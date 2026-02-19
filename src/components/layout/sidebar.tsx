@@ -16,6 +16,7 @@ import {
   ShoppingCart,
   Store,
   Truck,
+  UserRound,
   Users,
 } from "lucide-react";
 
@@ -84,6 +85,26 @@ const lojaItems: MenuItem[] = [
   { href: "/loja/ocorrencias", label: "Ocorrências", icon: AlertCircle },
 ];
 
+const gestorDadosSelfItems: MenuItem[] = [
+  ...gestorDadosItems,
+  { href: "/gestor-dados/perfil", label: "Meu Perfil", icon: UserRound },
+];
+
+const gestorFabricaSelfItems: MenuItem[] = [
+  ...gestorFabricaItems,
+  { href: "/gestor-fabrica/perfil", label: "Meu Perfil", icon: UserRound },
+];
+
+const chaoFabricaSelfItems: MenuItem[] = [
+  ...chaoFabricaItems,
+  { href: "/chao-fabrica/perfil", label: "Meu Perfil", icon: UserRound },
+];
+
+const lojaSelfItems: MenuItem[] = [
+  ...lojaItems,
+  { href: "/loja/perfil", label: "Meu Perfil", icon: UserRound },
+];
+
 export const profileConfig: Record<ProfileKey, ProfileConfig> = {
   administrador: {
     title: "Administrador",
@@ -95,6 +116,7 @@ export const profileConfig: Record<ProfileKey, ProfileConfig> = {
         items: [
           { href: "/administrador", label: "Dashboard Executivo", icon: LayoutDashboard },
           { href: "/administrador/usuarios", label: "Usuários e Permissões", icon: ShieldCheck },
+          { href: "/administrador/perfil", label: "Meu Perfil", icon: UserRound },
         ],
       },
       { label: "Gestor de Dados", items: gestorDadosItems },
@@ -107,25 +129,25 @@ export const profileConfig: Record<ProfileKey, ProfileConfig> = {
     title: "Gestor de Dados",
     subtitle: "Engenharia",
     badge: "Dados Mestres",
-    items: gestorDadosItems,
+    items: gestorDadosSelfItems,
   },
   "gestor-fabrica": {
     title: "Gestor de Fábrica",
     subtitle: "Operacional",
     badge: "Produção",
-    items: gestorFabricaItems,
+    items: gestorFabricaSelfItems,
   },
   "chao-fabrica": {
     title: "Chão de Fábrica",
     subtitle: "Execução Diária",
     badge: "Operação",
-    items: chaoFabricaItems,
+    items: chaoFabricaSelfItems,
   },
   loja: {
     title: "Responsável de Loja",
     subtitle: "Ponto de Venda",
     badge: "Operação Loja",
-    items: lojaItems,
+    items: lojaSelfItems,
   },
 };
 

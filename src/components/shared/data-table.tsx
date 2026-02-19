@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { LucideIcon, Eye, Pencil, Trash2, Printer, Plus } from "lucide-react";
+import { LucideIcon, Eye, Pencil, Trash2, Printer, Plus, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Column<T> {
@@ -11,7 +11,7 @@ interface Column<T> {
 }
 
 interface Action<T> {
-  icon: "view" | "edit" | "delete" | "print" | "add";
+  icon: "view" | "edit" | "delete" | "print" | "add" | "user";
   label: string;
   onClick: (item: T) => void;
   variant?: "default" | "destructive" | "outline";
@@ -52,6 +52,7 @@ export function DataTable<T extends object>({
     delete: Trash2,
     print: Printer,
     add: Plus,
+    user: UserRound,
   };
 
   if (isLoading) {

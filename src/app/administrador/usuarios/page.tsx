@@ -1,11 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CheckCircle2, KeyRound, Plus, UserCog, Users, XCircle } from "lucide-react";
+import { useMemo, useState, type ChangeEvent } from "react";
+import {
+  Camera,
+  CheckCircle2,
+  KeyRound,
+  Plus,
+  ShieldCheck,
+  UserCog,
+  Users,
+  XCircle,
+} from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { SearchFilter } from "@/components/shared/search-filter";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,6 +80,24 @@ const permissionModules = [
 type PermissionModuleId = (typeof permissionModules)[number]["id"];
 type PermissionMap = Record<PermissionModuleId, PermissionLevel>;
 
+type UserAddress = {
+  zipCode: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  country: string;
+};
+
+type ManagedUserProfile = {
+  avatarUrl: string;
+  phone: string;
+  address: UserAddress;
+  passwordUpdatedAt: string;
+};
+
 type ManagedUser = {
   id: string;
   name: string;
@@ -78,6 +106,7 @@ type ManagedUser = {
   status: ManagedUserStatus;
   updatedAt: string;
   permissions: PermissionMap;
+  profile: ManagedUserProfile;
 };
 
 type UserFormState = {
@@ -85,6 +114,14 @@ type UserFormState = {
   email: string;
   role: UserRole;
   status: ManagedUserStatus;
+};
+
+type ProfileFormState = {
+  avatarUrl: string;
+  phone: string;
+  address: UserAddress;
+  newPassword: string;
+  confirmPassword: string;
 };
 
 const permissionGroupOrder: PermissionGroup[] = [
@@ -166,6 +203,35 @@ function buildDefaultPermissions(role: UserRole): PermissionMap {
   return permissions;
 }
 
+function buildEmptyAddress(): UserAddress {
+  return {
+    zipCode: "",
+    street: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    country: "Brasil",
+  };
+}
+
+function buildProfile(
+  profile?: Partial<Omit<ManagedUserProfile, "address">> & {
+    address?: Partial<UserAddress>;
+  },
+): ManagedUserProfile {
+  return {
+    avatarUrl: profile?.avatarUrl ?? "",
+    phone: profile?.phone ?? "",
+    address: {
+      ...buildEmptyAddress(),
+      ...profile?.address,
+    },
+    passwordUpdatedAt: profile?.passwordUpdatedAt ?? "-",
+  };
+}
+
 function countAllowedModules(permissions: PermissionMap) {
   return permissionModules.filter((module) => permissions[module.id] !== "sem_acesso").length;
 }
@@ -188,6 +254,34 @@ function isCustomizedPermissions(user: ManagedUser) {
   );
 }
 
+function isProfileComplete(user: ManagedUser) {
+  const { phone, address } = user.profile;
+  return Boolean(
+    phone.trim() &&
+      address.street.trim() &&
+      address.number.trim() &&
+      address.neighborhood.trim() &&
+      address.city.trim() &&
+      address.state.trim(),
+  );
+}
+
+function getInitials(name: string) {
+  const pieces = name.trim().split(/\s+/).filter(Boolean);
+  if (pieces.length === 0) {
+    return "US";
+  }
+  if (pieces.length === 1) {
+    return pieces[0].slice(0, 2).toUpperCase();
+  }
+  return `${pieces[0][0] ?? ""}${pieces[pieces.length - 1][0] ?? ""}`.toUpperCase();
+}
+
+function buildAddressSummary(address: UserAddress) {
+  const cityState = [address.city.trim(), address.state.trim()].filter(Boolean).join(" / ");
+  return cityState || "Endereço não informado";
+}
+
 function nowLabel() {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
@@ -204,6 +298,20 @@ const initialUsers: ManagedUser[] = [
     status: "ativo",
     updatedAt: "19/02/2026, 10:00",
     permissions: buildDefaultPermissions("administrador"),
+    profile: buildProfile({
+      phone: "(85) 98888-1000",
+      address: {
+        zipCode: "60000-001",
+        street: "Av. Dom Luís",
+        number: "1000",
+        complement: "Sala 201",
+        neighborhood: "Aldeota",
+        city: "Fortaleza",
+        state: "CE",
+        country: "Brasil",
+      },
+      passwordUpdatedAt: "19/02/2026, 08:00",
+    }),
   },
   {
     id: "user-dados",
@@ -213,6 +321,20 @@ const initialUsers: ManagedUser[] = [
     status: "ativo",
     updatedAt: "19/02/2026, 09:20",
     permissions: buildDefaultPermissions("gestor-dados"),
+    profile: buildProfile({
+      phone: "(85) 98888-1001",
+      address: {
+        zipCode: "60115-080",
+        street: "Rua Joaquim Nabuco",
+        number: "340",
+        complement: "Bloco B",
+        neighborhood: "Meireles",
+        city: "Fortaleza",
+        state: "CE",
+        country: "Brasil",
+      },
+      passwordUpdatedAt: "18/02/2026, 15:40",
+    }),
   },
   {
     id: "user-fabrica",
@@ -222,6 +344,20 @@ const initialUsers: ManagedUser[] = [
     status: "ativo",
     updatedAt: "19/02/2026, 08:45",
     permissions: buildDefaultPermissions("gestor-fabrica"),
+    profile: buildProfile({
+      phone: "(85) 98888-1002",
+      address: {
+        zipCode: "60833-120",
+        street: "Rua das Oficinas",
+        number: "82",
+        complement: "",
+        neighborhood: "Distrito Industrial",
+        city: "Fortaleza",
+        state: "CE",
+        country: "Brasil",
+      },
+      passwordUpdatedAt: "17/02/2026, 11:25",
+    }),
   },
   {
     id: "user-chao",
@@ -231,6 +367,20 @@ const initialUsers: ManagedUser[] = [
     status: "ativo",
     updatedAt: "18/02/2026, 17:10",
     permissions: buildDefaultPermissions("chao-fabrica"),
+    profile: buildProfile({
+      phone: "(85) 98888-1003",
+      address: {
+        zipCode: "60833-120",
+        street: "Rua das Oficinas",
+        number: "120",
+        complement: "Galpão 3",
+        neighborhood: "Distrito Industrial",
+        city: "Fortaleza",
+        state: "CE",
+        country: "Brasil",
+      },
+      passwordUpdatedAt: "16/02/2026, 10:05",
+    }),
   },
   {
     id: "user-loja",
@@ -243,6 +393,20 @@ const initialUsers: ManagedUser[] = [
       ...buildDefaultPermissions("loja"),
       "gestor-fabrica.pedidos": "visualizar",
     },
+    profile: buildProfile({
+      phone: "",
+      address: {
+        zipCode: "",
+        street: "",
+        number: "",
+        complement: "",
+        neighborhood: "",
+        city: "",
+        state: "",
+        country: "Brasil",
+      },
+      passwordUpdatedAt: "14/02/2026, 09:00",
+    }),
   },
 ];
 
@@ -264,10 +428,17 @@ export default function AdministradorUsuariosPage() {
 
   const [permissionUserId, setPermissionUserId] = useState<string | null>(null);
   const [permissionDraft, setPermissionDraft] = useState<PermissionMap | null>(null);
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [profileForm, setProfileForm] = useState<ProfileFormState | null>(null);
+  const [profileFormError, setProfileFormError] = useState<string | null>(null);
 
   const permissionUser = useMemo(
     () => users.find((user) => user.id === permissionUserId) ?? null,
     [permissionUserId, users],
+  );
+  const profileUser = useMemo(
+    () => users.find((user) => user.id === profileUserId) ?? null,
+    [profileUserId, users],
   );
 
   const filteredUsers = useMemo(
@@ -291,6 +462,7 @@ export default function AdministradorUsuariosPage() {
       total: users.length,
       ativos: users.filter((user) => user.status === "ativo").length,
       admin: users.filter((user) => hasAdministrativeAccess(user.permissions)).length,
+      perfisCompletos: users.filter((user) => isProfileComplete(user)).length,
       customizados: users.filter((user) => isCustomizedPermissions(user)).length,
     }),
     [users],
@@ -301,9 +473,17 @@ export default function AdministradorUsuariosPage() {
       key: "name",
       header: "Usuário",
       render: (user: ManagedUser) => (
-        <div className="space-y-1">
-          <p className="font-medium text-foreground">{user.name}</p>
-          <p className="text-xs text-muted-foreground">{user.email}</p>
+        <div className="flex items-center gap-3">
+          <Avatar size="sm" className="border border-border/70">
+            {user.profile.avatarUrl ? (
+              <AvatarImage src={user.profile.avatarUrl} alt={`Foto de ${user.name}`} />
+            ) : null}
+            <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+          </Avatar>
+          <div className="space-y-1">
+            <p className="font-medium text-foreground">{user.name}</p>
+            <p className="text-xs text-muted-foreground">{user.email}</p>
+          </div>
         </div>
       ),
     },
@@ -331,6 +511,20 @@ export default function AdministradorUsuariosPage() {
         ),
     },
     {
+      key: "profile",
+      header: "Perfil",
+      render: (user: ManagedUser) => (
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">
+            {user.profile.phone || "Telefone não informado"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {buildAddressSummary(user.profile.address)}
+          </p>
+        </div>
+      ),
+    },
+    {
       key: "permissions",
       header: "Delegação",
       render: (user: ManagedUser) => (
@@ -354,6 +548,13 @@ export default function AdministradorUsuariosPage() {
   ];
 
   const actions = [
+    {
+      icon: "user" as const,
+      label: "Perfil e senha",
+      onClick: (user: ManagedUser) => {
+        openProfileDialog(user);
+      },
+    },
     {
       icon: "view" as const,
       label: "Delegar permissões",
@@ -418,6 +619,14 @@ export default function AdministradorUsuariosPage() {
       return;
     }
 
+    const hasDuplicatedEmail = users.some(
+      (user) => user.email.toLowerCase() === email && user.id !== editingUserId,
+    );
+    if (hasDuplicatedEmail) {
+      setUserFormError("Já existe um usuário cadastrado com este e-mail.");
+      return;
+    }
+
     if (editingUserId) {
       setUsers((current) =>
         current.map((user) => {
@@ -449,6 +658,7 @@ export default function AdministradorUsuariosPage() {
         status: userForm.status,
         updatedAt: nowLabel(),
         permissions: buildDefaultPermissions(userForm.role),
+        profile: buildProfile(),
       };
       setUsers((current) => [newUser, ...current]);
     }
@@ -513,10 +723,165 @@ export default function AdministradorUsuariosPage() {
     closePermissionDialog();
   }
 
+  function openProfileDialog(user: ManagedUser) {
+    setProfileUserId(user.id);
+    setProfileForm({
+      avatarUrl: user.profile.avatarUrl,
+      phone: user.profile.phone,
+      address: { ...user.profile.address },
+      newPassword: "",
+      confirmPassword: "",
+    });
+    setProfileFormError(null);
+  }
+
+  function updateProfileField<K extends keyof Omit<ProfileFormState, "address">>(
+    field: K,
+    value: ProfileFormState[K],
+  ) {
+    setProfileForm((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        [field]: value,
+      };
+    });
+  }
+
+  function updateProfileAddressField<K extends keyof UserAddress>(
+    field: K,
+    value: UserAddress[K],
+  ) {
+    setProfileForm((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        address: {
+          ...current.address,
+          [field]: value,
+        },
+      };
+    });
+  }
+
+  function handleProfilePhotoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setProfileFormError("Selecione um arquivo de imagem válido.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setProfileFormError("A foto deve ter no máximo 2MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      updateProfileField("avatarUrl", result);
+      setProfileFormError(null);
+    };
+    reader.onerror = () => {
+      setProfileFormError("Não foi possível carregar a foto selecionada.");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function closeProfileDialog() {
+    setProfileUserId(null);
+    setProfileForm(null);
+    setProfileFormError(null);
+  }
+
+  function saveProfileDialog() {
+    if (!profileUserId || !profileForm) {
+      return;
+    }
+
+    const phone = profileForm.phone.trim();
+    if (!phone) {
+      setProfileFormError("Informe o telefone do usuário.");
+      return;
+    }
+
+    const normalizedAddress: UserAddress = {
+      zipCode: profileForm.address.zipCode.trim(),
+      street: profileForm.address.street.trim(),
+      number: profileForm.address.number.trim(),
+      complement: profileForm.address.complement.trim(),
+      neighborhood: profileForm.address.neighborhood.trim(),
+      city: profileForm.address.city.trim(),
+      state: profileForm.address.state.trim().toUpperCase(),
+      country: profileForm.address.country.trim() || "Brasil",
+    };
+
+    if (
+      !normalizedAddress.street ||
+      !normalizedAddress.number ||
+      !normalizedAddress.neighborhood ||
+      !normalizedAddress.city ||
+      !normalizedAddress.state
+    ) {
+      setProfileFormError(
+        "Preencha rua, número, bairro, cidade e UF para salvar o endereço.",
+      );
+      return;
+    }
+
+    const newPassword = profileForm.newPassword.trim();
+    const confirmPassword = profileForm.confirmPassword.trim();
+
+    if (newPassword || confirmPassword) {
+      if (newPassword.length < 8) {
+        setProfileFormError("A nova senha deve ter no mínimo 8 caracteres.");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setProfileFormError("A confirmação de senha não confere.");
+        return;
+      }
+    }
+
+    const changedAt = nowLabel();
+
+    setUsers((current) =>
+      current.map((user) =>
+        user.id === profileUserId
+          ? {
+              ...user,
+              updatedAt: changedAt,
+              profile: {
+                ...user.profile,
+                avatarUrl: profileForm.avatarUrl,
+                phone,
+                address: normalizedAddress,
+                passwordUpdatedAt: newPassword
+                  ? changedAt
+                  : user.profile.passwordUpdatedAt,
+              },
+            }
+          : user,
+      ),
+    );
+
+    closeProfileDialog();
+  }
+
   return (
     <PageLayout
       title="Gestão de Usuários"
-      description="Delegue acessos e permissões por tipo de usuário e por página do sistema."
+      description="Delegue acessos e mantenha dados de perfil, contato, endereço e segurança dos usuários."
       badge="Administração"
       breadcrumbs={[
         { label: "Administrador", href: "/administrador" },
@@ -529,16 +894,22 @@ export default function AdministradorUsuariosPage() {
         </Button>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KPICard title="Usuários cadastrados" value={kpis.total} icon={Users} tone="info" />
         <KPICard title="Usuários ativos" value={kpis.ativos} icon={CheckCircle2} tone="success" />
         <KPICard title="Com acesso admin" value={kpis.admin} icon={KeyRound} tone="warning" />
-        <KPICard title="Permissões customizadas" value={kpis.customizados} icon={UserCog} tone="neutral" />
+        <KPICard title="Perfis completos" value={kpis.perfisCompletos} icon={UserCog} tone="neutral" />
+        <KPICard
+          title="Permissões customizadas"
+          value={kpis.customizados}
+          icon={ShieldCheck}
+          tone="info"
+        />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Cadastro e Delegação</CardTitle>
+          <CardTitle>Cadastro, Perfil e Delegação</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
@@ -581,7 +952,7 @@ export default function AdministradorUsuariosPage() {
       </Card>
 
       <Card>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               Passo 1
@@ -595,12 +966,20 @@ export default function AdministradorUsuariosPage() {
               Passo 2
             </p>
             <p className="mt-1 font-medium text-foreground">
-              Abra a delegação e habilite os módulos necessários por tipo de usuário.
+              Abra o perfil para manter foto, telefone, endereço e senha atualizados.
             </p>
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               Passo 3
+            </p>
+            <p className="mt-1 font-medium text-foreground">
+              Abra a delegação e habilite os módulos necessários por tipo de usuário.
+            </p>
+          </div>
+          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              Passo 4
             </p>
             <p className="mt-1 font-medium text-foreground">
               Ajuste o nível de acesso: visualizar, operar ou gerenciar cada módulo.
@@ -712,6 +1091,258 @@ export default function AdministradorUsuariosPage() {
             </Button>
             <Button type="button" onClick={handleSaveUser}>
               {editingUserId ? "Salvar alterações" : "Cadastrar usuário"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(profileUserId)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeProfileDialog();
+          }
+        }}
+      >
+        <DialogContent size="3xl">
+          <DialogHeader>
+            <DialogTitle>Perfil do Usuário</DialogTitle>
+            <DialogDescription>
+              {profileUser
+                ? `Atualize foto, contato, endereço e senha de ${profileUser.name}.`
+                : "Ajuste os dados de perfil do usuário."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {profileUser && profileForm && (
+            <div className="space-y-4 py-1">
+              <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+                <section className="space-y-4 rounded-xl border border-border/80 bg-panel/20 p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Foto e Contato</p>
+                    <p className="text-xs text-muted-foreground">
+                      Atualize a foto e o telefone principal.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <Avatar className="size-16 border border-border/70">
+                      {profileForm.avatarUrl ? (
+                        <AvatarImage
+                          src={profileForm.avatarUrl}
+                          alt={`Foto de ${profileUser.name}`}
+                        />
+                      ) : null}
+                      <AvatarFallback className="text-base font-semibold">
+                        {getInitials(profileUser.name)}
+                      </AvatarFallback>
+                    </Avatar>
+
+                    <div className="flex flex-col gap-2">
+                      <Label
+                        htmlFor="profile-photo-input"
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border/80 bg-card px-3 py-2 text-xs font-semibold text-foreground"
+                      >
+                        <Camera className="size-4" />
+                        Selecionar foto
+                      </Label>
+                      <input
+                        id="profile-photo-input"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleProfilePhotoChange}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => updateProfileField("avatarUrl", "")}
+                      >
+                        Remover foto
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="profile-phone">Telefone</Label>
+                    <Input
+                      id="profile-phone"
+                      value={profileForm.phone}
+                      onChange={(event) =>
+                        updateProfileField("phone", event.target.value)
+                      }
+                      placeholder="(99) 99999-9999"
+                    />
+                  </div>
+                </section>
+
+                <section className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Endereço</p>
+                    <p className="text-xs text-muted-foreground">
+                      Dados usados para identificação e contato administrativo.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-2">
+                      <Label htmlFor="profile-zip">CEP</Label>
+                      <Input
+                        id="profile-zip"
+                        value={profileForm.address.zipCode}
+                        onChange={(event) =>
+                          updateProfileAddressField("zipCode", event.target.value)
+                        }
+                        placeholder="00000-000"
+                      />
+                    </div>
+                    <div className="grid gap-2 sm:col-span-2">
+                      <Label htmlFor="profile-street">Rua</Label>
+                      <Input
+                        id="profile-street"
+                        value={profileForm.address.street}
+                        onChange={(event) =>
+                          updateProfileAddressField("street", event.target.value)
+                        }
+                        placeholder="Nome da rua"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-2">
+                      <Label htmlFor="profile-number">Número</Label>
+                      <Input
+                        id="profile-number"
+                        value={profileForm.address.number}
+                        onChange={(event) =>
+                          updateProfileAddressField("number", event.target.value)
+                        }
+                        placeholder="123"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="profile-complement">Complemento</Label>
+                      <Input
+                        id="profile-complement"
+                        value={profileForm.address.complement}
+                        onChange={(event) =>
+                          updateProfileAddressField("complement", event.target.value)
+                        }
+                        placeholder="Apto, bloco, sala..."
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="profile-neighborhood">Bairro</Label>
+                      <Input
+                        id="profile-neighborhood"
+                        value={profileForm.address.neighborhood}
+                        onChange={(event) =>
+                          updateProfileAddressField("neighborhood", event.target.value)
+                        }
+                        placeholder="Bairro"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-2 sm:col-span-2">
+                      <Label htmlFor="profile-city">Cidade</Label>
+                      <Input
+                        id="profile-city"
+                        value={profileForm.address.city}
+                        onChange={(event) =>
+                          updateProfileAddressField("city", event.target.value)
+                        }
+                        placeholder="Cidade"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="profile-state">UF</Label>
+                      <Input
+                        id="profile-state"
+                        value={profileForm.address.state}
+                        onChange={(event) =>
+                          updateProfileAddressField("state", event.target.value)
+                        }
+                        placeholder="CE"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="profile-country">País</Label>
+                    <Input
+                      id="profile-country"
+                      value={profileForm.address.country}
+                      onChange={(event) =>
+                        updateProfileAddressField("country", event.target.value)
+                      }
+                      placeholder="Brasil"
+                    />
+                  </div>
+                </section>
+              </div>
+
+              <section className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Segurança</p>
+                    <p className="text-xs text-muted-foreground">
+                      Edite a senha quando necessário.
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Última alteração de senha: {profileUser.profile.passwordUpdatedAt}
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="profile-new-password">Nova senha</Label>
+                    <Input
+                      id="profile-new-password"
+                      type="password"
+                      value={profileForm.newPassword}
+                      onChange={(event) =>
+                        updateProfileField("newPassword", event.target.value)
+                      }
+                      placeholder="Mínimo de 8 caracteres"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="profile-confirm-password">Confirmar senha</Label>
+                    <Input
+                      id="profile-confirm-password"
+                      type="password"
+                      value={profileForm.confirmPassword}
+                      onChange={(event) =>
+                        updateProfileField("confirmPassword", event.target.value)
+                      }
+                      placeholder="Repita a nova senha"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Deixe os campos de senha em branco para manter a senha atual.
+                </p>
+              </section>
+
+              {profileFormError && (
+                <div className="rounded-lg border border-danger/40 bg-danger/25 px-3 py-2 text-sm text-danger-foreground">
+                  {profileFormError}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeProfileDialog}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={saveProfileDialog}>
+              Salvar perfil
             </Button>
           </DialogFooter>
         </DialogContent>
