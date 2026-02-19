@@ -1,0 +1,534 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { AlertCircle, Clock3, Package, Plus, ShoppingCart, Truck } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KPICard } from "@/components/shared/kpi-card";
+import { DataTable } from "@/components/shared/data-table";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { SearchFilter } from "@/components/shared/search-filter";
+import { PageLayout } from "@/components/shared/page-layout";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { buildStoreOrderProductsMock, type StoreOrderProduct } from "@/lib/store-order-mock";
+import { storeOrderSummaries, type StoreOrderSummary } from "@/lib/store-orders-mock";
+import { cn } from "@/lib/utils";
+import type { ProductionWeekDay } from "@/lib/production-planning";
+
+const initialProducts: StoreOrderProduct[] = buildStoreOrderProductsMock(132);
+
+type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
+const WEEK_SEQUENCE: EditableDayField[] = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
+const FIELD_BY_JS_DAY_INDEX: EditableDayField[] = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
+const WEEK_LABEL: Record<EditableDayField, string> = {
+  seg: "SEG",
+  ter: "TER",
+  qua: "QUA",
+  qui: "QUI",
+  sex: "SEX",
+  sab: "SÁB",
+  dom: "DOM",
+};
+const PRODUCTION_DAY_BY_FIELD: Record<EditableDayField, ProductionWeekDay> = {
+  seg: "segunda",
+  ter: "terca",
+  qua: "quarta",
+  qui: "quinta",
+  sex: "sexta",
+  sab: "sabado",
+  dom: "domingo",
+};
+
+type StoreOption = {
+  id: string;
+  name: string;
+  dPlusDays: number;
+  cutoffTime: string;
+  deliveryIntervalDays: number;
+  receivesSunday: boolean;
+};
+
+const mockStores: StoreOption[] = [
+  {
+    id: "store-01",
+    name: "Empório do Pão",
+    dPlusDays: 3,
+    cutoffTime: "18:00",
+    deliveryIntervalDays: 1,
+    receivesSunday: false,
+  },
+  {
+    id: "store-02",
+    name: "Padaria Central",
+    dPlusDays: 2,
+    cutoffTime: "17:30",
+    deliveryIntervalDays: 1,
+    receivesSunday: true,
+  },
+  {
+    id: "store-03",
+    name: "Casa Express Pinheiros",
+    dPlusDays: 4,
+    cutoffTime: "18:30",
+    deliveryIntervalDays: 1,
+    receivesSunday: false,
+  },
+];
+
+function startOfDay(date: Date): Date {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  return value;
+}
+
+function addDays(date: Date, days: number): Date {
+  const value = new Date(date);
+  value.setDate(value.getDate() + days);
+  return value;
+}
+
+function isAfterCutoff(reference: Date, cutoffTime: string): boolean {
+  const [hour, minute] = cutoffTime.split(":").map((part) => Number(part));
+  return reference.getHours() > hour || (reference.getHours() === hour && reference.getMinutes() > minute);
+}
+
+function getBaseDateByCutoff(reference: Date, cutoffTime: string): Date {
+  const base = startOfDay(reference);
+  if (isAfterCutoff(reference, cutoffTime)) {
+    return addDays(base, 1);
+  }
+  return base;
+}
+
+function adjustDeliveryDateBySundayRule(deliveryDate: Date, receivesSunday: boolean): Date {
+  if (receivesSunday || deliveryDate.getDay() !== 0) {
+    return deliveryDate;
+  }
+  return addDays(deliveryDate, 1);
+}
+
+function getDeliveryDateByStoreRule(baseDate: Date, dPlusDays: number, receivesSunday: boolean): Date {
+  const calculatedDate = addDays(baseDate, dPlusDays);
+  return adjustDeliveryDateBySundayRule(calculatedDate, receivesSunday);
+}
+
+function getDayFieldByDate(date: Date): EditableDayField {
+  return FIELD_BY_JS_DAY_INDEX[date.getDay()];
+}
+
+function rotateDays(startDay: EditableDayField): EditableDayField[] {
+  const startIndex = WEEK_SEQUENCE.indexOf(startDay);
+  return [...WEEK_SEQUENCE.slice(startIndex), ...WEEK_SEQUENCE.slice(0, startIndex)];
+}
+
+function formatDateWithWeekday(date: Date): string {
+  const dateLabel = new Intl.DateTimeFormat("pt-BR").format(date);
+  const weekdayLabel = new Intl.DateTimeFormat("pt-BR", { weekday: "long" }).format(date);
+  return `${dateLabel} - ${weekdayLabel.charAt(0).toUpperCase()}${weekdayLabel.slice(1)}`;
+}
+
+function hasProductionDayBetween(days: ProductionWeekDay[], fromDate: Date, toDate: Date): boolean {
+  const start = startOfDay(fromDate);
+  const end = startOfDay(toDate);
+
+  if (end.getTime() < start.getTime()) {
+    return false;
+  }
+
+  const cursor = new Date(start);
+  while (cursor.getTime() <= end.getTime()) {
+    const field = getDayFieldByDate(cursor);
+    if (days.includes(PRODUCTION_DAY_BY_FIELD[field])) {
+      return true;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return false;
+}
+
+function canDeliverOnDate(
+  product: StoreOrderProduct,
+  baseDate: Date,
+  deliveryDate: Date,
+  intervalDays: number,
+): boolean {
+  const latestProductionDate = addDays(startOfDay(deliveryDate), -Math.max(intervalDays, 0));
+  return hasProductionDayBetween(product.productionDays, startOfDay(baseDate), latestProductionDate);
+}
+
+export default function PedidosLojaPage() {
+  const router = useRouter();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
+  const [selectedStoreId, setSelectedStoreId] = useState(mockStores[0].id);
+  const [orderProducts, setOrderProducts] = useState<StoreOrderProduct[]>(initialProducts);
+  const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [availabilityFilter, setAvailabilityFilter] = useState("all");
+
+  const referenceDate = useMemo(() => new Date(), []);
+  const selectedStore = useMemo(
+    () => mockStores.find((store) => store.id === selectedStoreId) ?? mockStores[0],
+    [selectedStoreId],
+  );
+  const baseDate = useMemo(
+    () => getBaseDateByCutoff(referenceDate, selectedStore.cutoffTime),
+    [referenceDate, selectedStore.cutoffTime],
+  );
+  const deliveryDate = useMemo(
+    () => getDeliveryDateByStoreRule(baseDate, selectedStore.dPlusDays, selectedStore.receivesSunday),
+    [baseDate, selectedStore.dPlusDays, selectedStore.receivesSunday],
+  );
+  const highlightedDay = useMemo(() => getDayFieldByDate(deliveryDate), [deliveryDate]);
+  const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
+  const deliveryDateLabel = useMemo(() => formatDateWithWeekday(deliveryDate), [deliveryDate]);
+  const productsWithAvailability = useMemo(
+    () =>
+      orderProducts.map((product) => ({
+        ...product,
+        available: canDeliverOnDate(product, baseDate, deliveryDate, selectedStore.deliveryIntervalDays),
+      })),
+    [baseDate, deliveryDate, orderProducts, selectedStore.deliveryIntervalDays],
+  );
+
+  const filteredPedidos = useMemo(
+    () =>
+      storeOrderSummaries.filter(
+        (item) =>
+          item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.store.toLowerCase().includes(searchTerm.toLowerCase()),
+      ),
+    [searchTerm],
+  );
+
+  const orderKpis = useMemo(
+    () => ({
+      total: storeOrderSummaries.length,
+      agendado: storeOrderSummaries.filter((item) => item.status === "agendado").length,
+      emProducao: storeOrderSummaries.filter((item) => item.status === "em_producao").length,
+      rotaEntrega: storeOrderSummaries.filter((item) => item.status === "rota_entrega").length,
+    }),
+    [],
+  );
+
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(new Set(productsWithAvailability.map((item) => item.category)))
+        .sort((a, b) => a.localeCompare(b))
+        .map((value) => ({ value, label: value })),
+    [productsWithAvailability],
+  );
+
+  const filteredOrderProducts = useMemo(() => {
+    const term = catalogSearchTerm.trim().toLowerCase();
+
+    return productsWithAvailability.filter((item) => {
+      const matchesSearch =
+        term.length === 0 ||
+        item.code.toLowerCase().includes(term) ||
+        item.name.toLowerCase().includes(term) ||
+        item.category.toLowerCase().includes(term);
+      const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
+      const matchesAvailability =
+        availabilityFilter === "all" ||
+        (availabilityFilter === "available" ? item.available : !item.available);
+
+      return matchesSearch && matchesCategory && matchesAvailability;
+    });
+  }, [availabilityFilter, catalogSearchTerm, categoryFilter, productsWithAvailability]);
+
+  const columns = [
+    { key: "code", header: "Código" },
+    { key: "date", header: "Data" },
+    {
+      key: "deliveryDate",
+      header: "Data Prevista Entrega",
+      render: (item: StoreOrderSummary) => (
+        <span className="rounded-md bg-warning/30 px-2 py-1 text-xs font-semibold text-warning-foreground">
+          {item.deliveryDate}
+        </span>
+      ),
+    },
+    { key: "status", header: "Status", render: (item: StoreOrderSummary) => <StatusBadge status={item.status} /> },
+    { key: "store", header: "Loja Solicitante" },
+  ];
+
+  const actions = [
+    { icon: "view" as const, label: "Visualizar", onClick: (item: StoreOrderSummary) => router.push(`/loja/pedidos/${item.id}`) },
+  ];
+
+  const handleQuantityChange = (productId: string, field: EditableDayField, value: number) => {
+    if (field !== highlightedDay) {
+      return;
+    }
+
+    const sanitizedValue = Number.isFinite(value) && value > 0 ? value : 0;
+
+    setOrderProducts((current) =>
+      current.map((product) => {
+        if (product.id !== productId) {
+          return product;
+        }
+
+        const nextProduct = { ...product };
+        nextProduct[field] = sanitizedValue;
+        nextProduct.total = sanitizedValue;
+        return nextProduct;
+      }),
+    );
+  };
+
+  function clearCatalogFilters() {
+    setCatalogSearchTerm("");
+    setCategoryFilter("all");
+    setAvailabilityFilter("all");
+  }
+
+  return (
+    <PageLayout
+      title="Meus Pedidos"
+      description="Gerencie seus pedidos"
+      badge="Loja"
+      breadcrumbs={[{ label: "Loja", href: "/loja" }, { label: "Pedidos" }]}
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <KPICard title="Total de Pedidos" value={orderKpis.total} icon={ShoppingCart} tone="info" />
+        <KPICard title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
+        <KPICard title="Em Produção" value={orderKpis.emProducao} icon={Package} tone="neutral" />
+        <KPICard title="Rota de Entrega" value={orderKpis.rotaEntrega} icon={Truck} tone="success" />
+        <KPICard title="Ocorrências" value="12" icon={AlertCircle} tone="danger" />
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardTitle>Lista de Pedidos</CardTitle>
+          <Dialog open={isNewOrderOpen} onOpenChange={setIsNewOrderOpen}>
+            <DialogTrigger asChild>
+              <Button type="button">
+                <Plus className="size-4" />
+                Novo Pedido
+              </Button>
+            </DialogTrigger>
+            <DialogContent size="full">
+              <DialogHeader>
+                <DialogTitle>Pedido Diário</DialogTitle>
+                <DialogDescription>Faça seu pedido de produtos</DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-6 py-2">
+                <div className="rounded-lg border border-border/80 bg-panel p-4">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="grid gap-2">
+                      <Label className="text-xs text-muted-foreground">Nome da Loja</Label>
+                      <Select value={selectedStore.id} onValueChange={setSelectedStoreId}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {mockStores.map((store) => (
+                            <SelectItem key={store.id} value={store.id}>
+                              {store.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs text-muted-foreground">Data de Entrega (D+X)</Label>
+                      <Input
+                        value={`${deliveryDateLabel} (D+${selectedStore.dPlusDays})`}
+                        disabled
+                        className="border-warning/40 bg-warning/20 font-semibold text-warning-foreground"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs text-muted-foreground">Horário Limite</Label>
+                      <Input value={selectedStore.cutoffTime} disabled className="bg-muted" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
+                  <div className="grid gap-3 lg:grid-cols-[2fr_1fr_1fr_auto]">
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Buscar Produto</Label>
+                      <Input
+                        value={catalogSearchTerm}
+                        onChange={(event) => setCatalogSearchTerm(event.target.value)}
+                        placeholder="Código, nome ou categoria..."
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Categoria</Label>
+                      <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          {categoryOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Disponibilidade</Label>
+                      <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Todas" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas</SelectItem>
+                          <SelectItem value="available">Disponível</SelectItem>
+                          <SelectItem value="unavailable">Indisponível</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-end">
+                      <Button type="button" variant="ghost" onClick={clearCatalogFilters}>
+                        Limpar
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {filteredOrderProducts.length} de {orderProducts.length} produtos visíveis.
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Coluna ativa do pedido: <strong>{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
+                  </p>
+                </div>
+
+                <div className="max-h-[420px] overflow-auto rounded-lg border border-border/80">
+                  <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-secondary/85">
+                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Código</th>
+                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
+                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Categoria</th>
+                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Un.</th>
+                        {dayColumns.map((dayField, index) => (
+                          <th
+                            key={dayField}
+                            className={cn(
+                              "px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.08em]",
+                              index === 0 && "bg-success/40",
+                            )}
+                          >
+                            {WEEK_LABEL[dayField]}
+                          </th>
+                        ))}
+                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredOrderProducts.length === 0 ? (
+                        <tr>
+                          <td colSpan={12} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                            Nenhum produto encontrado para os filtros selecionados.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredOrderProducts.map((product) => (
+                          <tr key={product.id} className="border-t border-border/70">
+                            <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
+                            <td className="px-2 py-2 text-sm">
+                              {product.name}
+                            </td>
+                            <td className="px-2 py-2 text-sm">{product.category}</td>
+                            <td className="px-2 py-2 text-sm">{product.unit}</td>
+                            {dayColumns.map((dayField, index) => {
+                              const isActiveColumn = index === 0;
+                              const canEdit = isActiveColumn && product.available;
+
+                              return (
+                                <td
+                                  key={`${product.id}-${dayField}`}
+                                  className={cn("px-1 py-1", isActiveColumn && "bg-success/25")}
+                                >
+                                  <Input
+                                    type="number"
+                                    className="h-8 w-16 text-center"
+                                    value={product[dayField]}
+                                    onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
+                                    disabled={!canEdit}
+                                  />
+                                </td>
+                              );
+                            })}
+                            <td className="px-2 py-2 text-sm font-semibold">
+                              {product[highlightedDay]} {product.unit}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="text-sm text-muted-foreground">
+                  <span className="mr-4 inline-flex items-center gap-1.5">
+                    <span className="inline-block size-3 rounded-sm bg-success/50" />
+                    Disponível
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="inline-block size-3 rounded-sm bg-secondary" />
+                    Indisponível
+                  </span>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsNewOrderOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="button" onClick={() => setIsNewOrderOpen(false)}>
+                  Fazer Pedido
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <SearchFilter
+            searchPlaceholder="Buscar por código ou loja..."
+            onSearch={setSearchTerm}
+            searchValue={searchTerm}
+            showFilters={false}
+          />
+          <DataTable
+            data={filteredPedidos}
+            columns={columns}
+            actions={actions}
+            keyField="id"
+            emptyMessage="Nenhum pedido encontrado"
+            stickyHeader
+          />
+        </CardContent>
+      </Card>
+    </PageLayout>
+  );
+}
