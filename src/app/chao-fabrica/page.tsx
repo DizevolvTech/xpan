@@ -76,11 +76,17 @@ export default function ChaoFabricaPage() {
         transition={{ delay: 0.1 }}
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
       >
-        <KPICard title="OPs para produzir" value={opsCount} tone="info" icon={Factory} />
-        <KPICard title="Carga de produção" value={`${productionKg} Kg`} tone="success" icon={Factory} />
-        <KPICard title="Pedidos prontos p/ expedir" value={expeditionReady} tone="success" icon={Truck} />
-        <KPICard title="Pedidos aguardando liberação" value={expeditionBlocked} tone="warning" icon={Truck} />
-        <KPICard title="Carga total de expedição" value={`${expeditionKg} Kg`} tone="neutral" icon={ListChecks} />
+        <KPICard title="OPs para produzir" value={opsCount} tone="info" icon={Factory} compactValue />
+        <KPICard title="Carga de produção" value={`${productionKg} Kg`} tone="success" icon={Factory} compactValue />
+        <KPICard title="Pedidos prontos p/ expedir" value={expeditionReady} tone="success" icon={Truck} compactValue />
+        <KPICard
+          title="Pedidos aguardando liberação"
+          value={expeditionBlocked}
+          tone="warning"
+          icon={Truck}
+          compactValue
+        />
+        <KPICard title="Carga total de expedição" value={`${expeditionKg} Kg`} tone="neutral" icon={ListChecks} compactValue />
       </motion.div>
 
       <motion.div

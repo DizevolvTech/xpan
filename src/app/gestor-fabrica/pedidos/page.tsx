@@ -387,10 +387,10 @@ export default function PedidosFabricaPage() {
       }
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Itens de Pedido" value={kpis.itens} icon={ShoppingCart} tone="info" />
-        <KPICard title="Pedidos" value={kpis.pedidos} icon={ListChecks} tone="neutral" />
-        <KPICard title="Produção no Dia" value={kpis.producaoHoje} icon={Factory} tone="success" />
-        <KPICard title="Sem Agenda" value={kpis.semAgenda} icon={AlertTriangle} tone="danger" />
+        <KPICard title="Itens de Pedido" value={kpis.itens} icon={ShoppingCart} tone="info" compactValue />
+        <KPICard title="Pedidos" value={kpis.pedidos} icon={ListChecks} tone="neutral" compactValue />
+        <KPICard title="Produção no Dia" value={kpis.producaoHoje} icon={Factory} tone="success" compactValue />
+        <KPICard title="Sem Agenda" value={kpis.semAgenda} icon={AlertTriangle} tone="danger" compactValue />
       </div>
 
       <Card>

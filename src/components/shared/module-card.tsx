@@ -51,8 +51,8 @@ export function ModuleCard({
       className="group flex h-full flex-col rounded-xl border border-border/80 bg-surface p-5 shadow-[var(--shadow-soft)] transition duration-200 hover:-translate-y-1 hover:border-border-strong/35"
     >
       <div className="flex items-start gap-3">
-        <div className={cn("mt-0.5 flex size-11 items-center justify-center rounded-xl", styles.icon)}>
-          <Icon className="size-5" />
+        <div className={cn("mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-xl", styles.icon)}>
+          <Icon className="size-5 shrink-0" />
         </div>
         <div>
           <h3 className="font-heading text-base font-semibold text-foreground">{title}</h3>

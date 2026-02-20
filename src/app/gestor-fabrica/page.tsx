@@ -78,6 +78,7 @@ export default function GestorFabricaPage() {
             value={kpi.value}
             tone={kpi.tone}
             icon={kpi.icon}
+            compactValue
           />
         ))}
       </motion.div>

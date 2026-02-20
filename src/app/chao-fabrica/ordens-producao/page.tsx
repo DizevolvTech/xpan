@@ -321,10 +321,10 @@ export default function OrdensProducaoPage() {
       }
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="OPs Consolidadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" />
-        <KPICard title="Carga Total" value={`${kpis.totalKg} Kg`} icon={Factory} tone="success" />
-        <KPICard title="Setores Ativos" value={kpis.setoresAtivos} icon={Factory} tone="info" />
-        <KPICard title="Linhas Ativas" value={kpis.linhasAtivas} icon={Layers} tone="warning" />
+        <KPICard title="OPs Consolidadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" compactValue />
+        <KPICard title="Carga Total" value={`${kpis.totalKg} Kg`} icon={Factory} tone="success" compactValue />
+        <KPICard title="Setores Ativos" value={kpis.setoresAtivos} icon={Factory} tone="info" compactValue />
+        <KPICard title="Linhas Ativas" value={kpis.linhasAtivas} icon={Layers} tone="warning" compactValue />
       </div>
 
       <Card>

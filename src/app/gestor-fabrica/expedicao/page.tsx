@@ -244,10 +244,10 @@ export default function ExpedicaoPage() {
       }
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Pedidos para separar" value={kpis.pedidos} icon={Truck} tone="info" />
-        <KPICard title="Itens para separar" value={kpis.itens} icon={Package} tone="neutral" />
-        <KPICard title="Carga total" value={`${kpis.totalKg} Kg`} icon={ListChecks} tone="success" />
-        <KPICard title="Entregas no dia" value={kpis.entregasHoje} icon={ShoppingCart} tone="warning" />
+        <KPICard title="Pedidos para separar" value={kpis.pedidos} icon={Truck} tone="info" compactValue />
+        <KPICard title="Itens para separar" value={kpis.itens} icon={Package} tone="neutral" compactValue />
+        <KPICard title="Carga total" value={`${kpis.totalKg} Kg`} icon={ListChecks} tone="success" compactValue />
+        <KPICard title="Entregas no dia" value={kpis.entregasHoje} icon={ShoppingCart} tone="warning" compactValue />
       </div>
 
       <Card>
