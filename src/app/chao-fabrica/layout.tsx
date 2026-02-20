@@ -1,10 +1,12 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { resolveShellProfile } from "@/lib/shell-profile";
 
-export default function ChaoFabricaLayout({
+export default async function ChaoFabricaLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <AppShell profile="chao-fabrica">{children}</AppShell>;
+  const profile = await resolveShellProfile("chao-fabrica");
+  return <AppShell profile={profile}>{children}</AppShell>;
 }
 

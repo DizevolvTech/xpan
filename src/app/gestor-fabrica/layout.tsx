@@ -1,9 +1,11 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { resolveShellProfile } from "@/lib/shell-profile";
 
-export default function GestorFabricaLayout({
+export default async function GestorFabricaLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <AppShell profile="gestor-fabrica">{children}</AppShell>;
+  const profile = await resolveShellProfile("gestor-fabrica");
+  return <AppShell profile={profile}>{children}</AppShell>;
 }

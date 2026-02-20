@@ -53,9 +53,22 @@ export default function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <Card className="border-border/80 bg-surface">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-20 bg-gradient-to-br from-canvas via-muted/35 to-canvas"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-28 top-10 -z-10 h-72 w-72 rounded-full bg-primary/20 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-20 right-0 -z-10 h-80 w-80 rounded-full bg-accent/25 blur-3xl"
+      />
+
+      <div className="grid w-full max-w-5xl gap-6 rounded-3xl border border-border/70 bg-surface/70 p-4 shadow-elevated backdrop-blur-sm md:p-6 lg:grid-cols-[1.2fr_1fr]">
+        <Card className="border-border/80 bg-card/95 shadow-soft">
           <CardHeader>
             <CardTitle className="font-heading text-2xl">Acesso ao Casa Express</CardTitle>
             <CardDescription>
@@ -63,63 +76,65 @@ export default function LoginForm() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="grid gap-2">
-                <Label htmlFor="email">E-mail</Label>
-                <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="email"
-                    type="email"
-                    className="pl-9"
-                    placeholder="voce@empresa.com"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    required
-                  />
+            <div className="rounded-2xl border border-border/75 bg-panel/70 p-4 shadow-soft md:p-5">
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="grid gap-2">
+                  <Label htmlFor="email">E-mail</Label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      className="pl-9"
+                      placeholder="voce@empresa.com"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="password">Senha</Label>
-                <div className="relative">
-                  <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type="password"
-                    className="pl-9"
-                    placeholder="Digite sua senha"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    required
-                  />
+                <div className="grid gap-2">
+                  <Label htmlFor="password">Senha</Label>
+                  <div className="relative">
+                    <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      type="password"
+                      className="pl-9"
+                      placeholder="Digite sua senha"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {error && (
-                <div className="rounded-lg border border-danger/40 bg-danger/30 px-3 py-2 text-sm text-danger-foreground">
-                  {error}
-                </div>
-              )}
-
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Entrando...
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="size-4" />
-                    Entrar
-                  </>
+                {error && (
+                  <div className="rounded-lg border border-danger/40 bg-danger/30 px-3 py-2 text-sm text-danger-foreground">
+                    {error}
+                  </div>
                 )}
-              </Button>
-            </form>
+
+                <Button type="submit" className="w-full shadow-soft" disabled={submitting}>
+                  {submitting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Entrando...
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="size-4" />
+                      Entrar
+                    </>
+                  )}
+                </Button>
+              </form>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border/80 bg-surface">
+        <Card className="border-border/80 bg-card/90 shadow-soft">
           <CardHeader>
             <CardTitle className="font-heading text-lg">Usuários de teste</CardTitle>
             <CardDescription>

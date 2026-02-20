@@ -1,9 +1,11 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { resolveShellProfile } from "@/lib/shell-profile";
 
-export default function LojaLayout({
+export default async function LojaLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <AppShell profile="loja">{children}</AppShell>;
+  const profile = await resolveShellProfile("loja");
+  return <AppShell profile={profile}>{children}</AppShell>;
 }
