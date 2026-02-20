@@ -18,7 +18,12 @@ type StatusType =
   | "aberta"
   | "em_analise"
   | "resolvida"
-  | "fechada";
+  | "fechada"
+  | "aguardando_expedicao"
+  | "pronto_coleta"
+  | "em_rota"
+  | "no_destino"
+  | "tentativa_falha";
 
 const statusConfig: Record<StatusType, { label: string; className: string }> = {
   ativo: { label: "Ativo", className: "bg-success text-success-foreground" },
@@ -43,6 +48,11 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
   em_analise: { label: "Em Análise", className: "bg-warning text-warning-foreground" },
   resolvida: { label: "Resolvida", className: "bg-info text-info-foreground" },
   fechada: { label: "Fechada", className: "bg-secondary text-secondary-foreground" },
+  aguardando_expedicao: { label: "Aguardando Expedição", className: "bg-secondary text-secondary-foreground" },
+  pronto_coleta: { label: "Pronto p/ Coleta", className: "bg-warning text-warning-foreground" },
+  em_rota: { label: "Em Rota", className: "bg-info text-info-foreground" },
+  no_destino: { label: "No Destino", className: "bg-[oklch(0.88_0.05_214)] text-[oklch(0.4_0.06_228)]" },
+  tentativa_falha: { label: "Tentativa Falhou", className: "bg-danger text-danger-foreground" },
 };
 
 interface StatusBadgeProps {

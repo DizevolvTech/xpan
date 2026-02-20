@@ -11,6 +11,7 @@ import {
   Factory,
   LayoutDashboard,
   LogOut,
+  Navigation,
   Package,
   ShieldCheck,
   ShoppingCart,
@@ -77,6 +78,7 @@ const chaoFabricaItems: MenuItem[] = [
   { href: "/chao-fabrica", label: "Visão Geral", icon: LayoutDashboard },
   { href: "/chao-fabrica/ordens-producao", label: "Ordens de Produção", icon: Factory },
   { href: "/chao-fabrica/expedicao", label: "Expedição", icon: Truck },
+  { href: "/chao-fabrica/entregas", label: "Entregas", icon: Navigation },
 ];
 
 const lojaItems: MenuItem[] = [

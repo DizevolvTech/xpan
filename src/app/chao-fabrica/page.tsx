@@ -44,6 +44,14 @@ export default function ChaoFabricaPage() {
       icon: ListChecks,
       tone: "emerald" as const,
     },
+    {
+      href: "/chao-fabrica/entregas",
+      title: "Entregas",
+      subtitle: "Execução em campo",
+      description: "Use o fluxo mobile para sair com os pedidos, registrar rota e confirmar entrega.",
+      icon: Truck,
+      tone: "cyan" as const,
+    },
   ];
 
   return (
@@ -93,7 +101,7 @@ export default function ChaoFabricaPage() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.2 }}
-        className="grid gap-4 md:grid-cols-2"
+        className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
       >
         {modules.map((module, index) => (
           <motion.div
