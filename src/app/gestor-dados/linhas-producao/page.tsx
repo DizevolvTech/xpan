@@ -77,8 +77,8 @@ export default function LinhasProducaoPage() {
 
   const columns = [
     { key: "code", header: "Código" },
-    { key: "name", header: "Linha" },
-    { key: "sectorName", header: "Setor" },
+    { key: "name", header: "Subcategoria" },
+    { key: "sectorName", header: "Categoria" },
     { key: "type", header: "Tipo" },
     { key: "productCount", header: "Produtos" },
     { key: "operatingHours", header: "Horário" },
@@ -120,19 +120,19 @@ export default function LinhasProducaoPage() {
 
   return (
     <PageLayout
-      title="Linhas de Produção"
-      description="Cada linha pertence a um setor. Use o botão de abrir para configurar a sublinha contínua e o calendário semanal de produção."
+      title="Subcategorias"
+      description="Cada subcategoria pertence a uma categoria e consolida os produtos que definem o cronograma."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
-        { label: "Linhas de Produção" },
+        { label: "Subcategorias" },
       ]}
     >
       <div className="grid gap-3 md:grid-cols-3">
-        <KPICard title="Linhas Ativas" value={`${activeLines} linhas`} icon={Layers3} tone="success" />
+        <KPICard title="Subcategorias Ativas" value={`${activeLines} subcategorias`} icon={Layers3} tone="success" />
         <KPICard
-          title="Pendentes de Auditoria"
-          value={`${pendingAudits} cronogramas`}
+          title="Linhas Derivadas"
+          value={`${pendingAudits} revisões`}
           icon={CalendarDays}
           tone="warning"
         />
@@ -141,21 +141,21 @@ export default function LinhasProducaoPage() {
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Linhas de Produção</CardTitle>
+          <CardTitle>Lista de Subcategorias</CardTitle>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button type="button">
                 <Plus className="size-4" />
-                Nova Linha
+                Nova Subcategoria
               </Button>
             </DialogTrigger>
             <DialogContent size="xl">
               <DialogHeader>
-                <DialogTitle>Nova Linha de Produção</DialogTitle>
+                <DialogTitle>Nova Subcategoria</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-2">
                 <div className="grid gap-2">
-                  <Label>Nome da Linha *</Label>
+                  <Label>Nome da Subcategoria *</Label>
                   <Input placeholder="Ex: Linha de Pães" />
                 </div>
                 <div className="grid gap-2">
@@ -163,7 +163,7 @@ export default function LinhasProducaoPage() {
                   <Input type="number" placeholder="Ex: 900" />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Setor *</Label>
+                  <Label>Categoria *</Label>
                   <Select>
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione" />
@@ -210,7 +210,7 @@ export default function LinhasProducaoPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código, linha ou setor..."
+            searchPlaceholder="Buscar por código, subcategoria ou categoria..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}

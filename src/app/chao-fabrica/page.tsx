@@ -6,25 +6,28 @@ import { useMemo, useState } from "react";
 
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
-import { applyFactoryOrderStatus, useFactoryOrderStatus } from "@/lib/factory-order-status";
+import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
 
 export default function ChaoFabricaPage() {
   const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
-  const statusState = useFactoryOrderStatus(referenceDate);
+  const workflow = useFactoryWorkflowState(referenceDate);
 
   const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
   const planningData = useMemo(
-    () => applyFactoryOrderStatus(basePlanningData, statusState.resolveStatus),
-    [basePlanningData, statusState.resolveStatus],
+    () =>
+      applyFactoryWorkflowState(basePlanningData, {
+        isReleased: workflow.isReleased,
+        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
+      }),
+    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
   );
 
   const opsCount = planningData.productionOrders.length;
   const productionKg = Number(planningData.productionOrders.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));
-  const expeditionReady = planningData.expedition.filter(
-    (item) => item.status === "em_producao" || item.status === "rota_entrega",
-  ).length;
-  const expeditionBlocked = planningData.expedition.length - expeditionReady;
+  const releasedOrders = planningData.orders.filter((item) => item.releasedToProduction).length;
+  const expeditionReady = planningData.expedition.filter((item) => item.status === "aguardando_expedicao").length;
+  const awaitingRelease = planningData.orders.filter((item) => !item.releasedToProduction).length;
   const expeditionKg = Number(planningData.expedition.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));
 
   const modules = [
@@ -32,7 +35,7 @@ export default function ChaoFabricaPage() {
       href: "/chao-fabrica/ordens-producao",
       title: "Produção",
       subtitle: "O que produzir agora",
-      description: "Lista operacional de OPs por setor e linha, pronta para execução.",
+      description: "Lista operacional de OPs por categoria, subcategoria e linha, pronta para execução.",
       icon: Factory,
       tone: "amber" as const,
     },
@@ -86,10 +89,11 @@ export default function ChaoFabricaPage() {
       >
         <KPICard title="OPs para produzir" value={opsCount} tone="info" icon={Factory} compactValue />
         <KPICard title="Carga de produção" value={`${productionKg} Kg`} tone="success" icon={Factory} compactValue />
+        <KPICard title="Pedidos liberados" value={releasedOrders} tone="info" icon={ListChecks} compactValue />
         <KPICard title="Pedidos prontos p/ expedir" value={expeditionReady} tone="success" icon={Truck} compactValue />
         <KPICard
           title="Pedidos aguardando liberação"
-          value={expeditionBlocked}
+          value={awaitingRelease}
           tone="warning"
           icon={Truck}
           compactValue

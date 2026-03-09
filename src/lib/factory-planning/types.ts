@@ -1,14 +1,28 @@
+import type { ProductionWeekDay } from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 
-export type OrderStatus = "agendado" | "em_producao" | "em_espera" | "rota_entrega";
+export type OrderStatus =
+  | "agendado"
+  | "em_producao"
+  | "em_espera"
+  | "aguardando_expedicao"
+  | "rota_entrega";
+export type ProductionItemStatus =
+  | "nao_iniciado"
+  | "em_preparacao"
+  | "em_producao"
+  | "em_forno"
+  | "embalando"
+  | "concluido";
 export type OrderUnit = UnitCode;
 
 export interface StoreProfile {
   id: string;
+  code: string;
   name: string;
-  cutoffTime: string;
-  dPlusDays: number;
-  receivesSunday: boolean;
+  orderingDays: ProductionWeekDay[];
+  receivingDays: ProductionWeekDay[];
+  receiveWindow: string;
 }
 
 export interface StoreOrderItem {
@@ -54,6 +68,11 @@ export interface PlannedOrderItem {
   expeditionQuantityRaw: number;
   expeditionQuantity: number;
   canPlan: boolean;
+  availableForRelease: boolean;
+  releasedToProduction: boolean;
+  productionItemKey: string | null;
+  productionItemStatus: ProductionItemStatus | null;
+  workflowProgress: number;
   opCode: string | null;
   status: OrderStatus;
 }
@@ -71,6 +90,9 @@ export interface PlannedOrderRow {
   itemsCount: number;
   totalKg: number;
   opsLabel: string;
+  releasedToProduction: boolean;
+  availableForRelease: boolean;
+  workflowProgress: number;
   status: OrderStatus;
 }
 
@@ -78,7 +100,11 @@ export interface ProductionOrderItem {
   productId: string;
   productCode: string;
   productName: string;
+  productionItemKey: string;
   totalKg: number;
+  progress: number;
+  status: ProductionItemStatus;
+  sourceItemsCount: number;
 }
 
 export interface ProductionOrderSourceItem {
@@ -96,6 +122,10 @@ export interface ProductionOrderSourceItem {
   deliveryDateLabel: string;
   expeditionUnit: OrderUnit;
   expeditionQuantity: number;
+  productionItemKey: string;
+  releasedToProduction: boolean;
+  productionItemStatus: ProductionItemStatus;
+  workflowProgress: number;
 }
 
 export interface ProductionOrderRow {
@@ -113,6 +143,8 @@ export interface ProductionOrderRow {
   itemsCount: number;
   ordersCount: number;
   totalKg: number;
+  releasedToProduction: boolean;
+  progress: number;
   status: OrderStatus;
   orderCodes: string[];
   items: ProductionOrderItem[];
@@ -131,6 +163,7 @@ export interface ExpeditionItem {
   expeditionQuantity: number;
   expeditionUnit: OrderUnit;
   productionDate: string | null;
+  workflowProgress: number;
 }
 
 export interface ExpeditionRow {
@@ -144,6 +177,8 @@ export interface ExpeditionRow {
   totalKg: number;
   itemsCount: number;
   itemsSummary: string;
+  releasedToProduction: boolean;
+  workflowProgress: number;
   status: OrderStatus;
   items: ExpeditionItem[];
 }

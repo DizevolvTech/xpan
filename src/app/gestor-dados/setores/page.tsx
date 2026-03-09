@@ -99,36 +99,36 @@ export default function SetoresPage() {
 
   return (
     <PageLayout
-      title="Gestão de Setores"
-      description="Gerencie os setores do sistema"
+      title="Gestão de Categorias"
+      description="Gerencie as categorias macro da operação e seus responsáveis."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
-        { label: "Setores" },
+        { label: "Categorias" },
       ]}
     >
       <div className="grid gap-3 md:grid-cols-2">
-        <KPICard title="Registros Ativos" value={`${activeCount} setores`} icon={Building} tone="success" />
+        <KPICard title="Registros Ativos" value={`${activeCount} categorias`} icon={Building} tone="success" />
         <KPICard title="Última Atualização" value="Há 2 dias" icon={Clock3} tone="neutral" />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Setores</CardTitle>
+          <CardTitle>Lista de Categorias</CardTitle>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button type="button" onClick={() => setEditingSetor(null)}>
                 <Plus className="size-4" />
-                Novo Setor
+                Nova Categoria
               </Button>
             </DialogTrigger>
             <DialogContent size="lg">
               <DialogHeader>
-                <DialogTitle>{editingSetor ? "Editar Setor" : "Cadastrar Novo Setor"}</DialogTitle>
+                <DialogTitle>{editingSetor ? "Editar Categoria" : "Cadastrar Nova Categoria"}</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-2">
                 <div className="grid gap-2">
-                  <Label>Nome do Setor *</Label>
+                  <Label>Nome da Categoria *</Label>
                   <Input placeholder="Ex: Confeitaria" defaultValue={editingSetor?.name} />
                 </div>
                 <div className="grid gap-2">
@@ -147,7 +147,7 @@ export default function SetoresPage() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Descrição do Setor</Label>
+                  <Label>Descrição da Categoria</Label>
                   <Input placeholder="Descrição..." />
                 </div>
                 {editingSetor && (

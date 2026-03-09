@@ -3,13 +3,17 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
-import { AlertCircle, ArrowLeft, Clock3, ListChecks, Store, Truck } from "lucide-react";
+import { AlertCircle, ArrowLeft, Clock3, ListChecks, Printer, Store, Truck } from "lucide-react";
 
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getStoreOrderById } from "@/lib/store-orders-mock";
+
+function openPrintPage(pathname: string) {
+  window.open(pathname, "_blank", "noopener,noreferrer");
+}
 
 function parseBrDate(dateLabel: string): Date | null {
   const [dayRaw, monthRaw, yearRaw] = dateLabel.split("/");
@@ -82,6 +86,10 @@ export default function PedidoLojaDetailsPage() {
       ]}
       actions={
         <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}`)}>
+            <Printer className="size-4" />
+            Imprimir pedido
+          </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/loja/pedidos">
               <ArrowLeft className="size-4" />

@@ -73,7 +73,7 @@ function getApprovedCatalogEntries(): ApprovedCatalogEntry[] {
 
       schedule.items.forEach((scheduleItem) => {
         const product = productsById.get(scheduleItem.productId);
-        if (!product || !product.active) {
+        if (!product || !product.active || !product.availableForOrdering) {
           return;
         }
 

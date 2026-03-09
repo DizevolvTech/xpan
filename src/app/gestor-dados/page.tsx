@@ -32,15 +32,15 @@ const modules = [
     tone: "emerald" as const,
   },
   {
-    title: "Setores",
-    description: "Cadastro e gestão de setores",
+    title: "Categorias",
+    description: "Cadastro e gestão de categorias",
     href: "/gestor-dados/setores",
     icon: Users,
     tone: "violet" as const,
   },
   {
-    title: "Linhas de Produção",
-    description: "Cadastro e gestão de linhas de produção",
+    title: "Subcategorias",
+    description: "Cadastro e gestão de subcategorias",
     href: "/gestor-dados/linhas-producao",
     icon: Factory,
     tone: "amber" as const,
@@ -84,7 +84,7 @@ export default function GestorDadosPage() {
       >
         <KPICard title="Registros Ativos" value="1.234" tone="info" icon={Database} />
         <KPICard title="Última Atualização" value="15 min" tone="neutral" icon={Clock} />
-        <KPICard title="Clientes Cadastrados" value="233" tone="success" icon={Store} />
+        <KPICard title="Lojas Cadastradas" value="233" tone="success" icon={Store} />
       </motion.div>
 
       <motion.div

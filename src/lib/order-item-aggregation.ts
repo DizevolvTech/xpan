@@ -1,4 +1,4 @@
-import type { PlannedOrderItem } from "@/lib/order-planning";
+import type { OrderStatus, PlannedOrderItem } from "@/lib/order-planning";
 
 export type AggregatedOrderItem = {
   aggregationKey: string;
@@ -16,6 +16,8 @@ export type AggregatedOrderItem = {
   productionDate: string | null;
   deliveryDate: string;
   opCode: string | null;
+  status: OrderStatus;
+  workflowProgress: number;
   sourceItemsCount: number;
 };
 
@@ -56,10 +58,12 @@ export function aggregateOrderItems(items: PlannedOrderItem[]): AggregatedOrderI
         expeditionUnit: item.expeditionUnit,
         sectorName: item.sectorName,
         lineName: item.lineName,
-        scheduleName: item.scheduleName ?? "Sem sublinha ativa",
+        scheduleName: item.scheduleName ?? "Sem linha ativa",
         productionDate: item.productionDate,
         deliveryDate: item.deliveryDate,
         opCode: item.opCode,
+        status: item.status,
+        workflowProgress: item.workflowProgress,
         sourceItemsCount: 0,
       });
     }
@@ -72,6 +76,10 @@ export function aggregateOrderItems(items: PlannedOrderItem[]): AggregatedOrderI
     row.requestedQuantity = round2(row.requestedQuantity + item.requestedQuantity);
     row.internalKg = round2(row.internalKg + item.internalKg);
     row.expeditionQuantity = round2(row.expeditionQuantity + item.expeditionQuantity);
+    if (item.workflowProgress >= row.workflowProgress) {
+      row.workflowProgress = item.workflowProgress;
+      row.status = item.status;
+    }
     row.sourceItemsCount += 1;
   });
 

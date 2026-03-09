@@ -10,7 +10,7 @@ const kpis = [
   { title: "Total de Pedidos", value: "1", tone: "info" as const, icon: ShoppingCart },
   { title: "Agendado", value: "1", tone: "warning" as const, icon: Clock },
   { title: "Em Produção", value: "0", tone: "neutral" as const, icon: Package },
-  { title: "Rota de Entrega", value: "0", tone: "success" as const, icon: Truck },
+  { title: "Entregas", value: "0", tone: "success" as const, icon: Truck },
   { title: "Ocorrências", value: "12", tone: "danger" as const, icon: AlertCircle },
 ];
 

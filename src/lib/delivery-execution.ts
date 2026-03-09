@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { OrderStatus } from "@/lib/order-planning";
-
 export type DeliveryExecutionStatus =
   | "aguardando_expedicao"
   | "pronto_coleta"
@@ -79,8 +77,8 @@ function readStateFromStorage(storageKey: string) {
   return parseState(window.localStorage.getItem(storageKey));
 }
 
-function getFallbackStatus(orderStatus: OrderStatus): DeliveryExecutionStatus {
-  return orderStatus === "rota_entrega" ? "pronto_coleta" : "aguardando_expedicao";
+function getFallbackStatus(expeditionReady: boolean): DeliveryExecutionStatus {
+  return expeditionReady ? "pronto_coleta" : "aguardando_expedicao";
 }
 
 export function useDeliveryExecution(referenceDate: string) {
@@ -104,10 +102,17 @@ export function useDeliveryExecution(referenceDate: string) {
   }, [executionState, hasInMemoryState, storageKey]);
 
   const resolveExecution = useCallback(
-    (orderId: string, orderStatus: OrderStatus): DeliveryExecutionEntry => {
+    (orderId: string, expeditionReady: boolean): DeliveryExecutionEntry => {
+      if (!expeditionReady) {
+        return {
+          status: "aguardando_expedicao",
+          updatedAt: executionState[orderId]?.updatedAt ?? new Date().toISOString(),
+        };
+      }
+
       return (
         executionState[orderId] ?? {
-          status: getFallbackStatus(orderStatus),
+          status: getFallbackStatus(expeditionReady),
           updatedAt: new Date().toISOString(),
         }
       );

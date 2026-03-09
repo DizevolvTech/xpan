@@ -19,15 +19,15 @@ const kpis = [
   { title: "Pendentes", value: "32", tone: "warning" as const, icon: Clock },
   { title: "Em Produção", value: "32", tone: "info" as const, icon: Factory },
   { title: "Em Espera", value: "12", tone: "neutral" as const, icon: Package },
-  { title: "Rota de Entrega", value: "32", tone: "success" as const, icon: Truck },
+  { title: "Entregas", value: "32", tone: "success" as const, icon: Truck },
 ];
 
 const modules = [
   {
     href: "/gestor-fabrica/sublinhas-producao",
-    title: "Sublinhas de Produção",
-    subtitle: "Aprovar e gerenciar cronogramas",
-    description: "Controle os cronogramas e a liberação operacional para os módulos de pedidos.",
+    title: "Linhas",
+    subtitle: "Visão derivada do cronograma",
+    description: "Acompanhe a linha executora derivada dos produtos e a carga consolidada por dia.",
     icon: ClipboardList,
     tone: "emerald" as const,
   },
@@ -42,8 +42,8 @@ const modules = [
   {
     href: "/gestor-fabrica/ordens-producao",
     title: "Ordens de Produção",
-    subtitle: "OP por setor e linha",
-    description: "Visualize as OPs geradas automaticamente com alocação por sublinha ativa.",
+    subtitle: "OP por categoria e subcategoria",
+    description: "Visualize as OPs liberadas com progresso derivado por item operacional.",
     icon: Factory,
     tone: "amber" as const,
   },
@@ -60,8 +60,8 @@ const modules = [
 export default function GestorFabricaPage() {
   return (
     <PageLayout
-      title="Gestor de Fábrica"
-      description="Gerencie sublinhas e pedidos da fábrica"
+    title="Gestor de Fábrica"
+      description="Gerencie linhas, pedidos, produção e expedição da fábrica"
       badge="Operacional"
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Gestor de Fábrica" }]}
     >

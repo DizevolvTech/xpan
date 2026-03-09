@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft, Factory, Printer, Truck } from "lucide-react";
 
 import { FactoryFlow } from "@/components/shared/factory-flow";
@@ -10,10 +10,14 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryOrderStatus, useFactoryOrderStatus } from "@/lib/factory-order-status";
-import { printProductionOrder } from "@/lib/factory-print";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  PRODUCTION_ITEM_STATUS_OPTIONS,
+  applyFactoryWorkflowState,
+  useFactoryWorkflowState,
+} from "@/lib/factory-order-status";
 import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
-import { productionLines } from "@/lib/production-planning";
+import { hierarchyLabels, productionLines } from "@/lib/production-planning";
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -22,18 +26,26 @@ function sanitizeDateKey(raw: string | null) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
 }
 
+function openPrintPage(pathname: string) {
+  window.open(pathname, "_blank", "noopener,noreferrer");
+}
+
 export default function OrdemProducaoDetailsPage() {
   const params = useParams<{ opId: string }>();
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const [referenceDate, setReferenceDate] = useState(() => sanitizeDateKey(searchParams.get("ref")));
-  const statusState = useFactoryOrderStatus(referenceDate);
+  const workflow = useFactoryWorkflowState(referenceDate);
 
-  const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
   const planningData = useMemo(
-    () => applyFactoryOrderStatus(basePlanningData, statusState.resolveStatus),
-    [basePlanningData, statusState.resolveStatus],
+    () =>
+      applyFactoryWorkflowState(buildFactoryPlanningData(referenceDate), {
+        isReleased: workflow.isReleased,
+        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
+      }),
+    [referenceDate, workflow.isReleased, workflow.resolveProductionItemStatus],
   );
+
   const op = useMemo(
     () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
     [opId, planningData.productionOrders],
@@ -43,22 +55,14 @@ export default function OrdemProducaoDetailsPage() {
     if (!op) {
       return 0;
     }
-    const line = productionLines.find((item) => item.id === op.lineId);
-    return line?.capacityPerDayKg ?? 0;
+    return productionLines.find((item) => item.id === op.lineId)?.capacityPerDayKg ?? 0;
   }, [op]);
-
-  const utilization = useMemo(() => {
-    if (!op || lineCapacity <= 0) {
-      return 0;
-    }
-    return Number(((op.totalKg / lineCapacity) * 100).toFixed(1));
-  }, [lineCapacity, op]);
 
   const flowSteps = [
     {
       key: "producao",
       title: "Produção",
-      helper: "OPs consolidadas",
+      helper: "OPs liberadas",
       value: planningData.productionOrders.length,
       href: "/chao-fabrica/ordens-producao",
       icon: Factory,
@@ -66,8 +70,8 @@ export default function OrdemProducaoDetailsPage() {
     {
       key: "expedicao",
       title: "Expedição",
-      helper: "Itens para separar",
-      value: planningData.expeditionItems.length,
+      helper: "Checklists",
+      value: planningData.expedition.length,
       href: "/chao-fabrica/expedicao",
       icon: Truck,
     },
@@ -104,8 +108,8 @@ export default function OrdemProducaoDetailsPage() {
 
   return (
     <PageLayout
-      title={`${op.code} · ${op.lineName}`}
-      description="Detalhe da OP consolidada por setor e linha, com foco em execução da produção em Kg."
+      title={`${op.code} · ${op.scheduleName}`}
+      description="Controle operacional do chão de fábrica com avanço por produto e impressão dedicada."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Chão de Fábrica", href: "/chao-fabrica" },
@@ -113,10 +117,14 @@ export default function OrdemProducaoDetailsPage() {
         { label: op.code },
       ]}
       actions={
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => printProductionOrder(op, referenceDate)}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/pre-pesagem/${op.id}?ref=${referenceDate}`)}>
             <Printer className="size-4" />
-            Imprimir OP
+            Pré-pesagem
+          </Button>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${op.id}?ref=${referenceDate}`)}>
+            <Printer className="size-4" />
+            Produção
           </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/chao-fabrica/ordens-producao">
@@ -137,9 +145,7 @@ export default function OrdemProducaoDetailsPage() {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Resumo da OP</CardTitle>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Referência da fábrica
-            </span>
+            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Referência da fábrica</span>
             <input
               type="date"
               value={referenceDate}
@@ -158,15 +164,15 @@ export default function OrdemProducaoDetailsPage() {
             <p className="mt-1 text-sm font-semibold">{op.productionDateLabel}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Setor</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{hierarchyLabels.sector}</p>
             <p className="mt-1 text-sm font-semibold">{op.sectorName}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linha</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{hierarchyLabels.line}</p>
             <p className="mt-1 text-sm font-semibold">{op.lineName}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Sublinha</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{hierarchyLabels.schedule}</p>
             <p className="mt-1 text-sm font-semibold">{op.scheduleName}</p>
           </div>
           <div>
@@ -181,12 +187,12 @@ export default function OrdemProducaoDetailsPage() {
       <FactoryFlow
         currentKey="producao"
         steps={flowSteps}
-        subtitle="A produção consolida necessidade total por dia, setor e linha. A separação por pedido fica na expedição."
+        subtitle="O chão de fábrica move o andamento por produto; a OP calcula a média automaticamente."
       />
 
       <Card>
         <CardHeader>
-          <CardTitle>Capacidade e Carga</CardTitle>
+          <CardTitle>Carga e conclusão</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-border/80 bg-panel p-3">
@@ -194,12 +200,12 @@ export default function OrdemProducaoDetailsPage() {
             <p className="mt-1 text-lg font-semibold">{op.totalKg} Kg</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Capacidade da Linha</p>
-            <p className="mt-1 text-lg font-semibold">{lineCapacity} Kg</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">% conclusão</p>
+            <p className="mt-1 text-lg font-semibold">{op.progress.toFixed(1)}%</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Utilização</p>
-            <p className="mt-1 text-lg font-semibold">{utilization.toFixed(1)}%</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Capacidade da subcategoria</p>
+            <p className="mt-1 text-lg font-semibold">{lineCapacity} Kg/dia</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Produtos na OP</p>
@@ -210,7 +216,7 @@ export default function OrdemProducaoDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Itens Consolidados da OP (Kg)</CardTitle>
+          <CardTitle>Avanço por produto</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-hidden rounded-xl border border-border/80">
@@ -218,16 +224,41 @@ export default function OrdemProducaoDetailsPage() {
               <thead className="bg-panel">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Carga (Kg)</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status operacional</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Itens origem</th>
                 </tr>
               </thead>
               <tbody>
                 {op.items.map((item) => (
-                  <tr key={`${op.id}-${item.productCode}`}>
+                  <tr key={item.productId}>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.productCode} · {item.productName}
                     </td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.totalKg}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.progress.toFixed(1)}%</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                      <div className="space-y-2">
+                        <StatusBadge status={item.status} />
+                        <Select
+                          value={item.status}
+                          onValueChange={(value) => workflow.updateProductionItemStatus(item.productionItemKey, value as (typeof PRODUCTION_ITEM_STATUS_OPTIONS)[number]["value"])}
+                        >
+                          <SelectTrigger className="h-9 w-[220px] bg-background">
+                            <SelectValue placeholder="Atualizar estágio" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PRODUCTION_ITEM_STATUS_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.sourceItemsCount}</td>
                   </tr>
                 ))}
               </tbody>
@@ -238,13 +269,39 @@ export default function OrdemProducaoDetailsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Observação Operacional</CardTitle>
+          <CardTitle>Pedidos atendidos por esta OP</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="rounded-md border border-border/70 bg-panel/45 px-3 py-2 text-sm text-muted-foreground">
-            Esta etapa é exclusivamente de produção consolidada. A distribuição por pedido e por loja é executada na
-            etapa de expedição.
-          </p>
+          <div className="overflow-hidden rounded-xl border border-border/80">
+            <table className="w-full border-collapse">
+              <thead className="bg-panel">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Pedido</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd loja</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Entrega</th>
+                </tr>
+              </thead>
+              <tbody>
+                {op.sourceItems.map((item) => (
+                  <tr key={item.id}>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.orderCode}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.storeName}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                      {item.productCode} · {item.productName}
+                    </td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                      {item.requestedQuantity} {item.requestedUnit}
+                    </td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.deliveryDateLabel}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </PageLayout>

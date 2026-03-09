@@ -98,9 +98,9 @@ export default function SublinhasProducaoPage() {
 
   const columns = [
     { key: "code", header: "Código" },
-    { key: "name", header: "Sublinha" },
-    { key: "lineName", header: "Linha de Produção" },
-    { key: "sectorName", header: "Setor" },
+    { key: "name", header: "Linha" },
+    { key: "lineName", header: "Subcategoria" },
+    { key: "sectorName", header: "Categoria" },
     { key: "itemsCount", header: "Produtos" },
     { key: "plannedDays", header: "Dias Planejados" },
     { key: "minimumTotal", header: "Mínimo Total" },
@@ -171,16 +171,16 @@ export default function SublinhasProducaoPage() {
 
   return (
     <PageLayout
-      title="Sublinhas de Produção"
-      description="Sublinhas contínuas por linha, auditadas uma vez e mantidas em produção até desativação."
+      title="Linhas"
+      description="Linhas executoras derivadas dos produtos vinculados em cada subcategoria."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
-        { label: "Sublinhas de Produção" },
+        { label: "Linhas" },
       ]}
     >
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Total Sublinhas" value={String(kpis.total)} icon={Clock} tone="info" />
+        <KPICard title="Total Linhas" value={String(kpis.total)} icon={Clock} tone="info" />
         <KPICard title="Pendentes" value={String(kpis.pendentes)} icon={Clock} tone="warning" />
         <KPICard title="Ativas" value={String(kpis.ativas)} icon={PlayCircle} tone="success" />
         <KPICard title="Inativas" value={String(kpis.inativas)} icon={PauseCircle} tone="neutral" />
@@ -188,11 +188,11 @@ export default function SublinhasProducaoPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Sublinhas Contínuas</CardTitle>
+          <CardTitle>Lista de Linhas Executoras</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código, nome, linha ou setor..."
+            searchPlaceholder="Buscar por código, linha, subcategoria ou categoria..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             filters={[
@@ -209,7 +209,7 @@ export default function SublinhasProducaoPage() {
               },
               {
                 key: "line",
-                label: "Linha",
+                label: "Subcategoria",
                 value: lineFilter,
                 onChange: setLineFilter,
                 options: productionLines.map((line) => ({ value: line.id, label: line.name })),
@@ -221,7 +221,7 @@ export default function SublinhasProducaoPage() {
             columns={columns}
             actions={actions}
             keyField="id"
-            emptyMessage="Nenhuma sublinha encontrada"
+            emptyMessage="Nenhuma linha encontrada"
             stickyHeader
           />
         </CardContent>
@@ -248,15 +248,15 @@ export default function SublinhasProducaoPage() {
             <div className="space-y-4">
               <div className="grid gap-3 rounded-lg border border-border/80 bg-panel p-4 md:grid-cols-5">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Sublinha</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linha</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{selectedSchedule.name}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linha</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Subcategoria</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{selectedSchedule.lineName}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Setor</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Categoria</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{selectedSchedule.sectorName}</p>
                 </div>
                 <div>
@@ -313,7 +313,7 @@ export default function SublinhasProducaoPage() {
               </div>
 
               <div className="grid gap-2 rounded-lg border border-border/80 bg-card p-4">
-                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Resumo da Sublinha</p>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Resumo da Linha</p>
                 <p className="text-sm text-foreground">
                   <strong>{selectedSchedule.name}</strong> criada por <strong>{selectedSchedule.createdBy}</strong> em{" "}
                   <strong>{formatDateBr(selectedSchedule.createdAt)}</strong> com{" "}
@@ -322,7 +322,7 @@ export default function SublinhasProducaoPage() {
                 </p>
                 {selectedSchedule.revisionOfId && (
                   <p className="text-sm text-muted-foreground">
-                    Revisão da sublinha{" "}
+                    Revisão da linha{" "}
                     {scheduleNameById.get(selectedSchedule.revisionOfId) ?? selectedSchedule.revisionOfId}.
                   </p>
                 )}
@@ -379,12 +379,12 @@ export default function SublinhasProducaoPage() {
                 onClick={() => updateScheduleStatus("inativo")}
               >
                 <PauseCircle className="size-4" />
-                Desativar Sublinha
+                Desativar Linha
               </Button>
             ) : (
               <Button type="button" onClick={() => updateScheduleStatus("ativo")}>
                 <PlayCircle className="size-4" />
-                Reativar Sublinha
+                Reativar Linha
               </Button>
             )}
           </DialogFooter>

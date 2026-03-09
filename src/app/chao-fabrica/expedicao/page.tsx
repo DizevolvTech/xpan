@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Factory, ListChecks, Package, Printer, Truck } from "lucide-react";
+import { ArrowLeft, Factory, ListChecks, Package, Truck } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
@@ -13,8 +13,7 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryOrderStatus, useFactoryOrderStatus } from "@/lib/factory-order-status";
-import { printExpeditionSeparation } from "@/lib/factory-print";
+import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import {
   buildFactoryPlanningData,
   formatDateKeyBr,
@@ -22,6 +21,10 @@ import {
   type ExpeditionRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+
+function openPrintPage(pathname: string) {
+  window.open(pathname, "_blank", "noopener,noreferrer");
+}
 
 type ExpeditionOrderRow = ExpeditionRow;
 
@@ -33,12 +36,15 @@ export default function ExpedicaoPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
-  const statusState = useFactoryOrderStatus(referenceDate);
+  const workflow = useFactoryWorkflowState(referenceDate);
 
-  const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
   const planningData = useMemo(
-    () => applyFactoryOrderStatus(basePlanningData, statusState.resolveStatus),
-    [basePlanningData, statusState.resolveStatus],
+    () =>
+      applyFactoryWorkflowState(buildFactoryPlanningData(referenceDate), {
+        isReleased: workflow.isReleased,
+        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
+      }),
+    [referenceDate, workflow.isReleased, workflow.resolveProductionItemStatus],
   );
 
   const orderRows = useMemo<ExpeditionOrderRow[]>(
@@ -48,12 +54,10 @@ export default function ExpedicaoPage() {
         if (byDelivery !== 0) {
           return byDelivery;
         }
-
         const byStore = a.storeName.localeCompare(b.storeName);
         if (byStore !== 0) {
           return byStore;
         }
-
         return a.orderCode.localeCompare(b.orderCode);
       }),
     [planningData.expedition],
@@ -75,35 +79,16 @@ export default function ExpedicaoPage() {
     });
   }, [deliveryDateFilter, orderRows, searchTerm, statusFilter, storeFilter]);
 
-  const activeFiltersCount = useMemo(() => {
-    let count = 0;
-
-    if (searchTerm.trim().length > 0) {
-      count += 1;
-    }
-    if (deliveryDateFilter !== "all") {
-      count += 1;
-    }
-    if (storeFilter !== "all") {
-      count += 1;
-    }
-    if (statusFilter !== "all") {
-      count += 1;
-    }
-
-    return count;
-  }, [deliveryDateFilter, searchTerm, statusFilter, storeFilter]);
-
   const storeOptions = useMemo(
     () =>
       Array.from(new Set(orderRows.map((item) => item.storeName)))
         .sort((a, b) => a.localeCompare(b))
-        .map((storeName) => ({ value: storeName, label: storeName })),
+        .map((value) => ({ value, label: value })),
     [orderRows],
   );
 
   const deliveryOptions = useMemo(
-    () => planningData.deliveryDates.map((deliveryDate) => ({ value: deliveryDate, label: formatDateKeyBr(deliveryDate) })),
+    () => planningData.deliveryDates.map((date) => ({ value: date, label: formatDateKeyBr(date) })),
     [planningData.deliveryDates],
   );
 
@@ -116,14 +101,14 @@ export default function ExpedicaoPage() {
     pedidos: orderRows.length,
     itens: orderRows.reduce((sum, item) => sum + item.itemsCount, 0),
     totalKg: Number(orderRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
-    entregasHoje: orderRows.filter((item) => item.deliveryDate === referenceDate).length,
+    prontos: orderRows.filter((item) => item.status === "aguardando_expedicao").length,
   };
 
   const flowSteps = [
     {
       key: "producao",
       title: "Produção",
-      helper: "OPs em Kg",
+      helper: "OPs liberadas",
       value: planningData.productionOrders.length,
       href: "/chao-fabrica/ordens-producao",
       icon: Factory,
@@ -131,21 +116,21 @@ export default function ExpedicaoPage() {
     {
       key: "expedicao",
       title: "Expedição",
-      helper: "Pedidos para separar",
+      helper: "Checklists",
       value: planningData.expedition.length,
       href: "/chao-fabrica/expedicao",
       icon: Truck,
     },
   ];
 
-  const orderColumns = [
+  const columns = [
     { key: "orderCode", header: "Pedido" },
     { key: "storeName", header: "Loja" },
     {
       key: "deliveryDateLabel",
-      header: "Entrega",
+      header: "Recebimento",
       render: (item: ExpeditionOrderRow) => (
-        <span className="rounded-md bg-success/30 px-2 py-1 text-xs font-semibold text-success-foreground">
+        <span className="rounded-md bg-warning/25 px-2 py-1 text-xs font-semibold text-warning-foreground">
           {item.deliveryDateLabel}
         </span>
       ),
@@ -153,48 +138,53 @@ export default function ExpedicaoPage() {
     { key: "itemsCount", header: "Itens" },
     { key: "totalKg", header: "Carga (Kg)" },
     {
+      key: "workflowProgress",
+      header: "Conclusão",
+      render: (item: ExpeditionOrderRow) => (
+        <div className="min-w-[170px]">
+          <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+            <span>{item.workflowProgress.toFixed(1)}%</span>
+            <span>{item.releasedToProduction ? "Liberado" : "Aguardando liberação"}</span>
+          </div>
+          <div className="h-2 rounded-full bg-panel">
+            <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.workflowProgress, 100)}%` }} />
+          </div>
+        </div>
+      ),
+    },
+    {
       key: "status",
       header: "Status",
       render: (item: ExpeditionOrderRow) => <StatusBadge status={item.status} />,
     },
     {
-      key: "print",
-      header: "Impressão",
+      key: "actions",
+      header: "Checklist",
       render: (item: ExpeditionOrderRow) => (
-        <Button type="button" variant="outline" size="sm" onClick={() => printExpeditionSeparation(item, referenceDate)}>
-          <Printer className="size-4" />
-          Imprimir
-        </Button>
-      ),
-    },
-    {
-      key: "separar",
-      header: "Separação",
-      render: (item: ExpeditionOrderRow) => {
-        const canSeparate = item.status === "em_producao" || item.status === "rota_entrega";
-
-        if (!canSeparate) {
-          return (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              title="Disponível quando o pedido estiver em produção ou em rota de entrega."
-            >
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${referenceDate}`)}>
+            Imprimir
+          </Button>
+          {item.status === "aguardando_expedicao" ? (
+            <Button asChild type="button" size="sm">
+              <Link href={`/chao-fabrica/expedicao/${item.id}?ref=${referenceDate}`}>Abrir checklist</Link>
+            </Button>
+          ) : (
+            <Button type="button" size="sm" disabled>
               Aguardando produção
             </Button>
-          );
-        }
-
-        return (
-          <Button asChild type="button" variant="outline" size="sm">
-            <Link href={`/chao-fabrica/expedicao/${item.id}?ref=${referenceDate}`}>Abrir separação</Link>
-          </Button>
-        );
-      },
+          )}
+        </div>
+      ),
     },
   ];
+
+  const activeFiltersCount = [
+    searchTerm.trim().length > 0 ? 1 : 0,
+    deliveryDateFilter !== "all" ? 1 : 0,
+    storeFilter !== "all" ? 1 : 0,
+    statusFilter !== "all" ? 1 : 0,
+  ].reduce((sum, value) => sum + value, 0);
 
   function clearFilters() {
     setSearchTerm("");
@@ -207,7 +197,7 @@ export default function ExpedicaoPage() {
   return (
     <PageLayout
       title="Expedição"
-      description="Visualização operacional dos pedidos para separação e envio."
+      description="Checklist final do chão de fábrica. A conferência só abre com a produção concluída."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Chão de Fábrica", href: "/chao-fabrica" },
@@ -223,19 +213,17 @@ export default function ExpedicaoPage() {
       }
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Pedidos para separar" value={kpis.pedidos} icon={Truck} tone="info" compactValue />
-        <KPICard title="Itens para separar" value={kpis.itens} icon={Package} tone="neutral" compactValue />
+        <KPICard title="Pedidos" value={kpis.pedidos} icon={Truck} tone="info" compactValue />
+        <KPICard title="Itens" value={kpis.itens} icon={Package} tone="neutral" compactValue />
         <KPICard title="Carga total" value={`${kpis.totalKg} Kg`} icon={ListChecks} tone="success" compactValue />
-        <KPICard title="Entregas no dia" value={kpis.entregasHoje} icon={Truck} tone="warning" compactValue />
+        <KPICard title="Prontos para checklist" value={kpis.prontos} icon={Factory} tone="warning" compactValue />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Controle de Referência</CardTitle>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Referência da fábrica
-            </span>
+            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Referência da fábrica</span>
             <input
               type="date"
               value={referenceDate}
@@ -249,100 +237,71 @@ export default function ExpedicaoPage() {
       <FactoryFlow
         currentKey="expedicao"
         steps={flowSteps}
-        subtitle="Visualize os pedidos liberados, abra a separação e execute a expedição."
+        subtitle="A fila do chão de fábrica mostra somente pedidos realmente prontos para conferência final."
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Fluxo de Separação</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 1</p>
-            <p className="mt-1 font-medium text-foreground">Selecione um pedido na tabela principal.</p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 2</p>
-            <p className="mt-1 font-medium text-foreground">
-              Abra a página de separação para visualizar os itens e a reconversão por unidade logística.
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 3</p>
-            <p className="mt-1 font-medium text-foreground">
-              Gere a impressão operacional e execute a separação física para envio.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <OperationFiltersCard
+        title="Filtros da Expedição"
+        summary={`${filteredOrders.length} de ${orderRows.length} pedidos visíveis`}
+        searchLabel="Busca"
+        searchPlaceholder="Buscar por pedido ou loja..."
+        searchValue={searchTerm}
+        onSearch={(value) => {
+          setSearchTerm(value);
+          setOrdersPage(1);
+        }}
+        activeFiltersCount={activeFiltersCount}
+        onClear={clearFilters}
+        helperText="Os pedidos aguardam checklist até a OP atingir 100%."
+        fields={[
+          {
+            key: "deliveryDate",
+            label: "Recebimento",
+            value: deliveryDateFilter,
+            onChange: (value) => {
+              setDeliveryDateFilter(value);
+              setOrdersPage(1);
+            },
+            options: deliveryOptions,
+          },
+          {
+            key: "store",
+            label: "Loja",
+            value: storeFilter,
+            onChange: (value) => {
+              setStoreFilter(value);
+              setOrdersPage(1);
+            },
+            options: storeOptions,
+          },
+          {
+            key: "status",
+            label: "Status",
+            value: statusFilter,
+            onChange: (value) => {
+              setStatusFilter(value);
+              setOrdersPage(1);
+            },
+            options: [
+              { value: "em_espera", label: "Em espera" },
+              { value: "agendado", label: "Agendado" },
+              { value: "em_producao", label: "Em produção" },
+              { value: "aguardando_expedicao", label: "Aguardando expedição" },
+            ],
+          },
+        ]}
+      />
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <CardTitle>Pedidos de Expedição</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              {filteredOrders.length} de {orderRows.length} pedidos visíveis
-            </p>
-          </div>
+          <CardTitle>Fila de checklists</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <OperationFiltersCard
-            title="Filtros da Expedição"
-            summary={`${filteredOrders.length} de ${orderRows.length} pedidos visíveis`}
-            helperText="Filtre a tabela para encontrar o pedido e abrir a separação."
-            searchLabel="Busca"
-            searchPlaceholder="Buscar por pedido ou loja..."
-            searchValue={searchTerm}
-            onSearch={(value) => {
-              setSearchTerm(value);
-              setOrdersPage(1);
-            }}
-            fields={[
-              {
-                key: "deliveryDate",
-                label: "Data de Entrega",
-                value: deliveryDateFilter,
-                onChange: (value) => {
-                  setDeliveryDateFilter(value);
-                  setOrdersPage(1);
-                },
-                options: deliveryOptions,
-              },
-              {
-                key: "store",
-                label: "Loja",
-                value: storeFilter,
-                onChange: (value) => {
-                  setStoreFilter(value);
-                  setOrdersPage(1);
-                },
-                options: storeOptions,
-              },
-              {
-                key: "status",
-                label: "Status",
-                value: statusFilter,
-                onChange: (value) => {
-                  setStatusFilter(value);
-                  setOrdersPage(1);
-                },
-                options: [
-                  { value: "agendado", label: "Agendado" },
-                  { value: "em_producao", label: "Em Produção" },
-                  { value: "em_espera", label: "Em Espera" },
-                  { value: "rota_entrega", label: "Rota de Entrega" },
-                ],
-              },
-            ]}
-            activeFiltersCount={activeFiltersCount}
-            onClear={clearFilters}
-          />
-
           <DataTable
             data={ordersPagination.items}
-            columns={orderColumns}
+            columns={columns}
             keyField="id"
-            emptyMessage="Nenhum pedido de expedição encontrado"
+            emptyMessage="Nenhum pedido encontrado para os filtros"
             stickyHeader
           />
 
@@ -365,4 +324,3 @@ export default function ExpedicaoPage() {
     </PageLayout>
   );
 }
-

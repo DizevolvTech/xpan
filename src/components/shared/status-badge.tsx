@@ -7,8 +7,13 @@ type StatusType =
   | "inativo"
   | "active"
   | "inactive"
+  | "nao_iniciado"
+  | "em_preparacao"
   | "agendado"
   | "em_producao"
+  | "em_forno"
+  | "embalando"
+  | "concluido"
   | "em_espera"
   | "rota_entrega"
   | "entregue"
@@ -30,8 +35,22 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
   active: { label: "Ativo", className: "bg-success text-success-foreground" },
   inativo: { label: "Inativo", className: "bg-secondary text-secondary-foreground" },
   inactive: { label: "Inativo", className: "bg-secondary text-secondary-foreground" },
+  nao_iniciado: {
+    label: "Não iniciado",
+    className: "bg-[oklch(0.9_0.03_255)] text-[oklch(0.42_0.05_255)]",
+  },
+  em_preparacao: { label: "Em Preparação", className: "bg-warning text-warning-foreground" },
   agendado: { label: "Agendado", className: "bg-warning text-warning-foreground" },
   em_producao: { label: "Em Produção", className: "bg-info text-info-foreground" },
+  em_forno: {
+    label: "Em Forno",
+    className: "bg-[oklch(0.8_0.14_55)] text-[oklch(0.3_0.09_45)]",
+  },
+  embalando: {
+    label: "Embalando",
+    className: "bg-[oklch(0.84_0.08_165)] text-[oklch(0.33_0.08_165)]",
+  },
+  concluido: { label: "Concluído", className: "bg-success text-success-foreground" },
   em_espera: {
     label: "Em Espera",
     className: "bg-[oklch(0.88_0.06_295)] text-[oklch(0.43_0.08_293)]",

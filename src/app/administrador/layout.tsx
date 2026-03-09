@@ -1,9 +1,15 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { getShellContext } from "@/lib/shell-profile";
 
-export default function AdministradorLayout({
+export default async function AdministradorLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <AppShell profile="administrador">{children}</AppShell>;
+  const context = await getShellContext("administrador");
+  return (
+    <AppShell profile={context.profile} canSwitchProfiles={context.canSwitchProfiles}>
+      {children}
+    </AppShell>
+  );
 }

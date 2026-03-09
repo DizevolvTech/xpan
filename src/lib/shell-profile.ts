@@ -1,14 +1,41 @@
+import "server-only";
+
 import { cookies } from "next/headers";
 
-import { SESSION_COOKIE_NAME, decodeSession, type UserRole } from "@/lib/auth";
+import { SESSION_COOKIE_NAME, decodeSession, roleHomePath, type UserRole } from "@/lib/auth";
+import { SHELL_PROFILE_COOKIE_NAME } from "@/lib/shell-profile-constants";
 
-export async function resolveShellProfile(defaultProfile: UserRole): Promise<UserRole> {
-  const cookieStore = await cookies();
-  const session = decodeSession(cookieStore.get(SESSION_COOKIE_NAME)?.value);
-
-  if (session?.role === "administrador") {
-    return "administrador";
+function normalizeShellProfile(raw: string | undefined): UserRole | null {
+  if (!raw) {
+    return null;
   }
 
-  return defaultProfile;
+  const value = raw as UserRole;
+  return value in roleHomePath ? value : null;
+}
+
+export async function getShellContext(defaultProfile: UserRole): Promise<{
+  profile: UserRole;
+  canSwitchProfiles: boolean;
+}> {
+  const cookieStore = await cookies();
+  const session = decodeSession(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const overrideProfile = normalizeShellProfile(cookieStore.get(SHELL_PROFILE_COOKIE_NAME)?.value);
+
+  if (session?.role === "administrador") {
+    return {
+      profile: overrideProfile ?? defaultProfile,
+      canSwitchProfiles: true,
+    };
+  }
+
+  return {
+    profile: defaultProfile,
+    canSwitchProfiles: false,
+  };
+}
+
+export async function resolveShellProfile(defaultProfile: UserRole): Promise<UserRole> {
+  const context = await getShellContext(defaultProfile);
+  return context.profile;
 }

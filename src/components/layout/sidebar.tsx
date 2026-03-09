@@ -61,14 +61,14 @@ const gestorDadosItems: MenuItem[] = [
   { href: "/gestor-dados", label: "Visão Geral", icon: LayoutDashboard },
   { href: "/gestor-dados/ingredientes", label: "Ingredientes", icon: Package },
   { href: "/gestor-dados/produtos", label: "Produtos", icon: ShoppingCart },
-  { href: "/gestor-dados/setores", label: "Setores", icon: Users },
-  { href: "/gestor-dados/linhas-producao", label: "Linhas de Produção", icon: Factory },
+  { href: "/gestor-dados/setores", label: "Categorias", icon: Users },
+  { href: "/gestor-dados/linhas-producao", label: "Subcategorias", icon: Factory },
   { href: "/gestor-dados/lojas", label: "Lojas", icon: Store },
 ];
 
 const gestorFabricaItems: MenuItem[] = [
   { href: "/gestor-fabrica", label: "Visão Geral", icon: LayoutDashboard },
-  { href: "/gestor-fabrica/sublinhas-producao", label: "Sublinhas", icon: ClipboardList },
+  { href: "/gestor-fabrica/sublinhas-producao", label: "Linhas", icon: ClipboardList },
   { href: "/gestor-fabrica/pedidos", label: "Pedidos", icon: ShoppingCart },
   { href: "/gestor-fabrica/ordens-producao", label: "Ordens de Produção", icon: Factory },
   { href: "/gestor-fabrica/expedicao", label: "Expedição", icon: Truck },
@@ -155,6 +155,7 @@ export const profileConfig: Record<ProfileKey, ProfileConfig> = {
 
 interface SidebarProps {
   profile: ProfileKey;
+  canSwitchProfiles?: boolean;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
   className?: string;

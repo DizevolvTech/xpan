@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { Box, Clock3, Plus, Trash2 } from "lucide-react";
 
+import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
+import { IngredientProfileFields } from "@/components/production/ingredient-profile-fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -29,75 +32,168 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  linesById,
+  getProductRecipeTotals,
+  hierarchyLabels,
+  productionIngredients,
   productionLines,
   productionProducts,
+  productionSectors,
+  productionWeekDays,
   sectorsById,
+  type BreakStage,
+  type IngredientCompositionItem,
+  type PackagingProfile,
+  type ProductUnitProfile,
+  type ProductionLine,
   type ProductionProduct,
+  type RecipeIngredientReference,
 } from "@/lib/production-planning";
 
 type ProductRow = ProductionProduct & {
   lineName: string;
   sectorName: string;
   validityLabel: string;
+  productionDaysLabel: string;
 };
 
-interface RecipeIngredient {
+type ProductFormState = ProductionProduct;
+
+type LineDraftState = {
+  name: string;
+  sectorId: string;
+  capacityPerDayKg: string;
+  operatingHours: string;
+  type: ProductionLine["type"];
+};
+
+type RecipeSourceOption = {
   id: string;
-  ingredient: string;
-  quantity: string;
-  recipeUnit: string;
+  label: string;
+  sourceType: RecipeIngredientReference["sourceType"];
+};
+
+const unitOptions = ["Kg", "Un", "Forma", "Assadeira", "Bandeja", "Pacote", "Caixa", "Travessa", "L", "g"] as const;
+const breakStageLabels: Record<BreakStage, string> = {
+  antes_divisao: "Antes da divisão",
+  depois_divisao: "Depois da divisão",
+  antes_forno: "Antes do forno",
+  depois_forno: "Depois do forno",
+};
+
+function createUnitProfile(unit: ProductUnitProfile["unit"], description: string, weightKg: number): ProductUnitProfile {
+  return {
+    unit,
+    description,
+    weightKg: unit === "Kg" ? 1 : weightKg,
+  };
 }
 
-const productRows: ProductRow[] = productionProducts.map((product) => {
-  const line = linesById.get(product.lineId);
-  const sector = line ? sectorsById.get(line.sectorId) : undefined;
+function buildProductFormState(lines: ProductionLine[], product?: ProductRow | null): ProductFormState {
+  if (product) {
+    return {
+      ...product,
+      recipe: product.recipe.map((item) => ({ ...item })),
+      unitProfiles: {
+        sales: { ...product.unitProfiles.sales },
+        production: { ...product.unitProfiles.production },
+        expedition: { ...product.unitProfiles.expedition },
+      },
+      packagingProfile: product.packagingProfile ? { ...product.packagingProfile } : undefined,
+      ingredientProfile: product.ingredientProfile ? { ...product.ingredientProfile } : undefined,
+      productionDays: [...product.productionDays],
+    };
+  }
+
+  const defaultLine = lines[0];
   return {
-    ...product,
-    lineName: line?.name ?? "-",
-    sectorName: sector?.name ?? "-",
-    validityLabel: `${product.validityDays} dias`,
+    id: `product-${Date.now()}`,
+    code: `PR-${String(Date.now()).slice(-5)}`,
+    name: "",
+    description: "",
+    lineId: defaultLine?.id ?? "",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 5,
+    minimumProductionKg: 100,
+    economicProductionKg: 140,
+    allowsStorage: false,
+    productionDays: ["segunda", "quarta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Kg", "Unidade de venda", 1),
+      production: createUnitProfile("Kg", "Unidade de produção", 1),
+      expedition: createUnitProfile("Kg", "Unidade de expedição", 1),
+    },
+    packagingProfile: {
+      unit: "Un",
+      description: "Embalagem individual",
+      weightKg: 0.2,
+      quantityPerPackage: 1,
+    },
+    isSoldLoose: false,
+    recipe: [],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "depois_divisao",
+    breakComment: "",
+    canBeIngredient: false,
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 1,
+      metadata: "",
+      observation: "",
+    },
+    weight: "1.000 Kg",
+    productionUnit: "Kg",
+    salesUnit: "Kg",
+    salesToKgFactor: 1,
+    expeditionUnit: "Kg",
+    expeditionToKgFactor: 1,
+    isMpiIngredient: false,
   };
-});
+}
 
-const ingredientOptions = Array.from(
-  new Set([
-    "Farinha",
-    "Açúcar",
-    "Fermento",
-    "Leite",
-    ...productionProducts.filter((product) => product.isMpiIngredient).map((product) => product.name),
-  ]),
-);
-const recipeUnitOptions = [
-  { value: "kg", label: "Kg" },
-  { value: "g", label: "Gramas" },
-  { value: "l", label: "Litros" },
-  { value: "ml", label: "Mililitros" },
-  { value: "un", label: "Unidades" },
-];
+function buildLineDraft(sectorId: string): LineDraftState {
+  return {
+    name: "",
+    sectorId,
+    capacityPerDayKg: "900",
+    operatingHours: "05:00 - 14:00",
+    type: "Seco",
+  };
+}
 
-const recipeUnitLabel = recipeUnitOptions.reduce<Record<string, string>>((acc, item) => {
-  acc[item.value] = item.label;
-  return acc;
-}, {});
+function mapProductRows(products: ProductionProduct[], lines: ProductionLine[]): ProductRow[] {
+  const linesMap = new Map(lines.map((line) => [line.id, line]));
+  return products.map((product) => {
+    const line = linesMap.get(product.lineId);
+    const sector = line ? sectorsById.get(line.sectorId) : undefined;
+
+    return {
+      ...product,
+      lineName: line?.name ?? "-",
+      sectorName: sector?.name ?? "-",
+      validityLabel: `${product.validityDays} dias`,
+      productionDaysLabel: product.productionDays.map((day) => day.slice(0, 3)).join(" · "),
+    };
+  });
+}
 
 export default function ProdutosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
-  const [ingredientsUsed, setIngredientsUsed] = useState<RecipeIngredient[]>([
-    { id: "1", ingredient: "Farinha", quantity: "1.2", recipeUnit: "kg" },
-    { id: "2", ingredient: "Fermento", quantity: "0.03", recipeUnit: "kg" },
-  ]);
-  const [draftIngredient, setDraftIngredient] = useState("Farinha");
-  const [draftQuantity, setDraftQuantity] = useState("");
-  const [draftRecipeUnit, setDraftRecipeUnit] = useState("kg");
-  const [preparationText, setPreparationText] = useState("");
-  const [isMpiIngredient, setIsMpiIngredient] = useState(false);
-  const [breakPercent, setBreakPercent] = useState(5);
-  const [yieldPercent, setYieldPercent] = useState(95);
+  const [productState, setProductState] = useState<ProductionProduct[]>(productionProducts);
+  const [lineState, setLineState] = useState<ProductionLine[]>(productionLines);
+  const [formState, setFormState] = useState<ProductFormState>(() => buildProductFormState(productionLines));
+  const [lineDraft, setLineDraft] = useState<LineDraftState>(() => buildLineDraft(productionSectors[0]?.id ?? ""));
+  const [draftRecipeSourceId, setDraftRecipeSourceId] = useState(productionIngredients[0]?.id ?? "");
+  const [draftRecipeQuantity, setDraftRecipeQuantity] = useState("");
+  const [draftRecipeUnit, setDraftRecipeUnit] = useState<RecipeIngredientReference["unit"]>("Kg");
+
+  const productRows = useMemo(() => mapProductRows(productState, lineState), [lineState, productState]);
 
   const filteredProducts = useMemo(
     () =>
@@ -107,90 +203,232 @@ export default function ProdutosPage() {
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.lineName.toLowerCase().includes(searchTerm.toLowerCase()),
       ),
-    [searchTerm],
+    [productRows, searchTerm],
   );
 
   const activeProductsCount = productRows.filter((item) => item.active).length;
+  const lineOptions = lineState.map((line) => ({
+    value: line.id,
+    label: `${line.name} · ${sectorsById.get(line.sectorId)?.name ?? "-"}`,
+  }));
+
+  const recipeSourceOptions: RecipeSourceOption[] = [
+    ...productionIngredients.map((ingredient) => ({
+      id: ingredient.id,
+      label: `${ingredient.code} · ${ingredient.name}`,
+      sourceType: "ingrediente" as const,
+    })),
+    ...productState
+      .filter((product) => product.canBeIngredient)
+      .map((product) => ({
+        id: product.id,
+        label: `${product.code} · ${product.name}`,
+        sourceType: "produto" as const,
+      })),
+  ];
+
+  const recipeTotals = useMemo(() => getProductRecipeTotals(formState), [formState]);
+  const mpiCompositionPreview = useMemo<IngredientCompositionItem[]>(
+    () =>
+      formState.recipe.map((item) => ({
+        id: item.id,
+        ingredientId: item.sourceType === "ingrediente" ? item.sourceId : undefined,
+        productId: item.sourceType === "produto" ? item.sourceId : undefined,
+        name: item.label,
+        quantity: item.quantity,
+        unit: item.unit,
+        observation: "",
+      })),
+    [formState.recipe],
+  );
 
   const columns = [
     { key: "code", header: "Código" },
     { key: "name", header: "Nome" },
-    { key: "lineName", header: "Linha Produção" },
-    { key: "sectorName", header: "Setor" },
+    { key: "lineName", header: hierarchyLabels.line },
+    { key: "sectorName", header: hierarchyLabels.sector },
     {
       key: "active",
       header: "Ativo?",
       render: (item: ProductRow) =>
         item.active ? <StatusBadge status="ativo" /> : <StatusBadge status="inativo" />,
     },
-    { key: "weight", header: "Peso Unitário" },
-    { key: "validityLabel", header: "Validade" },
+    {
+      key: "unitProfiles",
+      header: "Venda / Produção / Expedição",
+      render: (item: ProductRow) =>
+        `${item.unitProfiles.sales.unit} / ${item.unitProfiles.production.unit} / ${item.unitProfiles.expedition.unit}`,
+    },
+    { key: "productionDaysLabel", header: "Cronograma" },
   ];
 
   const actions = [
-    { icon: "view" as const, label: "Visualizar", onClick: (item: ProductRow) => console.log("View", item) },
+    {
+      icon: "view" as const,
+      label: "Visualizar",
+      onClick: (item: ProductRow) => {
+        setEditingProduct(item);
+        setFormState(buildProductFormState(lineState, item));
+        setIsDialogOpen(true);
+      },
+    },
     {
       icon: "edit" as const,
       label: "Editar",
       onClick: (item: ProductRow) => {
         setEditingProduct(item);
+        setFormState(buildProductFormState(lineState, item));
         setIsDialogOpen(true);
       },
     },
-    {
-      icon: "delete" as const,
-      label: "Excluir",
-      variant: "destructive" as const,
-      onClick: (item: ProductRow) => console.log("Delete", item),
-    },
   ];
 
-  const addRecipeIngredient = () => {
-    if (!draftIngredient || !draftQuantity) {
+  function openNewProduct() {
+    setEditingProduct(null);
+    setFormState(buildProductFormState(lineState));
+    setDraftRecipeSourceId(recipeSourceOptions[0]?.id ?? "");
+    setDraftRecipeQuantity("");
+    setDraftRecipeUnit("Kg");
+  }
+
+  function updateUnitProfile(scope: keyof ProductFormState["unitProfiles"], patch: Partial<ProductUnitProfile>) {
+    setFormState((current) => {
+      const nextUnit = patch.unit ?? current.unitProfiles[scope].unit;
+      const nextWeight =
+        patch.weightKg ?? (nextUnit === "Kg" ? 1 : current.unitProfiles[scope].weightKg);
+
+      return {
+        ...current,
+        unitProfiles: {
+          ...current.unitProfiles,
+          [scope]: {
+            ...current.unitProfiles[scope],
+            ...patch,
+            unit: nextUnit,
+            weightKg: nextUnit === "Kg" ? 1 : nextWeight,
+          },
+        },
+      };
+    });
+  }
+
+  function updatePackagingProfile(patch: Partial<PackagingProfile>) {
+    setFormState((current) => {
+      const currentPackaging = current.packagingProfile ?? {
+        unit: "Un" as const,
+        description: "",
+        weightKg: 0.2,
+        quantityPerPackage: 1,
+      };
+      const nextUnit = patch.unit ?? currentPackaging.unit;
+
+      return {
+        ...current,
+        packagingProfile: {
+          ...currentPackaging,
+          ...patch,
+          unit: nextUnit,
+          weightKg: nextUnit === "Kg" ? 1 : patch.weightKg ?? currentPackaging.weightKg,
+        },
+      };
+    });
+  }
+
+  function toggleProductionDay(day: (typeof productionWeekDays)[number]["key"]) {
+    setFormState((current) => ({
+      ...current,
+      productionDays: current.productionDays.includes(day)
+        ? current.productionDays.filter((item) => item !== day)
+        : [...current.productionDays, day],
+    }));
+  }
+
+  function addRecipeItem() {
+    if (!draftRecipeSourceId || !draftRecipeQuantity) {
       return;
     }
 
-    setIngredientsUsed((prev) => [
-      ...prev,
-      {
-        id: `${Date.now()}`,
-        ingredient: draftIngredient,
-        quantity: draftQuantity,
-        recipeUnit: draftRecipeUnit,
-      },
-    ]);
-    setDraftQuantity("");
-  };
-
-  const removeRecipeIngredient = (id: string) => {
-    setIngredientsUsed((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const clampPercent = (value: number) => {
-    if (!Number.isFinite(value)) {
-      return 0;
+    const quantity = Number(draftRecipeQuantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return;
     }
-    return Math.min(100, Math.max(0, value));
-  };
 
-  const handleBreakChange = (value: string) => {
-    const nextBreak = clampPercent(Number(value));
-    const nextYield = clampPercent(Number((100 - nextBreak).toFixed(2)));
-    setBreakPercent(nextBreak);
-    setYieldPercent(nextYield);
-  };
+    const sourceOption = recipeSourceOptions.find((option) => option.id === draftRecipeSourceId);
+    if (!sourceOption) {
+      return;
+    }
 
-  const handleYieldChange = (value: string) => {
-    const nextYield = clampPercent(Number(value));
-    const nextBreak = clampPercent(Number((100 - nextYield).toFixed(2)));
-    setYieldPercent(nextYield);
-    setBreakPercent(nextBreak);
-  };
+    setFormState((current) => ({
+      ...current,
+      recipe: [
+        ...current.recipe,
+        {
+          id: `recipe-${Date.now()}`,
+          sourceId: sourceOption.id,
+          sourceType: sourceOption.sourceType,
+          label: sourceOption.label,
+          quantity,
+          unit: draftRecipeUnit,
+        },
+      ],
+    }));
+    setDraftRecipeQuantity("");
+  }
+
+  function removeRecipeItem(recipeId: string) {
+    setFormState((current) => ({
+      ...current,
+      recipe: current.recipe.filter((item) => item.id !== recipeId),
+    }));
+  }
+
+  function handleSaveProduct() {
+    const salesWeight = formState.unitProfiles.sales.unit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
+    const expeditionWeight =
+      formState.unitProfiles.expedition.unit === "Kg" ? 1 : formState.unitProfiles.expedition.weightKg;
+
+    const nextProduct: ProductionProduct = {
+      ...formState,
+      salesUnit: formState.unitProfiles.sales.unit,
+      productionUnit: formState.unitProfiles.production.unit,
+      expeditionUnit: formState.unitProfiles.expedition.unit,
+      salesToKgFactor: salesWeight,
+      expeditionToKgFactor: expeditionWeight,
+      weight: `${salesWeight.toFixed(3)} Kg`,
+      isMpiIngredient: formState.canBeIngredient,
+    };
+
+    setProductState((current) => {
+      if (!editingProduct) {
+        return [nextProduct, ...current];
+      }
+      return current.map((item) => (item.id === editingProduct.id ? nextProduct : item));
+    });
+    setIsDialogOpen(false);
+  }
+
+  function handleCreateLine() {
+    const nextLine: ProductionLine = {
+      id: `line-${Date.now()}`,
+      code: `LP-${String(Date.now()).slice(-3)}`,
+      name: lineDraft.name,
+      sectorId: lineDraft.sectorId,
+      type: lineDraft.type,
+      operatingHours: lineDraft.operatingHours,
+      capacityPerDayKg: Number(lineDraft.capacityPerDayKg),
+      status: "ativo",
+    };
+
+    setLineState((current) => [...current, nextLine]);
+    setFormState((current) => ({ ...current, lineId: nextLine.id }));
+    setIsLineDialogOpen(false);
+    setLineDraft(buildLineDraft(lineDraft.sectorId));
+  }
 
   return (
     <PageLayout
       title="Gestão de Produtos"
-      description="Gerencie os produtos do sistema"
+      description="Modele a engenharia em kg, o cronograma por produto e o espelho MPI no mesmo cadastro."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
@@ -212,216 +450,399 @@ export default function ProdutosPage() {
           <CardTitle>Lista de Produtos</CardTitle>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button type="button" onClick={() => setEditingProduct(null)}>
+              <Button type="button" onClick={openNewProduct}>
                 <Plus className="size-4" />
                 Novo Produto
               </Button>
             </DialogTrigger>
-            <DialogContent size="3xl">
+            <DialogContent size="3xl" className="max-h-[92vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {editingProduct ? "Editar Produto" : "Cadastrar Novo Produto"}
                 </DialogTitle>
+                <DialogDescription>
+                  O cadastro agora usa kg como unidade universal da engenharia e concentra cronograma, receita e MPI.
+                </DialogDescription>
               </DialogHeader>
 
-              <div className="grid gap-6 py-2">
-                <section>
-                  <h3 className="mb-4 text-sm font-semibold">Dados do Produto</h3>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="grid gap-2">
-                      <Label htmlFor="name">Nome do Produto *</Label>
-                      <Input id="name" placeholder="Ex: Pão Francês" defaultValue={editingProduct?.name} />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="line">Linha de Produção *</Label>
-                      <Select defaultValue={editingProduct?.lineId ?? productionLines[0]?.id}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione a linha" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {productionLines.map((line) => {
-                            const sectorName = sectorsById.get(line.sectorId)?.name ?? "-";
-                            return (
-                              <SelectItem key={line.id} value={line.id}>
-                                {line.name} · {sectorName}
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="description">Descrição</Label>
-                      <Input id="description" placeholder="Descrição do produto" />
-                    </div>
-                    <div className="grid gap-3 md:col-span-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm font-semibold">Quebra e Rendimento</Label>
-                        <span className="text-xs font-semibold text-muted-foreground">
-                          Quebra + Rendimento = 100%
-                        </span>
-                      </div>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div className="grid gap-2 rounded-lg border border-border/80 bg-card p-3">
-                          <Label htmlFor="break">Quebra (%)</Label>
-                          <Input
-                            id="break"
-                            type="number"
-                            min={0}
-                            max={100}
-                            step="0.01"
-                            value={breakPercent}
-                            onChange={(event) => handleBreakChange(event.target.value)}
-                          />
-                        </div>
-                        <div className="grid gap-2 rounded-lg border border-success-foreground/35 bg-success/30 p-3">
-                          <Label htmlFor="yield">Rendimento (%)</Label>
-                          <Input
-                            id="yield"
-                            type="number"
-                            min={0}
-                            max={100}
-                            step="0.01"
-                            value={yieldPercent}
-                            onChange={(event) => handleYieldChange(event.target.value)}
-                            className="border-success-foreground/30 bg-card"
-                          />
-                          <p className="text-xs text-success-foreground">
-                            Campo destacado: valor resultante da produção.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="validity">Validade (dias)</Label>
-                      <Input
-                        id="validity"
-                        type="number"
-                        placeholder="Ex: 5"
-                        defaultValue={editingProduct?.validityDays}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="minProd">Produção Mínima (Kg)</Label>
-                      <Input id="minProd" type="number" placeholder="Ex: 200" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="ecoProd">Produção Econômica (Kg)</Label>
-                      <Input id="ecoProd" type="number" placeholder="Ex: 200" />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex items-center gap-2">
-                    <Checkbox id="storage" />
-                    <label htmlFor="storage" className="text-sm">
-                      Permite Armazenamento?
-                    </label>
-                  </div>
-                </section>
+              <Tabs defaultValue="cadastro" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
+                  <TabsTrigger value="receita">Receita</TabsTrigger>
+                  <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
+                  <TabsTrigger value="mpi">Produto como MPI</TabsTrigger>
+                </TabsList>
 
-                <section>
-                  <h3 className="mb-4 text-sm font-semibold">Unidades de Medida e Conversões</h3>
-                  <div className="space-y-4">
-                    <div className="rounded-lg border border-border/80 p-4">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        Unidade de Venda (Como a Loja Pede)
-                      </p>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label>Unidade de Venda</Label>
-                          <Select defaultValue="kg">
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="kg">Kg</SelectItem>
-                              <SelectItem value="un">Unidades</SelectItem>
-                              <SelectItem value="forma">Formas</SelectItem>
-                              <SelectItem value="g">Gramas</SelectItem>
-                              <SelectItem value="dz">Dúzias</SelectItem>
-                              <SelectItem value="bandeja">Bandejas</SelectItem>
-                              <SelectItem value="pacote">Pacotes</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Fator de Conversão (KC)</Label>
-                          <Input type="number" step="0.01" placeholder="Ex: 1.0" defaultValue="1" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg border border-border/80 p-4">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        Unidade de Produção (Padeiro)
-                      </p>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label>Unidade de Produção</Label>
-                          <Select defaultValue="kg">
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="kg">Kg</SelectItem>
-                              <SelectItem value="forma">Forma</SelectItem>
-                              <SelectItem value="assadeira">Assadeira</SelectItem>
-                              <SelectItem value="tela">Tela</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Fator de Conversão (KC)</Label>
-                          <Input type="number" step="0.01" placeholder="Ex: 1.0" defaultValue="1" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg border border-border/80 p-4">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        Unidade de Expedição (Embalagem)
-                      </p>
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2">
-                          <Label>Unidade de Expedição</Label>
-                          <Select defaultValue="pacote">
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pacote">Pacote</SelectItem>
-                              <SelectItem value="caixa">Caixa</SelectItem>
-                              <SelectItem value="carrinho">Carrinho</SelectItem>
-                              <SelectItem value="saco">Saco</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Fator de Conversão</Label>
-                          <Input type="number" step="0.01" placeholder="Ex: 1.0" defaultValue="1" />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Qtd por Embalagem</Label>
-                          <Input type="number" placeholder="Ex: 10" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="mb-4 text-sm font-semibold">Ingredientes da Receita</h3>
-                  <div className="space-y-4 rounded-lg border border-border/80 p-4">
-                    <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_auto]">
+                <TabsContent value="cadastro" className="space-y-5">
+                  <section className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
                       <div className="grid gap-2">
-                        <Label>Ingrediente usado</Label>
-                        <Select value={draftIngredient} onValueChange={setDraftIngredient}>
+                        <Label htmlFor="product-name">Nome do Produto *</Label>
+                        <Input
+                          id="product-name"
+                          placeholder="Ex: Pão Francês"
+                          value={formState.name}
+                          onChange={(event) =>
+                            setFormState((current) => ({ ...current, name: event.target.value }))
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Código</Label>
+                        <Input value={formState.code} disabled className="bg-muted" />
+                      </div>
+                      <div className="grid gap-2 md:col-span-2">
+                        <Label>Descrição</Label>
+                        <Input
+                          value={formState.description}
+                          onChange={(event) =>
+                            setFormState((current) => ({ ...current, description: event.target.value }))
+                          }
+                          placeholder="Descrição do produto"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+                      <div className="grid gap-2">
+                        <Label>{hierarchyLabels.line} *</Label>
+                        <Select
+                          value={formState.lineId}
+                          onValueChange={(value) =>
+                            setFormState((current) => ({ ...current, lineId: value }))
+                          }
+                        >
                           <SelectTrigger>
-                            <SelectValue placeholder="Selecione o ingrediente" />
+                            <SelectValue placeholder={`Selecione a ${hierarchyLabels.line.toLowerCase()}`} />
                           </SelectTrigger>
                           <SelectContent>
-                            {ingredientOptions.map((ingredient) => (
-                              <SelectItem key={ingredient} value={ingredient}>
-                                {ingredient}
+                            {lineOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-end">
+                        <Dialog open={isLineDialogOpen} onOpenChange={setIsLineDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button type="button" variant="outline">
+                              <Plus className="size-4" />
+                              Nova {hierarchyLabels.line}
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent size="lg">
+                            <DialogHeader>
+                              <DialogTitle>Nova {hierarchyLabels.line}</DialogTitle>
+                              <DialogDescription>
+                                Cadastre a nova {hierarchyLabels.line.toLowerCase()} sem sair do produto.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-2">
+                              <div className="grid gap-2">
+                                <Label>Nome *</Label>
+                                <Input
+                                  value={lineDraft.name}
+                                  onChange={(event) =>
+                                    setLineDraft((current) => ({ ...current, name: event.target.value }))
+                                  }
+                                  placeholder="Ex: Linha Ovos de Páscoa"
+                                />
+                              </div>
+                              <div className="grid gap-2 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                  <Label>{hierarchyLabels.sector} *</Label>
+                                  <Select
+                                    value={lineDraft.sectorId}
+                                    onValueChange={(value) =>
+                                      setLineDraft((current) => ({ ...current, sectorId: value }))
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {productionSectors.map((sector) => (
+                                        <SelectItem key={sector.id} value={sector.id}>
+                                          {sector.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Capacidade / dia (Kg)</Label>
+                                  <Input
+                                    type="number"
+                                    value={lineDraft.capacityPerDayKg}
+                                    onChange={(event) =>
+                                      setLineDraft((current) => ({ ...current, capacityPerDayKg: event.target.value }))
+                                    }
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid gap-2 md:grid-cols-2">
+                                <div className="grid gap-2">
+                                  <Label>Tipo</Label>
+                                  <Select
+                                    value={lineDraft.type}
+                                    onValueChange={(value) =>
+                                      setLineDraft((current) => ({
+                                        ...current,
+                                        type: value as ProductionLine["type"],
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="Seco">Seco</SelectItem>
+                                      <SelectItem value="Úmido">Úmido</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="grid gap-2">
+                                  <Label>Horário</Label>
+                                  <Input
+                                    value={lineDraft.operatingHours}
+                                    onChange={(event) =>
+                                      setLineDraft((current) => ({ ...current, operatingHours: event.target.value }))
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <DialogFooter>
+                              <Button type="button" variant="outline" onClick={() => setIsLineDialogOpen(false)}>
+                                Cancelar
+                              </Button>
+                              <Button type="button" onClick={handleCreateLine}>
+                                Criar {hierarchyLabels.line}
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="grid gap-2">
+                        <Label>Validade (dias)</Label>
+                        <Input
+                          type="number"
+                          value={formState.validityDays}
+                          onChange={(event) =>
+                            setFormState((current) => ({
+                              ...current,
+                              validityDays: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Produção mínima (Kg)</Label>
+                        <Input
+                          type="number"
+                          value={formState.minimumProductionKg}
+                          onChange={(event) =>
+                            setFormState((current) => ({
+                              ...current,
+                              minimumProductionKg: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Produção econômica (Kg)</Label>
+                        <Input
+                          type="number"
+                          value={formState.economicProductionKg}
+                          onChange={(event) =>
+                            setFormState((current) => ({
+                              ...current,
+                              economicProductionKg: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="storage"
+                        checked={formState.allowsStorage}
+                        onCheckedChange={(checked) =>
+                          setFormState((current) => ({
+                            ...current,
+                            allowsStorage: checked === true,
+                          }))
+                        }
+                      />
+                      <Label htmlFor="storage">Permite armazenamento?</Label>
+                    </div>
+                  </section>
+
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Unidades de Medida e Pesos Padrão</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Kg é a base da engenharia. Sempre que a unidade for Kg, o peso padrão fica travado em 1.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-3">
+                      {(
+                        [
+                          ["sales", "Venda"],
+                          ["production", "Produção"],
+                          ["expedition", "Expedição"],
+                        ] as const
+                      ).map(([scope, title]) => {
+                        const profile = formState.unitProfiles[scope];
+                        const lockedToKg = profile.unit === "Kg";
+                        return (
+                          <div key={scope} className="space-y-3 rounded-xl border border-border/70 bg-panel/25 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                              {title}
+                            </p>
+                            <div className="grid gap-2">
+                              <Label>Unidade</Label>
+                              <Select
+                                value={profile.unit}
+                                onValueChange={(value) =>
+                                  updateUnitProfile(scope, {
+                                    unit: value as ProductUnitProfile["unit"],
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {unitOptions.map((unit) => (
+                                    <SelectItem key={unit} value={unit}>
+                                      {unit}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Descrição</Label>
+                              <Input
+                                value={profile.description}
+                                onChange={(event) =>
+                                  updateUnitProfile(scope, { description: event.target.value })
+                                }
+                                placeholder="Ex: caixa térmica"
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Peso padrão (Kg)</Label>
+                              <Input
+                                type="number"
+                                step="0.001"
+                                value={lockedToKg ? 1 : profile.weightKg}
+                                disabled={lockedToKg}
+                                onChange={(event) =>
+                                  updateUnitProfile(scope, {
+                                    weightKg: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="sold-loose"
+                          checked={formState.isSoldLoose}
+                          onCheckedChange={(checked) =>
+                            setFormState((current) => ({
+                              ...current,
+                              isSoldLoose: checked === true,
+                            }))
+                          }
+                        />
+                        <Label htmlFor="sold-loose">Item vendido a granel</Label>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-4">
+                        <div className="grid gap-2">
+                          <Label>Unidade de embalagem</Label>
+                          <Select
+                            value={formState.packagingProfile?.unit ?? "Un"}
+                            onValueChange={(value) =>
+                              updatePackagingProfile({ unit: value as PackagingProfile["unit"] })
+                            }
+                            disabled={formState.isSoldLoose}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Un">Un</SelectItem>
+                              <SelectItem value="Pacote">Pacote</SelectItem>
+                              <SelectItem value="Caixa">Caixa</SelectItem>
+                              <SelectItem value="Bandeja">Bandeja</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Descrição</Label>
+                          <Input
+                            value={formState.packagingProfile?.description ?? ""}
+                            disabled={formState.isSoldLoose}
+                            onChange={(event) => updatePackagingProfile({ description: event.target.value })}
+                            placeholder="Ex: brownie embalado individualmente"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Peso padrão (Kg)</Label>
+                          <Input
+                            type="number"
+                            step="0.001"
+                            value={formState.isSoldLoose ? "" : formState.packagingProfile?.weightKg ?? ""}
+                            disabled={formState.isSoldLoose}
+                            onChange={(event) =>
+                              updatePackagingProfile({ weightKg: Number(event.target.value) })
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Qtd por embalagem</Label>
+                          <Input
+                            type="number"
+                            value={formState.isSoldLoose ? "" : formState.packagingProfile?.quantityPerPackage ?? ""}
+                            disabled={formState.isSoldLoose}
+                            onChange={(event) =>
+                              updatePackagingProfile({ quantityPerPackage: Number(event.target.value) })
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </TabsContent>
+
+                <TabsContent value="receita" className="space-y-5">
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div className="grid gap-4 md:grid-cols-4">
+                      <div className="grid gap-2 md:col-span-2">
+                        <Label>Ingrediente / Produto MPI</Label>
+                        <Select value={draftRecipeSourceId} onValueChange={setDraftRecipeSourceId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione a referência" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {recipeSourceOptions.map((option) => (
+                              <SelectItem key={option.id} value={option.id}>
+                                {option.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -431,80 +852,64 @@ export default function ProdutosPage() {
                         <Label>Quantidade</Label>
                         <Input
                           type="number"
-                          step="0.01"
-                          placeholder="Ex: 1.50"
-                          value={draftQuantity}
-                          onChange={(event) => setDraftQuantity(event.target.value)}
+                          step="0.001"
+                          value={draftRecipeQuantity}
+                          onChange={(event) => setDraftRecipeQuantity(event.target.value)}
+                          placeholder="1,500"
                         />
                       </div>
                       <div className="grid gap-2">
-                        <Label>Medida usada na receita</Label>
-                        <Select value={draftRecipeUnit} onValueChange={setDraftRecipeUnit}>
+                        <Label>Unidade da receita</Label>
+                        <Select value={draftRecipeUnit} onValueChange={(value) => setDraftRecipeUnit(value as RecipeIngredientReference["unit"])}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {recipeUnitOptions.map((unit) => (
-                              <SelectItem key={unit.value} value={unit.value}>
-                                {unit.label}
-                              </SelectItem>
-                            ))}
+                            <SelectItem value="Kg">Kg</SelectItem>
+                            <SelectItem value="L">L</SelectItem>
+                            <SelectItem value="g">g</SelectItem>
+                            <SelectItem value="Un">Un</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="flex items-end">
-                        <Button type="button" onClick={addRecipeIngredient}>
-                          <Plus className="size-4" />
-                          Adicionar
-                        </Button>
-                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button type="button" onClick={addRecipeItem}>
+                        <Plus className="size-4" />
+                        Adicionar item
+                      </Button>
                     </div>
 
-                    <div className="overflow-hidden rounded-lg border border-border/80">
+                    <div className="overflow-hidden rounded-xl border border-border/70">
                       <table className="w-full border-collapse">
-                        <thead className="bg-panel">
+                        <thead className="bg-card">
                           <tr>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                              Ingrediente usado
-                            </th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                              Quantidade
-                            </th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                              Medida usada na receita
-                            </th>
-                            <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
-                              Ações
-                            </th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Referência</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd</th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Unidade</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Ações</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {ingredientsUsed.length === 0 ? (
+                          {formState.recipe.length === 0 ? (
                             <tr>
-                              <td colSpan={4} className="bg-card px-3 py-3 text-sm text-muted-foreground">
-                                Nenhum ingrediente adicionado.
+                              <td colSpan={4} className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
+                                Nenhum item na receita.
                               </td>
                             </tr>
                           ) : (
-                            ingredientsUsed.map((item) => (
+                            formState.recipe.map((item) => (
                               <tr key={item.id}>
-                                <td className="border-t border-border/70 bg-card px-3 py-2.5 text-sm">
-                                  {item.ingredient}
-                                </td>
-                                <td className="border-t border-border/70 bg-card px-3 py-2.5 text-sm">
-                                  {item.quantity}
-                                </td>
-                                <td className="border-t border-border/70 bg-card px-3 py-2.5 text-sm">
-                                  {recipeUnitLabel[item.recipeUnit] ?? item.recipeUnit}
-                                </td>
-                                <td className="border-t border-border/70 bg-card px-3 py-2.5 text-right">
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.label}</td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.quantity}</td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.unit}</td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
                                   <Button
                                     type="button"
                                     variant="ghost"
                                     size="icon-sm"
-                                    className="text-danger-foreground/80 hover:bg-danger/40 hover:text-danger-foreground"
-                                    onClick={() => removeRecipeIngredient(item.id)}
-                                    aria-label={`Remover ${item.ingredient}`}
+                                    className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
+                                    onClick={() => removeRecipeItem(item.id)}
                                   >
                                     <Trash2 className="size-4" />
                                   </Button>
@@ -515,58 +920,200 @@ export default function ProdutosPage() {
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                </section>
+                  </section>
 
-                <section>
-                  <h3 className="mb-3 text-sm font-semibold">Modo de Preparo</h3>
-                  <Textarea
-                    placeholder="Descreva o modo de preparo passo a passo..."
-                    className="min-h-[140px]"
-                    value={preparationText}
-                    onChange={(event) => setPreparationText(event.target.value)}
-                  />
-                </section>
-
-                <section>
-                  <h3 className="mb-3 text-sm font-semibold">Ingrediente MPI</h3>
-                  <div
-                    className={`rounded-lg border p-4 transition-colors ${
-                      isMpiIngredient
-                        ? "border-success-foreground/35 bg-success/35"
-                        : "border-border/80 bg-panel"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        id="mpi"
-                        checked={isMpiIngredient}
-                        onCheckedChange={(value) => setIsMpiIngredient(Boolean(value))}
-                      />
-                      <div className="space-y-2">
-                        <label htmlFor="mpi" className="text-sm font-semibold text-foreground">
-                          Este produto é um Ingrediente MPI
-                        </label>
-                        <p className="text-sm text-muted-foreground">
-                          Quando marcado, este item pode ser usado como produto final e/ou como
-                          novo ingrediente na receita de outro produto.
-                        </p>
-                        {isMpiIngredient && (
-                          <span className="inline-flex rounded-full bg-success px-2.5 py-1 text-xs font-semibold text-success-foreground">
-                            Produto habilitado para uso em receitas
-                          </span>
-                        )}
+                  <section className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Totais da Receita
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-foreground">
+                        Total de ingredientes: {recipeTotals.totalIngredientsKg.toFixed(3)} Kg
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Total após quebra: {recipeTotals.outputAfterBreakKg.toFixed(3)} Kg
+                      </p>
+                    </div>
+                    <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
+                      <div className="grid gap-2">
+                        <Label>Quebra (%)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={formState.breakPercent}
+                          onChange={(event) =>
+                            setFormState((current) => ({
+                              ...current,
+                              breakPercent: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Momento da quebra</Label>
+                        <Select
+                          value={formState.breakStage}
+                          onValueChange={(value) =>
+                            setFormState((current) => ({
+                              ...current,
+                              breakStage: value as BreakStage,
+                            }))
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(Object.keys(breakStageLabels) as BreakStage[]).map((stage) => (
+                              <SelectItem key={stage} value={stage}>
+                                {breakStageLabels[stage]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Comentário da quebra</Label>
+                        <Input
+                          value={formState.breakComment}
+                          onChange={(event) =>
+                            setFormState((current) => ({ ...current, breakComment: event.target.value }))
+                          }
+                          placeholder="Ex: perda antes do forno por divisão"
+                        />
                       </div>
                     </div>
-                  </div>
-                </section>
-              </div>
+                  </section>
+
+                  <section className="grid gap-2">
+                    <Label>Modo de preparo</Label>
+                    <Textarea
+                      value={formState.preparationMode}
+                      onChange={(event) =>
+                        setFormState((current) => ({ ...current, preparationMode: event.target.value }))
+                      }
+                      className="min-h-[140px]"
+                      placeholder="Descreva o modo de preparo passo a passo..."
+                    />
+                  </section>
+                </TabsContent>
+
+                <TabsContent value="cronograma" className="space-y-5">
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Cronograma definido pelo produto</h3>
+                      <p className="text-xs text-muted-foreground">
+                        A {hierarchyLabels.line.toLowerCase()} apenas consolida os dias configurados aqui.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-4">
+                      {productionWeekDays.map((day) => {
+                        const checked = formState.productionDays.includes(day.key);
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            className={`rounded-xl border px-4 py-3 text-left transition-colors ${
+                              checked
+                                ? "border-info/60 bg-info/15 text-foreground"
+                                : "border-border/70 bg-card text-muted-foreground"
+                            }`}
+                            onClick={() => toggleProductionDay(day.key)}
+                          >
+                            <p className="text-xs font-semibold uppercase tracking-[0.08em]">{day.shortLabel}</p>
+                            <p className="mt-1 text-sm">{day.label}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="rounded-xl border border-border/70 bg-panel/25 p-4 text-sm text-muted-foreground">
+                      A visão da {hierarchyLabels.line.toLowerCase()} passa a exibir quantos produtos estão vinculados e
+                      em quais dias cada produto produz. Não há mais edição do cronograma no cadastro da linha executora.
+                    </div>
+                  </section>
+                </TabsContent>
+
+                <TabsContent value="mpi" className="space-y-5">
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        id="mpi-enabled"
+                        checked={formState.canBeIngredient}
+                        onCheckedChange={(checked) =>
+                          setFormState((current) => ({
+                            ...current,
+                            canBeIngredient: checked === true,
+                            isMpiIngredient: checked === true,
+                          }))
+                        }
+                      />
+                      <div>
+                        <Label htmlFor="mpi-enabled" className="text-sm font-semibold">
+                          Este produto pode ser usado como ingrediente (MPI)
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Quando ativado, o produto aparece como insumo disponível nas receitas de outros produtos.
+                        </p>
+                      </div>
+                    </div>
+
+                    {formState.canBeIngredient ? (
+                      <div className="space-y-4">
+                        <IngredientProfileFields
+                          title="Perfil espelhado do ingrediente"
+                          description="Os mesmos campos do ingrediente ficam disponíveis aqui para o MPI reaproveitável."
+                          profile={{
+                            unit: formState.ingredientProfile?.unit ?? "Kg",
+                            weightKg:
+                              formState.ingredientProfile?.unit === "Kg"
+                                ? 1
+                                : formState.ingredientProfile?.weightKg ?? formState.unitProfiles.sales.weightKg,
+                            metadata: formState.ingredientProfile?.metadata ?? "",
+                            observation: formState.ingredientProfile?.observation ?? "",
+                          }}
+                          unitOptions={unitOptions}
+                          metadataPlaceholder="Ex: usar como base de sanduíches"
+                          observationPlaceholder="Ex: consumir após resfriar"
+                          onChange={(patch) =>
+                            setFormState((current) => ({
+                              ...current,
+                              ingredientProfile: {
+                                unit: (patch.unit as ProductUnitProfile["unit"] | undefined) ?? current.ingredientProfile?.unit ?? "Kg",
+                                weightKg:
+                                  patch.unit === "Kg"
+                                    ? 1
+                                    : patch.weightKg ??
+                                      current.ingredientProfile?.weightKg ??
+                                      current.unitProfiles.sales.weightKg,
+                                metadata: patch.metadata ?? current.ingredientProfile?.metadata ?? "",
+                                observation: patch.observation ?? current.ingredientProfile?.observation ?? "",
+                              },
+                            }))
+                          }
+                        />
+
+                        <IngredientCompositionEditor
+                          title="Composição do MPI"
+                          description="Espelho somente leitura da receita técnica que alimenta este ingrediente reutilizável."
+                          composition={mpiCompositionPreview}
+                          emptyMessage="Nenhum item na receita. Adicione componentes na aba Receita."
+                          readOnly
+                        />
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border/70 bg-panel/20 p-4 text-sm text-muted-foreground">
+                        Ative a flag acima para espelhar os campos do cadastro de ingrediente dentro do produto.
+                      </div>
+                    )}
+                  </section>
+                </TabsContent>
+              </Tabs>
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={() => setIsDialogOpen(false)}>
+                <Button type="button" onClick={handleSaveProduct}>
                   {editingProduct ? "Salvar Alterações" : "Cadastrar Produto"}
                 </Button>
               </DialogFooter>

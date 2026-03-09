@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { useMemo, useState, type CSSProperties } from "react";
 import {
-  AlertTriangle,
   Factory,
   LayoutDashboard,
   LucideIcon,
@@ -19,8 +18,9 @@ import {
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard, type ModuleTone } from "@/components/shared/module-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryOrderStatus, useFactoryOrderStatus } from "@/lib/factory-order-status";
-import { buildFactoryPlanningData, getTodayDateKey, type OrderStatus } from "@/lib/order-planning";
+import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
+import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
 import { productionLines } from "@/lib/production-planning";
 
 type QuickAccessModule = {
@@ -75,9 +75,9 @@ const quickAccessGroups: Array<{ label: string; modules: QuickAccessModule[] }> 
       },
       {
         href: "/gestor-dados/setores",
-        title: "Setores",
+        title: "Categorias",
         subtitle: "Responsáveis e estrutura",
-        description: "Defina setores produtivos e lideranças que suportam a fábrica.",
+        description: "Defina categorias produtivas e lideranças que suportam a fábrica.",
         icon: Users,
         tone: "violet",
       },
@@ -97,8 +97,8 @@ const quickAccessGroups: Array<{ label: string; modules: QuickAccessModule[] }> 
       {
         href: "/gestor-fabrica/ordens-producao",
         title: "Ordens de Produção",
-        subtitle: "Planejamento por linha",
-        description: "Monitore OPs por setor, linha e capacidade diária utilizada.",
+        subtitle: "Planejamento por linha executora",
+        description: "Monitore OPs por categoria, subcategoria e progresso operacional diário.",
         icon: Factory,
         tone: "amber",
       },
@@ -143,25 +143,30 @@ const quickAccessGroups: Array<{ label: string; modules: QuickAccessModule[] }> 
   },
 ];
 
-const statusLabels: Record<OrderStatus, string> = {
-  agendado: "Agendado",
-  em_producao: "Em Produção",
-  em_espera: "Em Espera",
-  rota_entrega: "Rota de Entrega",
-};
+const dashboardStatuses = ["em_espera", "agendado", "em_producao", "aguardando_expedicao"] as const;
+type DashboardStatus = (typeof dashboardStatuses)[number];
 
-const statusBars: Record<OrderStatus, string> = {
-  agendado: "bg-info",
-  em_producao: "bg-success",
-  em_espera: "bg-warning",
-  rota_entrega: "bg-[oklch(0.62_0.08_220)]",
-};
-
-const statusConicColors: Record<OrderStatus, string> = {
-  agendado: "oklch(0.84 0.06 238)",
-  em_producao: "oklch(0.86 0.07 148)",
-  em_espera: "oklch(0.89 0.09 90)",
-  rota_entrega: "oklch(0.62 0.08 220)",
+const statusConfig: Record<DashboardStatus, { label: string; barClassName: string; conicColor: string }> = {
+  em_espera: {
+    label: "Em Espera",
+    barClassName: "bg-warning",
+    conicColor: "oklch(0.89 0.09 90)",
+  },
+  agendado: {
+    label: "Agendado",
+    barClassName: "bg-info",
+    conicColor: "oklch(0.84 0.06 238)",
+  },
+  em_producao: {
+    label: "Em Produção",
+    barClassName: "bg-success",
+    conicColor: "oklch(0.86 0.07 148)",
+  },
+  aguardando_expedicao: {
+    label: "Aguardando Expedição",
+    barClassName: "bg-secondary",
+    conicColor: "oklch(0.83 0.03 250)",
+  },
 };
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -222,12 +227,17 @@ export default function AdministradorPage() {
     }
   }
 
-  const statusState = useFactoryOrderStatus(referenceDate);
+  const workflow = useFactoryWorkflowState(referenceDate);
+  const deliveryExecution = useDeliveryExecution(referenceDate);
 
   const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
   const planningData = useMemo(
-    () => applyFactoryOrderStatus(basePlanningData, statusState.resolveStatus),
-    [basePlanningData, statusState.resolveStatus],
+    () =>
+      applyFactoryWorkflowState(basePlanningData, {
+        isReleased: workflow.isReleased,
+        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
+      }),
+    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
   );
 
   const activeLineCapacityByName = useMemo(
@@ -251,19 +261,51 @@ export default function AdministradorPage() {
   );
 
   const ordersByStatus = useMemo(() => {
-    const summary: Record<OrderStatus, number> = {
+    const summary: Record<DashboardStatus, number> = {
+      em_espera: 0,
       agendado: 0,
       em_producao: 0,
-      em_espera: 0,
-      rota_entrega: 0,
+      aguardando_expedicao: 0,
     };
 
     planningData.orders.forEach((order) => {
-      summary[order.status] += 1;
+      if (order.status in summary) {
+        summary[order.status as DashboardStatus] += 1;
+      }
     });
 
     return summary;
   }, [planningData.orders]);
+
+  const deliverySummary = useMemo(() => {
+    return planningData.expedition.reduce(
+      (summary, row) => {
+        const execution = deliveryExecution.resolveExecution(row.orderId, row.status === "aguardando_expedicao");
+
+        if (execution.status === "pronto_coleta") {
+          summary.ready += 1;
+          return summary;
+        }
+
+        if (execution.status === "em_rota" || execution.status === "no_destino") {
+          summary.inField += 1;
+          return summary;
+        }
+
+        if (execution.status === "entregue") {
+          summary.delivered += 1;
+          return summary;
+        }
+
+        if (execution.status === "tentativa_falha") {
+          summary.failed += 1;
+        }
+
+        return summary;
+      },
+      { ready: 0, inField: 0, delivered: 0, failed: 0 },
+    );
+  }, [deliveryExecution, planningData.expedition]);
 
   const noScheduleItems = useMemo(
     () => planningData.orderItems.filter((item) => !item.canPlan).length,
@@ -362,18 +404,17 @@ export default function AdministradorPage() {
   ] as const;
 
   const totalOrders = planningData.orders.length;
-  const readyForExpedition = planningData.expedition.filter(
-    (order) => order.status === "em_producao" || order.status === "rota_entrega",
-  ).length;
-  const operationalAlertsTotal = noScheduleItems + delayedItems + criticalOps;
+  const releasedOrders = planningData.orders.filter((order) => order.releasedToProduction).length;
+  const opsInProgress = planningData.productionOrders.filter((op) => op.status === "em_producao").length;
+  const readyForExpedition = planningData.expedition.filter((order) => order.status === "aguardando_expedicao").length;
   const statusDistribution = useMemo(
     () =>
-      (Object.keys(statusLabels) as OrderStatus[]).map((status) => {
+      dashboardStatuses.map((status) => {
         const count = ordersByStatus[status];
         const percentage = totalOrders > 0 ? Number(((count / totalOrders) * 100).toFixed(1)) : 0;
         return {
           status,
-          label: statusLabels[status],
+          label: statusConfig[status].label,
           count,
           percentage,
         };
@@ -386,14 +427,20 @@ export default function AdministradorPage() {
       return { background: "conic-gradient(var(--muted) 0 100%)" };
     }
 
-    let cursor = 0;
-    const segments = statusDistribution
+    const { segments } = statusDistribution
       .filter((entry) => entry.count > 0)
-      .map((entry) => {
-        const start = cursor;
-        cursor += entry.percentage;
-        return `${statusConicColors[entry.status]} ${start}% ${cursor}%`;
-      });
+      .reduce(
+        (acc, entry) => {
+          const start = acc.cursor;
+          const end = start + entry.percentage;
+          acc.segments.push(`${statusConfig[entry.status].conicColor} ${start}% ${end}%`);
+          return {
+            cursor: end,
+            segments: acc.segments,
+          };
+        },
+        { cursor: 0, segments: [] as string[] },
+      );
 
     if (segments.length === 0) {
       return { background: "conic-gradient(var(--muted) 0 100%)" };
@@ -466,8 +513,8 @@ export default function AdministradorPage() {
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6"
       >
         <KPICard title="Pedidos Totais" value={totalOrders} icon={ShoppingCart} tone="info" />
-        <KPICard title="Em Produção" value={ordersByStatus.em_producao} icon={Factory} tone="success" />
-        <KPICard title="Em Espera" value={ordersByStatus.em_espera} icon={Package} tone="warning" />
+        <KPICard title="Pedidos Liberados" value={releasedOrders} icon={ShieldCheck} tone="success" />
+        <KPICard title="OPs em Progresso" value={opsInProgress} icon={Factory} tone="warning" />
         <KPICard
           title="Carga Produção"
           value={formatCompactValue(productionKg, "Kg")}
@@ -476,17 +523,18 @@ export default function AdministradorPage() {
           tone="neutral"
         />
         <KPICard
-          title="Carga Expedição"
-          value={formatCompactValue(expeditionKg, "Kg")}
-          subtitle={`${expeditionKg.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} Kg`}
+          title="Prontos p/ Expedição"
+          value={readyForExpedition}
+          subtitle={`${expeditionKg.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} Kg separados`}
           icon={Truck}
           tone="success"
         />
         <KPICard
-          title="Alertas Operacionais"
-          value={operationalAlertsTotal}
-          icon={AlertTriangle}
-          tone={operationalAlertsTotal > 0 ? "danger" : "success"}
+          title="Entregas em Campo"
+          value={deliverySummary.inField}
+          subtitle={`${deliverySummary.delivered} concluídas`}
+          icon={Package}
+          tone={deliverySummary.inField > 0 ? "info" : "neutral"}
         />
       </motion.div>
 
@@ -565,7 +613,7 @@ export default function AdministradorPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Composição e Alertas</CardTitle>
+            <CardTitle>Composição Fabril e Entrega</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="rounded-lg border border-border/70 bg-panel/45 p-3">
@@ -584,7 +632,7 @@ export default function AdministradorPage() {
                   <div key={entry.status} className="rounded-lg border border-border/70 bg-card p-2.5">
                     <div className="mb-1.5 flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
-                        <span className={`size-2.5 rounded-full ${statusBars[entry.status]}`} />
+                        <span className={`size-2.5 rounded-full ${statusConfig[entry.status].barClassName}`} />
                         <span className="font-medium text-foreground">{entry.label}</span>
                       </div>
                       <span className="text-muted-foreground">
@@ -593,7 +641,7 @@ export default function AdministradorPage() {
                     </div>
                     <div className="h-1.5 rounded-full bg-panel">
                       <div
-                        className={`h-full rounded-full ${statusBars[entry.status]}`}
+                        className={`h-full rounded-full ${statusConfig[entry.status].barClassName}`}
                         style={{ width: `${Math.min(entry.percentage, 100)}%` }}
                       />
                     </div>
@@ -602,11 +650,25 @@ export default function AdministradorPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                Pronto para expedição
-              </p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{readyForExpedition} pedidos</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Pronto para expedição
+                </p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{readyForExpedition} pedidos</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Considera somente pedidos em <strong>aguardando expedição</strong>.
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Entrega em campo
+                </p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{deliverySummary.inField} pedidos</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {deliverySummary.ready} prontos para coleta, {deliverySummary.delivered} entregues e {deliverySummary.failed} falhas.
+                </p>
+              </div>
             </div>
 
             {operationalAlerts.map((alert) => (
@@ -629,7 +691,7 @@ export default function AdministradorPage() {
             ))}
 
             <div className="rounded-lg border border-border/70 bg-panel/35 p-3 text-xs text-muted-foreground">
-              Indicadores consolidados com base na data de referência para pedidos, produção e expedição.
+              Indicadores consolidados com fluxo fabril separado da execução de entrega.
             </div>
           </CardContent>
         </Card>
@@ -637,14 +699,14 @@ export default function AdministradorPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Carga por Setor da Fábrica</CardTitle>
+          <CardTitle>Carga por Categoria da Fábrica</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-xl border border-border/75">
             <table className="w-full min-w-[680px] border-collapse">
               <thead className="bg-panel">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Setor</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Categoria</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OPs</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Carga (Kg)</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Utilização média</th>

@@ -61,11 +61,11 @@ const permissionModules = [
   { id: "gestor-dados.dashboard", label: "Visão geral de dados", route: "/gestor-dados", group: "gestor-dados" },
   { id: "gestor-dados.ingredientes", label: "Ingredientes", route: "/gestor-dados/ingredientes", group: "gestor-dados" },
   { id: "gestor-dados.produtos", label: "Produtos", route: "/gestor-dados/produtos", group: "gestor-dados" },
-  { id: "gestor-dados.setores", label: "Setores", route: "/gestor-dados/setores", group: "gestor-dados" },
-  { id: "gestor-dados.linhas", label: "Linhas de produção", route: "/gestor-dados/linhas-producao", group: "gestor-dados" },
+  { id: "gestor-dados.setores", label: "Categorias", route: "/gestor-dados/setores", group: "gestor-dados" },
+  { id: "gestor-dados.linhas", label: "Subcategorias", route: "/gestor-dados/linhas-producao", group: "gestor-dados" },
   { id: "gestor-dados.lojas", label: "Lojas", route: "/gestor-dados/lojas", group: "gestor-dados" },
   { id: "gestor-fabrica.dashboard", label: "Visão geral da fábrica", route: "/gestor-fabrica", group: "gestor-fabrica" },
-  { id: "gestor-fabrica.sublinhas", label: "Sublinhas de produção", route: "/gestor-fabrica/sublinhas-producao", group: "gestor-fabrica" },
+  { id: "gestor-fabrica.sublinhas", label: "Linhas", route: "/gestor-fabrica/sublinhas-producao", group: "gestor-fabrica" },
   { id: "gestor-fabrica.pedidos", label: "Pedidos", route: "/gestor-fabrica/pedidos", group: "gestor-fabrica" },
   { id: "gestor-fabrica.ops", label: "Ordens de produção", route: "/gestor-fabrica/ordens-producao", group: "gestor-fabrica" },
   { id: "gestor-fabrica.expedicao", label: "Expedição", route: "/gestor-fabrica/expedicao", group: "gestor-fabrica" },
@@ -1372,8 +1372,14 @@ export default function AdministradorUsuariosPage() {
                 <Button type="button" variant="outline" size="sm" onClick={resetPermissionDraftByRole}>
                   Aplicar perfil base
                 </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setAllPermissions("visualizar")}>
+                  Liberar todos como Visualizar
+                </Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => setAllPermissions("operar")}>
                   Liberar todos como Operar
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setAllPermissions("gerenciar")}>
+                  Liberar todos como Gerenciar
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => setAllPermissions("sem_acesso")}>
                   Bloquear todos

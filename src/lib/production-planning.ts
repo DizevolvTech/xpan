@@ -3,6 +3,13 @@ import type { UnitCode } from "@/lib/factory-planning/units";
 export type RecordStatus = "ativo" | "inativo";
 export type LineType = "Seco" | "Úmido";
 export type ScheduleStatus = "pendente" | "ativo" | "inativo";
+export type IngredientType = "puro" | "misturado";
+export type RecipeSourceType = "ingrediente" | "produto";
+export type BreakStage =
+  | "antes_divisao"
+  | "depois_divisao"
+  | "antes_forno"
+  | "depois_forno";
 export type ProductionWeekDay =
   | "segunda"
   | "terca"
@@ -11,6 +18,75 @@ export type ProductionWeekDay =
   | "sexta"
   | "sabado"
   | "domingo";
+
+export interface ProductUnitProfile {
+  unit: UnitCode;
+  description: string;
+  weightKg: number;
+}
+
+export interface PackagingProfile {
+  unit: UnitCode;
+  description: string;
+  weightKg: number;
+  quantityPerPackage: number;
+}
+
+export interface IngredientCompositionItem {
+  id: string;
+  ingredientId?: string;
+  productId?: string;
+  name: string;
+  quantity: number;
+  unit: UnitCode;
+  observation: string;
+}
+
+export interface IngredientProfileMirror {
+  unit: UnitCode;
+  weightKg: number;
+  metadata: string;
+  observation: string;
+}
+
+export interface RecipeIngredientReference {
+  id: string;
+  sourceType: RecipeSourceType;
+  sourceId: string;
+  label: string;
+  quantity: number;
+  unit: UnitCode;
+}
+
+export interface ProductionIngredient {
+  id: string;
+  code: string;
+  name: string;
+  type: IngredientType;
+  unit: UnitCode;
+  metadata: string;
+  observation: string;
+  composition: IngredientCompositionItem[];
+  status: RecordStatus;
+}
+
+export interface OperationalSettings {
+  orderCutoffTime: string;
+  expeditionLeadDays: number;
+}
+
+export interface StoreMasterData {
+  id: string;
+  code: string;
+  name: string;
+  responsible: string;
+  email: string;
+  phone: string;
+  status: RecordStatus;
+  receiveWindow: string;
+  orderingDays: ProductionWeekDay[];
+  receivingDays: ProductionWeekDay[];
+}
 
 export interface ProductionSector {
   id: string;
@@ -35,12 +111,30 @@ export interface ProductionProduct {
   id: string;
   code: string;
   name: string;
+  description: string;
   lineId: string;
   active: boolean;
-  weight: string;
+  availableForOrdering: boolean;
   validityDays: number;
   minimumProductionKg: number;
   economicProductionKg: number;
+  allowsStorage: boolean;
+  productionDays: ProductionWeekDay[];
+  unitProfiles: {
+    sales: ProductUnitProfile;
+    production: ProductUnitProfile;
+    expedition: ProductUnitProfile;
+  };
+  packagingProfile?: PackagingProfile;
+  isSoldLoose: boolean;
+  recipe: RecipeIngredientReference[];
+  preparationMode: string;
+  breakPercent: number;
+  breakStage: BreakStage;
+  breakComment: string;
+  canBeIngredient: boolean;
+  ingredientProfile?: IngredientProfileMirror;
+  weight: string;
   productionUnit: UnitCode;
   salesUnit: UnitCode;
   salesToKgFactor: number;
@@ -73,6 +167,12 @@ export interface WeeklyProductionSchedule {
   items: WeeklyScheduleItem[];
 }
 
+export const hierarchyLabels = {
+  sector: "Categoria",
+  line: "Subcategoria",
+  schedule: "Linha",
+} as const;
+
 export const productionWeekDays: { key: ProductionWeekDay; label: string; shortLabel: string }[] = [
   { key: "segunda", label: "Segunda-feira", shortLabel: "Seg" },
   { key: "terca", label: "Terça-feira", shortLabel: "Ter" },
@@ -82,6 +182,11 @@ export const productionWeekDays: { key: ProductionWeekDay; label: string; shortL
   { key: "sabado", label: "Sábado", shortLabel: "Sab" },
   { key: "domingo", label: "Domingo", shortLabel: "Dom" },
 ];
+
+export const operationalSettings: OperationalSettings = {
+  orderCutoffTime: "18:00",
+  expeditionLeadDays: 2,
+};
 
 export const productionSectors: ProductionSector[] = [
   {
@@ -104,13 +209,6 @@ export const productionSectors: ProductionSector[] = [
     name: "Rotisseria",
     responsible: "Rafaela Moura",
     status: "ativo",
-  },
-  {
-    id: "sector-secos",
-    code: "SE-004",
-    name: "Secos",
-    responsible: "Pedro Costa",
-    status: "inativo",
   },
 ];
 
@@ -146,18 +244,8 @@ export const productionLines: ProductionLine[] = [
     status: "ativo",
   },
   {
-    id: "line-biscoitos",
-    code: "LP-004",
-    name: "Linha de Biscoitos",
-    sectorId: "sector-secos",
-    type: "Seco",
-    operatingHours: "06:30 - 15:30",
-    capacityPerDayKg: 540,
-    status: "inativo",
-  },
-  {
     id: "line-salgados",
-    code: "LP-005",
+    code: "LP-004",
     name: "Linha de Salgados",
     sectorId: "sector-rotisseria",
     type: "Úmido",
@@ -167,153 +255,415 @@ export const productionLines: ProductionLine[] = [
   },
 ];
 
+export const productionIngredients: ProductionIngredient[] = [
+  {
+    id: "ing-farinha",
+    code: "IN-572015",
+    name: "Farinha de Trigo",
+    type: "puro",
+    unit: "Kg",
+    metadata: "Matéria-prima base de panificação.",
+    observation: "",
+    composition: [],
+    status: "ativo",
+  },
+  {
+    id: "ing-acucar",
+    code: "IN-572016",
+    name: "Açúcar",
+    type: "puro",
+    unit: "Kg",
+    metadata: "Açúcar refinado padrão.",
+    observation: "",
+    composition: [],
+    status: "ativo",
+  },
+  {
+    id: "ing-fermento",
+    code: "IN-572017",
+    name: "Fermento",
+    type: "puro",
+    unit: "Kg",
+    metadata: "Fermentação panificação.",
+    observation: "",
+    composition: [],
+    status: "ativo",
+  },
+  {
+    id: "ing-leite-condensado",
+    code: "IN-572018",
+    name: "Leite Condensado",
+    type: "puro",
+    unit: "Kg",
+    metadata: "Base de confeitaria.",
+    observation: "",
+    composition: [],
+    status: "ativo",
+  },
+  {
+    id: "ing-leite",
+    code: "IN-572019",
+    name: "Leite Tipo C",
+    type: "puro",
+    unit: "L",
+    metadata: "Leite integral.",
+    observation: "",
+    composition: [],
+    status: "ativo",
+  },
+  {
+    id: "ing-ovo",
+    code: "IN-572020",
+    name: "Ovo Pasteurizado",
+    type: "puro",
+    unit: "Kg",
+    metadata: "Ovos líquidos para produção.",
+    observation: "",
+    composition: [],
+    status: "ativo",
+  },
+  {
+    id: "ing-calda-pudim",
+    code: "IN-572021",
+    name: "Calda para Pudim",
+    type: "puro",
+    unit: "Kg",
+    metadata: "Cobertura final de pudim.",
+    observation: "",
+    composition: [],
+    status: "ativo",
+  },
+  {
+    id: "ing-mistura-neutra",
+    code: "IN-572022",
+    name: "Mistura Neutra de Bolo",
+    type: "misturado",
+    unit: "Kg",
+    metadata: "MPI de confeitaria usada como base.",
+    observation: "Usar como base para bolos especiais e receitas padronizadas.",
+    composition: [
+      {
+        id: "mix-1",
+        ingredientId: "ing-farinha",
+        name: "Farinha de Trigo",
+        quantity: 0.68,
+        unit: "Kg",
+        observation: "",
+      },
+      {
+        id: "mix-2",
+        ingredientId: "ing-acucar",
+        name: "Açúcar",
+        quantity: 0.18,
+        unit: "Kg",
+        observation: "",
+      },
+      {
+        id: "mix-3",
+        ingredientId: "ing-fermento",
+        name: "Fermento",
+        quantity: 0.14,
+        unit: "Kg",
+        observation: "",
+      },
+    ],
+    status: "ativo",
+  },
+];
+
+export const storesMasterData: StoreMasterData[] = [
+  {
+    id: "store-01",
+    code: "LJ-001",
+    name: "Empório do Pão",
+    responsible: "Rommel Filho",
+    email: "loja1@casaexpress.com",
+    phone: "(85) 98888-1101",
+    status: "ativo",
+    receiveWindow: "07:00 - 10:00",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+  },
+  {
+    id: "store-02",
+    code: "LJ-002",
+    name: "Padaria Central",
+    responsible: "Carlos Silva",
+    email: "loja2@casaexpress.com",
+    phone: "(85) 98888-1102",
+    status: "ativo",
+    receiveWindow: "08:00 - 11:00",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"],
+  },
+  {
+    id: "store-03",
+    code: "LJ-003",
+    name: "Casa Express Pinheiros",
+    responsible: "Michele Nunes",
+    email: "loja3@casaexpress.com",
+    phone: "(85) 98888-1103",
+    status: "ativo",
+    receiveWindow: "06:30 - 09:00",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+  },
+];
+
+function createUnitProfile(unit: UnitCode, description: string, weightKg: number): ProductUnitProfile {
+  return {
+    unit,
+    description,
+    weightKg: unit === "Kg" ? 1 : weightKg,
+  };
+}
+
+function createLegacyWeight(value: number): string {
+  return `${value.toFixed(3)} Kg`;
+}
+
 export const productionProducts: ProductionProduct[] = [
   {
     id: "product-pao-frances",
     code: "PR-83374",
     name: "Pão Francês",
+    description: "Pão francês tradicional para venda unitária.",
     lineId: "line-paes",
     active: true,
-    weight: "0.05 Kg",
+    availableForOrdering: true,
     validityDays: 5,
-    minimumProductionKg: 200,
-    economicProductionKg: 260,
+    minimumProductionKg: 220,
+    economicProductionKg: 280,
+    allowsStorage: false,
+    productionDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 0.05),
+      production: createUnitProfile("Kg", "Massa padrão", 1),
+      expedition: createUnitProfile("Pacote", "Pacote para separação", 0.5),
+    },
+    packagingProfile: {
+      unit: "Pacote",
+      description: "Pacote de balcão",
+      weightKg: 0.5,
+      quantityPerPackage: 10,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-pf-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-farinha",
+        label: "Farinha de Trigo",
+        quantity: 0.88,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-pf-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-fermento",
+        label: "Fermento",
+        quantity: 0.03,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Fermentar, dividir, modelar e assar.",
+    breakPercent: 4,
+    breakStage: "depois_divisao",
+    breakComment: "Perda usual depois da divisão e modelagem.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(0.05),
     productionUnit: "Kg",
     salesUnit: "Un",
     salesToKgFactor: 0.05,
-    expeditionUnit: "Un",
-    expeditionToKgFactor: 0.05,
+    expeditionUnit: "Pacote",
+    expeditionToKgFactor: 0.5,
     isMpiIngredient: false,
   },
   {
     id: "product-pao-forma",
     code: "PR-83375",
     name: "Pão de Forma",
+    description: "Pão de forma fatiado.",
     lineId: "line-paes",
     active: true,
-    weight: "0.45 Kg",
+    availableForOrdering: true,
     validityDays: 6,
     minimumProductionKg: 150,
     economicProductionKg: 190,
-    productionUnit: "Kg",
+    allowsStorage: true,
+    productionDays: ["segunda", "quarta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 0.45),
+      production: createUnitProfile("Forma", "Forma de produção", 0.9),
+      expedition: createUnitProfile("Caixa", "Caixa de expedição", 5.4),
+    },
+    packagingProfile: {
+      unit: "Pacote",
+      description: "Pacote fatiado",
+      weightKg: 0.45,
+      quantityPerPackage: 1,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-pfoma-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-farinha",
+        label: "Farinha de Trigo",
+        quantity: 0.82,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-pfoma-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-acucar",
+        label: "Açúcar",
+        quantity: 0.05,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Misturar, cilindrar e assar em forma fechada.",
+    breakPercent: 5,
+    breakStage: "antes_forno",
+    breakComment: "Compensar perda antes do forno para manter peso final.",
+    canBeIngredient: true,
+    ingredientProfile: {
+      unit: "Un",
+      weightKg: 0.45,
+      metadata: "Produto pode ser consumido como base de sanduíches.",
+      observation: "Usar somente após resfriamento.",
+    },
+    weight: createLegacyWeight(0.45),
+    productionUnit: "Forma",
     salesUnit: "Un",
     salesToKgFactor: 0.45,
-    expeditionUnit: "Un",
-    expeditionToKgFactor: 0.45,
-    isMpiIngredient: false,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 5.4,
+    isMpiIngredient: true,
   },
   {
     id: "product-pao-doce",
     code: "PR-83376",
     name: "Pão Doce",
+    description: "Pão doce individual.",
     lineId: "line-paes",
     active: true,
-    weight: "0.08 Kg",
+    availableForOrdering: true,
     validityDays: 4,
     minimumProductionKg: 120,
     economicProductionKg: 180,
-    productionUnit: "Kg",
+    allowsStorage: false,
+    productionDays: ["terca", "quinta", "sabado"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 0.08),
+      production: createUnitProfile("Assadeira", "Assadeira de produção", 1.6),
+      expedition: createUnitProfile("Bandeja", "Bandeja para loja", 0.96),
+    },
+    packagingProfile: {
+      unit: "Bandeja",
+      description: "Bandeja padrão",
+      weightKg: 0.96,
+      quantityPerPackage: 12,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-pd-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-farinha",
+        label: "Farinha de Trigo",
+        quantity: 0.78,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-pd-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-acucar",
+        label: "Açúcar",
+        quantity: 0.11,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-pd-3",
+        sourceType: "ingrediente",
+        sourceId: "ing-fermento",
+        label: "Fermento",
+        quantity: 0.025,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Modelar, fermentar e finalizar com cobertura.",
+    breakPercent: 6,
+    breakStage: "depois_divisao",
+    breakComment: "Quebra calculada após divisão e acabamento.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(0.08),
+    productionUnit: "Assadeira",
     salesUnit: "Un",
     salesToKgFactor: 0.08,
-    expeditionUnit: "Un",
-    expeditionToKgFactor: 0.08,
+    expeditionUnit: "Bandeja",
+    expeditionToKgFactor: 0.96,
     isMpiIngredient: false,
   },
   {
-    id: "product-bolo-tapioca",
-    code: "PR-52797",
-    name: "Bolo de Tapioca",
+    id: "product-mpi-base-pudim",
+    code: "MPI-001",
+    name: "MPI Base para Pudim",
+    description: "Base industrializada produzida internamente para família de pudins.",
     lineId: "line-confeitaria",
     active: true,
-    weight: "2.0 Kg",
-    validityDays: 7,
-    minimumProductionKg: 80,
-    economicProductionKg: 120,
-    productionUnit: "Forma",
-    salesUnit: "Forma",
-    salesToKgFactor: 2,
-    expeditionUnit: "Forma",
-    expeditionToKgFactor: 2,
-    isMpiIngredient: false,
-  },
-  {
-    id: "product-sonho",
-    code: "PR-74072",
-    name: "Sonho",
-    lineId: "line-confeitaria",
-    active: true,
-    weight: "0.12 Kg",
-    validityDays: 3,
-    minimumProductionKg: 95,
-    economicProductionKg: 140,
-    productionUnit: "Dz",
-    salesUnit: "Dz",
-    salesToKgFactor: 1.44,
-    expeditionUnit: "Dz",
-    expeditionToKgFactor: 1.44,
-    isMpiIngredient: false,
-  },
-  {
-    id: "product-brownie",
-    code: "PR-74090",
-    name: "Brownie Tradicional",
-    lineId: "line-confeitaria",
-    active: true,
-    weight: "1.2 Kg",
-    validityDays: 6,
-    minimumProductionKg: 70,
-    economicProductionKg: 110,
-    productionUnit: "Forma",
-    salesUnit: "Forma",
-    salesToKgFactor: 1.2,
-    expeditionUnit: "Forma",
-    expeditionToKgFactor: 1.2,
-    isMpiIngredient: false,
-  },
-  {
-    id: "product-frango-assado",
-    code: "PR-44810",
-    name: "Frango Assado",
-    lineId: "line-rotisseria",
-    active: true,
-    weight: "1.6 Kg",
+    availableForOrdering: false,
     validityDays: 2,
-    minimumProductionKg: 180,
-    economicProductionKg: 260,
-    productionUnit: "Un",
-    salesUnit: "Un",
-    salesToKgFactor: 1.6,
-    expeditionUnit: "Un",
-    expeditionToKgFactor: 1.6,
-    isMpiIngredient: false,
-  },
-  {
-    id: "product-lasanha",
-    code: "PR-44811",
-    name: "Lasanha Bolonhesa",
-    lineId: "line-rotisseria",
-    active: true,
-    weight: "3.8 Kg",
-    validityDays: 5,
-    minimumProductionKg: 140,
-    economicProductionKg: 210,
-    productionUnit: "Travessa",
-    salesUnit: "Travessa",
-    salesToKgFactor: 3.8,
-    expeditionUnit: "Travessa",
-    expeditionToKgFactor: 3.8,
-    isMpiIngredient: false,
-  },
-  {
-    id: "product-mistura-pao",
-    code: "PR-22456",
-    name: "Mistura Base de Pães",
-    lineId: "line-biscoitos",
-    active: false,
-    weight: "0.5 Kg",
-    validityDays: 30,
-    minimumProductionKg: 40,
-    economicProductionKg: 60,
+    minimumProductionKg: 8,
+    economicProductionKg: 15,
+    allowsStorage: false,
+    productionDays: ["segunda", "quarta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Kg", "Unidade interna de engenharia", 1),
+      production: createUnitProfile("Kg", "Batida de base", 1),
+      expedition: createUnitProfile("Kg", "Consumo interno", 1),
+    },
+    isSoldLoose: true,
+    recipe: [
+      {
+        id: "recipe-mpi-pudim-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-leite-condensado",
+        label: "Leite Condensado",
+        quantity: 5.651,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-mpi-pudim-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-leite",
+        label: "Leite Tipo C",
+        quantity: 2.129,
+        unit: "L",
+      },
+      {
+        id: "recipe-mpi-pudim-3",
+        sourceType: "ingrediente",
+        sourceId: "ing-ovo",
+        label: "Ovo Pasteurizado",
+        quantity: 0.398,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Bater até homogeneizar e reservar para montagem dos pudins.",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "Sem quebra planejada na base.",
+    canBeIngredient: true,
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 1,
+      metadata: "MPI produzido na própria fábrica.",
+      observation: "Consumir no mesmo dia da produção.",
+    },
+    weight: createLegacyWeight(1),
     productionUnit: "Kg",
     salesUnit: "Kg",
     salesToKgFactor: 1,
@@ -322,185 +672,508 @@ export const productionProducts: ProductionProduct[] = [
     isMpiIngredient: true,
   },
   {
+    id: "product-pudim-mini",
+    code: "PR-02197",
+    name: "Pudim Leite Condensado Mini",
+    description: "Pudim mini moldado individualmente.",
+    lineId: "line-confeitaria",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 4,
+    minimumProductionKg: 12,
+    economicProductionKg: 18,
+    allowsStorage: true,
+    productionDays: ["segunda", "quarta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 0.098),
+      production: createUnitProfile("Forma", "Forma mini", 4.218),
+      expedition: createUnitProfile("Caixa", "Caixa térmica", 4.218),
+    },
+    packagingProfile: {
+      unit: "Caixa",
+      description: "Caixa com 43 unidades",
+      weightKg: 4.218,
+      quantityPerPackage: 43,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-pudim-mini-1",
+        sourceType: "produto",
+        sourceId: "product-mpi-base-pudim",
+        label: "MPI Base para Pudim",
+        quantity: 4.218,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-pudim-mini-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-calda-pudim",
+        label: "Calda para Pudim",
+        quantity: 0.398,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Porcionar a base, finalizar com calda e assar em banho-maria.",
+    breakPercent: 1.5,
+    breakStage: "depois_forno",
+    breakComment: "Pequena perda após desenformar.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(0.098),
+    productionUnit: "Forma",
+    salesUnit: "Un",
+    salesToKgFactor: 0.098,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 4.218,
+    isMpiIngredient: false,
+  },
+  {
+    id: "product-pudim-medio",
+    code: "PR-02205",
+    name: "Pudim Leite Condensado Médio",
+    description: "Pudim médio para exposição e encomenda.",
+    lineId: "line-confeitaria",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 4,
+    minimumProductionKg: 10,
+    economicProductionKg: 16,
+    allowsStorage: true,
+    productionDays: ["segunda", "quarta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 0.311),
+      production: createUnitProfile("Forma", "Forma média", 8.698),
+      expedition: createUnitProfile("Caixa", "Caixa média", 8.698),
+    },
+    packagingProfile: {
+      unit: "Caixa",
+      description: "Caixa com 28 unidades",
+      weightKg: 8.698,
+      quantityPerPackage: 28,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-pudim-medio-1",
+        sourceType: "produto",
+        sourceId: "product-mpi-base-pudim",
+        label: "MPI Base para Pudim",
+        quantity: 8.697,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-pudim-medio-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-calda-pudim",
+        label: "Calda para Pudim",
+        quantity: 0.571,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Dosar a base, cobrir com calda e finalizar no forno.",
+    breakPercent: 1.2,
+    breakStage: "depois_forno",
+    breakComment: "Ajuste de rendimento após resfriamento.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(0.311),
+    productionUnit: "Forma",
+    salesUnit: "Un",
+    salesToKgFactor: 0.311,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 8.698,
+    isMpiIngredient: false,
+  },
+  {
+    id: "product-pudim-grande",
+    code: "PR-00378",
+    name: "Pudim Leite Condensado Grande",
+    description: "Pudim grande para confeitaria.",
+    lineId: "line-confeitaria",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 4,
+    minimumProductionKg: 8,
+    economicProductionKg: 12,
+    allowsStorage: true,
+    productionDays: ["segunda", "quarta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 1.065),
+      production: createUnitProfile("Forma", "Forma grande", 2.13),
+      expedition: createUnitProfile("Caixa", "Caixa grande", 2.13),
+    },
+    packagingProfile: {
+      unit: "Caixa",
+      description: "Caixa com 2 unidades",
+      weightKg: 2.13,
+      quantityPerPackage: 2,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-pudim-grande-1",
+        sourceType: "produto",
+        sourceId: "product-mpi-base-pudim",
+        label: "MPI Base para Pudim",
+        quantity: 2.13,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-pudim-grande-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-calda-pudim",
+        label: "Calda para Pudim",
+        quantity: 0.089,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Montagem em forma grande com calda e cocção lenta.",
+    breakPercent: 0.8,
+    breakStage: "depois_forno",
+    breakComment: "Perda mínima após desenformar.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(1.065),
+    productionUnit: "Forma",
+    salesUnit: "Un",
+    salesToKgFactor: 1.065,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 2.13,
+    isMpiIngredient: false,
+  },
+  {
+    id: "product-brownie",
+    code: "PR-74090",
+    name: "Brownie Tradicional",
+    description: "Brownie embalado individualmente, vendido em kg.",
+    lineId: "line-confeitaria",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 6,
+    minimumProductionKg: 70,
+    economicProductionKg: 110,
+    allowsStorage: true,
+    productionDays: ["terca", "quinta", "sabado"],
+    unitProfiles: {
+      sales: createUnitProfile("Kg", "Venda a granel", 1),
+      production: createUnitProfile("Assadeira", "Assadeira padrão", 1.2),
+      expedition: createUnitProfile("Caixa", "Caixa fechada", 2.4),
+    },
+    packagingProfile: {
+      unit: "Un",
+      description: "Brownie embalado individualmente",
+      weightKg: 0.12,
+      quantityPerPackage: 20,
+    },
+    isSoldLoose: true,
+    recipe: [
+      {
+        id: "recipe-brownie-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-mistura-neutra",
+        label: "Mistura Neutra de Bolo",
+        quantity: 0.82,
+        unit: "Kg",
+      },
+      {
+        id: "recipe-brownie-2",
+        sourceType: "ingrediente",
+        sourceId: "ing-ovo",
+        label: "Ovo Pasteurizado",
+        quantity: 0.18,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Misturar, assar e porcionar individualmente.",
+    breakPercent: 8,
+    breakStage: "depois_divisao",
+    breakComment: "Considerar rebarbas no porcionamento individual.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(1),
+    productionUnit: "Assadeira",
+    salesUnit: "Kg",
+    salesToKgFactor: 1,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 2.4,
+    isMpiIngredient: false,
+  },
+  {
+    id: "product-frango-assado",
+    code: "PR-44810",
+    name: "Frango Assado",
+    description: "Frango inteiro assado para rotisseria.",
+    lineId: "line-rotisseria",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 2,
+    minimumProductionKg: 180,
+    economicProductionKg: 260,
+    allowsStorage: false,
+    productionDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 1.6),
+      production: createUnitProfile("Assadeira", "Assadeira do forno", 8),
+      expedition: createUnitProfile("Caixa", "Caixa térmica", 8),
+    },
+    packagingProfile: {
+      unit: "Caixa",
+      description: "Caixa térmica com 5 unidades",
+      weightKg: 8,
+      quantityPerPackage: 5,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-frango-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-acucar",
+        label: "Tempero Base",
+        quantity: 0.04,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Temperar, assar e embalar em caixa térmica.",
+    breakPercent: 3,
+    breakStage: "antes_forno",
+    breakComment: "Ajuste de perda de cocção antes do forno.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(1.6),
+    productionUnit: "Assadeira",
+    salesUnit: "Un",
+    salesToKgFactor: 1.6,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 8,
+    isMpiIngredient: false,
+  },
+  {
+    id: "product-lasanha",
+    code: "PR-44811",
+    name: "Lasanha Bolonhesa",
+    description: "Travessa de lasanha para rotisseria.",
+    lineId: "line-rotisseria",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 5,
+    minimumProductionKg: 140,
+    economicProductionKg: 210,
+    allowsStorage: true,
+    productionDays: ["segunda", "quarta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Travessa", "Travessa de venda", 3.8),
+      production: createUnitProfile("Travessa", "Travessa de produção", 3.8),
+      expedition: createUnitProfile("Caixa", "Caixa de transporte", 7.6),
+    },
+    packagingProfile: {
+      unit: "Caixa",
+      description: "Caixa com 2 travessas",
+      weightKg: 7.6,
+      quantityPerPackage: 2,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-lasanha-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-mistura-neutra",
+        label: "Base Molho",
+        quantity: 0.72,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Montar em camadas, assar e resfriar antes da expedição.",
+    breakPercent: 2.5,
+    breakStage: "depois_forno",
+    breakComment: "Quebra após assar e resfriar.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(3.8),
+    productionUnit: "Travessa",
+    salesUnit: "Travessa",
+    salesToKgFactor: 3.8,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 7.6,
+    isMpiIngredient: false,
+  },
+  {
     id: "product-coxinha",
     code: "PR-33991",
     name: "Coxinha",
+    description: "Salgado unitário de vitrine.",
     lineId: "line-salgados",
     active: true,
-    weight: "0.11 Kg",
+    availableForOrdering: true,
     validityDays: 2,
     minimumProductionKg: 110,
     economicProductionKg: 145,
-    productionUnit: "Un",
+    allowsStorage: false,
+    productionDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 0.11),
+      production: createUnitProfile("Bandeja", "Bandeja de fritura", 2.2),
+      expedition: createUnitProfile("Caixa", "Caixa de expedição", 2.2),
+    },
+    packagingProfile: {
+      unit: "Caixa",
+      description: "Caixa com 20 unidades",
+      weightKg: 2.2,
+      quantityPerPackage: 20,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-coxinha-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-farinha",
+        label: "Farinha de Trigo",
+        quantity: 0.4,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Modelar, empanar e fritar.",
+    breakPercent: 3,
+    breakStage: "depois_divisao",
+    breakComment: "Ajuste por empanamento e fritura.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(0.11),
+    productionUnit: "Bandeja",
     salesUnit: "Un",
     salesToKgFactor: 0.11,
-    expeditionUnit: "Un",
-    expeditionToKgFactor: 0.11,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 2.2,
     isMpiIngredient: false,
   },
   {
     id: "product-empada-frango",
     code: "PR-33992",
     name: "Empada de Frango",
+    description: "Empada unitária de balcão.",
     lineId: "line-salgados",
     active: true,
-    weight: "0.13 Kg",
+    availableForOrdering: true,
     validityDays: 3,
     minimumProductionKg: 95,
     economicProductionKg: 130,
-    productionUnit: "Un",
+    allowsStorage: false,
+    productionDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    unitProfiles: {
+      sales: createUnitProfile("Un", "Unidade de venda", 0.13),
+      production: createUnitProfile("Bandeja", "Bandeja de forno", 2.6),
+      expedition: createUnitProfile("Caixa", "Caixa padrão", 2.6),
+    },
+    packagingProfile: {
+      unit: "Caixa",
+      description: "Caixa com 20 unidades",
+      weightKg: 2.6,
+      quantityPerPackage: 20,
+    },
+    isSoldLoose: false,
+    recipe: [
+      {
+        id: "recipe-empada-1",
+        sourceType: "ingrediente",
+        sourceId: "ing-farinha",
+        label: "Farinha de Trigo",
+        quantity: 0.46,
+        unit: "Kg",
+      },
+    ],
+    preparationMode: "Forrar, rechear e assar.",
+    breakPercent: 2.8,
+    breakStage: "depois_forno",
+    breakComment: "Pequenas perdas na saída do forno.",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: createLegacyWeight(0.13),
+    productionUnit: "Bandeja",
     salesUnit: "Un",
     salesToKgFactor: 0.13,
-    expeditionUnit: "Un",
-    expeditionToKgFactor: 0.13,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 2.6,
     isMpiIngredient: false,
   },
 ];
 
-export const weeklySchedules: WeeklyProductionSchedule[] = [
+const weeklyScheduleMetadata: Omit<WeeklyProductionSchedule, "items">[] = [
   {
     id: "schedule-paes",
     code: "SL-8401",
-    name: "Sublinha Pães Tradicionais",
+    name: "Linha Pães Tradicionais",
     lineId: "line-paes",
     status: "ativo",
     createdAt: "2026-02-10",
     createdBy: "Fernanda Engenharia",
     auditedAt: "2026-02-11",
     auditedBy: "Marcos Fábrica",
-    auditNotes: "Sublinha liberada para execução contínua.",
-    items: [
-      {
-        id: "item-1",
-        productId: "product-pao-frances",
-        minimumProduction: 2200,
-        productionDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
-      },
-      {
-        id: "item-2",
-        productId: "product-pao-forma",
-        minimumProduction: 520,
-        productionDays: ["segunda", "quarta", "sexta"],
-      },
-      {
-        id: "item-6",
-        productId: "product-pao-doce",
-        minimumProduction: 860,
-        productionDays: ["terca", "quinta", "sabado"],
-      },
-    ],
+    auditNotes: "Linha liberada para execução contínua.",
   },
   {
     id: "schedule-confeitaria",
     code: "SL-8402",
-    name: "Sublinha Confeitaria Padrão",
+    name: "Linha Confeitaria Base",
     lineId: "line-confeitaria",
     status: "ativo",
     createdAt: "2026-02-12",
     createdBy: "Fernanda Engenharia",
     auditedAt: "2026-02-13",
     auditedBy: "Marcos Fábrica",
-    auditNotes: "Sublinha validada com mix de bolos e confeitaria fina.",
-    items: [
-      {
-        id: "item-3",
-        productId: "product-bolo-tapioca",
-        minimumProduction: 90,
-        productionDays: ["terca", "quinta", "sabado"],
-      },
-      {
-        id: "item-4",
-        productId: "product-sonho",
-        minimumProduction: 240,
-        productionDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
-      },
-      {
-        id: "item-7",
-        productId: "product-brownie",
-        minimumProduction: 80,
-        productionDays: ["quarta", "sexta", "sabado"],
-      },
-    ],
+    auditNotes: "Linha validada com foco em pudins e confeitaria fina.",
   },
   {
     id: "schedule-rotisseria",
     code: "SL-8403",
-    name: "Sublinha Rotisseria Quentes",
+    name: "Linha Rotisseria Quentes",
     lineId: "line-rotisseria",
     status: "ativo",
     createdAt: "2026-02-14",
     createdBy: "Fernanda Engenharia",
     auditedAt: "2026-02-15",
     auditedBy: "Marcos Fábrica",
-    auditNotes: "Sublinha preparada para assados e travessas.",
-    items: [
-      {
-        id: "item-8",
-        productId: "product-frango-assado",
-        minimumProduction: 150,
-        productionDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
-      },
-      {
-        id: "item-9",
-        productId: "product-lasanha",
-        minimumProduction: 70,
-        productionDays: ["segunda", "quarta", "sexta"],
-      },
-    ],
+    auditNotes: "Linha preparada para assados e travessas.",
   },
   {
     id: "schedule-salgados",
     code: "SL-8404",
-    name: "Sublinha Salgados Forno e Frito",
+    name: "Linha Salgados Forno e Frito",
     lineId: "line-salgados",
     status: "ativo",
     createdAt: "2026-02-14",
     createdBy: "Fernanda Engenharia",
     auditedAt: "2026-02-15",
     auditedBy: "Marcos Fábrica",
-    auditNotes: "Sublinha ativa para abastecimento diário de salgado.",
-    items: [
-      {
-        id: "item-10",
-        productId: "product-coxinha",
-        minimumProduction: 1300,
-        productionDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
-      },
-      {
-        id: "item-11",
-        productId: "product-empada-frango",
-        minimumProduction: 950,
-        productionDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
-      },
-    ],
-  },
-  {
-    id: "schedule-biscoitos",
-    code: "SL-8405",
-    name: "Sublinha Biscoitos Secos",
-    lineId: "line-biscoitos",
-    status: "inativo",
-    createdAt: "2026-02-12",
-    createdBy: "Fernanda Engenharia",
-    auditedAt: "2026-02-13",
-    auditedBy: "Marcos Fábrica",
-    auditNotes: "Linha desativada até ajuste de capacidade.",
-    deactivatedAt: "2026-02-13",
-    deactivatedBy: "Marcos Fábrica",
-    items: [
-      {
-        id: "item-5",
-        productId: "product-mistura-pao",
-        minimumProduction: 65,
-        productionDays: ["quarta"],
-      },
-    ],
+    auditNotes: "Linha ativa para abastecimento diário de salgado.",
   },
 ];
 
 export const sectorsById = new Map(productionSectors.map((sector) => [sector.id, sector]));
 export const linesById = new Map(productionLines.map((line) => [line.id, line]));
 export const productsById = new Map(productionProducts.map((product) => [product.id, product]));
+export const ingredientsById = new Map(productionIngredients.map((ingredient) => [ingredient.id, ingredient]));
+export const storesById = new Map(storesMasterData.map((store) => [store.id, store]));
+
+function sortProductionDays(days: ProductionWeekDay[]) {
+  const indexByDay = new Map(productionWeekDays.map((day, index) => [day.key, index]));
+  return [...days].sort((a, b) => (indexByDay.get(a) ?? 0) - (indexByDay.get(b) ?? 0));
+}
+
+function buildDerivedScheduleItems(lineId: string, products = productionProducts): WeeklyScheduleItem[] {
+  return products
+    .filter((product) => product.lineId === lineId && product.active)
+    .map((product) => ({
+      id: `item-${lineId}-${product.id}`,
+      productId: product.id,
+      minimumProduction: product.minimumProductionKg,
+      productionDays: sortProductionDays(product.productionDays),
+    }));
+}
+
+export const weeklySchedules: WeeklyProductionSchedule[] = weeklyScheduleMetadata.map((schedule) => ({
+  ...schedule,
+  items: buildDerivedScheduleItems(schedule.lineId),
+}));
 
 export function getLinesBySector(sectorId: string) {
   return productionLines.filter((line) => line.sectorId === sectorId);
@@ -510,8 +1183,19 @@ export function getProductsByLine(lineId: string) {
   return productionProducts.filter((product) => product.lineId === lineId);
 }
 
+export function getOrderableProductsByLine(lineId: string) {
+  return productionProducts.filter(
+    (product) => product.lineId === lineId && product.active && product.availableForOrdering,
+  );
+}
+
 export function getSchedulesByLine(lineId: string, schedules: WeeklyProductionSchedule[]) {
-  return schedules.filter((schedule) => schedule.lineId === lineId);
+  return schedules
+    .filter((schedule) => schedule.lineId === lineId)
+    .map((schedule) => ({
+      ...schedule,
+      items: buildDerivedScheduleItems(lineId),
+    }));
 }
 
 export function getMinimumProductionTotal(schedule: WeeklyProductionSchedule) {
@@ -519,9 +1203,80 @@ export function getMinimumProductionTotal(schedule: WeeklyProductionSchedule) {
 }
 
 export function getPlannedDaysCount(schedule: WeeklyProductionSchedule) {
-  return schedule.items.reduce((sum, item) => sum + item.productionDays.length, 0);
+  return new Set(schedule.items.flatMap((item) => item.productionDays)).size;
+}
+
+export function getStoreReceivesSunday(store: Pick<StoreMasterData, "receivingDays">) {
+  return store.receivingDays.includes("domingo");
+}
+
+export function getStoreCanOrderSunday(store: Pick<StoreMasterData, "orderingDays">) {
+  return store.orderingDays.includes("domingo");
+}
+
+function convertKnownUnitToKg(quantity: number, unit: UnitCode): number {
+  switch (unit) {
+    case "Kg":
+      return quantity;
+    case "g":
+      return quantity / 1000;
+    case "L":
+      return quantity;
+    case "ml":
+      return quantity / 1000;
+    default:
+      return quantity;
+  }
+}
+
+function getRecipeReferenceWeightKg(item: RecipeIngredientReference) {
+  if (item.sourceType === "ingrediente") {
+    const ingredient = ingredientsById.get(item.sourceId);
+    if (!ingredient) {
+      return convertKnownUnitToKg(item.quantity, item.unit);
+    }
+    if (ingredient.unit === "Kg" || ingredient.unit === "L") {
+      return convertKnownUnitToKg(item.quantity, item.unit);
+    }
+    return convertKnownUnitToKg(item.quantity, ingredient.unit);
+  }
+
+  const product = productsById.get(item.sourceId);
+  if (!product) {
+    return convertKnownUnitToKg(item.quantity, item.unit);
+  }
+  return item.unit === "Kg"
+    ? item.quantity
+    : item.quantity * (product.ingredientProfile?.weightKg ?? product.unitProfiles.sales.weightKg);
+}
+
+export function getRecipeTotalKg(recipe: RecipeIngredientReference[]) {
+  return Number(recipe.reduce((sum, item) => sum + getRecipeReferenceWeightKg(item), 0).toFixed(3));
+}
+
+export function getProductRecipeTotals(product: ProductionProduct) {
+  const totalIngredientsKg = getRecipeTotalKg(product.recipe);
+  const outputAfterBreakKg = Number((totalIngredientsKg * (1 - product.breakPercent / 100)).toFixed(3));
+
+  return {
+    totalIngredientsKg,
+    outputAfterBreakKg,
+  };
+}
+
+export function getLinePlannedKgPerDay(lineId: string) {
+  return getProductsByLine(lineId).reduce<Record<ProductionWeekDay, number>>((acc, product) => {
+    product.productionDays.forEach((day) => {
+      acc[day] = Number(((acc[day] ?? 0) + product.minimumProductionKg).toFixed(2));
+    });
+    return acc;
+  }, {} as Record<ProductionWeekDay, number>);
 }
 
 export function formatDateBr(dateIso: string) {
-  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${dateIso}T00:00:00`));
+  const [year, month, day] = dateIso.split("-");
+  if (!year || !month || !day) {
+    return dateIso;
+  }
+  return `${day}/${month}/${year}`;
 }

@@ -17,6 +17,7 @@ export interface StoreOrderDetailItem {
   name: string;
   category: string;
   unit: UnitCode;
+  operationalUnit: UnitCode;
   quantity: number;
 }
 
@@ -43,11 +44,11 @@ const mockStoreOrderDetails: StoreOrderDetail[] = [
     receiveWindow: "07:30 - 10:00",
     note: "Pedido padrão do dia. Entrega prevista dentro da janela comercial.",
     items: [
-      { id: "order-1443-item-1", code: "PR-6397", name: "Pão Teste", category: "Panificação", unit: "Kg", quantity: 50 },
-      { id: "order-1443-item-2", code: "PR-8337", name: "Pão Francês", category: "Panificação", unit: "Un", quantity: 200 },
-      { id: "order-1443-item-3", code: "PR-5279", name: "Bolo Tapioca", category: "Confeitaria", unit: "Forma", quantity: 10 },
-      { id: "order-1443-item-4", code: "PR-7407", name: "Sonho", category: "Confeitaria", unit: "Dz", quantity: 15 },
-      { id: "order-1443-item-5", code: "PR-2245", name: "Biscoito", category: "Secos", unit: "g", quantity: 5000 },
+      { id: "order-1443-item-1", code: "PR-6397", name: "Pão Teste", category: "Panificação", unit: "Kg", operationalUnit: "Kg", quantity: 50 },
+      { id: "order-1443-item-2", code: "PR-8337", name: "Pão Francês", category: "Panificação", unit: "Un", operationalUnit: "Un", quantity: 200 },
+      { id: "order-1443-item-3", code: "PR-5279", name: "Bolo Tapioca", category: "Confeitaria", unit: "Forma", operationalUnit: "Forma", quantity: 10 },
+      { id: "order-1443-item-4", code: "PR-7407", name: "Sonho", category: "Confeitaria", unit: "Dz", operationalUnit: "Bandeja", quantity: 15 },
+      { id: "order-1443-item-5", code: "PR-2245", name: "Biscoito", category: "Secos", unit: "g", operationalUnit: "Pacote", quantity: 5000 },
     ],
   },
   {
@@ -63,9 +64,9 @@ const mockStoreOrderDetails: StoreOrderDetail[] = [
     receiveWindow: "06:00 - 08:30",
     note: "Loja habilitada para receber domingo.",
     items: [
-      { id: "order-1442-item-1", code: "PR-8337", name: "Pão Francês", category: "Panificação", unit: "Un", quantity: 180 },
-      { id: "order-1442-item-2", code: "PR-1120", name: "Broa de Milho", category: "Panificação", unit: "Un", quantity: 120 },
-      { id: "order-1442-item-3", code: "PR-7001", name: "Bolo de Fubá", category: "Confeitaria", unit: "Forma", quantity: 8 },
+      { id: "order-1442-item-1", code: "PR-8337", name: "Pão Francês", category: "Panificação", unit: "Un", operationalUnit: "Un", quantity: 180 },
+      { id: "order-1442-item-2", code: "PR-1120", name: "Broa de Milho", category: "Panificação", unit: "Un", operationalUnit: "Un", quantity: 120 },
+      { id: "order-1442-item-3", code: "PR-7001", name: "Bolo de Fubá", category: "Confeitaria", unit: "Forma", operationalUnit: "Forma", quantity: 8 },
     ],
   },
   {
@@ -81,10 +82,10 @@ const mockStoreOrderDetails: StoreOrderDetail[] = [
     receiveWindow: "08:00 - 11:00",
     note: "Expedição confirmada com rota prioritária.",
     items: [
-      { id: "order-1441-item-1", code: "PR-9002", name: "Pão de Batata", category: "Panificação", unit: "Un", quantity: 140 },
-      { id: "order-1441-item-2", code: "PR-4450", name: "Bolo de Cenoura", category: "Confeitaria", unit: "Forma", quantity: 12 },
-      { id: "order-1441-item-3", code: "PR-9911", name: "Cookie Gotas", category: "Secos", unit: "g", quantity: 3200 },
-      { id: "order-1441-item-4", code: "PR-3010", name: "Croissant", category: "Congelados", unit: "Un", quantity: 90 },
+      { id: "order-1441-item-1", code: "PR-9002", name: "Pão de Batata", category: "Panificação", unit: "Un", operationalUnit: "Un", quantity: 140 },
+      { id: "order-1441-item-2", code: "PR-4450", name: "Bolo de Cenoura", category: "Confeitaria", unit: "Forma", operationalUnit: "Forma", quantity: 12 },
+      { id: "order-1441-item-3", code: "PR-9911", name: "Cookie Gotas", category: "Secos", unit: "g", operationalUnit: "Pacote", quantity: 3200 },
+      { id: "order-1441-item-4", code: "PR-3010", name: "Croissant", category: "Congelados", unit: "Un", operationalUnit: "Un", quantity: 90 },
     ],
   },
 ];

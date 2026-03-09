@@ -18,26 +18,26 @@ export default function SetorDetailsPage() {
   if (!sector) {
     return (
       <PageLayout
-        title="Setor não encontrado"
-        description="O setor solicitado não existe ou foi removido."
+        title="Categoria não encontrada"
+        description="A categoria solicitada não existe ou foi removida."
         badge="Dados Mestres"
         breadcrumbs={[
           { label: "Gestor de Dados", href: "/gestor-dados" },
-          { label: "Setores", href: "/gestor-dados/setores" },
+          { label: "Categorias", href: "/gestor-dados/setores" },
           { label: "Detalhes" },
         ]}
         actions={
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/setores">
               <ArrowLeft className="size-4" />
-              Voltar para setores
+              Voltar para categorias
             </Link>
           </Button>
         }
       >
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Verifique se o código do setor está correto e tente novamente.
+            Verifique se o código da categoria está correto e tente novamente.
           </CardContent>
         </Card>
       </PageLayout>
@@ -50,11 +50,11 @@ export default function SetorDetailsPage() {
   return (
     <PageLayout
       title={`${sector.code} · ${sector.name}`}
-      description="Visualize os detalhes do setor e as linhas de produção vinculadas."
+      description="Visualize os detalhes da categoria e as subcategorias vinculadas."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
-        { label: "Setores", href: "/gestor-dados/setores" },
+        { label: "Categorias", href: "/gestor-dados/setores" },
         { label: sector.name },
       ]}
       actions={
@@ -62,13 +62,13 @@ export default function SetorDetailsPage() {
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/setores">
               <ArrowLeft className="size-4" />
-              Voltar para setores
+              Voltar para categorias
             </Link>
           </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/linhas-producao">
               <Factory className="size-4" />
-              Ver todas as linhas
+              Ver todas as subcategorias
             </Link>
           </Button>
         </div>
@@ -85,7 +85,7 @@ export default function SetorDetailsPage() {
             <p className="mt-1 text-sm font-semibold">{sector.responsible}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linhas vinculadas</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Subcategorias vinculadas</p>
             <p className="mt-1 text-sm font-semibold">
               {lines.length} ({activeLines} ativas)
             </p>
@@ -101,11 +101,11 @@ export default function SetorDetailsPage() {
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Linhas de Produção Vinculadas</CardTitle>
+          <CardTitle>Subcategorias Vinculadas</CardTitle>
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/linhas-producao">
               <Users className="size-4" />
-              Ir para módulo de linhas
+              Ir para módulo de subcategorias
             </Link>
           </Button>
         </CardHeader>
@@ -115,7 +115,7 @@ export default function SetorDetailsPage() {
               <thead className="bg-panel">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Código</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Subcategoria</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Tipo</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Horário</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Capacidade/dia</th>
@@ -130,7 +130,7 @@ export default function SetorDetailsPage() {
                       colSpan={7}
                       className="border-t border-border/70 bg-card px-4 py-3 text-sm text-muted-foreground"
                     >
-                      Este setor ainda não possui linhas de produção vinculadas.
+                      Esta categoria ainda não possui subcategorias vinculadas.
                     </td>
                   </tr>
                 ) : (
@@ -146,7 +146,7 @@ export default function SetorDetailsPage() {
                       </td>
                       <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
                         <Button asChild type="button" size="sm" variant="outline">
-                          <Link href={`/gestor-dados/linhas-producao/${line.id}`}>Abrir linha</Link>
+                          <Link href={`/gestor-dados/linhas-producao/${line.id}`}>Abrir subcategoria</Link>
                         </Button>
                       </td>
                     </tr>

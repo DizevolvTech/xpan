@@ -13,7 +13,7 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryOrderStatus, useFactoryOrderStatus } from "@/lib/factory-order-status";
+import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import {
   type DeliveryExecutionStatus,
   useDeliveryExecution,
@@ -89,13 +89,17 @@ export default function EntregasPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const statusState = useFactoryOrderStatus(referenceDate);
+  const workflow = useFactoryWorkflowState(referenceDate);
   const deliveryExecutionState = useDeliveryExecution(referenceDate);
 
   const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
   const planningData = useMemo(
-    () => applyFactoryOrderStatus(basePlanningData, statusState.resolveStatus),
-    [basePlanningData, statusState.resolveStatus],
+    () =>
+      applyFactoryWorkflowState(basePlanningData, {
+        isReleased: workflow.isReleased,
+        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
+      }),
+    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
   );
 
   const deliveryRows = useMemo<DeliveryRow[]>(
@@ -116,7 +120,10 @@ export default function EntregasPage() {
         })
         .map((item, index) => {
           const routeMeta = buildRouteMeta(item, index);
-          const execution = deliveryExecutionState.resolveExecution(item.orderId, item.status);
+          const execution = deliveryExecutionState.resolveExecution(
+            item.orderId,
+            item.status === "aguardando_expedicao",
+          );
 
           return {
             ...item,

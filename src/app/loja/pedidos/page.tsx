@@ -32,7 +32,19 @@ import { Label } from "@/components/ui/label";
 import { buildStoreOrderProductsMock, type StoreOrderProduct } from "@/lib/store-order-mock";
 import { storeOrderSummaries, type StoreOrderSummary } from "@/lib/store-orders-mock";
 import { cn } from "@/lib/utils";
-import type { ProductionWeekDay } from "@/lib/production-planning";
+import {
+  getBaseDateByCutoff,
+  getDeliveryDateByStoreRule,
+  moveToNextAllowedWeekday,
+} from "@/lib/order-planning";
+import {
+  getStoreCanOrderSunday,
+  getStoreReceivesSunday,
+  operationalSettings,
+  productionWeekDays,
+  storesMasterData,
+  type ProductionWeekDay,
+} from "@/lib/production-planning";
 
 const initialProducts: StoreOrderProduct[] = buildStoreOrderProductsMock(132);
 
@@ -57,78 +69,13 @@ const PRODUCTION_DAY_BY_FIELD: Record<EditableDayField, ProductionWeekDay> = {
   sab: "sabado",
   dom: "domingo",
 };
-
-type StoreOption = {
-  id: string;
-  name: string;
-  dPlusDays: number;
-  cutoffTime: string;
-  deliveryIntervalDays: number;
-  receivesSunday: boolean;
-};
-
-const mockStores: StoreOption[] = [
-  {
-    id: "store-01",
-    name: "Empório do Pão",
-    dPlusDays: 3,
-    cutoffTime: "18:00",
-    deliveryIntervalDays: 1,
-    receivesSunday: false,
-  },
-  {
-    id: "store-02",
-    name: "Padaria Central",
-    dPlusDays: 2,
-    cutoffTime: "17:30",
-    deliveryIntervalDays: 1,
-    receivesSunday: true,
-  },
-  {
-    id: "store-03",
-    name: "Casa Express Pinheiros",
-    dPlusDays: 4,
-    cutoffTime: "18:30",
-    deliveryIntervalDays: 1,
-    receivesSunday: false,
-  },
-];
+const activeStores = storesMasterData.filter((store) => store.status === "ativo");
+const productionDayLabels = new Map(productionWeekDays.map((day) => [day.key, day.shortLabel]));
 
 function startOfDay(date: Date): Date {
   const value = new Date(date);
   value.setHours(0, 0, 0, 0);
   return value;
-}
-
-function addDays(date: Date, days: number): Date {
-  const value = new Date(date);
-  value.setDate(value.getDate() + days);
-  return value;
-}
-
-function isAfterCutoff(reference: Date, cutoffTime: string): boolean {
-  const [hour, minute] = cutoffTime.split(":").map((part) => Number(part));
-  return reference.getHours() > hour || (reference.getHours() === hour && reference.getMinutes() > minute);
-}
-
-function getBaseDateByCutoff(reference: Date, cutoffTime: string): Date {
-  const base = startOfDay(reference);
-  if (isAfterCutoff(reference, cutoffTime)) {
-    return addDays(base, 1);
-  }
-  return base;
-}
-
-function adjustDeliveryDateBySundayRule(deliveryDate: Date, receivesSunday: boolean): Date {
-  if (receivesSunday || deliveryDate.getDay() !== 0) {
-    return deliveryDate;
-  }
-  return addDays(deliveryDate, 1);
-}
-
-function getDeliveryDateByStoreRule(baseDate: Date, dPlusDays: number, receivesSunday: boolean): Date {
-  const calculatedDate = addDays(baseDate, dPlusDays);
-  return adjustDeliveryDateBySundayRule(calculatedDate, receivesSunday);
 }
 
 function getDayFieldByDate(date: Date): EditableDayField {
@@ -166,21 +113,19 @@ function hasProductionDayBetween(days: ProductionWeekDay[], fromDate: Date, toDa
   return false;
 }
 
-function canDeliverOnDate(
-  product: StoreOrderProduct,
-  baseDate: Date,
-  deliveryDate: Date,
-  intervalDays: number,
-): boolean {
-  const latestProductionDate = addDays(startOfDay(deliveryDate), -Math.max(intervalDays, 0));
-  return hasProductionDayBetween(product.productionDays, startOfDay(baseDate), latestProductionDate);
+function canDeliverOnDate(product: StoreOrderProduct, baseDate: Date, deliveryDate: Date): boolean {
+  return hasProductionDayBetween(product.productionDays, startOfDay(baseDate), startOfDay(deliveryDate));
+}
+
+function formatOperationalDays(days: ProductionWeekDay[]) {
+  return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
 
 export default function PedidosLojaPage() {
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
-  const [selectedStoreId, setSelectedStoreId] = useState(mockStores[0].id);
+  const [selectedStoreId, setSelectedStoreId] = useState(activeStores[0]?.id ?? "");
   const [orderProducts, setOrderProducts] = useState<StoreOrderProduct[]>(initialProducts);
   const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -188,27 +133,39 @@ export default function PedidosLojaPage() {
 
   const referenceDate = useMemo(() => new Date(), []);
   const selectedStore = useMemo(
-    () => mockStores.find((store) => store.id === selectedStoreId) ?? mockStores[0],
+    () => activeStores.find((store) => store.id === selectedStoreId) ?? activeStores[0],
     [selectedStoreId],
   );
-  const baseDate = useMemo(
-    () => getBaseDateByCutoff(referenceDate, selectedStore.cutoffTime),
-    [referenceDate, selectedStore.cutoffTime],
+  const effectiveBaseDateKey = useMemo(() => {
+    const baseDateKey = getBaseDateByCutoff(referenceDate.toISOString(), operationalSettings.orderCutoffTime);
+    return selectedStore
+      ? moveToNextAllowedWeekday(baseDateKey, selectedStore.orderingDays)
+      : baseDateKey;
+  }, [referenceDate, selectedStore]);
+  const deliveryDateKey = useMemo(
+    () => (selectedStore ? getDeliveryDateByStoreRule(effectiveBaseDateKey, selectedStore) : effectiveBaseDateKey),
+    [effectiveBaseDateKey, selectedStore],
   );
-  const deliveryDate = useMemo(
-    () => getDeliveryDateByStoreRule(baseDate, selectedStore.dPlusDays, selectedStore.receivesSunday),
-    [baseDate, selectedStore.dPlusDays, selectedStore.receivesSunday],
-  );
+  const baseDate = useMemo(() => new Date(`${effectiveBaseDateKey}T00:00:00`), [effectiveBaseDateKey]);
+  const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
   const highlightedDay = useMemo(() => getDayFieldByDate(deliveryDate), [deliveryDate]);
   const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
   const deliveryDateLabel = useMemo(() => formatDateWithWeekday(deliveryDate), [deliveryDate]);
+  const orderingDaysLabel = useMemo(
+    () => (selectedStore ? formatOperationalDays(selectedStore.orderingDays) : "-"),
+    [selectedStore],
+  );
+  const receivingDaysLabel = useMemo(
+    () => (selectedStore ? formatOperationalDays(selectedStore.receivingDays) : "-"),
+    [selectedStore],
+  );
   const productsWithAvailability = useMemo(
     () =>
       orderProducts.map((product) => ({
         ...product,
-        available: canDeliverOnDate(product, baseDate, deliveryDate, selectedStore.deliveryIntervalDays),
+        available: canDeliverOnDate(product, baseDate, deliveryDate),
       })),
-    [baseDate, deliveryDate, orderProducts, selectedStore.deliveryIntervalDays],
+    [baseDate, deliveryDate, orderProducts],
   );
 
   const filteredPedidos = useMemo(
@@ -275,6 +232,7 @@ export default function PedidosLojaPage() {
 
   const actions = [
     { icon: "view" as const, label: "Visualizar", onClick: (item: StoreOrderSummary) => router.push(`/loja/pedidos/${item.id}`) },
+    { icon: "print" as const, label: "Imprimir", onClick: (item: StoreOrderSummary) => window.open(`/impressao/pedido-loja/${item.id}`, "_blank", "noopener,noreferrer") },
   ];
 
   const handleQuantityChange = (productId: string, field: EditableDayField, value: number) => {
@@ -315,7 +273,7 @@ export default function PedidosLojaPage() {
         <KPICard title="Total de Pedidos" value={orderKpis.total} icon={ShoppingCart} tone="info" />
         <KPICard title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
         <KPICard title="Em Produção" value={orderKpis.emProducao} icon={Package} tone="neutral" />
-        <KPICard title="Rota de Entrega" value={orderKpis.rotaEntrega} icon={Truck} tone="success" />
+        <KPICard title="Entregas" value={orderKpis.rotaEntrega} icon={Truck} tone="success" />
         <KPICard title="Ocorrências" value="12" icon={AlertCircle} tone="danger" />
       </div>
 
@@ -337,7 +295,7 @@ export default function PedidosLojaPage() {
 
               <div className="space-y-6 py-2">
                 <div className="rounded-lg border border-border/80 bg-panel p-4">
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-4">
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Nome da Loja</Label>
                       <Select value={selectedStore.id} onValueChange={setSelectedStoreId}>
@@ -345,7 +303,7 @@ export default function PedidosLojaPage() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {mockStores.map((store) => (
+                          {activeStores.map((store) => (
                             <SelectItem key={store.id} value={store.id}>
                               {store.name}
                             </SelectItem>
@@ -356,15 +314,29 @@ export default function PedidosLojaPage() {
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Data de Entrega (D+X)</Label>
                       <Input
-                        value={`${deliveryDateLabel} (D+${selectedStore.dPlusDays})`}
+                        value={`${deliveryDateLabel} (D+${operationalSettings.expeditionLeadDays})`}
                         disabled
                         className="border-warning/40 bg-warning/20 font-semibold text-warning-foreground"
                       />
                     </div>
                     <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Horário Limite</Label>
-                      <Input value={selectedStore.cutoffTime} disabled className="bg-muted" />
+                      <Label className="text-xs text-muted-foreground">Horário Limite Global</Label>
+                      <Input value={operationalSettings.orderCutoffTime} disabled className="bg-muted" />
                     </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs text-muted-foreground">Janela de Recebimento</Label>
+                      <Input value={selectedStore.receiveWindow} disabled className="bg-muted" />
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                    <p>
+                      Dias de pedido: <strong>{orderingDaysLabel}</strong>. Domingo permitido:{" "}
+                      <strong>{getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não"}</strong>.
+                    </p>
+                    <p>
+                      Dias de recebimento: <strong>{receivingDaysLabel}</strong>. Recebe domingo:{" "}
+                      <strong>{getStoreReceivesSunday(selectedStore) ? "Sim" : "Não"}</strong>.
+                    </p>
                   </div>
                 </div>
 
