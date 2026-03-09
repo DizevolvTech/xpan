@@ -1,18 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import {
-  SESSION_COOKIE_NAME,
-  authenticateUser,
-  encodeSession,
   roleHomePath,
 } from "@/lib/auth";
+import {
+  findManagedUserByAuthUserId,
+} from "@/lib/supabase-data/admin-users";
+import { createSupabaseRequestClient } from "@/lib/supabase-request-client";
 
 type LoginBody = {
   email?: string;
   password?: string;
 };
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const payload = (await request.json().catch(() => null)) as LoginBody | null;
 
   if (!payload?.email || !payload?.password) {
@@ -22,28 +23,58 @@ export async function POST(request: Request) {
     );
   }
 
-  const sessionUser = authenticateUser(payload.email, payload.password);
-  if (!sessionUser) {
-    return NextResponse.json(
-      { message: "Credenciais inválidas." },
-      { status: 401 },
+  const normalizedEmail = payload.email.trim().toLowerCase();
+  const { supabase, applyResponseCookies } = createSupabaseRequestClient(request);
+  const signInResult = await supabase.auth.signInWithPassword({
+    email: normalizedEmail,
+    password: payload.password,
+  });
+
+  if (signInResult.error || !signInResult.data.user) {
+    return applyResponseCookies(
+      NextResponse.json(
+        {
+          message: signInResult.error?.message ?? "Credenciais inválidas.",
+        },
+        { status: 401 },
+      ),
+    );
+  }
+
+  const managedUser = await findManagedUserByAuthUserId(signInResult.data.user.id, {
+    supabase,
+  });
+
+  if (!managedUser) {
+    await supabase.auth.signOut();
+
+    return applyResponseCookies(
+      NextResponse.json(
+        { message: "Usuário autenticado, mas sem perfil operacional cadastrado." },
+        { status: 403 },
+      ),
+    );
+  }
+
+  if (managedUser.status !== "ativo") {
+    await supabase.auth.signOut();
+
+    return applyResponseCookies(
+      NextResponse.json(
+        { message: "Usuário autenticado, mas o perfil está inativo." },
+        { status: 403 },
+      ),
     );
   }
 
   const response = NextResponse.json({
-    user: sessionUser,
-    redirectTo: roleHomePath[sessionUser.role],
+    user: {
+      role: managedUser.role,
+      email: managedUser.email,
+      name: managedUser.name,
+    },
+    redirectTo: roleHomePath[managedUser.role],
   });
 
-  response.cookies.set({
-    name: SESSION_COOKIE_NAME,
-    value: encodeSession(sessionUser),
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 8,
-  });
-
-  return response;
+  return applyResponseCookies(response);
 }

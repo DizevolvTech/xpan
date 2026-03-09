@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "supabase:gen-types": "npx supabase gen types typescript --project-id $SUPABASE_PROJECT_REF --schema public > src/lib/database.types.ts",
+    "supabase:seed:generate": "tsx scripts/supabase/generate-seed.ts",
+    "supabase:seed:refresh": "tsx scripts/supabase/generate-seed.ts > supabase/seed.sql",
+    "supabase:auth:bootstrap": "tsx scripts/supabase/bootstrap-auth-users.ts",
+    "supabase:remote:status": "tsx scripts/supabase/check-remote-schema.ts",
+    "supabase:sql:bundle": "tsx scripts/supabase/build-bootstrap-sql.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
@@ -30,6 +36,7 @@
     "eslint-config-next": "16.1.6",
     "shadcn": "^3.8.5",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5"
   }

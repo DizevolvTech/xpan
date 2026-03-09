@@ -4,8 +4,8 @@ import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
-import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
+import { getTodayDateKey } from "@/lib/order-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -28,16 +28,7 @@ export default function ProducaoPrintPage() {
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(buildFactoryPlanningData(referenceDate), {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [referenceDate, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
 
   const op = useMemo(
     () => planningData.productionOrders.find((item) => item.id === opId) ?? null,

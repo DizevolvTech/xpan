@@ -2,13 +2,12 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, LockKeyhole, LogIn, Mail, UserRound } from "lucide-react";
+import { Loader2, LockKeyhole, LogIn, Mail, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { loginHints } from "@/lib/auth";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -72,7 +71,7 @@ export default function LoginForm() {
           <CardHeader>
             <CardTitle className="font-heading text-2xl">Acesso ao Casa Express</CardTitle>
             <CardDescription>
-              Faça login para acessar o fluxo operacional correspondente ao seu perfil.
+              Faça login com o usuário provisionado no Supabase Auth para acessar seu fluxo operacional.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -110,11 +109,11 @@ export default function LoginForm() {
                   </div>
                 </div>
 
-                {error && (
+                {error ? (
                   <div className="rounded-lg border border-danger/40 bg-danger/30 px-3 py-2 text-sm text-danger-foreground">
                     {error}
                   </div>
-                )}
+                ) : null}
 
                 <Button type="submit" className="w-full shadow-soft" disabled={submitting}>
                   {submitting ? (
@@ -136,37 +135,30 @@ export default function LoginForm() {
 
         <Card className="border-border/80 bg-card/90 shadow-soft">
           <CardHeader>
-            <CardTitle className="font-heading text-lg">Usuários de teste</CardTitle>
+            <CardTitle className="font-heading text-lg">Sessão e Segurança</CardTitle>
             <CardDescription>
-              Clique em um usuário para preencher login automaticamente.
+              O acesso agora depende exclusivamente do Supabase Auth e do perfil operacional vinculado no banco.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {loginHints.map((user) => (
-              <button
-                key={user.email}
-                type="button"
-                onClick={() => {
-                  setEmail(user.email);
-                  if (user.role === "administrador") setPassword("Admin@123");
-                  if (user.role === "gestor-dados") setPassword("Engenharia@123");
-                  if (user.role === "gestor-fabrica") setPassword("Fabrica@123");
-                  if (user.role === "chao-fabrica") setPassword("Chao@123");
-                  if (user.role === "loja") setPassword("Loja@123");
-                  setError(null);
-                }}
-                className="flex w-full items-center justify-between rounded-lg border border-border/80 bg-panel px-3 py-3 text-left transition hover:border-border-strong/45"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-foreground">{user.name}</p>
-                  <p className="text-xs text-muted-foreground">{user.email}</p>
-                </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary-foreground">
-                  <UserRound className="size-3" />
-                  {user.role}
-                </span>
-              </button>
-            ))}
+          <CardContent className="space-y-4">
+            <div className="rounded-xl border border-border/75 bg-panel/70 p-4">
+              <div className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                <ShieldCheck className="size-4 text-primary" />
+                Regras ativas
+              </div>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>O usuário precisa existir no Supabase Auth.</li>
+                <li>O e-mail autenticado precisa estar vinculado a um perfil em `public.profiles`.</li>
+                <li>Perfis inativos não conseguem iniciar sessão.</li>
+                <li>O acesso às telas segue o papel operacional associado ao perfil.</li>
+              </ul>
+            </div>
+
+            <div className="rounded-xl border border-border/75 bg-panel/70 p-4 text-sm text-muted-foreground">
+              Se precisar redefinir senha ou conferir usuários provisionados, use o painel do Supabase em
+              {" "}
+              <span className="font-mono text-foreground">Authentication -&gt; Users</span>.
+            </div>
           </CardContent>
         </Card>
       </div>

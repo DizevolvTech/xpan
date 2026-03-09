@@ -30,11 +30,10 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
-  productionIngredients,
-  productionProducts,
   type IngredientCompositionItem,
   type ProductionIngredient,
 } from "@/lib/production-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 type IngredientRow = ProductionIngredient;
 
@@ -61,15 +60,19 @@ function buildFormState(ingredient?: IngredientRow | null): IngredientFormState 
 }
 
 export default function IngredientesPage() {
+  const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingIngredient, setEditingIngredient] = useState<IngredientRow | null>(null);
-  const [ingredients, setIngredients] = useState<IngredientRow[]>(productionIngredients);
   const [formState, setFormState] = useState<IngredientFormState>(() => buildFormState());
-  const [draftComponentId, setDraftComponentId] = useState(productionIngredients[0]?.id ?? "");
+  const [draftComponentId, setDraftComponentId] = useState("");
   const [draftComponentQty, setDraftComponentQty] = useState("");
   const [draftComponentUnit, setDraftComponentUnit] = useState<ProductionIngredient["unit"]>("Kg");
   const [draftComponentObservation, setDraftComponentObservation] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const ingredients = snapshot.ingredients;
 
   const filteredIngredients = useMemo(
     () =>
@@ -101,6 +104,7 @@ export default function IngredientesPage() {
       onClick: (item: IngredientRow) => {
         setEditingIngredient(item);
         setFormState(buildFormState(item));
+        setFormError(null);
         setIsDialogOpen(true);
       },
     },
@@ -110,12 +114,13 @@ export default function IngredientesPage() {
       onClick: (item: IngredientRow) => {
         setEditingIngredient(item);
         setFormState(buildFormState(item));
+        setFormError(null);
         setIsDialogOpen(true);
       },
     },
   ];
 
-  const productOptions = productionProducts
+  const productOptions = snapshot.products
     .filter((product) => product.canBeIngredient)
     .map((product) => ({ id: product.id, label: `${product.code} · ${product.name}`, type: "produto" as const }));
 
@@ -132,6 +137,7 @@ export default function IngredientesPage() {
     setDraftComponentQty("");
     setDraftComponentUnit("Kg");
     setDraftComponentObservation("");
+    setFormError(null);
   }
 
   function addCompositionItem() {
@@ -173,27 +179,44 @@ export default function IngredientesPage() {
     }));
   }
 
-  function handleSave() {
-    const nextIngredient: IngredientRow = {
-      id: editingIngredient?.id ?? `ingredient-${Date.now()}`,
-      code: editingIngredient?.code ?? formState.code,
-      name: formState.name,
-      type: formState.type,
-      unit: formState.unit,
-      metadata: formState.metadata,
-      observation: formState.observation,
-      composition: formState.type === "misturado" ? formState.composition : [],
-      status: "ativo",
-    };
+  async function handleSave() {
+    if (!formState.name.trim()) {
+      setFormError("Informe o nome do ingrediente.");
+      return;
+    }
 
-    setIngredients((current) => {
-      if (!editingIngredient) {
-        return [nextIngredient, ...current];
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const response = await fetch(
+        editingIngredient
+          ? `/api/master-data/ingredients/${editingIngredient.id}`
+          : "/api/master-data/ingredients",
+        {
+          method: editingIngredient ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...formState,
+            status: editingIngredient?.status ?? "ativo",
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message ?? "Falha ao salvar ingrediente");
       }
 
-      return current.map((item) => (item.id === editingIngredient.id ? nextIngredient : item));
-    });
-    setIsDialogOpen(false);
+      await refresh();
+      setIsDialogOpen(false);
+    } catch (saveError) {
+      setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar ingrediente");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -208,13 +231,26 @@ export default function IngredientesPage() {
     >
       <div className="grid gap-3 md:grid-cols-2">
         <KPICard title="Registros Ativos" value={`${ingredients.length} ingredientes`} icon={Package} tone="success" />
-        <KPICard title="Última Atualização" value="Há 11 dias" icon={Clock3} tone="neutral" />
+        <KPICard
+          title="Última Atualização"
+          value={isLoading ? "Carregando..." : `${ingredients.filter((item) => item.status === "ativo").length} ativos`}
+          icon={Clock3}
+          tone="neutral"
+        />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Lista de Ingredientes</CardTitle>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog
+            open={isDialogOpen}
+            onOpenChange={(open) => {
+              setIsDialogOpen(open);
+              if (!open) {
+                setFormError(null);
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <Button type="button" onClick={openNewIngredient}>
                 <Plus className="size-4" />
@@ -231,6 +267,12 @@ export default function IngredientesPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-5 py-2">
+                {formError ? (
+                  <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+                    {formError}
+                  </div>
+                ) : null}
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="grid gap-2">
                     <Label htmlFor="ingredient-name">Nome do Ingrediente *</Label>
@@ -348,7 +390,7 @@ export default function IngredientesPage() {
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={handleSave}>
+                <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
                   {editingIngredient ? "Salvar Alterações" : "Cadastrar Ingrediente"}
                 </Button>
               </DialogFooter>
@@ -362,12 +404,17 @@ export default function IngredientesPage() {
             searchValue={searchTerm}
             showFilters={false}
           />
+          {error ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              {error}
+            </div>
+          ) : null}
           <DataTable
             data={filteredIngredients}
             columns={columns}
             actions={actions}
             keyField="id"
-            emptyMessage="Nenhum ingrediente encontrado"
+            emptyMessage={isLoading ? "Carregando ingredientes..." : "Nenhum ingrediente encontrado"}
             stickyHeader
           />
         </CardContent>

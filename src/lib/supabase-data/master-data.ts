@@ -1,0 +1,307 @@
+import "server-only";
+
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { assertSupabaseResult, type SupabaseDataClient } from "@/lib/supabase-data/common";
+import type {
+  IngredientCompositionItem,
+  IngredientProfileMirror,
+  OperationalSettings,
+  PackagingProfile,
+  ProductUnitProfile,
+  ProductionIngredient,
+  ProductionLine,
+  ProductionProduct,
+  ProductionSector,
+  StoreMasterData,
+  WeeklyProductionSchedule,
+  WeeklyScheduleItem,
+} from "@/lib/production-planning";
+
+export interface MasterDataSnapshot {
+  operationalSettings: OperationalSettings;
+  sectors: ProductionSector[];
+  lines: ProductionLine[];
+  ingredients: ProductionIngredient[];
+  stores: StoreMasterData[];
+  products: ProductionProduct[];
+  schedules: WeeklyProductionSchedule[];
+}
+
+type MasterDataSnapshotOptions = {
+  supabase?: SupabaseDataClient;
+  includeProfileNames?: boolean;
+};
+
+function coerceUnitProfile(value: unknown): ProductUnitProfile {
+  const record = (value ?? {}) as Record<string, unknown>;
+
+  return {
+    unit: String(record.unit ?? "Kg") as ProductUnitProfile["unit"],
+    description: String(record.description ?? ""),
+    weightKg: Number(record.weightKg ?? 1),
+  };
+}
+
+function coercePackagingProfile(value: unknown): PackagingProfile | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    unit: String(record.unit ?? "Pacote") as PackagingProfile["unit"],
+    description: String(record.description ?? ""),
+    weightKg: Number(record.weightKg ?? 0),
+    quantityPerPackage: Number(record.quantityPerPackage ?? 0),
+  };
+}
+
+function coerceIngredientProfile(value: unknown): IngredientProfileMirror | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    unit: String(record.unit ?? "Kg") as IngredientProfileMirror["unit"],
+    weightKg: Number(record.weightKg ?? 1),
+    metadata: String(record.metadata ?? ""),
+    observation: String(record.observation ?? ""),
+  };
+}
+
+export async function getMasterDataSnapshot(
+  options: MasterDataSnapshotOptions = {},
+): Promise<MasterDataSnapshot> {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const includeProfileNames = options.includeProfileNames ?? true;
+
+  const [
+    operationalSettingsResult,
+    sectorsResult,
+    linesResult,
+    ingredientsResult,
+    ingredientComponentsResult,
+    storesResult,
+    productsResult,
+    recipeItemsResult,
+    profilesResult,
+    schedulesResult,
+    scheduleSnapshotsResult,
+  ] = await Promise.all([
+    supabase.from("operational_settings").select("*").order("created_at", { ascending: true }).limit(1).maybeSingle(),
+    supabase.from("categories").select("*").order("code", { ascending: true }),
+    supabase.from("subcategories").select("*").order("code", { ascending: true }),
+    supabase.from("ingredients").select("*").order("code", { ascending: true }),
+    supabase.from("ingredient_components").select("*").order("sort_order", { ascending: true }),
+    supabase.from("stores").select("*").order("code", { ascending: true }),
+    supabase.from("products").select("*").order("code", { ascending: true }),
+    supabase.from("product_recipe_items").select("*").order("sort_order", { ascending: true }),
+    includeProfileNames
+      ? supabase.rpc("list_profile_labels")
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from("schedule_lines").select("*").order("code", { ascending: true }),
+    supabase.from("schedule_line_item_snapshots").select("*").order("created_at", { ascending: true }),
+  ]);
+
+  const settingsRow = assertSupabaseResult(
+    { data: operationalSettingsResult.data, error: operationalSettingsResult.error },
+    "Failed to load operational settings",
+  );
+  const sectorRows = assertSupabaseResult(sectorsResult, "Failed to load categories");
+  const lineRows = assertSupabaseResult(linesResult, "Failed to load subcategories");
+  const ingredientRows = assertSupabaseResult(ingredientsResult, "Failed to load ingredients");
+  const ingredientComponentRows = assertSupabaseResult(
+    ingredientComponentsResult,
+    "Failed to load ingredient components",
+  );
+  const storeRows = assertSupabaseResult(storesResult, "Failed to load stores");
+  const productRows = assertSupabaseResult(productsResult, "Failed to load products");
+  const recipeRows = assertSupabaseResult(recipeItemsResult, "Failed to load product recipe items");
+  const profileRows = assertSupabaseResult(
+    profilesResult as { data: Array<{ id: string; name: string }>; error: { message: string } | null },
+    "Failed to load profile labels",
+  );
+  const scheduleRows = assertSupabaseResult(schedulesResult, "Failed to load schedule lines");
+  const scheduleSnapshotRows = assertSupabaseResult(
+    scheduleSnapshotsResult,
+    "Failed to load schedule snapshots",
+  );
+
+  const sectors: ProductionSector[] = sectorRows.map((row) => ({
+    id: row.legacy_id ?? row.id,
+    code: row.code,
+    name: row.name,
+    responsible: row.responsible,
+    status: row.status,
+  }));
+
+  const categoryLegacyById = new Map(sectorRows.map((row) => [row.id, row.legacy_id ?? row.id]));
+
+  const lines: ProductionLine[] = lineRows.map((row) => ({
+    id: row.legacy_id ?? row.id,
+    code: row.code,
+    name: row.name,
+    sectorId: categoryLegacyById.get(row.category_id) ?? row.category_id,
+    type: row.type as ProductionLine["type"],
+    operatingHours: row.operating_hours,
+    capacityPerDayKg: Number(row.capacity_per_day_kg),
+    status: row.status,
+  }));
+
+  const ingredientLegacyById = new Map(ingredientRows.map((row) => [row.id, row.legacy_id ?? row.id]));
+  const productLegacyById = new Map(productRows.map((row) => [row.id, row.legacy_id ?? row.id]));
+  const lineLegacyById = new Map(lineRows.map((row) => [row.id, row.legacy_id ?? row.id]));
+
+  const compositionByIngredientId = ingredientComponentRows.reduce<Map<string, IngredientCompositionItem[]>>(
+    (acc, row) => {
+      const key = ingredientLegacyById.get(row.ingredient_id) ?? row.ingredient_id;
+      const current = acc.get(key) ?? [];
+      current.push({
+        id: row.id,
+        ingredientId: row.ingredient_reference_id
+          ? ingredientLegacyById.get(row.ingredient_reference_id) ?? row.ingredient_reference_id
+          : undefined,
+        productId: row.product_reference_id
+          ? productLegacyById.get(row.product_reference_id) ?? row.product_reference_id
+          : undefined,
+        name: row.name,
+        quantity: Number(row.quantity),
+        unit: row.unit as IngredientCompositionItem["unit"],
+        observation: row.observation,
+      });
+      acc.set(key, current);
+      return acc;
+    },
+    new Map(),
+  );
+
+  const ingredients: ProductionIngredient[] = ingredientRows.map((row) => ({
+    id: row.legacy_id ?? row.id,
+    code: row.code,
+    name: row.name,
+    type: row.type,
+    unit: row.unit as ProductionIngredient["unit"],
+    metadata: row.metadata,
+    observation: row.observation,
+    composition: compositionByIngredientId.get(row.legacy_id ?? row.id) ?? [],
+    status: row.status,
+  }));
+
+  const stores: StoreMasterData[] = storeRows.map((row) => ({
+    id: row.legacy_id ?? row.id,
+    code: row.code,
+    name: row.name,
+    responsible: row.responsible,
+    email: row.email,
+    phone: row.phone,
+    status: row.status,
+    receiveWindow: row.receive_window,
+    orderingDays: row.ordering_days as StoreMasterData["orderingDays"],
+    receivingDays: row.receiving_days as StoreMasterData["receivingDays"],
+  }));
+
+  const recipeByProductId = recipeRows.reduce<Map<string, ProductionProduct["recipe"]>>((acc, row) => {
+    const key = productLegacyById.get(row.product_id) ?? row.product_id;
+    const current = acc.get(key) ?? [];
+    current.push({
+      id: row.id,
+      sourceType: row.source_type,
+      sourceId:
+        row.source_type === "ingrediente"
+          ? ingredientLegacyById.get(row.ingredient_source_id ?? "") ?? row.ingredient_source_id ?? ""
+          : productLegacyById.get(row.product_source_id ?? "") ?? row.product_source_id ?? "",
+      label: row.label,
+      quantity: Number(row.quantity),
+      unit: row.unit as ProductionProduct["recipe"][number]["unit"],
+    });
+    acc.set(key, current);
+    return acc;
+  }, new Map());
+
+  const products: ProductionProduct[] = productRows.map((row) => ({
+    id: row.legacy_id ?? row.id,
+    code: row.code,
+    name: row.name,
+    description: row.description,
+    lineId: lineLegacyById.get(row.subcategory_id) ?? row.subcategory_id,
+    active: row.active,
+    availableForOrdering: row.available_for_ordering,
+    validityDays: row.validity_days,
+    minimumProductionKg: Number(row.minimum_production_kg),
+    economicProductionKg: Number(row.economic_production_kg),
+    allowsStorage: row.allows_storage,
+    productionDays: row.production_days as ProductionProduct["productionDays"],
+    unitProfiles: {
+      sales: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).sales),
+      production: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).production),
+      expedition: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).expedition),
+    },
+    packagingProfile: coercePackagingProfile(row.packaging_profile),
+    isSoldLoose: row.is_sold_loose,
+    recipe: recipeByProductId.get(row.legacy_id ?? row.id) ?? [],
+    preparationMode: row.preparation_mode,
+    breakPercent: Number(row.break_percent),
+    breakStage: row.break_stage,
+    breakComment: row.break_comment,
+    canBeIngredient: row.can_be_ingredient,
+    ingredientProfile: coerceIngredientProfile(row.ingredient_profile),
+    weight: row.weight_label,
+    productionUnit: row.production_unit as ProductionProduct["productionUnit"],
+    salesUnit: row.sales_unit as ProductionProduct["salesUnit"],
+    salesToKgFactor: Number(row.sales_to_kg_factor),
+    expeditionUnit: row.expedition_unit as ProductionProduct["expeditionUnit"],
+    expeditionToKgFactor: Number(row.expedition_to_kg_factor),
+    isMpiIngredient: row.is_mpi_ingredient,
+  }));
+
+  const scheduleItemsByScheduleId = scheduleSnapshotRows.reduce<Map<string, WeeklyScheduleItem[]>>((acc, row) => {
+    const key = row.schedule_line_id;
+    const current = acc.get(key) ?? [];
+    current.push({
+      id: row.id,
+      productId: productLegacyById.get(row.product_id) ?? row.product_id,
+      minimumProduction: Number(row.minimum_production),
+      productionDays: row.production_days as WeeklyScheduleItem["productionDays"],
+    });
+    acc.set(key, current);
+    return acc;
+  }, new Map());
+
+  const profileNameById = new Map(profileRows.map((row) => [row.id, row.name]));
+  const scheduleLegacyById = new Map(scheduleRows.map((row) => [row.id, row.legacy_id ?? row.id]));
+
+  const schedules: WeeklyProductionSchedule[] = scheduleRows.map((row) => ({
+    id: row.legacy_id ?? row.id,
+    code: row.code,
+    name: row.name,
+    lineId: lineLegacyById.get(row.subcategory_id) ?? row.subcategory_id,
+    revisionOfId: row.revision_of_id ? scheduleLegacyById.get(row.revision_of_id) ?? row.revision_of_id : undefined,
+    status: row.status,
+    createdAt: row.created_at,
+    createdBy: row.created_by_profile_id ? profileNameById.get(row.created_by_profile_id) ?? row.created_by_profile_id : "",
+    auditedAt: row.audited_at ?? undefined,
+    auditedBy: row.audited_by_profile_id ? profileNameById.get(row.audited_by_profile_id) ?? row.audited_by_profile_id : undefined,
+    auditNotes: row.audit_notes ?? undefined,
+    deactivatedAt: row.deactivated_at ?? undefined,
+    deactivatedBy: row.deactivated_by_profile_id
+      ? profileNameById.get(row.deactivated_by_profile_id) ?? row.deactivated_by_profile_id
+      : undefined,
+    items: scheduleItemsByScheduleId.get(row.id) ?? [],
+  }));
+
+  return {
+    operationalSettings: {
+      orderCutoffTime: String(settingsRow.order_cutoff_time).slice(0, 5),
+      expeditionLeadDays: settingsRow.expedition_lead_days,
+    },
+    sectors,
+    lines,
+    ingredients,
+    stores,
+    products,
+    schedules,
+  };
+}

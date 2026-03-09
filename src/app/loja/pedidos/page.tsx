@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Clock3, Package, Plus, ShoppingCart, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,8 +29,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { buildStoreOrderProductsMock, type StoreOrderProduct } from "@/lib/store-order-mock";
-import { storeOrderSummaries, type StoreOrderSummary } from "@/lib/store-orders-mock";
 import { cn } from "@/lib/utils";
 import {
   getBaseDateByCutoff,
@@ -40,13 +38,12 @@ import {
 import {
   getStoreCanOrderSunday,
   getStoreReceivesSunday,
-  operationalSettings,
   productionWeekDays,
-  storesMasterData,
   type ProductionWeekDay,
 } from "@/lib/production-planning";
-
-const initialProducts: StoreOrderProduct[] = buildStoreOrderProductsMock(132);
+import type { StoreOrderCatalogProduct, StoreOrderSummary } from "@/lib/store-order-types";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderSummaries } from "@/lib/use-store-orders";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
 const WEEK_SEQUENCE: EditableDayField[] = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
@@ -69,7 +66,6 @@ const PRODUCTION_DAY_BY_FIELD: Record<EditableDayField, ProductionWeekDay> = {
   sab: "sabado",
   dom: "domingo",
 };
-const activeStores = storesMasterData.filter((store) => store.status === "ativo");
 const productionDayLabels = new Map(productionWeekDays.map((day) => [day.key, day.shortLabel]));
 
 function startOfDay(date: Date): Date {
@@ -113,7 +109,7 @@ function hasProductionDayBetween(days: ProductionWeekDay[], fromDate: Date, toDa
   return false;
 }
 
-function canDeliverOnDate(product: StoreOrderProduct, baseDate: Date, deliveryDate: Date): boolean {
+function canDeliverOnDate(product: StoreOrderCatalogProduct, baseDate: Date, deliveryDate: Date): boolean {
   return hasProductionDayBetween(product.productionDays, startOfDay(baseDate), startOfDay(deliveryDate));
 }
 
@@ -123,28 +119,53 @@ function formatOperationalDays(days: ProductionWeekDay[]) {
 
 export default function PedidosLojaPage() {
   const router = useRouter();
+  const { snapshot } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
-  const [selectedStoreId, setSelectedStoreId] = useState(activeStores[0]?.id ?? "");
-  const [orderProducts, setOrderProducts] = useState<StoreOrderProduct[]>(initialProducts);
+  const [selectedStoreId, setSelectedStoreId] = useState("");
+  const [orderProducts, setOrderProducts] = useState<StoreOrderCatalogProduct[]>([]);
   const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [availabilityFilter, setAvailabilityFilter] = useState("all");
 
   const referenceDate = useMemo(() => new Date(), []);
+  const referenceDateKey = useMemo(() => referenceDate.toISOString().slice(0, 10), [referenceDate]);
+  const { orders: storeOrderSummaries, refresh: refreshStoreOrders } = useStoreOrderSummaries(referenceDateKey);
+  const { catalog } = useStoreOrderCatalog();
+  const activeStores = useMemo(
+    () => snapshot.stores.filter((store) => store.status === "ativo"),
+    [snapshot.stores],
+  );
+  const { createOrder, isSubmitting } = useCreateStoreOrder(() => {
+    void refreshStoreOrders();
+    setIsNewOrderOpen(false);
+  });
+
+  useEffect(() => {
+    if (!selectedStoreId && activeStores[0]) {
+      setSelectedStoreId(activeStores[0].id);
+    }
+  }, [activeStores, selectedStoreId]);
+
+  useEffect(() => {
+    setOrderProducts(catalog);
+  }, [catalog]);
   const selectedStore = useMemo(
     () => activeStores.find((store) => store.id === selectedStoreId) ?? activeStores[0],
-    [selectedStoreId],
+    [activeStores, selectedStoreId],
   );
   const effectiveBaseDateKey = useMemo(() => {
-    const baseDateKey = getBaseDateByCutoff(referenceDate.toISOString(), operationalSettings.orderCutoffTime);
+    const baseDateKey = getBaseDateByCutoff(referenceDate.toISOString(), snapshot.operationalSettings.orderCutoffTime);
     return selectedStore
       ? moveToNextAllowedWeekday(baseDateKey, selectedStore.orderingDays)
       : baseDateKey;
-  }, [referenceDate, selectedStore]);
+  }, [referenceDate, selectedStore, snapshot.operationalSettings.orderCutoffTime]);
   const deliveryDateKey = useMemo(
-    () => (selectedStore ? getDeliveryDateByStoreRule(effectiveBaseDateKey, selectedStore) : effectiveBaseDateKey),
-    [effectiveBaseDateKey, selectedStore],
+    () =>
+      selectedStore
+        ? getDeliveryDateByStoreRule(effectiveBaseDateKey, selectedStore, snapshot.operationalSettings)
+        : effectiveBaseDateKey,
+    [effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
   );
   const baseDate = useMemo(() => new Date(`${effectiveBaseDateKey}T00:00:00`), [effectiveBaseDateKey]);
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
@@ -175,7 +196,7 @@ export default function PedidosLojaPage() {
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.store.toLowerCase().includes(searchTerm.toLowerCase()),
       ),
-    [searchTerm],
+    [searchTerm, storeOrderSummaries],
   );
 
   const orderKpis = useMemo(
@@ -183,9 +204,9 @@ export default function PedidosLojaPage() {
       total: storeOrderSummaries.length,
       agendado: storeOrderSummaries.filter((item) => item.status === "agendado").length,
       emProducao: storeOrderSummaries.filter((item) => item.status === "em_producao").length,
-      rotaEntrega: storeOrderSummaries.filter((item) => item.status === "rota_entrega").length,
+      rotaEntrega: storeOrderSummaries.filter((item) => item.status === "aguardando_expedicao").length,
     }),
-    [],
+    [storeOrderSummaries],
   );
 
   const categoryOptions = useMemo(
@@ -262,6 +283,31 @@ export default function PedidosLojaPage() {
     setAvailabilityFilter("all");
   }
 
+  async function handleSubmitOrder() {
+    if (!selectedStore) {
+      return;
+    }
+
+    const items = orderProducts
+      .filter((product) => product.available && product[highlightedDay] > 0)
+      .map((product) => ({
+        productId: product.productId,
+        quantity: product[highlightedDay],
+        unit: product.unit,
+      }));
+
+    if (items.length === 0) {
+      return;
+    }
+
+    await createOrder({
+      storeId: selectedStore.id,
+      orderedAt: referenceDate.toISOString(),
+      items,
+    });
+    setOrderProducts(catalog);
+  }
+
   return (
     <PageLayout
       title="Meus Pedidos"
@@ -314,14 +360,14 @@ export default function PedidosLojaPage() {
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Data de Entrega (D+X)</Label>
                       <Input
-                        value={`${deliveryDateLabel} (D+${operationalSettings.expeditionLeadDays})`}
+                        value={`${deliveryDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays})`}
                         disabled
                         className="border-warning/40 bg-warning/20 font-semibold text-warning-foreground"
                       />
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Horário Limite Global</Label>
-                      <Input value={operationalSettings.orderCutoffTime} disabled className="bg-muted" />
+                      <Input value={snapshot.operationalSettings.orderCutoffTime} disabled className="bg-muted" />
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Janela de Recebimento</Label>
@@ -476,7 +522,7 @@ export default function PedidosLojaPage() {
                 <Button type="button" variant="outline" onClick={() => setIsNewOrderOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={() => setIsNewOrderOpen(false)}>
+                <Button type="button" onClick={() => void handleSubmitOrder()} disabled={isSubmitting}>
                   Fazer Pedido
                 </Button>
               </DialogFooter>

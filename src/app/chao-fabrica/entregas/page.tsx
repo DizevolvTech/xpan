@@ -13,13 +13,13 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import {
   type DeliveryExecutionStatus,
   useDeliveryExecution,
 } from "@/lib/delivery-execution";
-import { buildFactoryPlanningData, formatDateKeyBr, getTodayDateKey, type ExpeditionRow } from "@/lib/order-planning";
+import { formatDateKeyBr, getTodayDateKey, type ExpeditionRow } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 type DeliveryRow = ExpeditionRow & {
   routeCode: string;
@@ -89,18 +89,8 @@ export default function EntregasPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const workflow = useFactoryWorkflowState(referenceDate);
+  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
   const deliveryExecutionState = useDeliveryExecution(referenceDate);
-
-  const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(basePlanningData, {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
 
   const deliveryRows = useMemo<DeliveryRow[]>(
     () =>

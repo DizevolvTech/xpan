@@ -1,15 +1,12 @@
 import {
   formatDateBr,
-  linesById,
-  operationalSettings,
-  productsById,
-  sectorsById,
-  weeklySchedules,
+  type OperationalSettings,
+  type ProductionLine,
   type ProductionProduct,
+  type ProductionSector,
   type ProductionWeekDay,
   type WeeklyProductionSchedule,
 } from "@/lib/production-planning";
-import { buildMockFactoryInput } from "@/lib/factory-planning/mock-source";
 import type {
   ExpeditionItem,
   ExpeditionRow,
@@ -26,6 +23,24 @@ import type {
   StoreProfile,
 } from "@/lib/factory-planning/types";
 import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
+
+export interface FactoryPlanningInput {
+  stores: StoreProfile[];
+  storeOrders: StoreOrder[];
+  settings: OperationalSettings;
+  sectors: ProductionSector[];
+  lines: ProductionLine[];
+  products: ProductionProduct[];
+  schedules: WeeklyProductionSchedule[];
+}
+
+interface ResolvedPlanningSource {
+  settings: OperationalSettings;
+  sectorsById: Map<string, ProductionSector>;
+  linesById: Map<string, ProductionLine>;
+  productsById: Map<string, ProductionProduct>;
+  schedules: WeeklyProductionSchedule[];
+}
 
 const weekdayByIndex: ProductionWeekDay[] = [
   "domingo",
@@ -123,8 +138,12 @@ export function moveToNextAllowedWeekday(dateKey: string, allowedDays: Productio
   return dateKey;
 }
 
-export function getDeliveryDateByStoreRule(baseDate: string, store: StoreProfile): string {
-  const calculatedDate = addDays(baseDate, operationalSettings.expeditionLeadDays);
+export function getDeliveryDateByStoreRule(
+  baseDate: string,
+  store: StoreProfile,
+  settings: OperationalSettings,
+): string {
+  const calculatedDate = addDays(baseDate, settings.expeditionLeadDays);
   return moveToNextAllowedWeekday(calculatedDate, store.receivingDays);
 }
 
@@ -156,10 +175,10 @@ function sanitizeFactor(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
-function buildActiveScheduleByLine(): Map<string, WeeklyProductionSchedule> {
+function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<string, WeeklyProductionSchedule> {
   const map = new Map<string, WeeklyProductionSchedule>();
 
-  weeklySchedules
+  schedules
     .filter((schedule) => schedule.status === "ativo")
     .forEach((schedule) => {
       if (!map.has(schedule.lineId)) {
@@ -168,6 +187,16 @@ function buildActiveScheduleByLine(): Map<string, WeeklyProductionSchedule> {
     });
 
   return map;
+}
+
+function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
+  return {
+    settings: input.settings,
+    sectorsById: new Map(input.sectors.map((sector) => [sector.id, sector])),
+    linesById: new Map(input.lines.map((line) => [line.id, line])),
+    productsById: new Map(input.products.map((product) => [product.id, product])),
+    schedules: input.schedules,
+  };
 }
 
 function getPotentialItemStatus(productionDate: string | null, canPlan: boolean, referenceDate: string): OrderStatus {
@@ -273,6 +302,7 @@ function buildPlannedItems(
     storeOrders: StoreOrder[];
     storeById: Map<string, StoreProfile>;
     scheduleByLineId: Map<string, WeeklyProductionSchedule>;
+    source: ResolvedPlanningSource;
   },
   referenceDate: string,
 ): PlannedOrderItem[] {
@@ -283,13 +313,13 @@ function buildPlannedItems(
         return [];
       }
 
-      const baseDate = getBaseDateByCutoff(order.orderedAt, operationalSettings.orderCutoffTime);
-      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store);
+      const baseDate = getBaseDateByCutoff(order.orderedAt, input.source.settings.orderCutoffTime);
+      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, input.source.settings);
 
       return order.items.flatMap<PlannedOrderItem>((orderItem) => {
-        const product = productsById.get(orderItem.productId);
-        const line = product ? linesById.get(product.lineId) : undefined;
-        const sector = line ? sectorsById.get(line.sectorId) : undefined;
+        const product = input.source.productsById.get(orderItem.productId);
+        const line = product ? input.source.linesById.get(product.lineId) : undefined;
+        const sector = line ? input.source.sectorsById.get(line.sectorId) : undefined;
         const schedule = line ? input.scheduleByLineId.get(line.id) : undefined;
 
         if (!product || !line || !sector) {
@@ -541,6 +571,7 @@ function buildOrders(
   orderItemsByOrderId: Map<string, PlannedOrderItem[]>,
   storeById: Map<string, StoreProfile>,
   opsByOrderId: Map<string, Set<string>>,
+  settings: OperationalSettings,
 ): PlannedOrderRow[] {
   return storeOrders
     .map((order) => {
@@ -551,8 +582,8 @@ function buildOrders(
 
       const items = orderItemsByOrderId.get(order.id) ?? [];
       const opCodes = Array.from(opsByOrderId.get(order.id) ?? []).sort((a, b) => a.localeCompare(b));
-      const baseDate = getBaseDateByCutoff(order.orderedAt, operationalSettings.orderCutoffTime);
-      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store);
+      const baseDate = getBaseDateByCutoff(order.orderedAt, settings.orderCutoffTime);
+      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, settings);
 
       return {
         id: order.id,
@@ -560,7 +591,7 @@ function buildOrders(
         storeId: store.id,
         storeName: store.name,
         orderedAt: formatDateTimeBr(order.orderedAt),
-        dPlusLabel: `D+${operationalSettings.expeditionLeadDays}`,
+        dPlusLabel: `D+${settings.expeditionLeadDays}`,
         deliveryDate,
         deliveryDateLabel: formatDateBr(deliveryDate),
         productionDateLabel: buildOrderProductionDateLabel(items),
@@ -588,6 +619,7 @@ function buildExpeditionRows(
   orderItemsByOrderId: Map<string, PlannedOrderItem[]>,
   storeById: Map<string, StoreProfile>,
   orderByCode: Map<string, PlannedOrderRow>,
+  settings: OperationalSettings,
 ): ExpeditionRow[] {
   return storeOrders
     .map((order) => {
@@ -597,8 +629,8 @@ function buildExpeditionRows(
       }
 
       const items = (orderItemsByOrderId.get(order.id) ?? []).slice().sort((a, b) => a.productCode.localeCompare(b.productCode));
-      const baseDate = getBaseDateByCutoff(order.orderedAt, operationalSettings.orderCutoffTime);
-      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store);
+      const baseDate = getBaseDateByCutoff(order.orderedAt, settings.orderCutoffTime);
+      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, settings);
       const orderSummary = orderByCode.get(order.code);
 
       const expeditionItems: ExpeditionItem[] = items.map((item) => ({
@@ -670,14 +702,19 @@ function buildExpeditionItems(expeditionRows: ExpeditionRow[]): ExpeditionSepara
   );
 }
 
-export function buildFactoryPlanningData(referenceDate: string, input = buildMockFactoryInput(referenceDate)): FactoryPlanningData {
+export function buildFactoryPlanningData(
+  referenceDate: string,
+  input: FactoryPlanningInput,
+): FactoryPlanningData {
+  const source = resolvePlanningSource(input);
   const storeById = new Map(input.stores.map((store) => [store.id, store]));
-  const scheduleByLineId = buildActiveScheduleByLine();
+  const scheduleByLineId = buildActiveScheduleByLine(source.schedules);
   const orderItems = buildPlannedItems(
     {
       storeOrders: input.storeOrders,
       storeById,
       scheduleByLineId,
+      source,
     },
     referenceDate,
   );
@@ -692,9 +729,9 @@ export function buildFactoryPlanningData(referenceDate: string, input = buildMoc
   });
 
   const orderItemsByOrderId = groupOrderItemsByOrderId(orderItemsWithOpCodes);
-  const orders = buildOrders(input.storeOrders, orderItemsByOrderId, storeById, opsByOrderId);
+  const orders = buildOrders(input.storeOrders, orderItemsByOrderId, storeById, opsByOrderId, source.settings);
   const orderByCode = new Map(orders.map((order) => [order.code, order]));
-  const expedition = buildExpeditionRows(input.storeOrders, orderItemsByOrderId, storeById, orderByCode);
+  const expedition = buildExpeditionRows(input.storeOrders, orderItemsByOrderId, storeById, orderByCode, source.settings);
   const expeditionItems = buildExpeditionItems(expedition);
 
   return {
@@ -711,6 +748,6 @@ export function buildFactoryPlanningData(referenceDate: string, input = buildMoc
   };
 }
 
-export function getProductById(productId: string): ProductionProduct | undefined {
-  return productsById.get(productId);
+export function getProductById(productId: string, products: ProductionProduct[]): ProductionProduct | undefined {
+  return products.find((product) => product.id === productId);
 }

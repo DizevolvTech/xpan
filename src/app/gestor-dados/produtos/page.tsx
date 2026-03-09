@@ -36,12 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   getProductRecipeTotals,
   hierarchyLabels,
-  productionIngredients,
-  productionLines,
-  productionProducts,
-  productionSectors,
   productionWeekDays,
-  sectorsById,
   type BreakStage,
   type IngredientCompositionItem,
   type PackagingProfile,
@@ -50,6 +45,7 @@ import {
   type ProductionProduct,
   type RecipeIngredientReference,
 } from "@/lib/production-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 type ProductRow = ProductionProduct & {
   lineName: string;
@@ -164,36 +160,39 @@ function buildLineDraft(sectorId: string): LineDraftState {
   };
 }
 
-function mapProductRows(products: ProductionProduct[], lines: ProductionLine[]): ProductRow[] {
-  const linesMap = new Map(lines.map((line) => [line.id, line]));
-  return products.map((product) => {
-    const line = linesMap.get(product.lineId);
-    const sector = line ? sectorsById.get(line.sectorId) : undefined;
-
-    return {
-      ...product,
-      lineName: line?.name ?? "-",
-      sectorName: sector?.name ?? "-",
-      validityLabel: `${product.validityDays} dias`,
-      productionDaysLabel: product.productionDays.map((day) => day.slice(0, 3)).join(" · "),
-    };
-  });
-}
-
 export default function ProdutosPage() {
+  const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
-  const [productState, setProductState] = useState<ProductionProduct[]>(productionProducts);
-  const [lineState, setLineState] = useState<ProductionLine[]>(productionLines);
-  const [formState, setFormState] = useState<ProductFormState>(() => buildProductFormState(productionLines));
-  const [lineDraft, setLineDraft] = useState<LineDraftState>(() => buildLineDraft(productionSectors[0]?.id ?? ""));
-  const [draftRecipeSourceId, setDraftRecipeSourceId] = useState(productionIngredients[0]?.id ?? "");
+  const [formState, setFormState] = useState<ProductFormState>(() => buildProductFormState([]));
+  const [lineDraft, setLineDraft] = useState<LineDraftState>(() => buildLineDraft(""));
+  const [draftRecipeSourceId, setDraftRecipeSourceId] = useState("");
   const [draftRecipeQuantity, setDraftRecipeQuantity] = useState("");
   const [draftRecipeUnit, setDraftRecipeUnit] = useState<RecipeIngredientReference["unit"]>("Kg");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const productRows = useMemo(() => mapProductRows(productState, lineState), [lineState, productState]);
+  const sectorNameById = useMemo(
+    () => new Map(snapshot.sectors.map((sector) => [sector.id, sector.name])),
+    [snapshot.sectors],
+  );
+
+  const productRows = useMemo(
+    () =>
+      snapshot.products.map((product) => {
+        const line = snapshot.lines.find((item) => item.id === product.lineId);
+        return {
+          ...product,
+          lineName: line?.name ?? "-",
+          sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
+          validityLabel: `${product.validityDays} dias`,
+          productionDaysLabel: product.productionDays.map((day) => day.slice(0, 3)).join(" · "),
+        };
+      }),
+    [sectorNameById, snapshot.lines, snapshot.products],
+  );
 
   const filteredProducts = useMemo(
     () =>
@@ -207,18 +206,18 @@ export default function ProdutosPage() {
   );
 
   const activeProductsCount = productRows.filter((item) => item.active).length;
-  const lineOptions = lineState.map((line) => ({
+  const lineOptions = snapshot.lines.map((line) => ({
     value: line.id,
-    label: `${line.name} · ${sectorsById.get(line.sectorId)?.name ?? "-"}`,
+    label: `${line.name} · ${sectorNameById.get(line.sectorId) ?? "-"}`,
   }));
 
   const recipeSourceOptions: RecipeSourceOption[] = [
-    ...productionIngredients.map((ingredient) => ({
+    ...snapshot.ingredients.map((ingredient) => ({
       id: ingredient.id,
       label: `${ingredient.code} · ${ingredient.name}`,
       sourceType: "ingrediente" as const,
     })),
-    ...productState
+    ...snapshot.products
       .filter((product) => product.canBeIngredient)
       .map((product) => ({
         id: product.id,
@@ -268,7 +267,8 @@ export default function ProdutosPage() {
       label: "Visualizar",
       onClick: (item: ProductRow) => {
         setEditingProduct(item);
-        setFormState(buildProductFormState(lineState, item));
+        setFormState(buildProductFormState(snapshot.lines, item));
+        setFormError(null);
         setIsDialogOpen(true);
       },
     },
@@ -277,7 +277,8 @@ export default function ProdutosPage() {
       label: "Editar",
       onClick: (item: ProductRow) => {
         setEditingProduct(item);
-        setFormState(buildProductFormState(lineState, item));
+        setFormState(buildProductFormState(snapshot.lines, item));
+        setFormError(null);
         setIsDialogOpen(true);
       },
     },
@@ -285,10 +286,12 @@ export default function ProdutosPage() {
 
   function openNewProduct() {
     setEditingProduct(null);
-    setFormState(buildProductFormState(lineState));
+    setFormState(buildProductFormState(snapshot.lines));
+    setLineDraft(buildLineDraft(snapshot.sectors[0]?.id ?? ""));
     setDraftRecipeSourceId(recipeSourceOptions[0]?.id ?? "");
     setDraftRecipeQuantity("");
     setDraftRecipeUnit("Kg");
+    setFormError(null);
   }
 
   function updateUnitProfile(scope: keyof ProductFormState["unitProfiles"], patch: Partial<ProductUnitProfile>) {
@@ -382,12 +385,17 @@ export default function ProdutosPage() {
     }));
   }
 
-  function handleSaveProduct() {
+  async function handleSaveProduct() {
+    if (!formState.name.trim() || !formState.lineId) {
+      setFormError("Informe nome e subcategoria do produto.");
+      return;
+    }
+
     const salesWeight = formState.unitProfiles.sales.unit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
     const expeditionWeight =
       formState.unitProfiles.expedition.unit === "Kg" ? 1 : formState.unitProfiles.expedition.weightKg;
 
-    const nextProduct: ProductionProduct = {
+    const nextProduct: ProductFormState = {
       ...formState,
       salesUnit: formState.unitProfiles.sales.unit,
       productionUnit: formState.unitProfiles.production.unit,
@@ -398,31 +406,79 @@ export default function ProdutosPage() {
       isMpiIngredient: formState.canBeIngredient,
     };
 
-    setProductState((current) => {
-      if (!editingProduct) {
-        return [nextProduct, ...current];
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const response = await fetch(
+        editingProduct
+          ? `/api/master-data/products/${editingProduct.id}`
+          : "/api/master-data/products",
+        {
+          method: editingProduct ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(nextProduct),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message ?? "Falha ao salvar produto");
       }
-      return current.map((item) => (item.id === editingProduct.id ? nextProduct : item));
-    });
-    setIsDialogOpen(false);
+
+      await refresh();
+      setIsDialogOpen(false);
+    } catch (saveError) {
+      setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar produto");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
-  function handleCreateLine() {
-    const nextLine: ProductionLine = {
-      id: `line-${Date.now()}`,
-      code: `LP-${String(Date.now()).slice(-3)}`,
-      name: lineDraft.name,
-      sectorId: lineDraft.sectorId,
-      type: lineDraft.type,
-      operatingHours: lineDraft.operatingHours,
-      capacityPerDayKg: Number(lineDraft.capacityPerDayKg),
-      status: "ativo",
-    };
+  async function handleCreateLine() {
+    if (!lineDraft.name.trim() || !lineDraft.sectorId) {
+      setFormError(`Informe nome e ${hierarchyLabels.sector.toLowerCase()} da nova ${hierarchyLabels.line.toLowerCase()}.`);
+      return;
+    }
 
-    setLineState((current) => [...current, nextLine]);
-    setFormState((current) => ({ ...current, lineId: nextLine.id }));
-    setIsLineDialogOpen(false);
-    setLineDraft(buildLineDraft(lineDraft.sectorId));
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const response = await fetch("/api/master-data/subcategories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: lineDraft.name,
+          sectorId: lineDraft.sectorId,
+          type: lineDraft.type,
+          operatingHours: lineDraft.operatingHours,
+          capacityPerDayKg: Number(lineDraft.capacityPerDayKg),
+          status: "ativo",
+        }),
+      });
+
+      const body = (await response.json().catch(() => null)) as { message?: string; id?: string } | null;
+      if (!response.ok) {
+        throw new Error(body?.message ?? "Falha ao criar subcategoria");
+      }
+
+      const createdLineId = body?.id ?? null;
+      await refresh();
+      if (createdLineId) {
+        setFormState((current) => ({ ...current, lineId: createdLineId }));
+      }
+      setIsLineDialogOpen(false);
+      setLineDraft(buildLineDraft(lineDraft.sectorId));
+    } catch (saveError) {
+      setFormError(saveError instanceof Error ? saveError.message : "Falha ao criar subcategoria");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -442,15 +498,28 @@ export default function ProdutosPage() {
           icon={Box}
           tone="success"
         />
-        <KPICard title="Última Atualização" value="Há 14 dias" icon={Clock3} tone="neutral" />
+        <KPICard
+          title="Última Atualização"
+          value={isLoading ? "Carregando..." : `${productRows.length} cadastrados`}
+          icon={Clock3}
+          tone="neutral"
+        />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Lista de Produtos</CardTitle>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog
+            open={isDialogOpen}
+            onOpenChange={(open) => {
+              setIsDialogOpen(open);
+              if (!open) {
+                setFormError(null);
+              }
+            }}
+          >
             <DialogTrigger asChild>
-              <Button type="button" onClick={openNewProduct}>
+              <Button type="button" onClick={openNewProduct} disabled={isSubmitting}>
                 <Plus className="size-4" />
                 Novo Produto
               </Button>
@@ -464,6 +533,12 @@ export default function ProdutosPage() {
                   O cadastro agora usa kg como unidade universal da engenharia e concentra cronograma, receita e MPI.
                 </DialogDescription>
               </DialogHeader>
+
+              {formError ? (
+                <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+                  {formError}
+                </div>
+              ) : null}
 
               <Tabs defaultValue="cadastro" className="space-y-4">
                 <TabsList className="grid w-full grid-cols-4">
@@ -525,7 +600,17 @@ export default function ProdutosPage() {
                         </Select>
                       </div>
                       <div className="flex items-end">
-                        <Dialog open={isLineDialogOpen} onOpenChange={setIsLineDialogOpen}>
+                        <Dialog
+                          open={isLineDialogOpen}
+                          onOpenChange={(open) => {
+                            setIsLineDialogOpen(open);
+                            if (open) {
+                              setLineDraft((current) =>
+                                current.sectorId ? current : buildLineDraft(snapshot.sectors[0]?.id ?? ""),
+                              );
+                            }
+                          }}
+                        >
                           <DialogTrigger asChild>
                             <Button type="button" variant="outline">
                               <Plus className="size-4" />
@@ -563,7 +648,7 @@ export default function ProdutosPage() {
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {productionSectors.map((sector) => (
+                                      {snapshot.sectors.map((sector) => (
                                         <SelectItem key={sector.id} value={sector.id}>
                                           {sector.name}
                                         </SelectItem>
@@ -615,10 +700,10 @@ export default function ProdutosPage() {
                               </div>
                             </div>
                             <DialogFooter>
-                              <Button type="button" variant="outline" onClick={() => setIsLineDialogOpen(false)}>
+                              <Button type="button" variant="outline" onClick={() => setIsLineDialogOpen(false)} disabled={isSubmitting}>
                                 Cancelar
                               </Button>
-                              <Button type="button" onClick={handleCreateLine}>
+                              <Button type="button" onClick={() => void handleCreateLine()} disabled={isSubmitting}>
                                 Criar {hierarchyLabels.line}
                               </Button>
                             </DialogFooter>
@@ -1110,10 +1195,10 @@ export default function ProdutosPage() {
               </Tabs>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={handleSaveProduct}>
+                <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting}>
                   {editingProduct ? "Salvar Alterações" : "Cadastrar Produto"}
                 </Button>
               </DialogFooter>
@@ -1128,12 +1213,17 @@ export default function ProdutosPage() {
             searchValue={searchTerm}
             showFilters={false}
           />
+          {error ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              {error}
+            </div>
+          ) : null}
           <DataTable
             data={filteredProducts}
             columns={columns}
             actions={actions}
             keyField="id"
-            emptyMessage="Nenhum produto encontrado"
+            emptyMessage={isLoading ? "Carregando produtos..." : "Nenhum produto encontrado"}
             stickyHeader
           />
         </CardContent>

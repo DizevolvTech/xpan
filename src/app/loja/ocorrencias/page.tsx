@@ -3,15 +3,13 @@
 import { useMemo, useState } from "react";
 import { AlertCircle, Plus } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { SearchFilter } from "@/components/shared/search-filter";
+import { KPICard } from "@/components/shared/kpi-card";
 import { PageLayout } from "@/components/shared/page-layout";
+import { SearchFilter } from "@/components/shared/search-filter";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -21,55 +19,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getStoreOrderById, storeOrderSummaries, type StoreOrderDetail } from "@/lib/store-orders-mock";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { getTodayDateKey } from "@/lib/order-planning";
+import { useStoreOccurrences } from "@/lib/use-store-occurrences";
+import { useStoreOrderDetail, useStoreOrderSummaries } from "@/lib/use-store-orders";
 
 type QuantityType = "percentual" | "kg" | "operacional";
-
-interface Ocorrencia {
-  id: string;
-  code: string;
-  orderCode: string;
-  product: string;
-  type: string;
-  quantitySummary: string;
-  openDate: string;
-  status: "aberta" | "em_analise" | "resolvida" | "fechada";
-}
-
-const initialOcorrencias: Ocorrencia[] = [
-  {
-    id: "1",
-    code: "OC-0001",
-    orderCode: "PD-1443",
-    product: "Pão Francês",
-    type: "Quantidade incorreta",
-    quantitySummary: "12 Un",
-    openDate: "08/11/2025",
-    status: "aberta",
-  },
-  {
-    id: "2",
-    code: "OC-0002",
-    orderCode: "PD-1440",
-    product: "Bolo Tapioca",
-    type: "Produto danificado",
-    quantitySummary: "1 Forma",
-    openDate: "07/11/2025",
-    status: "em_analise",
-  },
-  {
-    id: "3",
-    code: "OC-0003",
-    orderCode: "PD-1435",
-    product: "Sonho",
-    type: "Atraso na entrega",
-    quantitySummary: "100%",
-    openDate: "05/11/2025",
-    status: "resolvida",
-  },
-];
 
 const problemTypes = [
   "Produto extraviado",
@@ -77,7 +35,7 @@ const problemTypes = [
   "Quantidade incorreta",
   "Produto errado",
   "Produto vencido",
-  "Qualidade insatisfatória",
+  "Qualidade insatisfatoria",
   "Atraso na entrega",
   "Outro",
 ];
@@ -88,21 +46,17 @@ const quantityTypeOptions: Array<{ value: QuantityType; label: string }> = [
   { value: "operacional", label: "Unidades/Pacotes" },
 ];
 
-function getTodayBrDate() {
-  return new Intl.DateTimeFormat("pt-BR").format(new Date());
-}
-
-function buildOrderDetailsList() {
-  return storeOrderSummaries
-    .map((summary) => getStoreOrderById(summary.id))
-    .filter((order): order is StoreOrderDetail => Boolean(order));
+function formatDateTimeBr(dateIso: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(dateIso));
 }
 
 export default function OcorrenciasLojaPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>(initialOcorrencias);
   const [orderId, setOrderId] = useState("");
   const [productId, setProductId] = useState("");
   const [problemType, setProblemType] = useState("");
@@ -111,11 +65,10 @@ export default function OcorrenciasLojaPage() {
   const [description, setDescription] = useState("");
   const [formError, setFormError] = useState("");
 
-  const orderDetails = useMemo(() => buildOrderDetailsList(), []);
-  const selectedOrder = useMemo(
-    () => orderDetails.find((item) => item.id === orderId) ?? null,
-    [orderDetails, orderId],
-  );
+  const { occurrences, createOccurrence } = useStoreOccurrences();
+  const { orders: orderSummaries } = useStoreOrderSummaries(getTodayDateKey());
+  const { order: selectedOrder } = useStoreOrderDetail(orderId, getTodayDateKey());
+
   const selectedProduct = useMemo(
     () => selectedOrder?.items.find((item) => item.id === productId) ?? null,
     [productId, selectedOrder],
@@ -124,31 +77,42 @@ export default function OcorrenciasLojaPage() {
   const operationalUnit = selectedProduct?.operationalUnit ?? selectedProduct?.unit ?? "-";
   const quantityUnit = quantityType === "percentual" ? "%" : quantityType === "kg" ? "Kg" : operationalUnit;
 
-  const filteredOcorrencias = ocorrencias.filter((item) => {
-    const matchesSearch =
-      item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.orderCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.product.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredOccurrences = useMemo(
+    () =>
+      occurrences.filter((item) => {
+        const matchesSearch =
+          item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.orderCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.productName.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+        return matchesSearch && matchesStatus;
+      }),
+    [occurrences, searchTerm, statusFilter],
+  );
 
   const columns = [
-    { key: "code", header: "Código" },
+    { key: "code", header: "Codigo" },
     { key: "orderCode", header: "Pedido" },
-    { key: "product", header: "Produto" },
-    { key: "type", header: "Tipo" },
-    { key: "quantitySummary", header: "Qtd afetada" },
-    { key: "openDate", header: "Data Abertura" },
+    { key: "productName", header: "Produto" },
+    { key: "problemType", header: "Tipo" },
+    {
+      key: "quantitySummary",
+      header: "Qtd afetada",
+      render: (item: (typeof occurrences)[number]) =>
+        item.quantityType === "percentual"
+          ? `${item.quantity}%`
+          : `${item.quantity} ${item.quantityUnit}`,
+    },
+    {
+      key: "createdAt",
+      header: "Data Abertura",
+      render: (item: (typeof occurrences)[number]) => formatDateTimeBr(item.createdAt),
+    },
     {
       key: "status",
       header: "Status",
-      render: (item: Ocorrencia) => <StatusBadge status={item.status} />,
+      render: (item: (typeof occurrences)[number]) => <StatusBadge status={item.status} />,
     },
-  ];
-
-  const actions = [
-    { icon: "view" as const, label: "Visualizar", onClick: (item: Ocorrencia) => console.log("View", item) },
   ];
 
   function resetForm() {
@@ -187,78 +151,67 @@ export default function OcorrenciasLojaPage() {
 
     const quantityValue = Number(quantity);
     if (!Number.isFinite(quantityValue) || quantityValue <= 0) {
-      return "Informe uma quantidade afetada válida.";
+      return "Informe uma quantidade afetada valida.";
     }
-
     if (quantityType === "percentual" && quantityValue > 100) {
       return "Para % afetado, o valor deve ficar entre 0 e 100.";
     }
-
     if (description.trim().length < 20) {
-      return "Descreva o problema com no mínimo 20 caracteres.";
+      return "Descreva o problema com no minimo 20 caracteres.";
     }
 
     return null;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const error = validateForm();
     if (error) {
       setFormError(error);
       return;
     }
 
-    const quantityValue = Number(quantity);
-    const quantitySummary =
-      quantityType === "percentual"
-        ? `${quantityValue}%`
-        : `${quantityValue} ${quantityUnit}`;
-
-    setOcorrencias((current) => [
-      {
-        id: String(current.length + 1),
-        code: `OC-${String(current.length + 1).padStart(4, "0")}`,
-        orderCode: selectedOrder!.code,
-        product: selectedProduct!.name,
-        type: problemType,
-        quantitySummary,
-        openDate: getTodayBrDate(),
-        status: "aberta",
-      },
-      ...current,
-    ]);
+    await createOccurrence({
+      orderId: selectedOrder!.id,
+      orderItemId: selectedProduct!.id,
+      productNameSnapshot: selectedProduct!.name,
+      problemType,
+      quantityType,
+      quantity: Number(quantity),
+      quantityUnitSnapshot: quantityUnit,
+      description,
+    });
 
     handleDialogChange(false);
   }
 
   return (
     <PageLayout
-      title="Ocorrências"
-      description="Registre perdas, divergências e problemas de entrega com unidade operacional preenchida automaticamente."
+      title="Ocorrencias"
+      description="Registre perdas, divergencias e problemas de entrega com unidade operacional preenchida automaticamente."
       badge="Loja"
-      breadcrumbs={[{ label: "Loja", href: "/loja" }, { label: "Ocorrências" }]}
+      breadcrumbs={[{ label: "Loja", href: "/loja" }, { label: "Ocorrencias" }]}
     >
       <div className="grid gap-3 md:grid-cols-3">
-        <KPICard title="Ocorrências abertas" value={ocorrencias.filter((item) => item.status === "aberta").length} icon={AlertCircle} tone="danger" />
-        <KPICard title="Em análise" value={ocorrencias.filter((item) => item.status === "em_analise").length} icon={AlertCircle} tone="warning" />
-        <KPICard title="Resolvidas" value={ocorrencias.filter((item) => item.status === "resolvida").length} icon={AlertCircle} tone="success" />
+        <KPICard title="Ocorrencias abertas" value={occurrences.filter((item) => item.status === "aberta").length} icon={AlertCircle} tone="danger" />
+        <KPICard title="Em analise" value={occurrences.filter((item) => item.status === "em_analise").length} icon={AlertCircle} tone="warning" />
+        <KPICard title="Resolvidas" value={occurrences.filter((item) => item.status === "resolvida").length} icon={AlertCircle} tone="success" />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Ocorrências</CardTitle>
+          <CardTitle>Lista de Ocorrencias</CardTitle>
           <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
             <DialogTrigger asChild>
               <Button type="button">
                 <Plus className="size-4" />
-                Nova Ocorrência
+                Nova Ocorrencia
               </Button>
             </DialogTrigger>
             <DialogContent size="xl">
               <DialogHeader>
-                <DialogTitle>Nova Ocorrência</DialogTitle>
+                <DialogTitle>Nova Ocorrencia</DialogTitle>
                 <DialogDescription>
-                  Selecione o pedido, o produto e o tipo de quantidade afetada. A unidade operacional do produto é preenchida automaticamente.
+                  Selecione o pedido, o produto e o tipo de quantidade afetada. A unidade operacional do produto e preenchida automaticamente.
                 </DialogDescription>
               </DialogHeader>
 
@@ -270,7 +223,7 @@ export default function OcorrenciasLojaPage() {
                       <SelectValue placeholder="Selecione o pedido" />
                     </SelectTrigger>
                     <SelectContent>
-                      {orderDetails.map((order) => (
+                      {orderSummaries.map((order) => (
                         <SelectItem key={order.id} value={order.id}>
                           {order.code} - {order.deliveryDate} - {order.store}
                         </SelectItem>
@@ -352,11 +305,11 @@ export default function OcorrenciasLojaPage() {
                     ? "Use % para perdas proporcionais da entrega inteira."
                     : quantityType === "kg"
                       ? "Use Kg quando o impacto for medido em peso."
-                      : `A unidade operacional do produto selecionado é ${quantityUnit}.`}
+                      : `A unidade operacional do produto selecionado e ${quantityUnit}.`}
                 </div>
 
                 <div className="grid gap-2">
-                  <Label>Descrição do Problema *</Label>
+                  <Label>Descricao do Problema *</Label>
                   <Textarea
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
@@ -376,8 +329,8 @@ export default function OcorrenciasLojaPage() {
                 <Button type="button" variant="outline" onClick={() => handleDialogChange(false)}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={handleSubmit}>
-                  Abrir Ocorrência
+                <Button type="button" onClick={() => void handleSubmit()}>
+                  Abrir Ocorrencia
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -386,7 +339,7 @@ export default function OcorrenciasLojaPage() {
 
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código, pedido ou produto..."
+            searchPlaceholder="Buscar por codigo, pedido ou produto..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             filters={[
@@ -397,7 +350,7 @@ export default function OcorrenciasLojaPage() {
                 onChange: setStatusFilter,
                 options: [
                   { value: "aberta", label: "Aberta" },
-                  { value: "em_analise", label: "Em análise" },
+                  { value: "em_analise", label: "Em analise" },
                   { value: "resolvida", label: "Resolvida" },
                   { value: "fechada", label: "Fechada" },
                 ],
@@ -406,11 +359,13 @@ export default function OcorrenciasLojaPage() {
           />
 
           <DataTable
-            data={filteredOcorrencias}
+            data={filteredOccurrences}
             columns={columns}
-            actions={actions}
+            actions={[
+              { icon: "view" as const, label: "Visualizar", onClick: (item) => console.log("View", item) },
+            ]}
             keyField="id"
-            emptyMessage="Nenhuma ocorrência encontrada"
+            emptyMessage="Nenhuma ocorrencia encontrada"
             stickyHeader
           />
         </CardContent>

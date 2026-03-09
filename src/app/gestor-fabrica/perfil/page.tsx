@@ -1,12 +1,10 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { ProfilePage } from "@/components/shared/profile-page";
-import { SESSION_COOKIE_NAME, decodeSession } from "@/lib/auth";
+import { resolveServerSession } from "@/lib/server-session";
 
 export default async function GestorFabricaPerfilPage() {
-  const cookieStore = await cookies();
-  const session = decodeSession(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const session = await resolveServerSession();
 
   if (!session) {
     redirect("/login");

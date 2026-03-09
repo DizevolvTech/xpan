@@ -8,14 +8,16 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getLinesBySector, sectorsById } from "@/lib/production-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { getLinesBySectorFromData } from "@/lib/production-data-utils";
 
 export default function SetorDetailsPage() {
   const params = useParams<{ sectorId: string }>();
   const sectorId = typeof params.sectorId === "string" ? params.sectorId : "";
-  const sector = sectorsById.get(sectorId) ?? null;
+  const { snapshot, isLoading, error } = useMasterDataSnapshot();
+  const sector = snapshot.sectors.find((item) => item.id === sectorId) ?? null;
 
-  if (!sector) {
+  if (!isLoading && !sector) {
     return (
       <PageLayout
         title="Categoria não encontrada"
@@ -44,18 +46,18 @@ export default function SetorDetailsPage() {
     );
   }
 
-  const lines = getLinesBySector(sector.id);
+  const lines = sector ? getLinesBySectorFromData(sector.id, snapshot.lines) : [];
   const activeLines = lines.filter((line) => line.status === "ativo").length;
 
   return (
     <PageLayout
-      title={`${sector.code} · ${sector.name}`}
+      title={sector ? `${sector.code} · ${sector.name}` : "Carregando categoria"}
       description="Visualize os detalhes da categoria e as subcategorias vinculadas."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
         { label: "Categorias", href: "/gestor-dados/setores" },
-        { label: sector.name },
+        { label: sector?.name ?? "Detalhes" },
       ]}
       actions={
         <div className="flex items-center gap-2">
@@ -74,15 +76,21 @@ export default function SetorDetailsPage() {
         </div>
       }
     >
+      {error ? (
+        <Card>
+          <CardContent className="py-6 text-sm text-danger-foreground">{error}</CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardContent className="grid gap-3 p-4 md:grid-cols-4">
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Código</p>
-            <p className="mt-1 text-sm font-semibold">{sector.code}</p>
+            <p className="mt-1 text-sm font-semibold">{sector?.code ?? "-"}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Responsável</p>
-            <p className="mt-1 text-sm font-semibold">{sector.responsible}</p>
+            <p className="mt-1 text-sm font-semibold">{sector?.responsible ?? "-"}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Subcategorias vinculadas</p>
@@ -93,7 +101,7 @@ export default function SetorDetailsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
             <div className="mt-1">
-              <StatusBadge status={sector.status} />
+              <StatusBadge status={sector?.status ?? "inativo"} />
             </div>
           </div>
         </CardContent>

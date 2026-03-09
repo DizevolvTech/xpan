@@ -12,15 +12,14 @@ import { OperationFiltersCard } from "@/components/shared/operation-filters-card
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import {
-  buildFactoryPlanningData,
   formatDateKeyBr,
   getTodayDateKey,
   type PlannedOrderItem,
   type PlannedOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 type OrderSummaryRow = PlannedOrderRow & {
   productsCount: number;
@@ -39,17 +38,7 @@ export default function PedidosFabricaPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(basePlanningData, {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData, releaseOrder } = useFactoryPlanningSnapshot(referenceDate);
 
   const orderItemsByOrderId = useMemo(() => {
     const map = new Map<string, PlannedOrderItem[]>();
@@ -367,7 +356,7 @@ export default function PedidosFabricaPage() {
                               type="button"
                               size="sm"
                               disabled={!order.availableForRelease || order.releasedToProduction}
-                              onClick={() => workflow.releaseOrder(order.id)}
+                              onClick={() => void releaseOrder(order.id)}
                             >
                               {order.releasedToProduction ? "Liberado" : "Liberar para produção"}
                             </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { Camera, KeyRound, MapPin, Phone, Save, UserRound } from "lucide-react";
 
 import { PageLayout } from "@/components/shared/page-layout";
@@ -37,6 +37,46 @@ type ProfileForm = {
   address: ProfileAddress;
 };
 
+type CurrentProfileResponse = {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl: string;
+  phone: string;
+  address: ProfileAddress;
+  passwordUpdatedAt: string;
+};
+
+function buildInitialForm(initialName: string, initialEmail: string): ProfileForm {
+  return {
+    avatarUrl: "",
+    name: initialName,
+    email: initialEmail,
+    phone: "",
+    address: {
+      zipCode: "",
+      street: "",
+      number: "",
+      complement: "",
+      neighborhood: "",
+      city: "",
+      state: "",
+      country: "Brasil",
+    },
+  };
+}
+
+async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
+  const response = await fetch(input, init);
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
@@ -55,27 +95,59 @@ export function ProfilePage({
   initialName,
   initialEmail,
 }: ProfilePageProps) {
-  const [form, setForm] = useState<ProfileForm>({
-    avatarUrl: "",
-    name: initialName,
-    email: initialEmail,
-    phone: "",
-    address: {
-      zipCode: "",
-      street: "",
-      number: "",
-      complement: "",
-      neighborhood: "",
-      city: "",
-      state: "",
-      country: "Brasil",
-    },
-  });
+  const [form, setForm] = useState<ProfileForm>(() => buildInitialForm(initialName, initialEmail));
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [passwordUpdatedAt, setPasswordUpdatedAt] = useState("-");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      setIsLoadingProfile(true);
+
+      try {
+        const profile = await readJson<CurrentProfileResponse>("/api/me/profile");
+
+        if (cancelled) {
+          return;
+        }
+
+        setForm({
+          avatarUrl: profile.avatarUrl,
+          name: profile.name,
+          email: profile.email,
+          phone: profile.phone,
+          address: profile.address,
+        });
+        setPasswordUpdatedAt(profile.passwordUpdatedAt);
+        setErrorMessage(null);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setErrorMessage(
+          error instanceof Error ? error.message : "Não foi possível carregar os dados do perfil.",
+        );
+      } finally {
+        if (!cancelled) {
+          setIsLoadingProfile(false);
+        }
+      }
+    }
+
+    void loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateFormField<K extends keyof Omit<ProfileForm, "address">>(
     field: K,
@@ -126,7 +198,7 @@ export function ProfilePage({
     reader.readAsDataURL(file);
   }
 
-  function handleSave() {
+  async function handleSave() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -167,10 +239,55 @@ export function ProfilePage({
       }
     }
 
-    setSuccessMessage("Perfil atualizado localmente no front-end.");
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
+    setIsSaving(true);
+
+    try {
+      const normalizedAddress: ProfileAddress = {
+        zipCode: form.address.zipCode.trim(),
+        street: form.address.street.trim(),
+        number: form.address.number.trim(),
+        complement: form.address.complement.trim(),
+        neighborhood: form.address.neighborhood.trim(),
+        city: form.address.city.trim(),
+        state: form.address.state.trim().toUpperCase(),
+        country: form.address.country.trim() || "Brasil",
+      };
+
+      const updatedProfile = await readJson<CurrentProfileResponse>("/api/me/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          email: form.email.trim().toLowerCase(),
+          avatarUrl: form.avatarUrl,
+          phone: form.phone.trim(),
+          address: normalizedAddress,
+          markPasswordUpdated: Boolean(newPassword),
+          newPassword: newPassword.trim() || undefined,
+        }),
+      });
+
+      setForm({
+        avatarUrl: updatedProfile.avatarUrl,
+        name: updatedProfile.name,
+        email: updatedProfile.email,
+        phone: updatedProfile.phone,
+        address: updatedProfile.address,
+      });
+      setPasswordUpdatedAt(updatedProfile.passwordUpdatedAt);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setSuccessMessage("Perfil atualizado no banco com sucesso.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Não foi possível salvar o perfil.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -183,9 +300,9 @@ export function ProfilePage({
         { label: "Meu Perfil" },
       ]}
       actions={
-        <Button type="button" onClick={handleSave}>
+        <Button type="button" onClick={() => void handleSave()} disabled={isSaving || isLoadingProfile}>
           <Save className="size-4" />
-          Salvar alterações
+          {isSaving ? "Salvando..." : "Salvar alterações"}
         </Button>
       }
     >
@@ -221,6 +338,7 @@ export function ProfilePage({
                 variant="outline"
                 size="sm"
                 onClick={() => updateFormField("avatarUrl", "")}
+                disabled={isSaving || isLoadingProfile}
               >
                 Remover foto
               </Button>
@@ -235,6 +353,7 @@ export function ProfilePage({
                 value={form.name}
                 onChange={(event) => updateFormField("name", event.target.value)}
                 placeholder="Nome completo"
+                disabled={isSaving || isLoadingProfile}
               />
             </div>
             <div className="grid gap-2 sm:col-span-2">
@@ -245,6 +364,7 @@ export function ProfilePage({
                 value={form.email}
                 onChange={(event) => updateFormField("email", event.target.value)}
                 placeholder="voce@empresa.com"
+                disabled={isSaving || isLoadingProfile}
               />
             </div>
             <div className="grid gap-2 sm:col-span-2">
@@ -257,6 +377,7 @@ export function ProfilePage({
                 value={form.phone}
                 onChange={(event) => updateFormField("phone", event.target.value)}
                 placeholder="(99) 99999-9999"
+                disabled={isSaving || isLoadingProfile}
               />
             </div>
           </div>
@@ -278,6 +399,7 @@ export function ProfilePage({
               value={form.address.zipCode}
               onChange={(event) => updateAddressField("zipCode", event.target.value)}
               placeholder="00000-000"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2 sm:col-span-2">
@@ -287,6 +409,7 @@ export function ProfilePage({
               value={form.address.street}
               onChange={(event) => updateAddressField("street", event.target.value)}
               placeholder="Nome da rua"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2">
@@ -296,6 +419,7 @@ export function ProfilePage({
               value={form.address.number}
               onChange={(event) => updateAddressField("number", event.target.value)}
               placeholder="123"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2">
@@ -305,6 +429,7 @@ export function ProfilePage({
               value={form.address.complement}
               onChange={(event) => updateAddressField("complement", event.target.value)}
               placeholder="Apto, bloco, sala..."
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2">
@@ -314,6 +439,7 @@ export function ProfilePage({
               value={form.address.neighborhood}
               onChange={(event) => updateAddressField("neighborhood", event.target.value)}
               placeholder="Bairro"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2 sm:col-span-2">
@@ -323,6 +449,7 @@ export function ProfilePage({
               value={form.address.city}
               onChange={(event) => updateAddressField("city", event.target.value)}
               placeholder="Cidade"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2">
@@ -332,6 +459,7 @@ export function ProfilePage({
               value={form.address.state}
               onChange={(event) => updateAddressField("state", event.target.value)}
               placeholder="CE"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2 sm:col-span-3">
@@ -341,6 +469,7 @@ export function ProfilePage({
               value={form.address.country}
               onChange={(event) => updateAddressField("country", event.target.value)}
               placeholder="Brasil"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
         </CardContent>
@@ -362,6 +491,7 @@ export function ProfilePage({
               value={currentPassword}
               onChange={(event) => setCurrentPassword(event.target.value)}
               placeholder="Senha atual"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2">
@@ -372,6 +502,7 @@ export function ProfilePage({
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
               placeholder="Mínimo 8 caracteres"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
           <div className="grid gap-2">
@@ -382,31 +513,41 @@ export function ProfilePage({
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               placeholder="Repita a nova senha"
+              disabled={isSaving || isLoadingProfile}
             />
           </div>
         </CardContent>
       </Card>
 
-      {errorMessage && (
+      {errorMessage ? (
         <div className="rounded-lg border border-danger/40 bg-danger/25 px-3 py-2 text-sm text-danger-foreground">
           {errorMessage}
         </div>
-      )}
+      ) : null}
 
-      {successMessage && (
+      {successMessage ? (
         <div className="rounded-lg border border-success/40 bg-success/25 px-3 py-2 text-sm text-success-foreground">
           {successMessage}
         </div>
-      )}
+      ) : null}
 
       <Card>
-        <CardContent className="flex items-center justify-between gap-3 p-4">
-          <p className="text-sm text-muted-foreground">
-            Alterações são locais no front-end por enquanto e não persistem em backend.
-          </p>
-          <Button type="button" onClick={handleSave}>
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">
+              Alterações são persistidas no banco e, quando o usuário já estiver vinculado ao Supabase Auth, a senha também é sincronizada.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Última atualização de senha: {passwordUpdatedAt}
+            </p>
+          </div>
+          <Button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving || isLoadingProfile}
+          >
             <UserRound className="size-4" />
-            Salvar perfil
+            {isLoadingProfile ? "Carregando..." : isSaving ? "Salvando..." : "Salvar perfil"}
           </Button>
         </CardContent>
       </Card>

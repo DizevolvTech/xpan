@@ -2,26 +2,16 @@
 
 import { motion } from "framer-motion";
 import { Factory, ListChecks, Truck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
-import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
+import { getTodayDateKey } from "@/lib/order-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 export default function ChaoFabricaPage() {
   const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(basePlanningData, {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
 
   const opsCount = planningData.productionOrders.length;
   const productionKg = Number(planningData.productionOrders.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));

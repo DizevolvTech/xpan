@@ -5,8 +5,8 @@ import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
 import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
-import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
+import { getTodayDateKey } from "@/lib/order-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -29,16 +29,7 @@ export default function ExpedicaoPrintPage() {
   const searchParams = useSearchParams();
   const expeditionId = typeof params.expeditionId === "string" ? params.expeditionId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(buildFactoryPlanningData(referenceDate), {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [referenceDate, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
 
   const expedition = useMemo(
     () => planningData.expedition.find((item) => item.id === expeditionId) ?? null,

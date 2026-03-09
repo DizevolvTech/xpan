@@ -1,11 +1,10 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { SESSION_COOKIE_NAME, decodeSession, roleHomePath } from "@/lib/auth";
+import { roleHomePath } from "@/lib/auth";
+import { resolveServerSession } from "@/lib/server-session";
 
 export default async function HomePage() {
-  const cookieStore = await cookies();
-  const session = decodeSession(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const session = await resolveServerSession();
 
   if (!session) {
     redirect("/login");

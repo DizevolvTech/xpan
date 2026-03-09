@@ -20,16 +20,17 @@ import {
 } from "@/components/ui/dialog";
 import {
   formatDateBr,
-  getMinimumProductionTotal,
-  getPlannedDaysCount,
-  linesById,
-  productsById,
-  productionLines,
   productionWeekDays,
-  sectorsById,
-  weeklySchedules,
   type WeeklyProductionSchedule,
 } from "@/lib/production-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import {
+  buildLineById,
+  buildProductById,
+  buildSectorNameById,
+  getMinimumProductionTotalFromSchedule,
+  getPlannedDaysCountFromSchedule,
+} from "@/lib/production-data-utils";
 
 type SublinhaRow = WeeklyProductionSchedule & {
   lineName: string;
@@ -40,29 +41,33 @@ type SublinhaRow = WeeklyProductionSchedule & {
 };
 
 export default function SublinhasProducaoPage() {
+  const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
-  const [scheduleRowsState, setScheduleRowsState] = useState<WeeklyProductionSchedule[]>(weeklySchedules);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [auditNotes, setAuditNotes] = useState("");
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const linesById = useMemo(() => buildLineById(snapshot.lines), [snapshot.lines]);
+  const productsById = useMemo(() => buildProductById(snapshot.products), [snapshot.products]);
+  const sectorNameById = useMemo(() => buildSectorNameById(snapshot.sectors), [snapshot.sectors]);
 
   const scheduleRows = useMemo<SublinhaRow[]>(
     () =>
-      scheduleRowsState.map((schedule) => {
+      snapshot.schedules.map((schedule) => {
         const line = linesById.get(schedule.lineId);
-        const sector = line ? sectorsById.get(line.sectorId) : undefined;
         return {
           ...schedule,
           lineName: line?.name ?? "-",
-          sectorName: sector?.name ?? "-",
+          sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
           itemsCount: schedule.items.length,
-          minimumTotal: getMinimumProductionTotal(schedule),
-          plannedDays: getPlannedDaysCount(schedule),
+          minimumTotal: getMinimumProductionTotalFromSchedule(schedule),
+          plannedDays: getPlannedDaysCountFromSchedule(schedule),
         };
       }),
-    [scheduleRowsState],
+    [linesById, sectorNameById, snapshot.schedules],
   );
 
   const selectedSchedule = useMemo(
@@ -123,50 +128,38 @@ export default function SublinhasProducaoPage() {
     },
   ];
 
-  const updateScheduleStatus = (nextStatus: "ativo" | "inativo") => {
+  const updateScheduleStatus = async (nextStatus: "ativo" | "inativo") => {
     if (!selectedSchedule) {
       return;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    setIsSubmitting(true);
+    setPageError(null);
 
-    setScheduleRowsState((previous) =>
-      previous.map((schedule) => {
-        if (schedule.id === selectedSchedule.id) {
-          const wasPending = schedule.status === "pendente";
-          const nextSchedule: WeeklyProductionSchedule = {
-            ...schedule,
-            status: nextStatus,
-            auditNotes: auditNotes.trim() || undefined,
-            auditedAt: wasPending ? today : schedule.auditedAt,
-            auditedBy: wasPending ? "Gestor de Fábrica" : schedule.auditedBy,
-            deactivatedAt: nextStatus === "inativo" ? today : undefined,
-            deactivatedBy: nextStatus === "inativo" ? "Gestor de Fábrica" : undefined,
-          };
+    try {
+      const response = await fetch(`/api/master-data/schedules/${selectedSchedule.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: nextStatus,
+          auditNotes,
+        }),
+      });
 
-          return nextSchedule;
-        }
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message ?? "Falha ao atualizar linha");
+      }
 
-        const shouldInactivatePreviousActive =
-          nextStatus === "ativo" &&
-          schedule.lineId === selectedSchedule.lineId &&
-          schedule.id !== selectedSchedule.id &&
-          schedule.status === "ativo";
-
-        if (!shouldInactivatePreviousActive) {
-          return schedule;
-        }
-
-        return {
-          ...schedule,
-          status: "inativo",
-          deactivatedAt: today,
-          deactivatedBy: "Gestor de Fábrica",
-        };
-      }),
-    );
-
-    setIsDetailsOpen(false);
+      await refresh();
+      setIsDetailsOpen(false);
+    } catch (updateError) {
+      setPageError(updateError instanceof Error ? updateError.message : "Falha ao atualizar linha");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -212,16 +205,21 @@ export default function SublinhasProducaoPage() {
                 label: "Subcategoria",
                 value: lineFilter,
                 onChange: setLineFilter,
-                options: productionLines.map((line) => ({ value: line.id, label: line.name })),
+                options: snapshot.lines.map((line) => ({ value: line.id, label: line.name })),
               },
             ]}
           />
+          {error || pageError ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              {pageError ?? error}
+            </div>
+          ) : null}
           <DataTable
             data={filteredSublinhas}
             columns={columns}
             actions={actions}
             keyField="id"
-            emptyMessage="Nenhuma linha encontrada"
+            emptyMessage={isLoading ? "Carregando linhas..." : "Nenhuma linha encontrada"}
             stickyHeader
           />
         </CardContent>
@@ -361,12 +359,13 @@ export default function SublinhasProducaoPage() {
                   type="button"
                   variant="outline"
                   className="border-danger-foreground/35 text-danger-foreground hover:bg-danger/35"
-                  onClick={() => updateScheduleStatus("inativo")}
+                  onClick={() => void updateScheduleStatus("inativo")}
+                  disabled={isSubmitting}
                 >
                   <PauseCircle className="size-4" />
                   Não Aprovar
                 </Button>
-                <Button type="button" onClick={() => updateScheduleStatus("ativo")}>
+                <Button type="button" onClick={() => void updateScheduleStatus("ativo")} disabled={isSubmitting}>
                   <CheckCircle className="size-4" />
                   Aprovar e Ativar
                 </Button>
@@ -376,13 +375,14 @@ export default function SublinhasProducaoPage() {
                 type="button"
                 variant="outline"
                 className="border-danger-foreground/35 text-danger-foreground hover:bg-danger/35"
-                onClick={() => updateScheduleStatus("inativo")}
+                onClick={() => void updateScheduleStatus("inativo")}
+                disabled={isSubmitting}
               >
                 <PauseCircle className="size-4" />
                 Desativar Linha
               </Button>
             ) : (
-              <Button type="button" onClick={() => updateScheduleStatus("ativo")}>
+              <Button type="button" onClick={() => void updateScheduleStatus("ativo")} disabled={isSubmitting}>
                 <PlayCircle className="size-4" />
                 Reativar Linha
               </Button>

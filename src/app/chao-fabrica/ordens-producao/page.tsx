@@ -13,15 +13,15 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import {
-  buildFactoryPlanningData,
   formatDateKeyBr,
   getTodayDateKey,
   type ProductionOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
-import { hierarchyLabels, productionLines } from "@/lib/production-planning";
+import { hierarchyLabels } from "@/lib/production-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 type OpQueueRow = ProductionOrderRow & {
   capacityKg: number;
@@ -51,20 +51,12 @@ export default function OrdensProducaoPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [opPage, setOpPage] = useState(1);
   const [opPageSize, setOpPageSize] = useState(20);
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(buildFactoryPlanningData(referenceDate), {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [referenceDate, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
+  const { snapshot } = useMasterDataSnapshot();
 
   const capacityByLineId = useMemo(
-    () => new Map(productionLines.map((line) => [line.id, line.capacityPerDayKg])),
-    [],
+    () => new Map(snapshot.lines.map((line) => [line.id, line.capacityPerDayKg])),
+    [snapshot.lines],
   );
 
   const opRows = useMemo<OpQueueRow[]>(

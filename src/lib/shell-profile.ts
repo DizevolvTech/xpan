@@ -2,7 +2,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import { SESSION_COOKIE_NAME, decodeSession, roleHomePath, type UserRole } from "@/lib/auth";
+import { roleHomePath, type UserRole } from "@/lib/auth";
+import { resolveServerSession } from "@/lib/server-session";
 import { SHELL_PROFILE_COOKIE_NAME } from "@/lib/shell-profile-constants";
 
 function normalizeShellProfile(raw: string | undefined): UserRole | null {
@@ -19,7 +20,7 @@ export async function getShellContext(defaultProfile: UserRole): Promise<{
   canSwitchProfiles: boolean;
 }> {
   const cookieStore = await cookies();
-  const session = decodeSession(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const session = await resolveServerSession();
   const overrideProfile = normalizeShellProfile(cookieStore.get(SHELL_PROFILE_COOKIE_NAME)?.value);
 
   if (session?.role === "administrador") {

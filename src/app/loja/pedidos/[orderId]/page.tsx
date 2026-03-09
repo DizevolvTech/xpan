@@ -9,7 +9,8 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getStoreOrderById } from "@/lib/store-orders-mock";
+import { getTodayDateKey } from "@/lib/order-planning";
+import { useStoreOrderDetail } from "@/lib/use-store-orders";
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -32,7 +33,7 @@ function parseBrDate(dateLabel: string): Date | null {
 export default function PedidoLojaDetailsPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
-  const order = useMemo(() => getStoreOrderById(orderId), [orderId]);
+  const { order } = useStoreOrderDetail(orderId, getTodayDateKey());
 
   const itemsCount = useMemo(() => (order ? order.items.length : 0), [order]);
   const totalRequested = useMemo(

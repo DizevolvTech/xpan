@@ -13,14 +13,13 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import {
-  buildFactoryPlanningData,
   formatDateKeyBr,
   getTodayDateKey,
   type ExpeditionRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -36,16 +35,7 @@ export default function ExpedicaoPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(buildFactoryPlanningData(referenceDate), {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [referenceDate, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
 
   const orderRows = useMemo<ExpeditionOrderRow[]>(
     () =>

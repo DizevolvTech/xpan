@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   Factory,
   LayoutDashboard,
@@ -18,10 +18,10 @@ import {
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard, type ModuleTone } from "@/components/shared/module-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
-import { productionLines } from "@/lib/production-planning";
+import { getTodayDateKey, type FactoryPlanningData } from "@/lib/order-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 type QuickAccessModule = {
   href: string;
@@ -213,6 +213,9 @@ function getInitialReferenceDate() {
 
 export default function AdministradorPage() {
   const [referenceDate, setReferenceDate] = useState(getInitialReferenceDate);
+  const [loadTrend, setLoadTrend] = useState<
+    Array<{ dateKey: string; label: string; productionKg: number; expeditionKg: number; totalOrders: number }>
+  >([]);
 
   function handleReferenceDateChange(nextDate: string) {
     if (!isValidDateKey(nextDate) || nextDate === referenceDate) {
@@ -227,27 +230,18 @@ export default function AdministradorPage() {
     }
   }
 
-  const workflow = useFactoryWorkflowState(referenceDate);
+  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
   const deliveryExecution = useDeliveryExecution(referenceDate);
-
-  const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(basePlanningData, {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { snapshot } = useMasterDataSnapshot();
 
   const activeLineCapacityByName = useMemo(
     () =>
       new Map(
-        productionLines
+        snapshot.lines
           .filter((line) => line.status === "ativo")
           .map((line) => [line.name, line.capacityPerDayKg]),
       ),
-    [],
+    [snapshot.lines],
   );
 
   const productionKg = useMemo(
@@ -451,26 +445,44 @@ export default function AdministradorPage() {
     };
   }, [statusDistribution, totalOrders]);
 
-  const loadTrend = useMemo(() => {
-    const dayOffsets = [-3, -2, -1, 0, 1, 2, 3];
-    return dayOffsets.map((offset) => {
-      const dateKey = addDays(referenceDate, offset);
-      const dayPlanning = buildFactoryPlanningData(dateKey);
-      const dayProductionKg = Number(
-        dayPlanning.productionOrders.reduce((sum, op) => sum + op.totalKg, 0).toFixed(2),
-      );
-      const dayExpeditionKg = Number(
-        dayPlanning.expedition.reduce((sum, expeditionRow) => sum + expeditionRow.totalKg, 0).toFixed(2),
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTrendSeries() {
+      const dayOffsets = [-3, -2, -1, 0, 1, 2, 3];
+      const data = await Promise.all(
+        dayOffsets.map(async (offset) => {
+          const dateKey = addDays(referenceDate, offset);
+          const response = await fetch(`/api/factory-planning?referenceDate=${dateKey}`);
+          if (!response.ok) {
+            throw new Error("Falha ao carregar tendencia operacional");
+          }
+          const dayPlanning = (await response.json()) as FactoryPlanningData;
+
+          return {
+            dateKey,
+            label: formatShortDate(dateKey),
+            productionKg: Number(dayPlanning.productionOrders.reduce((sum, op) => sum + op.totalKg, 0).toFixed(2)),
+            expeditionKg: Number(dayPlanning.expedition.reduce((sum, expeditionRow) => sum + expeditionRow.totalKg, 0).toFixed(2)),
+            totalOrders: dayPlanning.orders.length,
+          };
+        }),
       );
 
-      return {
-        dateKey,
-        label: formatShortDate(dateKey),
-        productionKg: dayProductionKg,
-        expeditionKg: dayExpeditionKg,
-        totalOrders: dayPlanning.orders.length,
-      };
+      if (!cancelled) {
+        setLoadTrend(data);
+      }
+    }
+
+    void loadTrendSeries().catch(() => {
+      if (!cancelled) {
+        setLoadTrend([]);
+      }
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [referenceDate]);
 
   const trendMaxKg = useMemo(

@@ -38,383 +38,50 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { UserRole } from "@/lib/auth";
-
-type PermissionGroup =
-  | "administrador"
-  | "gestor-dados"
-  | "gestor-fabrica"
-  | "chao-fabrica"
-  | "loja";
-type PermissionLevel = "sem_acesso" | "visualizar" | "operar" | "gerenciar";
-type ManagedUserStatus = "ativo" | "inativo";
-
-type PermissionModuleDefinition = {
-  id: string;
-  label: string;
-  route: string;
-  group: PermissionGroup;
-};
-
-const permissionModules = [
-  { id: "administrador.dashboard", label: "Dashboard administrativo", route: "/administrador", group: "administrador" },
-  { id: "administrador.usuarios", label: "Gestão de usuários", route: "/administrador/usuarios", group: "administrador" },
-  { id: "gestor-dados.dashboard", label: "Visão geral de dados", route: "/gestor-dados", group: "gestor-dados" },
-  { id: "gestor-dados.ingredientes", label: "Ingredientes", route: "/gestor-dados/ingredientes", group: "gestor-dados" },
-  { id: "gestor-dados.produtos", label: "Produtos", route: "/gestor-dados/produtos", group: "gestor-dados" },
-  { id: "gestor-dados.setores", label: "Categorias", route: "/gestor-dados/setores", group: "gestor-dados" },
-  { id: "gestor-dados.linhas", label: "Subcategorias", route: "/gestor-dados/linhas-producao", group: "gestor-dados" },
-  { id: "gestor-dados.lojas", label: "Lojas", route: "/gestor-dados/lojas", group: "gestor-dados" },
-  { id: "gestor-fabrica.dashboard", label: "Visão geral da fábrica", route: "/gestor-fabrica", group: "gestor-fabrica" },
-  { id: "gestor-fabrica.sublinhas", label: "Linhas", route: "/gestor-fabrica/sublinhas-producao", group: "gestor-fabrica" },
-  { id: "gestor-fabrica.pedidos", label: "Pedidos", route: "/gestor-fabrica/pedidos", group: "gestor-fabrica" },
-  { id: "gestor-fabrica.ops", label: "Ordens de produção", route: "/gestor-fabrica/ordens-producao", group: "gestor-fabrica" },
-  { id: "gestor-fabrica.expedicao", label: "Expedição", route: "/gestor-fabrica/expedicao", group: "gestor-fabrica" },
-  { id: "chao-fabrica.dashboard", label: "Visão geral de execução", route: "/chao-fabrica", group: "chao-fabrica" },
-  { id: "chao-fabrica.ops", label: "Execução de OP", route: "/chao-fabrica/ordens-producao", group: "chao-fabrica" },
-  { id: "chao-fabrica.expedicao", label: "Execução da expedição", route: "/chao-fabrica/expedicao", group: "chao-fabrica" },
-  { id: "loja.dashboard", label: "Visão geral da loja", route: "/loja", group: "loja" },
-  { id: "loja.pedidos", label: "Pedidos da loja", route: "/loja/pedidos", group: "loja" },
-  { id: "loja.ocorrencias", label: "Ocorrências da loja", route: "/loja/ocorrencias", group: "loja" },
-] as const satisfies ReadonlyArray<PermissionModuleDefinition>;
-
-type PermissionModuleId = (typeof permissionModules)[number]["id"];
-type PermissionMap = Record<PermissionModuleId, PermissionLevel>;
-
-type UserAddress = {
-  zipCode: string;
-  street: string;
-  number: string;
-  complement: string;
-  neighborhood: string;
-  city: string;
-  state: string;
-  country: string;
-};
-
-type ManagedUserProfile = {
-  avatarUrl: string;
-  phone: string;
-  address: UserAddress;
-  passwordUpdatedAt: string;
-};
-
-type ManagedUser = {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  status: ManagedUserStatus;
-  updatedAt: string;
-  permissions: PermissionMap;
-  profile: ManagedUserProfile;
-};
-
-type UserFormState = {
-  name: string;
-  email: string;
-  role: UserRole;
-  status: ManagedUserStatus;
-};
-
-type ProfileFormState = {
-  avatarUrl: string;
-  phone: string;
-  address: UserAddress;
-  newPassword: string;
-  confirmPassword: string;
-};
-
-const permissionGroupOrder: PermissionGroup[] = [
-  "administrador",
-  "gestor-dados",
-  "gestor-fabrica",
-  "chao-fabrica",
-  "loja",
-];
-
-const permissionGroupLabels: Record<PermissionGroup, string> = {
-  administrador: "Administração",
-  "gestor-dados": "Gestor de Dados",
-  "gestor-fabrica": "Gestor de Fábrica",
-  "chao-fabrica": "Chão de Fábrica",
-  loja: "Loja",
-};
-
-const permissionLevelLabels: Record<PermissionLevel, string> = {
-  sem_acesso: "Sem acesso",
-  visualizar: "Visualizar",
-  operar: "Operar",
-  gerenciar: "Gerenciar",
-};
-
-const roleLabels: Record<UserRole, string> = {
-  administrador: "Administrador",
-  "gestor-dados": "Gestor de Dados",
-  "gestor-fabrica": "Gestor de Fábrica",
-  "chao-fabrica": "Chão de Fábrica",
-  loja: "Loja",
-};
-
-function buildEmptyPermissions(): PermissionMap {
-  return permissionModules.reduce<PermissionMap>((acc, module) => {
-    acc[module.id] = "sem_acesso";
-    return acc;
-  }, {} as PermissionMap);
-}
-
-function applyGroupLevel(
-  permissions: PermissionMap,
-  group: PermissionGroup,
-  level: PermissionLevel,
-) {
-  permissionModules.forEach((module) => {
-    if (module.group === group) {
-      permissions[module.id] = level;
-    }
-  });
-}
-
-function buildDefaultPermissions(role: UserRole): PermissionMap {
-  const permissions = buildEmptyPermissions();
-
-  switch (role) {
-    case "administrador":
-      permissionModules.forEach((module) => {
-        permissions[module.id] = "gerenciar";
-      });
-      break;
-    case "gestor-dados":
-      applyGroupLevel(permissions, "gestor-dados", "gerenciar");
-      break;
-    case "gestor-fabrica":
-      applyGroupLevel(permissions, "gestor-fabrica", "gerenciar");
-      applyGroupLevel(permissions, "chao-fabrica", "visualizar");
-      break;
-    case "chao-fabrica":
-      applyGroupLevel(permissions, "chao-fabrica", "operar");
-      break;
-    case "loja":
-      applyGroupLevel(permissions, "loja", "operar");
-      break;
-    default:
-      break;
-  }
-
-  return permissions;
-}
-
-function buildEmptyAddress(): UserAddress {
-  return {
-    zipCode: "",
-    street: "",
-    number: "",
-    complement: "",
-    neighborhood: "",
-    city: "",
-    state: "",
-    country: "Brasil",
-  };
-}
-
-function buildProfile(
-  profile?: Partial<Omit<ManagedUserProfile, "address">> & {
-    address?: Partial<UserAddress>;
-  },
-): ManagedUserProfile {
-  return {
-    avatarUrl: profile?.avatarUrl ?? "",
-    phone: profile?.phone ?? "",
-    address: {
-      ...buildEmptyAddress(),
-      ...profile?.address,
-    },
-    passwordUpdatedAt: profile?.passwordUpdatedAt ?? "-",
-  };
-}
-
-function countAllowedModules(permissions: PermissionMap) {
-  return permissionModules.filter((module) => permissions[module.id] !== "sem_acesso").length;
-}
-
-function countManagementPermissions(permissions: PermissionMap) {
-  return permissionModules.filter((module) => permissions[module.id] === "gerenciar").length;
-}
-
-function hasAdministrativeAccess(permissions: PermissionMap) {
-  return permissionModules.some(
-    (module) =>
-      module.group === "administrador" && permissions[module.id] !== "sem_acesso",
-  );
-}
-
-function isCustomizedPermissions(user: ManagedUser) {
-  const defaults = buildDefaultPermissions(user.role);
-  return permissionModules.some(
-    (module) => user.permissions[module.id] !== defaults[module.id],
-  );
-}
-
-function isProfileComplete(user: ManagedUser) {
-  const { phone, address } = user.profile;
-  return Boolean(
-    phone.trim() &&
-      address.street.trim() &&
-      address.number.trim() &&
-      address.neighborhood.trim() &&
-      address.city.trim() &&
-      address.state.trim(),
-  );
-}
-
-function getInitials(name: string) {
-  const pieces = name.trim().split(/\s+/).filter(Boolean);
-  if (pieces.length === 0) {
-    return "US";
-  }
-  if (pieces.length === 1) {
-    return pieces[0].slice(0, 2).toUpperCase();
-  }
-  return `${pieces[0][0] ?? ""}${pieces[pieces.length - 1][0] ?? ""}`.toUpperCase();
-}
-
-function buildAddressSummary(address: UserAddress) {
-  const cityState = [address.city.trim(), address.state.trim()].filter(Boolean).join(" / ");
-  return cityState || "Endereço não informado";
-}
-
-function nowLabel() {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date());
-}
-
-const initialUsers: ManagedUser[] = [
-  {
-    id: "user-admin",
-    name: "Administrador Geral",
-    email: "admin@danielaugusto.com",
-    role: "administrador",
-    status: "ativo",
-    updatedAt: "19/02/2026, 10:00",
-    permissions: buildDefaultPermissions("administrador"),
-    profile: buildProfile({
-      phone: "(85) 98888-1000",
-      address: {
-        zipCode: "60000-001",
-        street: "Av. Dom Luís",
-        number: "1000",
-        complement: "Sala 201",
-        neighborhood: "Aldeota",
-        city: "Fortaleza",
-        state: "CE",
-        country: "Brasil",
-      },
-      passwordUpdatedAt: "19/02/2026, 08:00",
-    }),
-  },
-  {
-    id: "user-dados",
-    name: "Fernanda Engenharia",
-    email: "engenharia@danielaugusto.com",
-    role: "gestor-dados",
-    status: "ativo",
-    updatedAt: "19/02/2026, 09:20",
-    permissions: buildDefaultPermissions("gestor-dados"),
-    profile: buildProfile({
-      phone: "(85) 98888-1001",
-      address: {
-        zipCode: "60115-080",
-        street: "Rua Joaquim Nabuco",
-        number: "340",
-        complement: "Bloco B",
-        neighborhood: "Meireles",
-        city: "Fortaleza",
-        state: "CE",
-        country: "Brasil",
-      },
-      passwordUpdatedAt: "18/02/2026, 15:40",
-    }),
-  },
-  {
-    id: "user-fabrica",
-    name: "Marcos Fabrica",
-    email: "fabrica@danielaugusto.com",
-    role: "gestor-fabrica",
-    status: "ativo",
-    updatedAt: "19/02/2026, 08:45",
-    permissions: buildDefaultPermissions("gestor-fabrica"),
-    profile: buildProfile({
-      phone: "(85) 98888-1002",
-      address: {
-        zipCode: "60833-120",
-        street: "Rua das Oficinas",
-        number: "82",
-        complement: "",
-        neighborhood: "Distrito Industrial",
-        city: "Fortaleza",
-        state: "CE",
-        country: "Brasil",
-      },
-      passwordUpdatedAt: "17/02/2026, 11:25",
-    }),
-  },
-  {
-    id: "user-chao",
-    name: "Equipe Chão",
-    email: "chao@danielaugusto.com",
-    role: "chao-fabrica",
-    status: "ativo",
-    updatedAt: "18/02/2026, 17:10",
-    permissions: buildDefaultPermissions("chao-fabrica"),
-    profile: buildProfile({
-      phone: "(85) 98888-1003",
-      address: {
-        zipCode: "60833-120",
-        street: "Rua das Oficinas",
-        number: "120",
-        complement: "Galpão 3",
-        neighborhood: "Distrito Industrial",
-        city: "Fortaleza",
-        state: "CE",
-        country: "Brasil",
-      },
-      passwordUpdatedAt: "16/02/2026, 10:05",
-    }),
-  },
-  {
-    id: "user-loja",
-    name: "Rommel Filho",
-    email: "loja@danielaugusto.com",
-    role: "loja",
-    status: "inativo",
-    updatedAt: "17/02/2026, 15:45",
-    permissions: {
-      ...buildDefaultPermissions("loja"),
-      "gestor-fabrica.pedidos": "visualizar",
-    },
-    profile: buildProfile({
-      phone: "",
-      address: {
-        zipCode: "",
-        street: "",
-        number: "",
-        complement: "",
-        neighborhood: "",
-        city: "",
-        state: "",
-        country: "Brasil",
-      },
-      passwordUpdatedAt: "14/02/2026, 09:00",
-    }),
-  },
-];
+import {
+  buildAddressSummary,
+  getInitials,
+  isCustomizedPermissions,
+  isProfileComplete,
+  roleLabels,
+  type ManagedUser,
+  type ManagedUserStatus,
+  type ProfileFormState,
+  type UserAddress,
+  type UserFormState,
+} from "@/lib/admin-users";
+import {
+  buildDefaultPermissions,
+  countAllowedModules,
+  countManagementPermissions,
+  hasAdministrativeAccess,
+  permissionGroupLabels,
+  permissionGroupOrder,
+  permissionLevelLabels,
+  permissionModules,
+  type PermissionLevel,
+  type PermissionMap,
+  type PermissionModuleId,
+} from "@/lib/permission-modules";
+import { useManagedUsers } from "@/lib/use-managed-users";
 
 export default function AdministradorUsuariosPage() {
-  const [users, setUsers] = useState<ManagedUser[]>(initialUsers);
+  const {
+    users,
+    isLoading,
+    isSubmitting,
+    error,
+    refresh,
+    createUser,
+    updateUser,
+    savePermissions,
+    saveProfile,
+  } = useManagedUsers();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [pageNotice, setPageNotice] = useState<string | null>(null);
 
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -428,9 +95,14 @@ export default function AdministradorUsuariosPage() {
 
   const [permissionUserId, setPermissionUserId] = useState<string | null>(null);
   const [permissionDraft, setPermissionDraft] = useState<PermissionMap | null>(null);
+  const [permissionFormError, setPermissionFormError] = useState<string | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState | null>(null);
   const [profileFormError, setProfileFormError] = useState<string | null>(null);
+  const editingUser = useMemo(
+    () => users.find((user) => user.id === editingUserId) ?? null,
+    [editingUserId, users],
+  );
 
   const permissionUser = useMemo(
     () => users.find((user) => user.id === permissionUserId) ?? null,
@@ -552,6 +224,7 @@ export default function AdministradorUsuariosPage() {
       icon: "user" as const,
       label: "Perfil e senha",
       onClick: (user: ManagedUser) => {
+        setPageError(null);
         openProfileDialog(user);
       },
     },
@@ -559,14 +232,17 @@ export default function AdministradorUsuariosPage() {
       icon: "view" as const,
       label: "Delegar permissões",
       onClick: (user: ManagedUser) => {
+        setPageError(null);
         setPermissionUserId(user.id);
         setPermissionDraft({ ...user.permissions });
+        setPermissionFormError(null);
       },
     },
     {
       icon: "edit" as const,
       label: "Editar usuário",
       onClick: (user: ManagedUser) => {
+        setPageError(null);
         setEditingUserId(user.id);
         setUserForm({
           name: user.name,
@@ -583,22 +259,13 @@ export default function AdministradorUsuariosPage() {
       label: "Ativar/Inativar",
       variant: "destructive" as const,
       onClick: (user: ManagedUser) => {
-        setUsers((current) =>
-          current.map((item) =>
-            item.id === user.id
-              ? {
-                  ...item,
-                  status: item.status === "ativo" ? "inativo" : "ativo",
-                  updatedAt: nowLabel(),
-                }
-              : item,
-          ),
-        );
+        void handleToggleUserStatus(user);
       },
     },
   ];
 
   function openNewUserDialog() {
+    setPageError(null);
     setEditingUserId(null);
     setUserForm({
       name: "",
@@ -610,7 +277,7 @@ export default function AdministradorUsuariosPage() {
     setIsUserDialogOpen(true);
   }
 
-  function handleSaveUser() {
+  async function handleSaveUser() {
     const name = userForm.name.trim();
     const email = userForm.email.trim().toLowerCase();
 
@@ -627,43 +294,43 @@ export default function AdministradorUsuariosPage() {
       return;
     }
 
-    if (editingUserId) {
-      setUsers((current) =>
-        current.map((user) => {
-          if (user.id !== editingUserId) {
-            return user;
-          }
-
-          const roleChanged = user.role !== userForm.role;
-
-          return {
-            ...user,
+    try {
+      if (editingUserId) {
+        await updateUser(
+          editingUserId,
+          {
             name,
             email,
             role: userForm.role,
             status: userForm.status,
-            updatedAt: nowLabel(),
-            permissions: roleChanged
-              ? buildDefaultPermissions(userForm.role)
-              : user.permissions,
-          };
-        }),
-      );
-    } else {
-      const newUser: ManagedUser = {
-        id: `user-${Date.now()}`,
-        name,
-        email,
-        role: userForm.role,
-        status: userForm.status,
-        updatedAt: nowLabel(),
-        permissions: buildDefaultPermissions(userForm.role),
-        profile: buildProfile(),
-      };
-      setUsers((current) => [newUser, ...current]);
-    }
+            storeIds: editingUser?.storeIds,
+          },
+          editingUser?.role !== userForm.role,
+        );
+      } else {
+        const created = await createUser({
+          name,
+          email,
+          role: userForm.role,
+          status: userForm.status,
+        });
 
-    setIsUserDialogOpen(false);
+        if (created?.temporaryPassword) {
+          setPageNotice(
+            `Usuário criado com acesso no Supabase Auth. Senha temporária: ${created.temporaryPassword}`,
+          );
+        } else {
+          setPageNotice("Usuário criado com sucesso.");
+        }
+      }
+
+      setPageError(null);
+      setIsUserDialogOpen(false);
+    } catch (saveError) {
+      setUserFormError(
+        saveError instanceof Error ? saveError.message : "Não foi possível salvar o usuário.",
+      );
+    }
   }
 
   function updatePermissionDraft(moduleId: PermissionModuleId, level: PermissionLevel) {
@@ -702,25 +369,24 @@ export default function AdministradorUsuariosPage() {
   function closePermissionDialog() {
     setPermissionUserId(null);
     setPermissionDraft(null);
+    setPermissionFormError(null);
   }
 
-  function savePermissionDialog() {
+  async function savePermissionDialog() {
     if (!permissionUserId || !permissionDraft) {
       return;
     }
 
-    setUsers((current) =>
-      current.map((user) =>
-        user.id === permissionUserId
-          ? {
-              ...user,
-              permissions: permissionDraft,
-              updatedAt: nowLabel(),
-            }
-          : user,
-      ),
-    );
-    closePermissionDialog();
+    try {
+      await savePermissions(permissionUserId, permissionDraft);
+      setPageError(null);
+      setPermissionFormError(null);
+      closePermissionDialog();
+    } catch (saveError) {
+      setPermissionFormError(
+        saveError instanceof Error ? saveError.message : "Não foi possível salvar as permissões.",
+      );
+    }
   }
 
   function openProfileDialog(user: ManagedUser) {
@@ -804,7 +470,7 @@ export default function AdministradorUsuariosPage() {
     setProfileFormError(null);
   }
 
-  function saveProfileDialog() {
+  async function saveProfileDialog() {
     if (!profileUserId || !profileForm) {
       return;
     }
@@ -853,29 +519,44 @@ export default function AdministradorUsuariosPage() {
       }
     }
 
-    const changedAt = nowLabel();
+    try {
+      await saveProfile(profileUserId, {
+        avatarUrl: profileForm.avatarUrl,
+        phone,
+        address: normalizedAddress,
+        markPasswordUpdated: Boolean(newPassword),
+        newPassword: newPassword || undefined,
+      });
+      setPageError(null);
+      setPageNotice(null);
+      closeProfileDialog();
+    } catch (saveError) {
+      setProfileFormError(
+        saveError instanceof Error ? saveError.message : "Não foi possível salvar o perfil.",
+      );
+    }
+  }
 
-    setUsers((current) =>
-      current.map((user) =>
-        user.id === profileUserId
-          ? {
-              ...user,
-              updatedAt: changedAt,
-              profile: {
-                ...user.profile,
-                avatarUrl: profileForm.avatarUrl,
-                phone,
-                address: normalizedAddress,
-                passwordUpdatedAt: newPassword
-                  ? changedAt
-                  : user.profile.passwordUpdatedAt,
-              },
-            }
-          : user,
-      ),
-    );
-
-    closeProfileDialog();
+  async function handleToggleUserStatus(user: ManagedUser) {
+    try {
+      await updateUser(
+        user.id,
+        {
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          status: user.status === "ativo" ? "inativo" : "ativo",
+          storeIds: user.storeIds,
+        },
+        false,
+      );
+      setPageError(null);
+      setPageNotice(null);
+    } catch (toggleError) {
+      setPageError(
+        toggleError instanceof Error ? toggleError.message : "Não foi possível atualizar o status.",
+      );
+    }
   }
 
   return (
@@ -888,7 +569,7 @@ export default function AdministradorUsuariosPage() {
         { label: "Usuários e Permissões" },
       ]}
       actions={
-        <Button type="button" onClick={openNewUserDialog}>
+        <Button type="button" onClick={openNewUserDialog} disabled={isSubmitting}>
           <Plus className="size-4" />
           Novo Usuário
         </Button>
@@ -912,6 +593,39 @@ export default function AdministradorUsuariosPage() {
           <CardTitle>Cadastro, Perfil e Delegação</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {pageNotice ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-success/40 bg-success/20 px-3 py-2 text-sm text-success-foreground">
+              <span>{pageNotice}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPageNotice(null)}
+              >
+                Fechar
+              </Button>
+            </div>
+          ) : null}
+
+          {error || pageError ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              <span>{pageError ?? error}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setPageError(null);
+                  setPageNotice(null);
+                  void refresh();
+                }}
+                disabled={isLoading}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          ) : null}
+
           <SearchFilter
             searchPlaceholder="Buscar por nome ou e-mail..."
             searchValue={searchTerm}
@@ -945,7 +659,7 @@ export default function AdministradorUsuariosPage() {
             columns={columns}
             actions={actions}
             keyField="id"
-            emptyMessage="Nenhum usuário encontrado para os filtros informados."
+            emptyMessage={isLoading ? "Carregando usuários..." : "Nenhum usuário encontrado para os filtros informados."}
             stickyHeader
           />
         </CardContent>
@@ -1086,10 +800,11 @@ export default function AdministradorUsuariosPage() {
               type="button"
               variant="outline"
               onClick={() => setIsUserDialogOpen(false)}
+              disabled={isSubmitting}
             >
               Cancelar
             </Button>
-            <Button type="button" onClick={handleSaveUser}>
+            <Button type="button" onClick={() => void handleSaveUser()} disabled={isSubmitting}>
               {editingUserId ? "Salvar alterações" : "Cadastrar usuário"}
             </Button>
           </DialogFooter>
@@ -1338,10 +1053,10 @@ export default function AdministradorUsuariosPage() {
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeProfileDialog}>
+            <Button type="button" variant="outline" onClick={closeProfileDialog} disabled={isSubmitting}>
               Cancelar
             </Button>
-            <Button type="button" onClick={saveProfileDialog}>
+            <Button type="button" onClick={() => void saveProfileDialog()} disabled={isSubmitting}>
               Salvar perfil
             </Button>
           </DialogFooter>
@@ -1368,6 +1083,12 @@ export default function AdministradorUsuariosPage() {
 
           {permissionUser && permissionDraft && (
             <div className="space-y-4 py-1">
+              {permissionFormError ? (
+                <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+                  {permissionFormError}
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" variant="outline" size="sm" onClick={resetPermissionDraftByRole}>
                   Aplicar perfil base
@@ -1474,10 +1195,10 @@ export default function AdministradorUsuariosPage() {
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={closePermissionDialog}>
+            <Button type="button" variant="outline" onClick={closePermissionDialog} disabled={isSubmitting}>
               Cancelar
             </Button>
-            <Button type="button" onClick={savePermissionDialog}>
+            <Button type="button" onClick={() => void savePermissionDialog()} disabled={isSubmitting}>
               Salvar permissões
             </Button>
           </DialogFooter>

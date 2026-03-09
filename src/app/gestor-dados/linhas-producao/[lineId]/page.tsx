@@ -11,30 +11,39 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   formatDateBr,
-  getLinePlannedKgPerDay,
-  getProductsByLine,
-  getSchedulesByLine,
   hierarchyLabels,
-  linesById,
   type ProductionWeekDay,
   productionWeekDays,
-  sectorsById,
-  weeklySchedules,
 } from "@/lib/production-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import {
+  buildSectorNameById,
+  getLinePlannedKgPerDayFromData,
+  getProductsByLineFromData,
+  getSchedulesByLineFromData,
+} from "@/lib/production-data-utils";
 
 export default function LinhaProducaoDetailsPage() {
   const params = useParams<{ lineId: string }>();
   const lineId = typeof params.lineId === "string" ? params.lineId : "";
-  const line = linesById.get(lineId) ?? null;
+  const { snapshot, isLoading, error } = useMasterDataSnapshot();
+  const line = snapshot.lines.find((item) => item.id === lineId) ?? null;
+  const sectorNameById = useMemo(() => buildSectorNameById(snapshot.sectors), [snapshot.sectors]);
 
-  const products = useMemo(() => (line ? getProductsByLine(line.id) : []), [line]);
-  const schedules = useMemo(() => (line ? getSchedulesByLine(line.id, weeklySchedules) : []), [line]);
+  const products = useMemo(
+    () => (line ? getProductsByLineFromData(line.id, snapshot.products) : []),
+    [line, snapshot.products],
+  );
+  const schedules = useMemo(
+    () => (line ? getSchedulesByLineFromData(line.id, snapshot.schedules) : []),
+    [line, snapshot.schedules],
+  );
   const plannedKgByDay = useMemo<Partial<Record<ProductionWeekDay, number>>>(
-    () => (line ? getLinePlannedKgPerDay(line.id) : {}),
-    [line],
+    () => (line ? getLinePlannedKgPerDayFromData(line.id, snapshot.products) : {}),
+    [line, snapshot.products],
   );
 
-  if (!line) {
+  if (!isLoading && !line) {
     return (
       <PageLayout
         title="Subcategoria não encontrada"
@@ -65,13 +74,13 @@ export default function LinhaProducaoDetailsPage() {
 
   return (
     <PageLayout
-      title={`${line.code} · ${line.name}`}
+      title={line ? `${line.code} · ${line.name}` : "Carregando subcategoria"}
       description="A linha executora é derivada dos produtos vinculados. O cronograma agora é definido no cadastro de produto."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
         { label: "Subcategorias", href: "/gestor-dados/linhas-producao" },
-        { label: line.name },
+        { label: line?.name ?? "Detalhes" },
       ]}
       actions={
         <Button asChild type="button" variant="outline">
@@ -82,24 +91,30 @@ export default function LinhaProducaoDetailsPage() {
         </Button>
       }
     >
+      {error ? (
+        <Card>
+          <CardContent className="py-6 text-sm text-danger-foreground">{error}</CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardContent className="grid gap-3 p-4 md:grid-cols-4">
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{hierarchyLabels.sector}</p>
-            <p className="mt-1 text-sm font-medium">{sectorsById.get(line.sectorId)?.name ?? "-"}</p>
+            <p className="mt-1 text-sm font-medium">{line ? sectorNameById.get(line.sectorId) ?? "-" : "-"}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Horário</p>
-            <p className="mt-1 text-sm font-medium">{line.operatingHours}</p>
+            <p className="mt-1 text-sm font-medium">{line?.operatingHours ?? "-"}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Capacidade / dia</p>
-            <p className="mt-1 text-sm font-medium">{line.capacityPerDayKg} Kg</p>
+            <p className="mt-1 text-sm font-medium">{line?.capacityPerDayKg ?? 0} Kg</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
             <div className="mt-1">
-              <StatusBadge status={line.status} />
+              <StatusBadge status={line?.status ?? "inativo"} />
             </div>
           </div>
         </CardContent>

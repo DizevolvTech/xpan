@@ -11,13 +11,11 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  PRODUCTION_ITEM_STATUS_OPTIONS,
-  applyFactoryWorkflowState,
-  useFactoryWorkflowState,
-} from "@/lib/factory-order-status";
-import { buildFactoryPlanningData, getTodayDateKey } from "@/lib/order-planning";
-import { hierarchyLabels, productionLines } from "@/lib/production-planning";
+import { getTodayDateKey } from "@/lib/order-planning";
+import { PRODUCTION_ITEM_STATUS_OPTIONS } from "@/lib/production-item-status-options";
+import { hierarchyLabels } from "@/lib/production-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -35,16 +33,8 @@ export default function OrdemProducaoDetailsPage() {
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const [referenceDate, setReferenceDate] = useState(() => sanitizeDateKey(searchParams.get("ref")));
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(buildFactoryPlanningData(referenceDate), {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [referenceDate, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData, updateProductionItemStatus } = useFactoryPlanningSnapshot(referenceDate);
+  const { snapshot } = useMasterDataSnapshot();
 
   const op = useMemo(
     () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
@@ -55,8 +45,8 @@ export default function OrdemProducaoDetailsPage() {
     if (!op) {
       return 0;
     }
-    return productionLines.find((item) => item.id === op.lineId)?.capacityPerDayKg ?? 0;
-  }, [op]);
+    return snapshot.lines.find((item) => item.id === op.lineId)?.capacityPerDayKg ?? 0;
+  }, [op, snapshot.lines]);
 
   const flowSteps = [
     {
@@ -251,7 +241,7 @@ export default function OrdemProducaoDetailsPage() {
                         <StatusBadge status={item.status} />
                         <Select
                           value={item.status}
-                          onValueChange={(value) => workflow.updateProductionItemStatus(item.productionItemKey, value as (typeof PRODUCTION_ITEM_STATUS_OPTIONS)[number]["value"])}
+                          onValueChange={(value) => void updateProductionItemStatus(item.productionItemKey, value as (typeof PRODUCTION_ITEM_STATUS_OPTIONS)[number]["value"])}
                         >
                           <SelectTrigger className="h-9 w-[220px] bg-background">
                             <SelectValue placeholder="Atualizar estágio" />

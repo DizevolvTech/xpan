@@ -23,11 +23,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   getStoreCanOrderSunday,
   getStoreReceivesSunday,
-  operationalSettings,
   productionWeekDays,
-  storesMasterData,
   type StoreMasterData,
 } from "@/lib/production-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Loja = StoreMasterData;
 
@@ -49,11 +55,15 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
 }
 
 export default function LojasPage() {
+  const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
-  const [lojas, setLojas] = useState<Loja[]>(storesMasterData);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<Loja | null>(null);
   const [formState, setFormState] = useState<LojaFormState>(() => buildLojaFormState());
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const lojas = snapshot.stores;
 
   const filteredLojas = useMemo(
     () =>
@@ -98,6 +108,7 @@ export default function LojasPage() {
       onClick: (item: Loja) => {
         setEditingStore(item);
         setFormState(buildLojaFormState(item));
+        setFormError(null);
         setIsDialogOpen(true);
       },
     },
@@ -107,6 +118,7 @@ export default function LojasPage() {
       onClick: (item: Loja) => {
         setEditingStore(item);
         setFormState(buildLojaFormState(item));
+        setFormError(null);
         setIsDialogOpen(true);
       },
     },
@@ -124,18 +136,45 @@ export default function LojasPage() {
   function openNewStore() {
     setEditingStore(null);
     setFormState(buildLojaFormState());
+    setFormError(null);
     setIsDialogOpen(true);
   }
 
-  function handleSave() {
-    setLojas((current) => {
-      if (!editingStore) {
-        return [formState, ...current];
+  async function handleSave() {
+    if (!formState.name.trim() || !formState.responsible.trim()) {
+      setFormError("Informe nome e responsável da loja.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const response = await fetch(
+        editingStore
+          ? `/api/master-data/stores/${editingStore.id}`
+          : "/api/master-data/stores",
+        {
+          method: editingStore ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(formState),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message ?? "Falha ao salvar loja");
       }
 
-      return current.map((item) => (item.id === editingStore.id ? formState : item));
-    });
-    setIsDialogOpen(false);
+      await refresh();
+      setIsDialogOpen(false);
+    } catch (saveError) {
+      setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar loja");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -150,19 +189,24 @@ export default function LojasPage() {
     >
       <div className="grid gap-3 md:grid-cols-2">
         <KPICard title="Registros Ativos" value={`${lojas.length} lojas`} icon={Building2} tone="success" />
-        <KPICard title="Última Atualização" value="Há 4 dias" icon={Clock3} tone="neutral" />
+        <KPICard
+          title="Última Atualização"
+          value={isLoading ? "Carregando..." : `${lojas.filter((store) => store.status === "ativo").length} ativas`}
+          icon={Clock3}
+          tone="neutral"
+        />
       </div>
 
       <Card className="border-info/25 bg-info/10">
         <CardContent className="grid gap-3 p-4 md:grid-cols-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Regra Global</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{operationalSettings.orderCutoffTime}</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{snapshot.operationalSettings.orderCutoffTime}</p>
             <p className="text-sm text-muted-foreground">Horário limite do pedido</p>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Regra Global</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">D+{operationalSettings.expeditionLeadDays}</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">D+{snapshot.operationalSettings.expeditionLeadDays}</p>
             <p className="text-sm text-muted-foreground">Lead time padrão de expedição</p>
           </div>
           <div className="text-sm text-muted-foreground">
@@ -186,16 +230,42 @@ export default function LojasPage() {
             searchValue={searchTerm}
             showFilters={false}
           />
-          <DataTable data={filteredLojas} columns={columns} actions={actions} keyField="id" stickyHeader />
+          {error ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              {error}
+            </div>
+          ) : null}
+          <DataTable
+            data={filteredLojas}
+            columns={columns}
+            actions={actions}
+            keyField="id"
+            stickyHeader
+            emptyMessage={isLoading ? "Carregando lojas..." : "Nenhuma loja encontrada"}
+          />
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setFormError(null);
+          }
+        }}
+      >
         <DialogContent size="3xl">
           <DialogHeader>
             <DialogTitle>{editingStore ? "Editar Loja" : "Cadastrar Loja"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-6 py-2">
+            {formError ? (
+              <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+                {formError}
+              </div>
+            ) : null}
+
             <div>
               <h3 className="mb-4 text-sm font-semibold">Informações Básicas</h3>
               <div className="grid gap-4 md:grid-cols-2">
@@ -254,6 +324,23 @@ export default function LojasPage() {
                     placeholder="07:00 - 10:00"
                   />
                 </div>
+                <div className="grid gap-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={formState.status}
+                    onValueChange={(value) =>
+                      setFormState((current) => ({ ...current, status: value as Loja["status"] }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ativo">Ativo</SelectItem>
+                      <SelectItem value="inativo">Inativo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
@@ -306,10 +393,10 @@ export default function LojasPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
               Cancelar
             </Button>
-            <Button type="button" onClick={handleSave}>
+            <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
               {editingStore ? "Salvar" : "Cadastrar"}
             </Button>
           </DialogFooter>

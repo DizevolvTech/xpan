@@ -11,8 +11,8 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
-import { applyFactoryWorkflowState, useFactoryWorkflowState } from "@/lib/factory-order-status";
-import { buildFactoryPlanningData, formatDateKeyBr, getTodayDateKey } from "@/lib/order-planning";
+import { formatDateKeyBr, getTodayDateKey } from "@/lib/order-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -30,17 +30,7 @@ export default function PedidoDetailsPage() {
   const searchParams = useSearchParams();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const [referenceDate, setReferenceDate] = useState(() => sanitizeDateKey(searchParams.get("ref")));
-  const workflow = useFactoryWorkflowState(referenceDate);
-
-  const basePlanningData = useMemo(() => buildFactoryPlanningData(referenceDate), [referenceDate]);
-  const planningData = useMemo(
-    () =>
-      applyFactoryWorkflowState(basePlanningData, {
-        isReleased: workflow.isReleased,
-        resolveProductionItemStatus: workflow.resolveProductionItemStatus,
-      }),
-    [basePlanningData, workflow.isReleased, workflow.resolveProductionItemStatus],
-  );
+  const { planningData, releaseOrder } = useFactoryPlanningSnapshot(referenceDate);
 
   const order = useMemo(
     () => planningData.orders.find((item) => item.id === orderId) ?? null,
@@ -198,7 +188,7 @@ export default function PedidoDetailsPage() {
               type="button"
               className="w-full"
               disabled={!order.availableForRelease || order.releasedToProduction}
-              onClick={() => workflow.releaseOrder(order.id)}
+              onClick={() => void releaseOrder(order.id)}
             >
               {order.releasedToProduction ? "Pedido liberado" : "Liberar para produção"}
             </Button>

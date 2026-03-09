@@ -18,7 +18,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -28,15 +27,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import {
-  getProductsByLine,
-  getSchedulesByLine,
-  productionLines,
-  productionSectors,
-  sectorsById,
-  weeklySchedules,
-  type ProductionLine,
-} from "@/lib/production-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import type { ProductionLine } from "@/lib/production-planning";
 
 type LinhaRow = ProductionLine & {
   sectorName: string;
@@ -44,21 +36,55 @@ type LinhaRow = ProductionLine & {
   pendingAudits: number;
 };
 
+type SubcategoryFormState = {
+  name: string;
+  sectorId: string;
+  type: ProductionLine["type"];
+  operatingHours: string;
+  capacityPerDayKg: number;
+  status: ProductionLine["status"];
+};
+
+function buildFormState(
+  sectors: Array<{ id: string }>,
+  line?: ProductionLine | null,
+): SubcategoryFormState {
+  return {
+    name: line?.name ?? "",
+    sectorId: line?.sectorId ?? sectors[0]?.id ?? "",
+    type: line?.type ?? "Seco",
+    operatingHours: line?.operatingHours ?? "05:00 - 14:00",
+    capacityPerDayKg: line?.capacityPerDayKg ?? 900,
+    status: line?.status ?? "ativo",
+  };
+}
+
 export default function LinhasProducaoPage() {
   const router = useRouter();
+  const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingLine, setEditingLine] = useState<LinhaRow | null>(null);
+  const [formState, setFormState] = useState<SubcategoryFormState>(() => buildFormState([]));
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const sectorNameById = useMemo(
+    () => new Map(snapshot.sectors.map((sector) => [sector.id, sector.name])),
+    [snapshot.sectors],
+  );
 
   const lineRows = useMemo<LinhaRow[]>(
     () =>
-      productionLines.map((line) => ({
+      snapshot.lines.map((line) => ({
         ...line,
-        sectorName: sectorsById.get(line.sectorId)?.name ?? "-",
-        productCount: getProductsByLine(line.id).length,
-        pendingAudits: getSchedulesByLine(line.id, weeklySchedules).filter((item) => item.status === "pendente")
-          .length,
+        sectorName: sectorNameById.get(line.sectorId) ?? "-",
+        productCount: snapshot.products.filter((product) => product.lineId === line.id).length,
+        pendingAudits: snapshot.schedules.filter(
+          (schedule) => schedule.lineId === line.id && schedule.status === "pendente",
+        ).length,
       })),
-    [],
+    [sectorNameById, snapshot.lines, snapshot.products, snapshot.schedules],
   );
 
   const filteredLinhas = useMemo(
@@ -73,7 +99,7 @@ export default function LinhasProducaoPage() {
   );
 
   const activeLines = lineRows.filter((item) => item.status === "ativo").length;
-  const pendingAudits = weeklySchedules.filter((item) => item.status === "pendente").length;
+  const pendingAudits = snapshot.schedules.filter((item) => item.status === "pendente").length;
 
   const columns = [
     { key: "code", header: "Código" },
@@ -106,17 +132,57 @@ export default function LinhasProducaoPage() {
       icon: "edit" as const,
       label: "Editar",
       onClick: (item: LinhaRow) => {
-        console.log("Edit", item);
+        setEditingLine(item);
+        setFormState(buildFormState(snapshot.sectors, item));
+        setFormError(null);
         setIsDialogOpen(true);
       },
     },
-    {
-      icon: "delete" as const,
-      label: "Excluir",
-      variant: "destructive" as const,
-      onClick: (item: LinhaRow) => console.log("Delete", item),
-    },
   ];
+
+  function openNewLine() {
+    setEditingLine(null);
+    setFormState(buildFormState(snapshot.sectors));
+    setFormError(null);
+    setIsDialogOpen(true);
+  }
+
+  async function handleSave() {
+    if (!formState.name.trim() || !formState.sectorId) {
+      setFormError("Informe nome e categoria da subcategoria.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const response = await fetch(
+        editingLine
+          ? `/api/master-data/subcategories/${editingLine.id}`
+          : "/api/master-data/subcategories",
+        {
+          method: editingLine ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(formState),
+        },
+      );
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message ?? "Falha ao salvar subcategoria");
+      }
+
+      await refresh();
+      setIsDialogOpen(false);
+    } catch (saveError) {
+      setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar subcategoria");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <PageLayout
@@ -136,77 +202,21 @@ export default function LinhasProducaoPage() {
           icon={CalendarDays}
           tone="warning"
         />
-        <KPICard title="Última Atualização" value="Há 1 dia" icon={Clock3} tone="neutral" />
+        <KPICard
+          title="Última Atualização"
+          value={isLoading ? "Carregando..." : `${lineRows.length} cadastradas`}
+          icon={Clock3}
+          tone="neutral"
+        />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Lista de Subcategorias</CardTitle>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button type="button">
-                <Plus className="size-4" />
-                Nova Subcategoria
-              </Button>
-            </DialogTrigger>
-            <DialogContent size="xl">
-              <DialogHeader>
-                <DialogTitle>Nova Subcategoria</DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-2">
-                <div className="grid gap-2">
-                  <Label>Nome da Subcategoria *</Label>
-                  <Input placeholder="Ex: Linha de Pães" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Capacidade - Dia (Kg) *</Label>
-                  <Input type="number" placeholder="Ex: 900" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Categoria *</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {productionSectors.map((sector) => (
-                        <SelectItem key={sector.id} value={sector.id}>
-                          {sector.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Tipo *</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="seco">Seco</SelectItem>
-                      <SelectItem value="umido">Úmido</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Horário de Funcionamento</Label>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Input type="time" placeholder="Início" />
-                    <Input type="time" placeholder="Fim" />
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="button" onClick={() => setIsDialogOpen(false)}>
-                  Cadastrar
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button type="button" onClick={openNewLine} disabled={isSubmitting}>
+            <Plus className="size-4" />
+            Nova Subcategoria
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
@@ -215,9 +225,145 @@ export default function LinhasProducaoPage() {
             searchValue={searchTerm}
             showFilters={false}
           />
-          <DataTable data={filteredLinhas} columns={columns} actions={actions} keyField="id" stickyHeader />
+          {error ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              {error}
+            </div>
+          ) : null}
+          <DataTable
+            data={filteredLinhas}
+            columns={columns}
+            actions={actions}
+            keyField="id"
+            stickyHeader
+            emptyMessage={isLoading ? "Carregando subcategorias..." : "Nenhuma subcategoria encontrada"}
+          />
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setFormError(null);
+          }
+        }}
+      >
+        <DialogContent size="xl">
+          <DialogHeader>
+            <DialogTitle>{editingLine ? "Editar Subcategoria" : "Nova Subcategoria"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            {formError ? (
+              <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+                {formError}
+              </div>
+            ) : null}
+            <div className="grid gap-2">
+              <Label>Nome da Subcategoria *</Label>
+              <Input
+                placeholder="Ex: Linha de Pães"
+                value={formState.name}
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, name: event.target.value }))
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Capacidade - Dia (Kg) *</Label>
+              <Input
+                type="number"
+                value={formState.capacityPerDayKg}
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    capacityPerDayKg: Number(event.target.value),
+                  }))
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Categoria *</Label>
+              <Select
+                value={formState.sectorId}
+                onValueChange={(value) =>
+                  setFormState((current) => ({ ...current, sectorId: value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  {snapshot.sectors.map((sector) => (
+                    <SelectItem key={sector.id} value={sector.id}>
+                      {sector.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Tipo *</Label>
+              <Select
+                value={formState.type}
+                onValueChange={(value) =>
+                  setFormState((current) => ({
+                    ...current,
+                    type: value as ProductionLine["type"],
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Seco">Seco</SelectItem>
+                  <SelectItem value="Úmido">Úmido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Horário de Funcionamento</Label>
+              <Input
+                value={formState.operatingHours}
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, operatingHours: event.target.value }))
+                }
+                placeholder="05:00 - 14:00"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Status</Label>
+              <Select
+                value={formState.status}
+                onValueChange={(value) =>
+                  setFormState((current) => ({
+                    ...current,
+                    status: value as ProductionLine["status"],
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ativo">Ativo</SelectItem>
+                  <SelectItem value="inativo">Inativo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
+              {editingLine ? "Salvar" : "Cadastrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageLayout>
   );
 }
