@@ -142,8 +142,15 @@ export default function PedidosLojaPage() {
   });
 
   useEffect(() => {
-    if (!selectedStoreId && activeStores[0]) {
+    const currentStoreStillAvailable = activeStores.some((store) => store.id === selectedStoreId);
+
+    if ((!selectedStoreId || !currentStoreStillAvailable) && activeStores[0]) {
       setSelectedStoreId(activeStores[0].id);
+      return;
+    }
+
+    if (activeStores.length === 0 && selectedStoreId) {
+      setSelectedStoreId("");
     }
   }, [activeStores, selectedStoreId]);
 
@@ -151,7 +158,7 @@ export default function PedidosLojaPage() {
     setOrderProducts(catalog);
   }, [catalog]);
   const selectedStore = useMemo(
-    () => activeStores.find((store) => store.id === selectedStoreId) ?? activeStores[0],
+    () => activeStores.find((store) => store.id === selectedStoreId) ?? null,
     [activeStores, selectedStoreId],
   );
   const effectiveBaseDateKey = useMemo(() => {
@@ -340,13 +347,19 @@ export default function PedidosLojaPage() {
               </DialogHeader>
 
               <div className="space-y-6 py-2">
+                {activeStores.length === 0 ? (
+                  <div className="rounded-lg border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
+                    Nenhuma loja ativa está vinculada ao seu perfil. Revise os vínculos de loja antes de criar pedidos.
+                  </div>
+                ) : null}
+
                 <div className="rounded-lg border border-border/80 bg-panel p-4">
                   <div className="grid gap-4 md:grid-cols-4">
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Nome da Loja</Label>
-                      <Select value={selectedStore.id} onValueChange={setSelectedStoreId}>
+                      <Select value={selectedStore?.id ?? ""} onValueChange={setSelectedStoreId} disabled={activeStores.length === 0}>
                         <SelectTrigger>
-                          <SelectValue />
+                          <SelectValue placeholder="Selecione uma loja" />
                         </SelectTrigger>
                         <SelectContent>
                           {activeStores.map((store) => (
@@ -371,17 +384,17 @@ export default function PedidosLojaPage() {
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Janela de Recebimento</Label>
-                      <Input value={selectedStore.receiveWindow} disabled className="bg-muted" />
+                      <Input value={selectedStore?.receiveWindow ?? "Nenhuma loja disponível"} disabled className="bg-muted" />
                     </div>
                   </div>
                   <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
                     <p>
                       Dias de pedido: <strong>{orderingDaysLabel}</strong>. Domingo permitido:{" "}
-                      <strong>{getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não"}</strong>.
+                      <strong>{selectedStore ? (getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não") : "-"}</strong>.
                     </p>
                     <p>
                       Dias de recebimento: <strong>{receivingDaysLabel}</strong>. Recebe domingo:{" "}
-                      <strong>{getStoreReceivesSunday(selectedStore) ? "Sim" : "Não"}</strong>.
+                      <strong>{selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "-"}</strong>.
                     </p>
                   </div>
                 </div>
@@ -522,7 +535,7 @@ export default function PedidosLojaPage() {
                 <Button type="button" variant="outline" onClick={() => setIsNewOrderOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={() => void handleSubmitOrder()} disabled={isSubmitting}>
+                <Button type="button" onClick={() => void handleSubmitOrder()} disabled={isSubmitting || !selectedStore}>
                   Fazer Pedido
                 </Button>
               </DialogFooter>

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, LockKeyhole, LogIn, Mail, ShieldCheck } from "lucide-react";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { brand } from "@/lib/brand";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -69,7 +71,15 @@ export default function LoginForm() {
       <div className="grid w-full max-w-5xl gap-6 rounded-3xl border border-border/70 bg-surface/70 p-4 shadow-elevated backdrop-blur-sm md:p-6 lg:grid-cols-[1.2fr_1fr]">
         <Card className="border-border/80 bg-card/95 shadow-soft">
           <CardHeader>
-            <CardTitle className="font-heading text-2xl">Acesso ao Casa Express</CardTitle>
+            <div className="mb-2 flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center p-1.5">
+                <Image src={brand.logoPath} alt={brand.name} width={48} height={48} className="h-full w-full object-contain" priority />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Software</p>
+                <CardTitle className="font-heading text-2xl">Acesso ao {brand.name}</CardTitle>
+              </div>
+            </div>
             <CardDescription>
               Faça login com seu usuário para acessar o fluxo operacional correspondente ao seu perfil.
             </CardDescription>

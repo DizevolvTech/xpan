@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { brand } from "@/lib/brand";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
@@ -219,18 +221,30 @@ function SidebarNav({
           onClick={onNavigate}
         >
           {!collapsed ? (
-            <div className="space-y-1">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/90">
-                Software
-              </p>
-              <p className="font-heading text-base font-semibold leading-none text-foreground">
-                Casa Express
-              </p>
-              <p className="text-xs text-muted-foreground">Gestão de produção e pedidos</p>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl p-1.5">
+                <Image
+                  src={brand.logoPath}
+                  alt={brand.name}
+                  width={40}
+                  height={40}
+                  className="h-full w-full object-contain"
+                  priority
+                />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/90">
+                  Software
+                </p>
+                <p className="font-heading text-base font-semibold leading-none text-foreground">
+                  {brand.name}
+                </p>
+                <p className="text-xs text-muted-foreground">Gestão de produção e pedidos</p>
+              </div>
             </div>
           ) : (
             <span className="font-heading text-xs font-semibold uppercase tracking-[0.12em] text-foreground">
-              CE
+              {brand.shortName}
             </span>
           )}
         </Link>

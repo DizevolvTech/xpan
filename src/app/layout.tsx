@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Sora, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { brand } from "@/lib/brand";
 import "./globals.css";
 
 const headingFont = Sora({
@@ -19,8 +20,13 @@ const monoFont = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Casa Express - Plataforma de Gestão",
-  description: "Casa Express para controle de produção e pedidos",
+  title: `${brand.name} - Plataforma de Gestão`,
+  description: brand.description,
+  icons: {
+    icon: brand.faviconPath,
+    shortcut: brand.faviconPath,
+    apple: brand.faviconPath,
+  },
 };
 
 export default function RootLayout({

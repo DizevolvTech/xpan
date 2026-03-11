@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { Printer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { brand } from "@/lib/brand";
 
 interface PrintDocumentProps {
   title: string;
@@ -46,9 +48,19 @@ export function PrintDocument({ title, subtitle, meta, children, variant = "defa
           <div className="flex flex-col gap-4 print:block">
             <div className="flex items-start justify-between gap-4 print:block">
               <div className={industrial ? "flex-1 text-center" : undefined}>
-                <p className={industrial ? "text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500" : "text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500"}>
-                  Casa Express
-                </p>
+                <div className={industrial ? "mb-2 flex items-center justify-center gap-3" : "mb-2 flex items-center gap-3"}>
+                  <Image
+                    src={brand.logoPath}
+                    alt={brand.name}
+                    width={industrial ? 40 : 32}
+                    height={industrial ? 40 : 32}
+                    className={industrial ? "h-10 w-10 object-contain" : "h-8 w-8 object-contain"}
+                    priority
+                  />
+                  <p className={industrial ? "text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500" : "text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500"}>
+                    {brand.name}
+                  </p>
+                </div>
                 <h1 className={industrial ? "mt-1 text-[28px] font-bold uppercase leading-tight text-stone-900" : "mt-1 text-2xl font-semibold text-stone-900"}>
                   {title}
                 </h1>
