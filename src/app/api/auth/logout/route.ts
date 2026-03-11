@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { SESSION_COOKIE_NAME } from "@/lib/auth";
+import { getSupabaseProjectRef } from "@/lib/supabase-env";
 import { createSupabaseRequestClient } from "@/lib/supabase-request-client";
-import { supabaseProjectRef } from "@/lib/supabase-env";
 
 export async function POST(request: NextRequest) {
   const { supabase, applyResponseCookies } = createSupabaseRequestClient(request);
   await supabase.auth.signOut();
 
   const response = NextResponse.json({ ok: true });
-  const authCookieBaseName = `sb-${supabaseProjectRef}-auth-token`;
+  const authCookieBaseName = `sb-${getSupabaseProjectRef()}-auth-token`;
 
   response.cookies.set({
     name: SESSION_COOKIE_NAME,

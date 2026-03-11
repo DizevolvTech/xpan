@@ -25,11 +25,10 @@ import {
 } from "@/lib/production-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import {
+  buildLineDaySummariesFromData,
   buildLineById,
-  buildProductById,
   buildSectorNameById,
-  getMinimumProductionTotalFromSchedule,
-  getPlannedDaysCountFromSchedule,
+  getProductsByLineFromData,
 } from "@/lib/production-data-utils";
 
 type SublinhaRow = WeeklyProductionSchedule & {
@@ -38,6 +37,7 @@ type SublinhaRow = WeeklyProductionSchedule & {
   itemsCount: number;
   minimumTotal: number;
   plannedDays: number;
+  daySummaries: ReturnType<typeof buildLineDaySummariesFromData>;
 };
 
 export default function SublinhasProducaoPage() {
@@ -51,28 +51,62 @@ export default function SublinhasProducaoPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const linesById = useMemo(() => buildLineById(snapshot.lines), [snapshot.lines]);
-  const productsById = useMemo(() => buildProductById(snapshot.products), [snapshot.products]);
   const sectorNameById = useMemo(() => buildSectorNameById(snapshot.sectors), [snapshot.sectors]);
 
   const scheduleRows = useMemo<SublinhaRow[]>(
     () =>
       snapshot.schedules.map((schedule) => {
         const line = linesById.get(schedule.lineId);
+        const lineProducts = getProductsByLineFromData(schedule.lineId, snapshot.products).filter((product) => product.active);
+        const daySummaries = buildLineDaySummariesFromData(schedule.lineId, snapshot.products);
         return {
           ...schedule,
           lineName: line?.name ?? "-",
           sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
-          itemsCount: schedule.items.length,
-          minimumTotal: getMinimumProductionTotalFromSchedule(schedule),
-          plannedDays: getPlannedDaysCountFromSchedule(schedule),
+          itemsCount: lineProducts.length,
+          minimumTotal: Number(
+            lineProducts.reduce((total, product) => total + product.minimumProductionKg, 0).toFixed(2),
+          ),
+          plannedDays: daySummaries.filter((day) => day.productsCount > 0).length,
+          daySummaries,
         };
       }),
-    [linesById, sectorNameById, snapshot.schedules],
+    [linesById, sectorNameById, snapshot.products, snapshot.schedules],
   );
 
   const selectedSchedule = useMemo(
     () => scheduleRows.find((schedule) => schedule.id === selectedScheduleId) ?? null,
     [scheduleRows, selectedScheduleId],
+  );
+  const selectedLineProducts = useMemo(
+    () =>
+      selectedSchedule
+        ? getProductsByLineFromData(selectedSchedule.lineId, snapshot.products).filter((product) => product.active)
+        : [],
+    [selectedSchedule, snapshot.products],
+  );
+  const selectedDayBoards = useMemo(
+    () => {
+      const orderedDays = [
+        ...productionWeekDays.filter((day) => day.key !== "domingo"),
+        ...productionWeekDays.filter((day) => day.key === "domingo"),
+      ];
+
+      return orderedDays
+        .map((day) => {
+        const products = selectedLineProducts.filter((product) => product.productionDays.includes(day.key));
+        const plannedKg = Number(
+          products.reduce((total, product) => total + product.minimumProductionKg, 0).toFixed(2),
+        );
+        return {
+          ...day,
+          products,
+          plannedKg,
+        };
+        })
+        .filter((day) => day.key !== "domingo" || day.products.length > 0);
+    },
+    [selectedLineProducts],
   );
   const scheduleNameById = useMemo(
     () => new Map(scheduleRows.map((schedule) => [schedule.id, schedule.name])),
@@ -107,8 +141,25 @@ export default function SublinhasProducaoPage() {
     { key: "lineName", header: "Subcategoria" },
     { key: "sectorName", header: "Categoria" },
     { key: "itemsCount", header: "Produtos" },
-    { key: "plannedDays", header: "Dias Planejados" },
-    { key: "minimumTotal", header: "Mínimo Total" },
+    {
+      key: "daySummaries",
+      header: "Visão Semanal",
+      render: (item: SublinhaRow) => (
+        <div className="flex flex-wrap gap-1.5">
+          {item.daySummaries
+            .filter((day) => day.productsCount > 0)
+            .map((day) => (
+              <span
+                key={`${item.id}-${day.day}`}
+                className="rounded-full border border-border/80 bg-panel px-2 py-1 text-[11px] font-medium text-foreground"
+              >
+                {day.shortLabel} · {day.productsCount} itens · {day.plannedKg} Kg
+              </span>
+            ))}
+        </div>
+      ),
+    },
+    { key: "minimumTotal", header: "Carga Base (Kg)" },
     { key: "status", header: "Status", render: (item: SublinhaRow) => <StatusBadge status={item.status} /> },
     { key: "createdBy", header: "Criado Por" },
   ];
@@ -165,7 +216,7 @@ export default function SublinhasProducaoPage() {
   return (
     <PageLayout
       title="Linhas"
-      description="Linhas executoras derivadas dos produtos vinculados em cada subcategoria."
+      description="Visão consolidada por dia da semana, derivada dos produtos vinculados em cada subcategoria."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
@@ -264,50 +315,41 @@ export default function SublinhasProducaoPage() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Dias Planejados</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Produtos Ativos</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">
-                    {selectedSchedule.plannedDays} dias/semana
+                    {selectedSchedule.itemsCount} produtos
                   </p>
                 </div>
               </div>
 
               <div className="overflow-hidden rounded-xl border border-border/80">
-                <table className="w-full border-collapse">
-                  <thead className="bg-panel">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Mínimo</th>
-                      {productionWeekDays.map((day) => (
-                        <th key={day.key} className="px-3 py-3 text-center text-xs font-semibold text-muted-foreground">
-                          {day.shortLabel}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedSchedule.items.map((item) => {
-                      const product = productsById.get(item.productId);
-                      return (
-                        <tr key={item.id}>
-                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                            {product?.name ?? item.productId}
-                          </td>
-                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                            {item.minimumProduction} {product?.productionUnit ?? ""}
-                          </td>
-                          {productionWeekDays.map((day) => (
-                            <td
-                              key={`${item.id}-${day.key}`}
-                              className="border-t border-border/70 bg-card px-3 py-3 text-center text-sm font-semibold text-foreground"
-                            >
-                              {item.productionDays.includes(day.key) ? "●" : ""}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div className="grid gap-px bg-border/80 md:grid-cols-2 xl:grid-cols-7">
+                  {selectedDayBoards.map((day) => (
+                    <div key={`${selectedSchedule.id}-${day.key}`} className="bg-card">
+                      <div className="border-b border-border/80 bg-amber-600 px-3 py-2 text-white">
+                        <p className="text-xs font-semibold uppercase tracking-[0.08em]">{day.label}</p>
+                        <p className="mt-1 text-[11px] text-amber-50">
+                          {day.products.length} itens · {day.plannedKg} Kg
+                        </p>
+                      </div>
+                      <div className="min-h-44 space-y-2 px-3 py-3">
+                        {day.products.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sem produção programada.</p>
+                        ) : (
+                          day.products.map((product) => (
+                            <div key={`${day.key}-${product.id}`} className="border-b border-dashed border-border/70 pb-2 last:border-b-0 last:pb-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                                {product.code}
+                              </p>
+                              <p className="text-sm font-medium text-foreground">{product.name}</p>
+                              <p className="text-xs text-muted-foreground">{product.minimumProductionKg} Kg mínimos</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="grid gap-2 rounded-lg border border-border/80 bg-card p-4">
@@ -316,7 +358,7 @@ export default function SublinhasProducaoPage() {
                   <strong>{selectedSchedule.name}</strong> criada por <strong>{selectedSchedule.createdBy}</strong> em{" "}
                   <strong>{formatDateBr(selectedSchedule.createdAt)}</strong> com{" "}
                   <strong>{selectedSchedule.itemsCount} produtos</strong> e mínimo total de{" "}
-                  <strong>{selectedSchedule.minimumTotal}</strong>.
+                  <strong>{selectedSchedule.minimumTotal} Kg</strong>.
                 </p>
                 {selectedSchedule.revisionOfId && (
                   <p className="text-sm text-muted-foreground">

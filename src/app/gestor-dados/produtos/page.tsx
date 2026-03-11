@@ -34,7 +34,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  getProductRecipeTotals,
   hierarchyLabels,
   productionWeekDays,
   type BreakStage,
@@ -45,6 +44,7 @@ import {
   type ProductionProduct,
   type RecipeIngredientReference,
 } from "@/lib/production-planning";
+import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 type ProductRow = ProductionProduct & {
@@ -71,6 +71,7 @@ type RecipeSourceOption = {
 };
 
 const unitOptions = ["Kg", "Un", "Forma", "Assadeira", "Bandeja", "Pacote", "Caixa", "Travessa", "L", "g"] as const;
+const packagingUnitOptions = ["Kg", "Un", "Pacote", "Caixa", "Bandeja"] as const;
 const breakStageLabels: Record<BreakStage, string> = {
   antes_divisao: "Antes da divisão",
   depois_divisao: "Depois da divisão",
@@ -160,6 +161,14 @@ function buildLineDraft(sectorId: string): LineDraftState {
   };
 }
 
+function getPackagingUnitsForSalesUnit(unit: ProductUnitProfile["unit"]): ProductUnitProfile["unit"][] {
+  if (unit === "Kg") {
+    return ["Un", "Kg"];
+  }
+
+  return [...packagingUnitOptions];
+}
+
 export default function ProdutosPage() {
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
@@ -226,7 +235,22 @@ export default function ProdutosPage() {
       })),
   ];
 
-  const recipeTotals = useMemo(() => getProductRecipeTotals(formState), [formState]);
+  const recipeTotals = useMemo(
+    () => getProductRecipeTotalsFromData(formState, snapshot.ingredients, snapshot.products),
+    [formState, snapshot.ingredients, snapshot.products],
+  );
+  const availablePackagingUnits = useMemo(
+    () => getPackagingUnitsForSalesUnit(formState.unitProfiles.sales.unit),
+    [formState.unitProfiles.sales.unit],
+  );
+  const currentPackagingUnit = useMemo(
+    () =>
+      availablePackagingUnits.includes(formState.packagingProfile?.unit ?? availablePackagingUnits[0])
+        ? (formState.packagingProfile?.unit ?? availablePackagingUnits[0])
+        : availablePackagingUnits[0],
+    [availablePackagingUnits, formState.packagingProfile?.unit],
+  );
+  const packagingWeightLockedToKg = currentPackagingUnit === "Kg";
   const mpiCompositionPreview = useMemo<IngredientCompositionItem[]>(
     () =>
       formState.recipe.map((item) => ({
@@ -240,6 +264,7 @@ export default function ProdutosPage() {
       })),
     [formState.recipe],
   );
+  const yieldPercent = useMemo(() => Math.max(0, Number((100 - formState.breakPercent).toFixed(2))), [formState.breakPercent]);
 
   const columns = [
     { key: "code", header: "Código" },
@@ -299,6 +324,23 @@ export default function ProdutosPage() {
       const nextUnit = patch.unit ?? current.unitProfiles[scope].unit;
       const nextWeight =
         patch.weightKg ?? (nextUnit === "Kg" ? 1 : current.unitProfiles[scope].weightKg);
+      const nextPackagingUnits =
+        scope === "sales" ? getPackagingUnitsForSalesUnit(nextUnit) : getPackagingUnitsForSalesUnit(current.unitProfiles.sales.unit);
+      const nextPackagingProfile =
+        scope === "sales" && current.packagingProfile
+          ? {
+              ...current.packagingProfile,
+              unit: nextPackagingUnits.includes(current.packagingProfile.unit)
+                ? current.packagingProfile.unit
+                : nextPackagingUnits[0],
+              weightKg:
+                (nextPackagingUnits.includes(current.packagingProfile.unit)
+                  ? current.packagingProfile.unit
+                  : nextPackagingUnits[0]) === "Kg"
+                  ? 1
+                  : current.packagingProfile.weightKg,
+            }
+          : current.packagingProfile;
 
       return {
         ...current,
@@ -311,6 +353,7 @@ export default function ProdutosPage() {
             weightKg: nextUnit === "Kg" ? 1 : nextWeight,
           },
         },
+        packagingProfile: nextPackagingProfile,
       };
     });
   }
@@ -391,6 +434,41 @@ export default function ProdutosPage() {
       return;
     }
 
+    const normalizedPackagingProfile = formState.isSoldLoose
+      ? undefined
+      : {
+          ...(formState.packagingProfile ?? {
+            unit: availablePackagingUnits[0],
+            description: "",
+            weightKg: availablePackagingUnits[0] === "Kg" ? 1 : 0,
+            quantityPerPackage: 1,
+          }),
+          unit: availablePackagingUnits.includes(formState.packagingProfile?.unit ?? availablePackagingUnits[0])
+            ? (formState.packagingProfile?.unit ?? availablePackagingUnits[0])
+            : availablePackagingUnits[0],
+        };
+
+    if (!formState.isSoldLoose && formState.unitProfiles.sales.unit === "Kg") {
+      if (!normalizedPackagingProfile?.description.trim()) {
+        setFormError("Informe a descrição da embalagem para itens vendidos em Kg e embalados individualmente.");
+        return;
+      }
+
+      if (!Number.isFinite(normalizedPackagingProfile.weightKg) || normalizedPackagingProfile.weightKg <= 0) {
+        setFormError("Informe o peso padrão da embalagem para itens vendidos em Kg.");
+        return;
+      }
+    }
+
+    if (
+      !formState.isSoldLoose &&
+      normalizedPackagingProfile &&
+      (!Number.isFinite(normalizedPackagingProfile.quantityPerPackage) || normalizedPackagingProfile.quantityPerPackage <= 0)
+    ) {
+      setFormError("Informe uma quantidade por embalagem maior que zero.");
+      return;
+    }
+
     const salesWeight = formState.unitProfiles.sales.unit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
     const expeditionWeight =
       formState.unitProfiles.expedition.unit === "Kg" ? 1 : formState.unitProfiles.expedition.weightKg;
@@ -404,6 +482,12 @@ export default function ProdutosPage() {
       expeditionToKgFactor: expeditionWeight,
       weight: `${salesWeight.toFixed(3)} Kg`,
       isMpiIngredient: formState.canBeIngredient,
+      packagingProfile: normalizedPackagingProfile
+        ? {
+            ...normalizedPackagingProfile,
+            weightKg: normalizedPackagingProfile.unit === "Kg" ? 1 : normalizedPackagingProfile.weightKg,
+          }
+        : undefined,
     };
 
     setIsSubmitting(true);
@@ -524,13 +608,13 @@ export default function ProdutosPage() {
                 Novo Produto
               </Button>
             </DialogTrigger>
-            <DialogContent size="3xl" className="max-h-[92vh] overflow-y-auto">
+            <DialogContent size="3xl" className="max-h-[92vh] overflow-y-auto rounded-[28px] bg-white p-5 sm:max-w-[1080px]">
               <DialogHeader>
-                <DialogTitle>
+                <DialogTitle className="text-xl">
                   {editingProduct ? "Editar Produto" : "Cadastrar Novo Produto"}
                 </DialogTitle>
                 <DialogDescription>
-                  O cadastro agora usa kg como unidade universal da engenharia e concentra cronograma, receita e MPI.
+                  Preencha dados, engenharia, receita, cronograma e reaproveitamento MPI no mesmo cadastro.
                 </DialogDescription>
               </DialogHeader>
 
@@ -541,7 +625,7 @@ export default function ProdutosPage() {
               ) : null}
 
               <Tabs defaultValue="cadastro" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-4 rounded-xl bg-panel/60 p-1">
                   <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
                   <TabsTrigger value="receita">Receita</TabsTrigger>
                   <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
@@ -549,7 +633,13 @@ export default function ProdutosPage() {
                 </TabsList>
 
                 <TabsContent value="cadastro" className="space-y-5">
-                  <section className="space-y-4">
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Dados do Produto</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Nome, código, descrição e vínculo com a linha principal de produção.
+                      </p>
+                    </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="grid gap-2">
                         <Label htmlFor="product-name">Nome do Produto *</Label>
@@ -712,88 +802,194 @@ export default function ProdutosPage() {
                       </div>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <div className="grid gap-2">
-                        <Label>Validade (dias)</Label>
-                        <Input
-                          type="number"
-                          value={formState.validityDays}
-                          onChange={(event) =>
-                            setFormState((current) => ({
-                              ...current,
-                              validityDays: Number(event.target.value),
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Produção mínima (Kg)</Label>
-                        <Input
-                          type="number"
-                          value={formState.minimumProductionKg}
-                          onChange={(event) =>
-                            setFormState((current) => ({
-                              ...current,
-                              minimumProductionKg: Number(event.target.value),
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Produção econômica (Kg)</Label>
-                        <Input
-                          type="number"
-                          value={formState.economicProductionKg}
-                          onChange={(event) =>
-                            setFormState((current) => ({
-                              ...current,
-                              economicProductionKg: Number(event.target.value),
-                            }))
-                          }
-                        />
-                      </div>
+                  </section>
+
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Quebra e Rendimento</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Controle a quebra principal do produto e acompanhe o rendimento líquido estimado.
+                      </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="storage"
-                        checked={formState.allowsStorage}
-                        onCheckedChange={(checked) =>
-                          setFormState((current) => ({
-                            ...current,
-                            allowsStorage: checked === true,
-                          }))
-                        }
-                      />
-                      <Label htmlFor="storage">Permite armazenamento?</Label>
+                    <div className="grid gap-4 lg:grid-cols-[1.2fr_320px]">
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-2">
+                          <Label>Quebra (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formState.breakPercent}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                breakPercent: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Validade (dias)</Label>
+                          <Input
+                            type="number"
+                            value={formState.validityDays}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                validityDays: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Produção mínima (Kg)</Label>
+                          <Input
+                            type="number"
+                            value={formState.minimumProductionKg}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                minimumProductionKg: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2 md:col-span-2">
+                          <Label>Produção econômica (Kg)</Label>
+                          <Input
+                            type="number"
+                            value={formState.economicProductionKg}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                economicProductionKg: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <div className="flex items-center gap-2 pb-2">
+                            <Checkbox
+                              id="storage"
+                              checked={formState.allowsStorage}
+                              onCheckedChange={(checked) =>
+                                setFormState((current) => ({
+                                  ...current,
+                                  allowsStorage: checked === true,
+                                }))
+                              }
+                            />
+                            <Label htmlFor="storage">Permite armazenamento?</Label>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                          Rendimento (%)
+                        </p>
+                        <p className="mt-2 text-3xl font-semibold text-emerald-900">{yieldPercent.toFixed(2)}</p>
+                        <p className="mt-2 text-xs text-emerald-800">
+                          Campo de destaque para o rendimento líquido após a quebra principal informada.
+                        </p>
+                      </div>
                     </div>
                   </section>
 
                   <section className="space-y-4 rounded-xl border border-border/80 p-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-foreground">Unidades de Medida e Pesos Padrão</h3>
+                      <h3 className="text-sm font-semibold text-foreground">Resumo Operacional</h3>
                       <p className="text-xs text-muted-foreground">
-                        Kg é a base da engenharia. Sempre que a unidade for Kg, o peso padrão fica travado em 1.
+                        Conversões principais usadas no planejamento e na expedição deste produto.
                       </p>
                     </div>
 
-                    <div className="grid gap-4 lg:grid-cols-3">
-                      {(
-                        [
-                          ["sales", "Venda"],
-                          ["production", "Produção"],
-                          ["expedition", "Expedição"],
-                        ] as const
-                      ).map(([scope, title]) => {
-                        const profile = formState.unitProfiles[scope];
-                        const lockedToKg = profile.unit === "Kg";
-                        return (
-                          <div key={scope} className="space-y-3 rounded-xl border border-border/70 bg-panel/25 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                              {title}
-                            </p>
-                            <div className="grid gap-2">
-                              <Label>Unidade</Label>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="grid gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Venda
+                        </p>
+                        <div className="rounded-lg border border-border/70 bg-panel/25 px-3 py-3 text-sm text-foreground">
+                          {formState.unitProfiles.sales.unit} · {formState.salesToKgFactor.toFixed(3)} Kg
+                        </div>
+                      </div>
+                      <div className="grid gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Produção
+                        </p>
+                        <div className="rounded-lg border border-border/70 bg-panel/25 px-3 py-3 text-sm text-foreground">
+                          {formState.unitProfiles.production.unit} · {formState.unitProfiles.production.weightKg.toFixed(3)} Kg
+                        </div>
+                      </div>
+                      <div className="grid gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Expedição
+                        </p>
+                        <div className="rounded-lg border border-border/70 bg-panel/25 px-3 py-3 text-sm text-foreground">
+                          {formState.unitProfiles.expedition.unit} · {formState.expeditionToKgFactor.toFixed(3)} Kg
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Unidades de Medida e Conversões</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Kg é a base universal da engenharia. Defina embalagem, venda, produção e expedição no mesmo
+                        quadro, com tipo, descrição e peso padrão próprios.
+                      </p>
+                    </div>
+
+                    <div className="overflow-hidden rounded-xl border border-border/80">
+                      <div className="grid grid-cols-[112px_repeat(4,minmax(0,1fr))] border-b border-border/80 bg-panel/70">
+                        <div className="border-r border-border/70 px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Campo
+                        </div>
+                        {["Embalagem", "Venda", "Produção", "Expedição"].map((title) => (
+                          <div
+                            key={title}
+                            className="border-r border-border/70 px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground last:border-r-0"
+                          >
+                            {title}
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-[112px_repeat(4,minmax(0,1fr))] border-b border-border/80">
+                        <div className="border-r border-border/70 bg-panel/30 px-3 py-3 text-xs font-semibold text-foreground">
+                          Tipo
+                        </div>
+                        <div className="border-r border-border/70 px-3 py-3">
+                          <Select
+                            value={currentPackagingUnit}
+                            onValueChange={(value) =>
+                              updatePackagingProfile({ unit: value as PackagingProfile["unit"] })
+                            }
+                            disabled={formState.isSoldLoose}
+                          >
+                            <SelectTrigger aria-label="Tipo da embalagem">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availablePackagingUnits.map((unit) => (
+                                <SelectItem key={unit} value={unit}>
+                                  {unit}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {(
+                          [
+                            ["sales", "Venda"],
+                            ["production", "Produção"],
+                            ["expedition", "Expedição"],
+                          ] as const
+                        ).map(([scope, title]) => {
+                          const profile = formState.unitProfiles[scope];
+                          return (
+                            <div key={`${scope}-type`} className="border-r border-border/70 px-3 py-3 last:border-r-0">
                               <Select
                                 value={profile.unit}
                                 onValueChange={(value) =>
@@ -802,7 +998,7 @@ export default function ProdutosPage() {
                                   })
                                 }
                               >
-                                <SelectTrigger>
+                                <SelectTrigger aria-label={`Tipo de ${title}`}>
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -814,19 +1010,72 @@ export default function ProdutosPage() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="grid gap-2">
-                              <Label>Descrição</Label>
+                          );
+                        })}
+                      </div>
+
+                      <div className="grid grid-cols-[112px_repeat(4,minmax(0,1fr))] border-b border-border/80">
+                        <div className="border-r border-border/70 bg-panel/30 px-3 py-3 text-xs font-semibold text-foreground">
+                          Descrição
+                        </div>
+                        <div className="border-r border-border/70 px-3 py-3">
+                          <Input
+                            aria-label="Descrição da embalagem"
+                            value={formState.packagingProfile?.description ?? ""}
+                            disabled={formState.isSoldLoose}
+                            onChange={(event) => updatePackagingProfile({ description: event.target.value })}
+                            placeholder="Ex: embalagem individual"
+                          />
+                        </div>
+                        {(
+                          [
+                            ["sales", "Venda"],
+                            ["production", "Produção"],
+                            ["expedition", "Expedição"],
+                          ] as const
+                        ).map(([scope, title]) => (
+                          <div key={`${scope}-description`} className="border-r border-border/70 px-3 py-3 last:border-r-0">
+                            <Input
+                              aria-label={`Descrição de ${title}`}
+                              value={formState.unitProfiles[scope].description}
+                              onChange={(event) =>
+                                updateUnitProfile(scope, { description: event.target.value })
+                              }
+                              placeholder={`Descrição de ${title.toLowerCase()}`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-[112px_repeat(4,minmax(0,1fr))]">
+                        <div className="border-r border-border/70 bg-panel/30 px-3 py-3 text-xs font-semibold text-foreground">
+                          Peso
+                        </div>
+                        <div className="border-r border-border/70 px-3 py-3">
+                          <Input
+                            aria-label="Peso padrão da embalagem"
+                            type="number"
+                            step="0.001"
+                            value={formState.isSoldLoose ? "" : packagingWeightLockedToKg ? 1 : formState.packagingProfile?.weightKg ?? ""}
+                            disabled={formState.isSoldLoose || packagingWeightLockedToKg}
+                            onChange={(event) =>
+                              updatePackagingProfile({ weightKg: Number(event.target.value) })
+                            }
+                          />
+                        </div>
+                        {(
+                          [
+                            ["sales", "Venda"],
+                            ["production", "Produção"],
+                            ["expedition", "Expedição"],
+                          ] as const
+                        ).map(([scope, title]) => {
+                          const profile = formState.unitProfiles[scope];
+                          const lockedToKg = profile.unit === "Kg";
+                          return (
+                            <div key={`${scope}-weight`} className="border-r border-border/70 px-3 py-3 last:border-r-0">
                               <Input
-                                value={profile.description}
-                                onChange={(event) =>
-                                  updateUnitProfile(scope, { description: event.target.value })
-                                }
-                                placeholder="Ex: caixa térmica"
-                              />
-                            </div>
-                            <div className="grid gap-2">
-                              <Label>Peso padrão (Kg)</Label>
-                              <Input
+                                aria-label={`Peso padrão de ${title}`}
                                 type="number"
                                 step="0.001"
                                 value={lockedToKg ? 1 : profile.weightKg}
@@ -838,78 +1087,50 @@ export default function ProdutosPage() {
                                 }
                               />
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="sold-loose"
-                          checked={formState.isSoldLoose}
-                          onCheckedChange={(checked) =>
-                            setFormState((current) => ({
-                              ...current,
-                              isSoldLoose: checked === true,
-                            }))
+                    <div className="grid gap-4 rounded-xl border border-border/70 bg-card p-4 lg:grid-cols-[1.2fr_220px]">
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            id="sold-loose"
+                            checked={formState.isSoldLoose}
+                            onCheckedChange={(checked) =>
+                              setFormState((current) => ({
+                                ...current,
+                                isSoldLoose: checked === true,
+                              }))
+                            }
+                          />
+                          <Label htmlFor="sold-loose">Item vendido a granel</Label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Quando marcado como granel, a embalagem fica fora do cálculo operacional e de auditoria.
+                        </p>
+                        {formState.unitProfiles.sales.unit === "Kg" ? (
+                          <div className="rounded-lg border border-border/70 bg-panel/30 px-3 py-2 text-xs text-muted-foreground">
+                            Produto vendido em Kg: a venda permanece fixa em 1 Kg. A embalagem vira a referência para
+                            porcionamento, conferência e exposição individual.
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label>Qtd por embalagem</Label>
+                        <Input
+                          type="number"
+                          value={formState.isSoldLoose ? "" : formState.packagingProfile?.quantityPerPackage ?? ""}
+                          disabled={formState.isSoldLoose}
+                          onChange={(event) =>
+                            updatePackagingProfile({ quantityPerPackage: Number(event.target.value) })
                           }
                         />
-                        <Label htmlFor="sold-loose">Item vendido a granel</Label>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-4">
-                        <div className="grid gap-2">
-                          <Label>Unidade de embalagem</Label>
-                          <Select
-                            value={formState.packagingProfile?.unit ?? "Un"}
-                            onValueChange={(value) =>
-                              updatePackagingProfile({ unit: value as PackagingProfile["unit"] })
-                            }
-                            disabled={formState.isSoldLoose}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Un">Un</SelectItem>
-                              <SelectItem value="Pacote">Pacote</SelectItem>
-                              <SelectItem value="Caixa">Caixa</SelectItem>
-                              <SelectItem value="Bandeja">Bandeja</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Descrição</Label>
-                          <Input
-                            value={formState.packagingProfile?.description ?? ""}
-                            disabled={formState.isSoldLoose}
-                            onChange={(event) => updatePackagingProfile({ description: event.target.value })}
-                            placeholder="Ex: brownie embalado individualmente"
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Peso padrão (Kg)</Label>
-                          <Input
-                            type="number"
-                            step="0.001"
-                            value={formState.isSoldLoose ? "" : formState.packagingProfile?.weightKg ?? ""}
-                            disabled={formState.isSoldLoose}
-                            onChange={(event) =>
-                              updatePackagingProfile({ weightKg: Number(event.target.value) })
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Qtd por embalagem</Label>
-                          <Input
-                            type="number"
-                            value={formState.isSoldLoose ? "" : formState.packagingProfile?.quantityPerPackage ?? ""}
-                            disabled={formState.isSoldLoose}
-                            onChange={(event) =>
-                              updatePackagingProfile({ quantityPerPackage: Number(event.target.value) })
-                            }
-                          />
-                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Use este campo para informar quantas unidades operacionais compõem cada embalagem.
+                        </p>
                       </div>
                     </div>
                   </section>
@@ -917,6 +1138,12 @@ export default function ProdutosPage() {
 
                 <TabsContent value="receita" className="space-y-5">
                   <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Ingredientes da Receita</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Monte a receita técnica do produto com ingredientes comuns ou produtos MPI.
+                      </p>
+                    </div>
                     <div className="grid gap-4 md:grid-cols-4">
                       <div className="grid gap-2 md:col-span-2">
                         <Label>Ingrediente / Produto MPI</Label>
@@ -1020,20 +1247,6 @@ export default function ProdutosPage() {
                       </p>
                     </div>
                     <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
-                      <div className="grid gap-2">
-                        <Label>Quebra (%)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={formState.breakPercent}
-                          onChange={(event) =>
-                            setFormState((current) => ({
-                              ...current,
-                              breakPercent: Number(event.target.value),
-                            }))
-                          }
-                        />
-                      </div>
                       <div className="grid gap-2">
                         <Label>Momento da quebra</Label>
                         <Select

@@ -11,8 +11,22 @@ function getEnvironmentVariable(name: RequiredEnvironmentVariable) {
   return value;
 }
 
-export const supabaseUrl = getEnvironmentVariable("NEXT_PUBLIC_SUPABASE_URL");
-export const supabaseAnonKey = getEnvironmentVariable("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-export const supabaseServiceRoleKey = getEnvironmentVariable("SUPABASE_SERVICE_ROLE_KEY");
-export const supabaseProjectRef = process.env.SUPABASE_PROJECT_REF ?? "";
-export const supabaseAccessToken = process.env.SUPABASE_ACCESS_TOKEN ?? "";
+export function getSupabaseUrl() {
+  return getEnvironmentVariable("NEXT_PUBLIC_SUPABASE_URL");
+}
+
+export function getSupabaseAnonKey() {
+  return getEnvironmentVariable("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+}
+
+export function getSupabaseServiceRoleKey() {
+  return getEnvironmentVariable("SUPABASE_SERVICE_ROLE_KEY");
+}
+
+export function getSupabaseProjectRef() {
+  return process.env.SUPABASE_PROJECT_REF ?? "";
+}
+
+export function getSupabaseAccessToken() {
+  return process.env.SUPABASE_ACCESS_TOKEN ?? "";
+}

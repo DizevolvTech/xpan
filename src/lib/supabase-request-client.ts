@@ -2,7 +2,7 @@ import type { CookieOptions } from "@supabase/ssr";
 import { createServerClient } from "@supabase/ssr";
 import type { NextRequest, NextResponse } from "next/server";
 
-import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase-env";
+import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/supabase-env";
 
 type PendingCookie = {
   name: string;
@@ -13,7 +13,7 @@ type PendingCookie = {
 export function createSupabaseRequestClient(request: NextRequest) {
   const pendingCookies: PendingCookie[] = [];
 
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+  const supabase = createServerClient(getSupabaseUrl(), getSupabaseAnonKey(), {
     cookies: {
       getAll() {
         return request.cookies.getAll();

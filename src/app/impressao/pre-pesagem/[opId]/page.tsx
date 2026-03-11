@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
+import type { PrintIngredientRow } from "@/lib/printing-documents";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPreWeighingDocument } from "@/lib/printing-documents";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
@@ -18,10 +19,55 @@ function sanitizeDateKey(raw: string | null) {
 
 function MetaCard({ label, value }: { label: string; value: string }) {
   return (
-    <article className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</p>
+    <article className="border border-stone-300 bg-stone-100 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</p>
       <p className="mt-1 text-sm font-semibold text-stone-900">{value}</p>
     </article>
+  );
+}
+
+function RecipeTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: PrintIngredientRow[];
+}) {
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="overflow-hidden border border-stone-300">
+      <header className="bg-stone-300 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-stone-700">{title}</p>
+      </header>
+      <table className="w-full border-collapse">
+        <thead className="bg-white">
+          <tr>
+            <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+              Pré pesagem
+            </th>
+            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+              Ingredientes
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
+                {row.estimatedQuantity.toFixed(3)} {row.unit}
+              </td>
+              <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
+                <div>{row.label}</div>
+                {row.notes ? <div className="mt-1 text-xs text-stone-500">{row.notes}</div> : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -47,6 +93,13 @@ export default function PrePesagemPrintPage() {
         : null,
     [op, snapshot.ingredients, snapshot.products],
   );
+  const deliveryDateLabel = useMemo(() => {
+    if (!op) {
+      return "-";
+    }
+    const labels = Array.from(new Set(op.sourceItems.map((item) => item.deliveryDateLabel)));
+    return labels.join(" · ");
+  }, [op]);
 
   if (!op || !document) {
     return (
@@ -56,86 +109,73 @@ export default function PrePesagemPrintPage() {
 
   return (
     <PrintDocument
-      title={`Pré-pesagem · ${op.code}`}
-      subtitle="Agrupamento por produto e bases/MPI compartilhados para separar insumos antes da produção."
+      title={op.sectorName}
+      subtitle={op.lineName}
+      variant="industrial"
       meta={
         <>
-          <MetaCard label="Produção" value={op.productionDateLabel} />
-          <MetaCard label="Categoria / Subcategoria" value={`${op.sectorName} / ${op.lineName}`} />
-          <MetaCard label="Linha executora" value={op.scheduleName} />
+          <MetaCard label="Documento" value={`Pré-pesagem · ${op.code}`} />
+          <MetaCard label="Produzir" value={op.productionDateLabel} />
+          <MetaCard label="Para entregar" value={deliveryDateLabel} />
         </>
       }
     >
-      {document.sharedPreparations.length > 0 ? (
+      {document.ingredientProducts.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-stone-900">Bases e MPI compartilhados</h2>
-          <div className="overflow-hidden rounded-xl border border-stone-200">
-            <table className="w-full border-collapse">
-              <thead className="bg-stone-100">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Base / MPI</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Qtd estimada</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Usado por</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Observação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {document.sharedPreparations.map((item) => (
-                  <tr key={item.key}>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-900">{item.label}</td>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
-                      {item.estimatedQuantity} {item.unit}
-                    </td>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{item.usedBy.join(", ")}</td>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-600">{item.notes ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {document.ingredientProducts.map((section) => (
+            <article key={section.productId} className="overflow-hidden border border-stone-400">
+              <header className="grid grid-cols-[132px_84px_1fr_180px] border-b border-stone-400 bg-stone-300 text-stone-900">
+                <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
+                  Produto Ingrediente
+                </div>
+                <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
+                <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">{section.productName}</div>
+                <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
+                  <div>Peso finalizado: {section.requiredKg.toFixed(3)} kg</div>
+                </div>
+              </header>
+
+              <div className="space-y-2 px-3 py-3">
+                <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
+                  Usado por: {section.usedBy.join(", ")}
+                </div>
+                <RecipeTable title="Ingredientes" rows={section.items} />
+              </div>
+            </article>
+          ))}
         </section>
       ) : null}
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-stone-900">Separação por produto</h2>
-        {document.productGroups.map((group) => (
-          <article key={group.productId} className="overflow-hidden rounded-xl border border-stone-200">
-            <header className="flex items-center justify-between gap-3 bg-stone-100 px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-stone-900">
-                  {group.productCode} · {group.productName}
-                </p>
-                <p className="text-xs text-stone-600">Carga planejada: {group.plannedKg} Kg</p>
+      <section className="space-y-3">
+        {document.productSections.map((section) => (
+          <article key={section.productId} className="overflow-hidden border border-stone-400">
+            <header className="grid grid-cols-[96px_84px_1fr_120px_160px] border-b border-stone-400 bg-stone-300 text-stone-900">
+              <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
+                Produto
               </div>
-              <div className="rounded-full border border-stone-300 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-stone-700">
-                Conferido
+              <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
+              <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">{section.productName}</div>
+              <div className="border-r border-stone-400 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
+                <div>Pedido</div>
+                <div className="mt-1 text-base font-bold text-stone-900">
+                  {section.requestedQuantity.toFixed(0)} {section.requestedUnit}
+                </div>
+              </div>
+              <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
+                <div>Carga planejada: {section.plannedKg.toFixed(3)} kg</div>
+                <div className="mt-1">Peso unitário: {section.unitWeightKg.toFixed(3)} kg</div>
               </div>
             </header>
 
-            <table className="w-full border-collapse">
-              <thead className="bg-white">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Ingrediente</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Qtd estimada</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Tipo</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Observação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.items.map((item) => (
-                  <tr key={item.key}>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-900">{item.label}</td>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
-                      {item.estimatedQuantity} {item.unit}
-                    </td>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
-                      {item.sourceType === "produto" ? "MPI / Base" : "Ingrediente"}
-                    </td>
-                    <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-600">{item.notes ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="space-y-2 px-3 py-3">
+              <RecipeTable title="Ingredientes Base" rows={section.baseIngredients} />
+              <RecipeTable title="Ingredientes Adicionais" rows={section.additionalIngredients} />
+              {section.baseIngredients.length === 0 && section.additionalIngredients.length === 0 ? (
+                <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
+                  Este produto consome somente produto ingrediente destacado abaixo.
+                </div>
+              ) : null}
+            </div>
           </article>
         ))}
       </section>

@@ -2,10 +2,10 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { supabaseServiceRoleKey, supabaseUrl } from "@/lib/supabase-env";
+import { getSupabaseServiceRoleKey, getSupabaseUrl } from "@/lib/supabase-env";
 
 export function createSupabaseAdminClient() {
-  return createClient(supabaseUrl, supabaseServiceRoleKey, {
+  return createClient(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

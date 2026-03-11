@@ -4,8 +4,11 @@ import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
+import type { PrintIngredientRow } from "@/lib/printing-documents";
+import { buildProductionSheetDocument } from "@/lib/printing-documents";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -16,10 +19,55 @@ function sanitizeDateKey(raw: string | null) {
 
 function MetaCard({ label, value }: { label: string; value: string }) {
   return (
-    <article className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</p>
+    <article className="border border-stone-300 bg-stone-100 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</p>
       <p className="mt-1 text-sm font-semibold text-stone-900">{value}</p>
     </article>
+  );
+}
+
+function RecipeTable({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: PrintIngredientRow[];
+}) {
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="overflow-hidden border border-stone-300">
+      <header className="bg-stone-300 px-3 py-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-stone-700">{title}</p>
+      </header>
+      <table className="w-full border-collapse">
+        <thead className="bg-white">
+          <tr>
+            <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+              Pré pesagem
+            </th>
+            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+              Ingredientes
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
+                {row.estimatedQuantity.toFixed(3)} {row.unit}
+              </td>
+              <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
+                <div>{row.label}</div>
+                {row.notes ? <div className="mt-1 text-xs text-stone-500">{row.notes}</div> : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -29,85 +77,85 @@ export default function ProducaoPrintPage() {
   const opId = typeof params.opId === "string" ? params.opId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
   const { planningData } = useFactoryPlanningSnapshot(referenceDate);
+  const { snapshot } = useMasterDataSnapshot();
 
   const op = useMemo(
     () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
     [opId, planningData.productionOrders],
   );
+  const document = useMemo(
+    () =>
+      op
+        ? buildProductionSheetDocument(op, {
+            products: snapshot.products,
+            ingredients: snapshot.ingredients,
+          })
+        : null,
+    [op, snapshot.ingredients, snapshot.products],
+  );
+  const deliveryDateLabel = useMemo(() => {
+    if (!op) {
+      return "-";
+    }
+    const labels = Array.from(new Set(op.sourceItems.map((item) => item.deliveryDateLabel)));
+    return labels.join(" · ");
+  }, [op]);
 
-  if (!op) {
+  if (!op || !document) {
     return <PrintDocument title="Folha de produção não encontrada" subtitle="Nenhuma OP foi localizada." />;
   }
 
   return (
     <PrintDocument
-      title={`Produção · ${op.code}`}
-      subtitle="Folha operacional da linha executora, consolidada por produto."
+      title={op.sectorName}
+      subtitle={`${op.lineName} - Padeiro`}
+      variant="industrial"
       meta={
         <>
-          <MetaCard label="Data de produção" value={op.productionDateLabel} />
-          <MetaCard label="Categoria / Subcategoria" value={`${op.sectorName} / ${op.lineName}`} />
-          <MetaCard label="Linha executora" value={op.scheduleName} />
+          <MetaCard label="Documento" value={`Produção · ${op.code}`} />
+          <MetaCard label="Produzir" value={op.productionDateLabel} />
+          <MetaCard label="Para entregar" value={deliveryDateLabel} />
         </>
       }
     >
-      <section className="overflow-hidden rounded-xl border border-stone-200">
-        <table className="w-full border-collapse">
-          <thead className="bg-stone-100">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Produto</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Carga (Kg)</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Progresso atual</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Conferência</th>
-            </tr>
-          </thead>
-          <tbody>
-            {op.items.map((item) => (
-              <tr key={item.productId}>
-                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-900">
-                  {item.productCode} · {item.productName}
-                </td>
-                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{item.totalKg}</td>
-                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{item.progress.toFixed(1)}%</td>
-                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{item.status}</td>
-                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-400">______________________</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      <section className="space-y-4">
+        {document.productSections.map((section) => (
+          <article key={section.productId} className="overflow-hidden border border-stone-400">
+            <header className="grid grid-cols-[96px_84px_1fr_120px_160px] border-b border-stone-400 bg-stone-300 text-stone-900">
+              <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
+                Produto
+              </div>
+              <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
+              <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">{section.productName}</div>
+              <div className="border-r border-stone-400 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
+                <div>Pedido</div>
+                <div className="mt-1 text-base font-bold text-stone-900">
+                  {section.requestedQuantity.toFixed(0)} {section.requestedUnit}
+                </div>
+              </div>
+              <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
+                <div>Carga planejada: {section.plannedKg.toFixed(3)} kg</div>
+                <div className="mt-1">Peso unitário: {section.unitWeightKg.toFixed(3)} kg</div>
+              </div>
+            </header>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-stone-900">Pedidos atendidos por esta OP</h2>
-        <div className="overflow-hidden rounded-xl border border-stone-200">
-          <table className="w-full border-collapse">
-            <thead className="bg-stone-100">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Pedido</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Loja</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Produto</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Qtd loja</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-stone-500">Kg</th>
-              </tr>
-            </thead>
-            <tbody>
-              {op.sourceItems.map((item) => (
-                <tr key={item.id}>
-                  <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-900">{item.orderCode}</td>
-                  <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{item.storeName}</td>
-                  <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
-                    {item.productCode} · {item.productName}
-                  </td>
-                  <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
-                    {item.requestedQuantity} {item.requestedUnit}
-                  </td>
-                  <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{item.internalKg}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            <div className="space-y-2 px-3 py-3">
+              <RecipeTable
+                title="Ingredientes Base"
+                rows={section.items.filter((item) => item.sectionKind !== "additional")}
+              />
+              <RecipeTable
+                title="Ingredientes Adicionais"
+                rows={section.items.filter((item) => item.sectionKind === "additional")}
+              />
+              {section.items.length === 0 ? (
+                <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
+                  Este produto não possui receita cadastrada para a folha de produção.
+                </div>
+              ) : null}
+            </div>
+          </article>
+        ))}
       </section>
     </PrintDocument>
   );

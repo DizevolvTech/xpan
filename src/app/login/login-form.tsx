@@ -71,7 +71,7 @@ export default function LoginForm() {
           <CardHeader>
             <CardTitle className="font-heading text-2xl">Acesso ao Casa Express</CardTitle>
             <CardDescription>
-              Faça login com o usuário provisionado no Supabase Auth para acessar seu fluxo operacional.
+              Faça login com seu usuário para acessar o fluxo operacional correspondente ao seu perfil.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -137,7 +137,7 @@ export default function LoginForm() {
           <CardHeader>
             <CardTitle className="font-heading text-lg">Sessão e Segurança</CardTitle>
             <CardDescription>
-              O acesso agora depende exclusivamente do Supabase Auth e do perfil operacional vinculado no banco.
+              O acesso depende de um usuário ativo e de um perfil operacional válido.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -147,17 +147,15 @@ export default function LoginForm() {
                 Regras ativas
               </div>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>O usuário precisa existir no Supabase Auth.</li>
-                <li>O e-mail autenticado precisa estar vinculado a um perfil em `public.profiles`.</li>
+                <li>O usuário precisa estar cadastrado e ativo.</li>
+                <li>O e-mail precisa estar vinculado a um perfil operacional.</li>
                 <li>Perfis inativos não conseguem iniciar sessão.</li>
                 <li>O acesso às telas segue o papel operacional associado ao perfil.</li>
               </ul>
             </div>
 
             <div className="rounded-xl border border-border/75 bg-panel/70 p-4 text-sm text-muted-foreground">
-              Se precisar redefinir senha ou conferir usuários provisionados, use o painel do Supabase em
-              {" "}
-              <span className="font-mono text-foreground">Authentication -&gt; Users</span>.
+              Se precisar redefinir senha ou revisar acessos, use o painel administrativo da plataforma.
             </div>
           </CardContent>
         </Card>
