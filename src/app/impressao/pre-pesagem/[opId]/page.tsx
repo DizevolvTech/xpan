@@ -76,8 +76,8 @@ export default function PrePesagemPrintPage() {
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
-  const { snapshot } = useMasterDataSnapshot();
+  const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
+  const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
 
   const op = useMemo(
     () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
@@ -101,6 +101,15 @@ export default function PrePesagemPrintPage() {
     return labels.join(" · ");
   }, [op]);
 
+  if (isPlanningLoading || isMasterDataLoading) {
+    return (
+      <PrintDocument
+        title="Preparando pré-pesagem"
+        subtitle="Carregando os dados da ordem de produção para impressão."
+      />
+    );
+  }
+
   if (!op || !document) {
     return (
       <PrintDocument title="Pré-pesagem não encontrada" subtitle="Nenhuma OP foi localizada para esta impressão." />
@@ -112,6 +121,7 @@ export default function PrePesagemPrintPage() {
       title={op.sectorName}
       subtitle={op.lineName}
       variant="industrial"
+      autoPrint
       meta={
         <>
           <MetaCard label="Documento" value={`Pré-pesagem · ${op.code}`} />

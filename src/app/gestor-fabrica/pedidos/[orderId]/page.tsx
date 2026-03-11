@@ -212,8 +212,8 @@ export default function PedidoDetailsPage() {
           <CardTitle>Itens Consolidados do Pedido</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-xl border border-border/80">
-            <table className="w-full border-collapse">
+          <div className="overflow-x-auto rounded-xl border border-border/80">
+            <table className="w-full min-w-[980px] border-collapse">
               <thead className="bg-panel">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
@@ -256,8 +256,8 @@ export default function PedidoDetailsPage() {
           <CardTitle>Itens Originais do Pedido</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-xl border border-border/80">
-            <table className="w-full border-collapse">
+          <div className="overflow-x-auto rounded-xl border border-border/80">
+            <table className="w-full min-w-[760px] border-collapse">
               <thead className="bg-panel">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
@@ -295,8 +295,8 @@ export default function PedidoDetailsPage() {
           {relatedOps.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhuma OP gerada. Libere o pedido para produção.</p>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border/80">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto rounded-xl border border-border/80">
+              <table className="w-full min-w-[860px] border-collapse">
                 <thead className="bg-panel">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>

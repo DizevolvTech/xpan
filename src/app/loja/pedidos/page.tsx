@@ -31,9 +31,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import {
-  getBaseDateByCutoff,
   getDeliveryDateByStoreRule,
-  moveToNextAllowedWeekday,
+  getOperationalBaseDateByStoreRule,
 } from "@/lib/order-planning";
 import {
   getStoreCanOrderSunday,
@@ -57,22 +56,7 @@ const WEEK_LABEL: Record<EditableDayField, string> = {
   sab: "SÁB",
   dom: "DOM",
 };
-const PRODUCTION_DAY_BY_FIELD: Record<EditableDayField, ProductionWeekDay> = {
-  seg: "segunda",
-  ter: "terca",
-  qua: "quarta",
-  qui: "quinta",
-  sex: "sexta",
-  sab: "sabado",
-  dom: "domingo",
-};
 const productionDayLabels = new Map(productionWeekDays.map((day) => [day.key, day.shortLabel]));
-
-function startOfDay(date: Date): Date {
-  const value = new Date(date);
-  value.setHours(0, 0, 0, 0);
-  return value;
-}
 
 function getDayFieldByDate(date: Date): EditableDayField {
   return FIELD_BY_JS_DAY_INDEX[date.getDay()];
@@ -89,30 +73,6 @@ function formatDateWithWeekday(date: Date): string {
   return `${dateLabel} - ${weekdayLabel.charAt(0).toUpperCase()}${weekdayLabel.slice(1)}`;
 }
 
-function hasProductionDayBetween(days: ProductionWeekDay[], fromDate: Date, toDate: Date): boolean {
-  const start = startOfDay(fromDate);
-  const end = startOfDay(toDate);
-
-  if (end.getTime() < start.getTime()) {
-    return false;
-  }
-
-  const cursor = new Date(start);
-  while (cursor.getTime() <= end.getTime()) {
-    const field = getDayFieldByDate(cursor);
-    if (days.includes(PRODUCTION_DAY_BY_FIELD[field])) {
-      return true;
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return false;
-}
-
-function canDeliverOnDate(product: StoreOrderCatalogProduct, baseDate: Date, deliveryDate: Date): boolean {
-  return hasProductionDayBetween(product.productionDays, startOfDay(baseDate), startOfDay(deliveryDate));
-}
-
 function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
@@ -126,16 +86,16 @@ export default function PedidosLojaPage() {
   const [orderProducts, setOrderProducts] = useState<StoreOrderCatalogProduct[]>([]);
   const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [availabilityFilter, setAvailabilityFilter] = useState("all");
 
   const referenceDate = useMemo(() => new Date(), []);
+  const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
   const referenceDateKey = useMemo(() => referenceDate.toISOString().slice(0, 10), [referenceDate]);
   const { orders: storeOrderSummaries, refresh: refreshStoreOrders } = useStoreOrderSummaries(referenceDateKey);
-  const { catalog } = useStoreOrderCatalog();
   const activeStores = useMemo(
     () => snapshot.stores.filter((store) => store.status === "ativo"),
     [snapshot.stores],
   );
+  const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso);
   const { createOrder, isSubmitting } = useCreateStoreOrder(() => {
     void refreshStoreOrders();
     setIsNewOrderOpen(false);
@@ -162,11 +122,10 @@ export default function PedidosLojaPage() {
     [activeStores, selectedStoreId],
   );
   const effectiveBaseDateKey = useMemo(() => {
-    const baseDateKey = getBaseDateByCutoff(referenceDate.toISOString(), snapshot.operationalSettings.orderCutoffTime);
     return selectedStore
-      ? moveToNextAllowedWeekday(baseDateKey, selectedStore.orderingDays)
-      : baseDateKey;
-  }, [referenceDate, selectedStore, snapshot.operationalSettings.orderCutoffTime]);
+      ? getOperationalBaseDateByStoreRule(orderedAtIso, selectedStore, snapshot.operationalSettings)
+      : orderedAtIso.slice(0, 10);
+  }, [orderedAtIso, selectedStore, snapshot.operationalSettings]);
   const deliveryDateKey = useMemo(
     () =>
       selectedStore
@@ -174,7 +133,6 @@ export default function PedidosLojaPage() {
         : effectiveBaseDateKey,
     [effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
   );
-  const baseDate = useMemo(() => new Date(`${effectiveBaseDateKey}T00:00:00`), [effectiveBaseDateKey]);
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
   const highlightedDay = useMemo(() => getDayFieldByDate(deliveryDate), [deliveryDate]);
   const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
@@ -186,14 +144,6 @@ export default function PedidosLojaPage() {
   const receivingDaysLabel = useMemo(
     () => (selectedStore ? formatOperationalDays(selectedStore.receivingDays) : "-"),
     [selectedStore],
-  );
-  const productsWithAvailability = useMemo(
-    () =>
-      orderProducts.map((product) => ({
-        ...product,
-        available: canDeliverOnDate(product, baseDate, deliveryDate),
-      })),
-    [baseDate, deliveryDate, orderProducts],
   );
 
   const filteredPedidos = useMemo(
@@ -218,29 +168,26 @@ export default function PedidosLojaPage() {
 
   const categoryOptions = useMemo(
     () =>
-      Array.from(new Set(productsWithAvailability.map((item) => item.category)))
+      Array.from(new Set(orderProducts.map((item) => item.category)))
         .sort((a, b) => a.localeCompare(b))
         .map((value) => ({ value, label: value })),
-    [productsWithAvailability],
+    [orderProducts],
   );
 
   const filteredOrderProducts = useMemo(() => {
     const term = catalogSearchTerm.trim().toLowerCase();
 
-    return productsWithAvailability.filter((item) => {
+    return orderProducts.filter((item) => {
       const matchesSearch =
         term.length === 0 ||
         item.code.toLowerCase().includes(term) ||
         item.name.toLowerCase().includes(term) ||
         item.category.toLowerCase().includes(term);
       const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
-      const matchesAvailability =
-        availabilityFilter === "all" ||
-        (availabilityFilter === "available" ? item.available : !item.available);
 
-      return matchesSearch && matchesCategory && matchesAvailability;
+      return matchesSearch && matchesCategory;
     });
-  }, [availabilityFilter, catalogSearchTerm, categoryFilter, productsWithAvailability]);
+  }, [catalogSearchTerm, categoryFilter, orderProducts]);
 
   const columns = [
     { key: "code", header: "Código" },
@@ -287,7 +234,6 @@ export default function PedidosLojaPage() {
   function clearCatalogFilters() {
     setCatalogSearchTerm("");
     setCategoryFilter("all");
-    setAvailabilityFilter("all");
   }
 
   async function handleSubmitOrder() {
@@ -296,7 +242,7 @@ export default function PedidosLojaPage() {
     }
 
     const items = orderProducts
-      .filter((product) => product.available && product[highlightedDay] > 0)
+      .filter((product) => product[highlightedDay] > 0)
       .map((product) => ({
         productId: product.productId,
         quantity: product[highlightedDay],
@@ -400,7 +346,7 @@ export default function PedidosLojaPage() {
                 </div>
 
                 <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
-                  <div className="grid gap-3 lg:grid-cols-[2fr_1fr_1fr_auto]">
+                  <div className="grid gap-3 lg:grid-cols-[2fr_1fr_auto]">
                     <div className="grid gap-1.5">
                       <Label className="text-xs text-muted-foreground">Buscar Produto</Label>
                       <Input
@@ -425,19 +371,6 @@ export default function PedidosLojaPage() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid gap-1.5">
-                      <Label className="text-xs text-muted-foreground">Disponibilidade</Label>
-                      <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Todas" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todas</SelectItem>
-                          <SelectItem value="available">Disponível</SelectItem>
-                          <SelectItem value="unavailable">Indisponível</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div className="flex items-end">
                       <Button type="button" variant="ghost" onClick={clearCatalogFilters}>
                         Limpar
@@ -445,7 +378,7 @@ export default function PedidosLojaPage() {
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {filteredOrderProducts.length} de {orderProducts.length} produtos visíveis.
+                    {filteredOrderProducts.length} de {orderProducts.length} produtos disponíveis para a janela operacional.
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Coluna ativa do pedido: <strong>{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
@@ -492,7 +425,7 @@ export default function PedidosLojaPage() {
                             <td className="px-2 py-2 text-sm">{product.unit}</td>
                             {dayColumns.map((dayField, index) => {
                               const isActiveColumn = index === 0;
-                              const canEdit = isActiveColumn && product.available;
+                              const canEdit = isActiveColumn;
 
                               return (
                                 <td
@@ -517,17 +450,6 @@ export default function PedidosLojaPage() {
                       )}
                     </tbody>
                   </table>
-                </div>
-
-                <div className="text-sm text-muted-foreground">
-                  <span className="mr-4 inline-flex items-center gap-1.5">
-                    <span className="inline-block size-3 rounded-sm bg-success/50" />
-                    Disponível
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-block size-3 rounded-sm bg-secondary" />
-                    Indisponível
-                  </span>
                 </div>
               </div>
 

@@ -29,13 +29,22 @@ export default function ExpedicaoPrintPage() {
   const searchParams = useSearchParams();
   const expeditionId = typeof params.expeditionId === "string" ? params.expeditionId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
+  const { planningData, isLoading } = useFactoryPlanningSnapshot(referenceDate);
 
   const expedition = useMemo(
     () => planningData.expedition.find((item) => item.id === expeditionId) ?? null,
     [expeditionId, planningData.expedition],
   );
   const aggregatedItems = useMemo(() => aggregateExpeditionItems(expedition?.items ?? []), [expedition?.items]);
+
+  if (isLoading) {
+    return (
+      <PrintDocument
+        title="Preparando checklist de expedição"
+        subtitle="Carregando os dados do pedido para impressão."
+      />
+    );
+  }
 
   if (!expedition) {
     return <PrintDocument title="Checklist de expedição não encontrado" subtitle="Nenhum pedido foi localizado." />;
@@ -45,6 +54,7 @@ export default function ExpedicaoPrintPage() {
     <PrintDocument
       title={`Expedição · ${expedition.orderCode}`}
       subtitle="Checklist por loja e pedido, sem roteirização e sem nota de transferência."
+      autoPrint
       meta={
         <>
           <MetaCard label="Loja" value={expedition.storeName} />

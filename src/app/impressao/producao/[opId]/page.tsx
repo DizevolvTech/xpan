@@ -76,8 +76,8 @@ export default function ProducaoPrintPage() {
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
-  const { snapshot } = useMasterDataSnapshot();
+  const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
+  const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
 
   const op = useMemo(
     () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
@@ -101,6 +101,15 @@ export default function ProducaoPrintPage() {
     return labels.join(" · ");
   }, [op]);
 
+  if (isPlanningLoading || isMasterDataLoading) {
+    return (
+      <PrintDocument
+        title="Preparando folha de produção"
+        subtitle="Carregando os dados da ordem de produção para impressão."
+      />
+    );
+  }
+
   if (!op || !document) {
     return <PrintDocument title="Folha de produção não encontrada" subtitle="Nenhuma OP foi localizada." />;
   }
@@ -110,6 +119,7 @@ export default function ProducaoPrintPage() {
       title={op.sectorName}
       subtitle={`${op.lineName} - Padeiro`}
       variant="industrial"
+      autoPrint
       meta={
         <>
           <MetaCard label="Documento" value={`Produção · ${op.code}`} />

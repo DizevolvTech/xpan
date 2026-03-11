@@ -29,7 +29,7 @@ export default function PedidoLojaPrintPage() {
   const searchParams = useSearchParams();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
+  const { planningData, isLoading } = useFactoryPlanningSnapshot(referenceDate);
 
   const planningOrder = useMemo(
     () => planningData.orders.find((item) => item.id === orderId) ?? null,
@@ -39,6 +39,15 @@ export default function PedidoLojaPrintPage() {
     () => aggregateOrderItems(planningData.orderItems.filter((item) => item.orderId === orderId)),
     [orderId, planningData.orderItems],
   );
+
+  if (isLoading) {
+    return (
+      <PrintDocument
+        title="Preparando pedido da loja"
+        subtitle="Carregando os dados do pedido para impressão."
+      />
+    );
+  }
 
   if (!planningOrder) {
     return (
@@ -54,6 +63,7 @@ export default function PedidoLojaPrintPage() {
     <PrintDocument
       title={`Pedido da Loja · ${planningOrder.code}`}
       subtitle="Espelho do pedido solicitado pela loja, sem roteirização e sem nota de transferência."
+      autoPrint
       meta={
         <>
           <MetaCard label="Loja" value={planningOrder.storeName} />

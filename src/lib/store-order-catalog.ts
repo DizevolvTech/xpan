@@ -1,4 +1,5 @@
 import type { LineType } from "@/lib/production-planning";
+import { getOperationalOrderWindow, resolveProductionDateInWindow } from "@/lib/order-planning";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import type { StoreOrderCatalogProduct } from "@/lib/store-order-types";
 
@@ -21,7 +22,19 @@ function calculateTotal(
   return product.sex + product.sab + product.dom + product.seg + product.ter + product.qua + product.qui;
 }
 
-export function buildStoreOrderCatalog(snapshot: Pick<MasterDataSnapshot, "sectors" | "lines" | "products" | "schedules">) {
+export function buildStoreOrderCatalog(
+  snapshot: Pick<MasterDataSnapshot, "operationalSettings" | "stores" | "sectors" | "lines" | "products" | "schedules">,
+  options: {
+    storeId: string;
+    orderedAt: string;
+  },
+) {
+  const store = snapshot.stores.find((entry) => entry.id === options.storeId);
+  if (!store) {
+    throw new Error("Store not found");
+  }
+
+  const { baseDate, deliveryDate } = getOperationalOrderWindow(options.orderedAt, store, snapshot.operationalSettings);
   const sectorById = new Map(snapshot.sectors.map((sector) => [sector.id, sector]));
   const lineById = new Map(snapshot.lines.map((line) => [line.id, line]));
   const productById = new Map(snapshot.products.map((product) => [product.id, product]));
@@ -47,6 +60,11 @@ export function buildStoreOrderCatalog(snapshot: Pick<MasterDataSnapshot, "secto
           return;
         }
 
+        const planning = resolveProductionDateInWindow(baseDate, deliveryDate, product.productionDays);
+        if (!planning.date || planning.delayed) {
+          return;
+        }
+
         const key = `${schedule.id}|${product.id}`;
         if (entries.has(key)) {
           return;
@@ -62,7 +80,7 @@ export function buildStoreOrderCatalog(snapshot: Pick<MasterDataSnapshot, "secto
           lineName: line.name,
           lineType: line.type,
           scheduleName: schedule.name,
-          productionDays: scheduleItem.productionDays,
+          productionDays: product.productionDays,
         });
       });
     });

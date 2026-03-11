@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Printer } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,23 +14,91 @@ interface PrintDocumentProps {
   meta?: ReactNode;
   children?: ReactNode;
   variant?: "default" | "industrial";
+  autoPrint?: boolean;
 }
 
-export function PrintDocument({ title, subtitle, meta, children, variant = "default" }: PrintDocumentProps) {
+async function waitForPrintableDocument(container: HTMLElement | null) {
+  if (!container) {
+    return;
+  }
+
+  if ("fonts" in document && "ready" in document.fonts) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore font readiness failures and continue with the print flow.
+    }
+  }
+
+  const images = Array.from(container.querySelectorAll("img"));
+  if (images.length > 0) {
+    await Promise.all(
+      images.map(
+        (image) =>
+          new Promise<void>((resolve) => {
+            if (image.complete) {
+              resolve();
+              return;
+            }
+
+            const cleanup = () => {
+              image.removeEventListener("load", cleanup);
+              image.removeEventListener("error", cleanup);
+              resolve();
+            };
+
+            image.addEventListener("load", cleanup, { once: true });
+            image.addEventListener("error", cleanup, { once: true });
+          }),
+      ),
+    );
+  }
+
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+export function PrintDocument({
+  title,
+  subtitle,
+  meta,
+  children,
+  variant = "default",
+  autoPrint = false,
+}: PrintDocumentProps) {
+  const rootRef = useRef<HTMLElement | null>(null);
+  const hasAutoPrintedRef = useRef(false);
+
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    if (!autoPrint || hasAutoPrintedRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function triggerPrint() {
+      await waitForPrintableDocument(rootRef.current);
+
+      if (cancelled || hasAutoPrintedRef.current) {
+        return;
+      }
+
+      hasAutoPrintedRef.current = true;
       window.print();
-    }, 120);
+    }
+
+    void triggerPrint();
 
     return () => {
-      window.clearTimeout(timer);
+      cancelled = true;
     };
-  }, []);
+  }, [autoPrint]);
 
   const industrial = variant === "industrial";
 
   return (
     <main
+      ref={rootRef}
       className={
         industrial
           ? "min-h-screen bg-stone-200 px-3 py-4 print:bg-white print:px-0 print:py-0"

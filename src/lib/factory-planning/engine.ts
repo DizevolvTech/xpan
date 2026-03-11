@@ -147,7 +147,31 @@ export function getDeliveryDateByStoreRule(
   return moveToNextAllowedWeekday(calculatedDate, store.receivingDays);
 }
 
-function findProductionDate(baseDate: string, deliveryDate: string, productionDays: ProductionWeekDay[]) {
+export function getOperationalBaseDateByStoreRule(
+  orderedAt: string,
+  store: Pick<StoreProfile, "orderingDays">,
+  settings: Pick<OperationalSettings, "orderCutoffTime">,
+): string {
+  const baseDate = getBaseDateByCutoff(orderedAt, settings.orderCutoffTime);
+  return moveToNextAllowedWeekday(baseDate, store.orderingDays);
+}
+
+export function getOperationalOrderWindow(
+  orderedAt: string,
+  store: StoreProfile,
+  settings: OperationalSettings,
+) {
+  const baseDate = getOperationalBaseDateByStoreRule(orderedAt, store, settings);
+  const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, settings);
+
+  return { baseDate, deliveryDate };
+}
+
+export function resolveProductionDateInWindow(
+  baseDate: string,
+  deliveryDate: string,
+  productionDays: ProductionWeekDay[],
+) {
   if (productionDays.length === 0) {
     return { date: null as string | null, delayed: false };
   }
@@ -313,8 +337,7 @@ function buildPlannedItems(
         return [];
       }
 
-      const baseDate = getBaseDateByCutoff(order.orderedAt, input.source.settings.orderCutoffTime);
-      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, input.source.settings);
+      const { baseDate, deliveryDate } = getOperationalOrderWindow(order.orderedAt, store, input.source.settings);
 
       return order.items.flatMap<PlannedOrderItem>((orderItem) => {
         const product = input.source.productsById.get(orderItem.productId);
@@ -326,7 +349,7 @@ function buildPlannedItems(
           return [];
         }
 
-        const planning = findProductionDate(baseDate, deliveryDate, product.productionDays);
+        const planning = resolveProductionDateInWindow(baseDate, deliveryDate, product.productionDays);
         const salesFactor = sanitizeFactor(product.salesToKgFactor);
         const expeditionFactor = sanitizeFactor(product.expeditionToKgFactor);
         const internalKg = round2(orderItem.quantity * salesFactor);
@@ -582,8 +605,7 @@ function buildOrders(
 
       const items = orderItemsByOrderId.get(order.id) ?? [];
       const opCodes = Array.from(opsByOrderId.get(order.id) ?? []).sort((a, b) => a.localeCompare(b));
-      const baseDate = getBaseDateByCutoff(order.orderedAt, settings.orderCutoffTime);
-      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, settings);
+      const { deliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
 
       return {
         id: order.id,
@@ -629,8 +651,7 @@ function buildExpeditionRows(
       }
 
       const items = (orderItemsByOrderId.get(order.id) ?? []).slice().sort((a, b) => a.productCode.localeCompare(b.productCode));
-      const baseDate = getBaseDateByCutoff(order.orderedAt, settings.orderCutoffTime);
-      const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, settings);
+      const { deliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
       const orderSummary = orderByCode.get(order.code);
 
       const expeditionItems: ExpeditionItem[] = items.map((item) => ({

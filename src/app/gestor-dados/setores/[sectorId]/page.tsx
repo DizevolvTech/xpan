@@ -118,8 +118,8 @@ export default function SetorDetailsPage() {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="overflow-hidden rounded-xl border border-border/80">
-            <table className="w-full border-collapse">
+          <div className="overflow-x-auto rounded-xl border border-border/80">
+            <table className="w-full min-w-[920px] border-collapse">
               <thead className="bg-panel">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Código</th>

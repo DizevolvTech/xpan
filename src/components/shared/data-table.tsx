@@ -81,9 +81,9 @@ export function DataTable<T extends object>({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] border-collapse bg-card">
+    <div className="rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
+      <div className="overflow-x-auto overscroll-x-contain">
+        <table className="w-full min-w-[640px] border-collapse bg-card xl:min-w-full">
           <thead
             className={cn(
               "border-b border-border/70 bg-panel",
@@ -95,7 +95,7 @@ export function DataTable<T extends object>({
                 <th
                   key={column.key}
                   className={cn(
-                    "px-4 text-left text-xs font-semibold text-muted-foreground/95",
+                    "whitespace-nowrap px-4 text-left text-xs font-semibold text-muted-foreground/95",
                     compact ? "py-2.5" : "py-3.5",
                   )}
                 >
@@ -105,7 +105,7 @@ export function DataTable<T extends object>({
               {actions && actions.length > 0 && (
                 <th
                   className={cn(
-                    "px-4 text-right text-xs font-semibold text-muted-foreground/95",
+                    "w-px whitespace-nowrap px-4 text-right text-xs font-semibold text-muted-foreground/95",
                     compact ? "py-2.5" : "py-3.5",
                   )}
                 >
@@ -128,7 +128,7 @@ export function DataTable<T extends object>({
                   <td
                     key={column.key}
                     className={cn(
-                      "border-t border-border/70 bg-card px-4 text-sm text-foreground",
+                      "align-top border-t border-border/70 bg-card px-4 text-sm text-foreground",
                       compact ? "py-2.5" : "py-3",
                     )}
                   >
@@ -141,11 +141,11 @@ export function DataTable<T extends object>({
                 {actions && actions.length > 0 && (
                   <td
                     className={cn(
-                      "border-t border-border/70 bg-card px-4 text-right",
+                      "align-top border-t border-border/70 bg-card px-4 text-right",
                       compact ? "py-2.5" : "py-3",
                     )}
                   >
-                    <div className="flex items-center justify-end gap-1.5">
+                    <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
                       {actions.map((action, actionIndex) => {
                         const Icon = actionIcons[action.icon];
                         const isDestructive = action.variant === "destructive";

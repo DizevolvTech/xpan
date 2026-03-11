@@ -2,8 +2,9 @@ import "server-only";
 
 import type { UnitCode } from "@/lib/factory-planning/units";
 import type { FactoryPlanningInput, StoreOrder, StoreProfile } from "@/lib/order-planning";
-import { getBaseDateByCutoff, getDeliveryDateByStoreRule } from "@/lib/order-planning";
+import { getOperationalOrderWindow } from "@/lib/order-planning";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import {
   assertSupabaseResult,
   resolveProfileDatabaseId,
@@ -121,8 +122,7 @@ export async function createStoreOrder(
 
   const orderedAt = input.orderedAt ?? new Date().toISOString();
   const createdByProfileDatabaseId = await resolveProfileDatabaseId(supabase, input.createdByProfileId ?? null);
-  const baseDate = getBaseDateByCutoff(orderedAt, snapshot.operationalSettings.orderCutoffTime);
-  const deliveryDate = getDeliveryDateByStoreRule(baseDate, {
+  const orderWindow = getOperationalOrderWindow(orderedAt, {
     id: store.id,
     code: store.code,
     name: store.name,
@@ -130,6 +130,11 @@ export async function createStoreOrder(
     receivingDays: store.receivingDays,
     receiveWindow: store.receiveWindow,
   }, snapshot.operationalSettings);
+  const availableCatalog = buildStoreOrderCatalog(snapshot, {
+    storeId: store.id,
+    orderedAt,
+  });
+  const availableProductIds = new Set(availableCatalog.map((product) => product.productId));
 
   const existingOrdersResult = await supabase.from("store_orders").select("code");
   const existingOrders = assertSupabaseResult(existingOrdersResult, "Failed to load existing store orders");
@@ -148,6 +153,23 @@ export async function createStoreOrder(
     .select("id, legacy_id, code, name, sales_to_kg_factor, expedition_unit, expedition_to_kg_factor, production_unit");
   const productRows = assertSupabaseResult(productIdsResult, "Failed to resolve product ids");
   const productByLegacyId = new Map(productRows.map((row) => [row.legacy_id ?? row.id, row]));
+  const validatedItems = input.items.map((item) => {
+    const product = productByLegacyId.get(item.productId);
+    if (!product) {
+      throw new Error(`Product not found for store order item: ${item.productId}`);
+    }
+    if (!availableProductIds.has(item.productId)) {
+      throw new Error(`Product unavailable for the operational order window: ${product.code}`);
+    }
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      throw new Error(`Invalid quantity for store order item: ${product.code}`);
+    }
+
+    return {
+      item,
+      product,
+    };
+  });
 
   const insertOrderResult = await supabase
     .from("store_orders")
@@ -157,8 +179,8 @@ export async function createStoreOrder(
       store_id: storeIdRow.id,
       created_by_profile_id: createdByProfileDatabaseId,
       ordered_at: orderedAt,
-      base_date: baseDate,
-      delivery_date: deliveryDate,
+      base_date: orderWindow.baseDate,
+      delivery_date: orderWindow.deliveryDate,
       receive_window_snapshot: store.receiveWindow,
       expedition_lead_days_snapshot: snapshot.operationalSettings.expeditionLeadDays,
       note: input.note ?? "",
@@ -167,12 +189,7 @@ export async function createStoreOrder(
     .single();
   const insertedOrder = assertSupabaseResult(insertOrderResult, "Failed to create store order");
 
-  const orderItems = input.items.map((item, index) => {
-    const product = productByLegacyId.get(item.productId);
-    if (!product) {
-      throw new Error(`Product not found for store order item: ${item.productId}`);
-    }
-
+  const orderItems = validatedItems.map(({ item, product }, index) => {
     return {
       legacy_id: `${insertedOrder.legacy_id ?? insertedOrder.id}-item-${index + 1}`,
       order_id: insertedOrder.id,

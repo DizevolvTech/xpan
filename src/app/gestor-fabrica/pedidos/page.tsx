@@ -284,18 +284,18 @@ export default function PedidosFabricaPage() {
             onClear={clearFilters}
           />
 
-          <div className="overflow-hidden rounded-xl border border-border/80">
-            <table className="w-full min-w-[980px] border-collapse">
+          <div className="overflow-x-auto rounded-xl border border-border/80">
+            <table className="w-full min-w-[1280px] border-collapse">
               <thead className="bg-panel">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Pedido</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produtos</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Ações</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Pedido</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produtos</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                  <th className="w-px whitespace-nowrap px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -305,28 +305,28 @@ export default function PedidosFabricaPage() {
                   return (
                     <Fragment key={order.id}>
                       <tr className="hover:bg-panel/30">
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        <td className="min-w-[170px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <button
                             type="button"
-                            className="inline-flex items-center gap-2 font-medium text-foreground"
+                            className="inline-flex items-start gap-2 text-left font-medium text-foreground"
                             onClick={() => toggleExpand(order.id)}
                           >
                             {isExpanded ? <ArrowDown className="size-4" /> : <ArrowRight className="size-4" />}
-                            {order.code}
+                            <span className="whitespace-nowrap font-mono">{order.code}</span>
                           </button>
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{order.storeName}</td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <span className="rounded-md bg-warning/25 px-2 py-1 text-xs font-semibold text-warning-foreground">
+                        <td className="min-w-[210px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{order.storeName}</td>
+                        <td className="min-w-[160px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          <span className="inline-flex whitespace-nowrap rounded-md bg-warning/25 px-2 py-1 text-xs font-semibold text-warning-foreground">
                             {order.deliveryDateLabel}
                           </span>
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        <td className="min-w-[120px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {order.productsCount} produtos
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{order.totalKg} Kg</td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <div className="min-w-[150px]">
+                        <td className="min-w-[120px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{order.totalKg} Kg</td>
+                        <td className="min-w-[240px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          <div className="min-w-[220px]">
                             <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
                               <span>{order.workflowProgress.toFixed(1)}%</span>
                               <span>{order.releasedToProduction ? "Liberado" : "Aguardando liberação"}</span>
@@ -336,11 +336,11 @@ export default function PedidosFabricaPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        <td className="min-w-[190px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <StatusBadge status={order.status} />
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                        <td className="min-w-[360px] align-top border-t border-border/70 bg-card px-4 py-3 text-right">
+                          <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                             <Button asChild type="button" variant="outline" size="sm">
                               <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${referenceDate}`}>Detalhe</Link>
                             </Button>
@@ -366,33 +366,33 @@ export default function PedidosFabricaPage() {
                       {isExpanded ? (
                         <tr key={`${order.id}-expanded`}>
                           <td colSpan={8} className="border-t border-border/70 bg-panel/10 px-4 py-4">
-                            <div className="overflow-hidden rounded-xl border border-border/70">
-                              <table className="w-full border-collapse">
+                            <div className="overflow-x-auto rounded-xl border border-border/70">
+                              <table className="w-full min-w-[880px] border-collapse">
                                 <thead className="bg-card">
                                   <tr>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Linha</th>
-                                    <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
+                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
+                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
+                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Linha</th>
+                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {items.map((item) => (
                                     <tr key={item.id}>
-                                      <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      <td className="min-w-[260px] align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
                                         {item.productCode} · {item.productName}
                                       </td>
-                                      <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      <td className="whitespace-nowrap align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
                                         {item.requestedQuantity} {item.requestedUnit}
                                       </td>
-                                      <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.internalKg}</td>
-                                      <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      <td className="whitespace-nowrap align-top border-t border-border/70 bg-card px-3 py-3 text-sm">{item.internalKg}</td>
+                                      <td className="whitespace-nowrap align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
                                         {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
                                       </td>
-                                      <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.scheduleName ?? "Sem linha"}</td>
-                                      <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      <td className="min-w-[180px] align-top border-t border-border/70 bg-card px-3 py-3 text-sm">{item.scheduleName ?? "Sem linha"}</td>
+                                      <td className="min-w-[180px] align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
                                         <StatusBadge status={item.status} />
                                       </td>
                                     </tr>

@@ -1192,8 +1192,8 @@ export default function ProdutosPage() {
                       </Button>
                     </div>
 
-                    <div className="overflow-hidden rounded-xl border border-border/70">
-                      <table className="w-full border-collapse">
+                    <div className="overflow-x-auto rounded-xl border border-border/70">
+                      <table className="w-full min-w-[640px] border-collapse">
                         <thead className="bg-card">
                           <tr>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Referência</th>

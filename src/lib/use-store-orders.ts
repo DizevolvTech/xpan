@@ -84,20 +84,31 @@ export function useStoreOrderDetail(orderId: string, referenceDate: string) {
   );
 }
 
-export function useStoreOrderCatalog() {
+export function useStoreOrderCatalog(storeId: string, orderedAt: string) {
   const [catalog, setCatalog] = useState<StoreOrderCatalogProduct[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadCatalog() {
+      if (!storeId || !orderedAt) {
+        setCatalog([]);
+        setError(null);
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
 
       try {
-        const data = await readJson<StoreOrderCatalogProduct[]>("/api/store-order-catalog");
+        const params = new URLSearchParams({
+          storeId,
+          orderedAt,
+        });
+        const data = await readJson<StoreOrderCatalogProduct[]>(`/api/store-order-catalog?${params.toString()}`);
         if (!cancelled) {
           setCatalog(data);
         }
@@ -118,7 +129,7 @@ export function useStoreOrderCatalog() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [orderedAt, storeId]);
 
   return useMemo(
     () => ({ catalog, isLoading, error }),

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
+import { authorizeApiRequest, buildStoreScopeResponse, canAccessStore, getAllowedStoreIds } from "@/lib/api-auth";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
-export async function GET() {
+export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
     permission: "loja.pedidos",
     minimumLevel: "operar",
@@ -16,9 +16,20 @@ export async function GET() {
   }
 
   try {
+    const { searchParams } = new URL(request.url);
+    const storeId = searchParams.get("storeId");
+    const orderedAt = searchParams.get("orderedAt");
     const allowedStoreIds = getAllowedStoreIds(authorization.user);
+
+    if (!storeId || !orderedAt) {
+      return NextResponse.json([]);
+    }
+
     if (allowedStoreIds && allowedStoreIds.length === 0) {
       return NextResponse.json([]);
+    }
+    if (!canAccessStore(authorization.user, storeId)) {
+      return buildStoreScopeResponse();
     }
 
     const supabase = await createSupabaseServerClient();
@@ -26,7 +37,10 @@ export async function GET() {
       supabase,
       includeProfileNames: false,
     });
-    const catalog = buildStoreOrderCatalog(snapshot);
+    const catalog = buildStoreOrderCatalog(snapshot, {
+      storeId,
+      orderedAt,
+    });
 
     return NextResponse.json(catalog);
   } catch (error) {
