@@ -17,8 +17,8 @@ type DeliveryExecutionEntry = {
 
 type DeliveryExecutionState = Record<string, DeliveryExecutionEntry>;
 
-function getFallbackStatus(expeditionReady: boolean): DeliveryExecutionStatus {
-  return expeditionReady ? "pronto_coleta" : "aguardando_expedicao";
+function getFallbackStatus(): DeliveryExecutionStatus {
+  return "aguardando_expedicao";
 }
 
 export function useDeliveryExecution(referenceDate: string) {
@@ -68,7 +68,7 @@ export function useDeliveryExecution(referenceDate: string) {
 
       return (
         executionState[orderId] ?? {
-          status: getFallbackStatus(expeditionReady),
+          status: getFallbackStatus(),
           updatedAt: new Date().toISOString(),
         }
       );
@@ -79,6 +79,7 @@ export function useDeliveryExecution(referenceDate: string) {
   const updateExecution = useCallback(
     async (orderId: string, status: DeliveryExecutionStatus) => {
       const updatedAt = new Date().toISOString();
+      const previousEntry = executionState[orderId];
 
       setExecutionState((current) => ({
         ...current,
@@ -100,10 +101,22 @@ export function useDeliveryExecution(referenceDate: string) {
       });
 
       if (!response.ok) {
+        setExecutionState((current) => {
+          if (!previousEntry) {
+            const nextState = { ...current };
+            delete nextState[orderId];
+            return nextState;
+          }
+
+          return {
+            ...current,
+            [orderId]: previousEntry,
+          };
+        });
         throw new Error("Falha ao atualizar entrega");
       }
     },
-    [],
+    [executionState],
   );
 
   return useMemo(

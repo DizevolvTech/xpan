@@ -77,6 +77,14 @@ function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
 
+function buildOrderPrintPath(orderId: string, referenceDate: string) {
+  return `/impressao/pedido-loja/${orderId}?ref=${referenceDate}`;
+}
+
+function buildOrderDetailPath(orderId: string, referenceDate: string) {
+  return `/loja/pedidos/${orderId}?ref=${referenceDate}`;
+}
+
 export default function PedidosLojaPage() {
   const router = useRouter();
   const { snapshot } = useMasterDataSnapshot();
@@ -206,8 +214,17 @@ export default function PedidosLojaPage() {
   ];
 
   const actions = [
-    { icon: "view" as const, label: "Visualizar", onClick: (item: StoreOrderSummary) => router.push(`/loja/pedidos/${item.id}`) },
-    { icon: "print" as const, label: "Imprimir", onClick: (item: StoreOrderSummary) => window.open(`/impressao/pedido-loja/${item.id}`, "_blank", "noopener,noreferrer") },
+    {
+      icon: "view" as const,
+      label: "Visualizar",
+      onClick: (item: StoreOrderSummary) => router.push(buildOrderDetailPath(item.id, referenceDateKey)),
+    },
+    {
+      icon: "print" as const,
+      label: "Imprimir",
+      onClick: (item: StoreOrderSummary) =>
+        window.open(buildOrderPrintPath(item.id, referenceDateKey), "_blank", "noopener,noreferrer"),
+    },
   ];
 
   const handleQuantityChange = (productId: string, field: EditableDayField, value: number) => {

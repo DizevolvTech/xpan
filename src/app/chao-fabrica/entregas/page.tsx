@@ -25,6 +25,7 @@ type DeliveryRow = ExpeditionRow & {
   routeCode: string;
   zone: string;
   stopLabel: string;
+  expeditionReady: boolean;
   executionStatus: DeliveryExecutionStatus;
   executionUpdatedAt: string;
 };
@@ -110,14 +111,16 @@ export default function EntregasPage() {
         })
         .map((item, index) => {
           const routeMeta = buildRouteMeta(item, index);
+          const expeditionReady = item.status === "aguardando_expedicao";
           const execution = deliveryExecutionState.resolveExecution(
             item.orderId,
-            item.status === "aguardando_expedicao",
+            expeditionReady,
           );
 
           return {
             ...item,
             ...routeMeta,
+            expeditionReady,
             executionStatus: execution.status,
             executionUpdatedAt: execution.updatedAt,
           };
@@ -227,8 +230,18 @@ export default function EntregasPage() {
 
         if (item.executionStatus === "aguardando_expedicao") {
           return (
-            <Button type="button" variant="outline" size="sm" disabled title="Pedido ainda não liberado para entrega.">
-              Aguardando expedição
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled
+              title={
+                item.expeditionReady
+                  ? "Conclua o checklist da expedição antes de iniciar a entrega."
+                  : "Pedido ainda não liberado para expedição."
+              }
+            >
+              {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
             </Button>
           );
         }
@@ -427,8 +440,18 @@ export default function EntregasPage() {
 
                   <div className="mt-3 grid gap-2">
                     {item.executionStatus === "aguardando_expedicao" ? (
-                      <Button type="button" variant="outline" size="sm" disabled>
-                        Aguardando expedição
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled
+                        title={
+                          item.expeditionReady
+                            ? "Conclua o checklist da expedição antes de iniciar a entrega."
+                            : "Pedido ainda não liberado para expedição."
+                        }
+                      >
+                        {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
                       </Button>
                     ) : item.executionStatus === "entregue" ? (
                       <Button type="button" variant="outline" size="sm" disabled>

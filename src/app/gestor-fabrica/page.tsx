@@ -6,81 +6,183 @@ import {
   Clock,
   Factory,
   ListChecks,
-  Package,
   ShoppingCart,
   Truck,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
-
-const kpis = [
-  { title: "Total de Pedidos", value: "1.234", tone: "info" as const, icon: ShoppingCart },
-  { title: "Pendentes", value: "32", tone: "warning" as const, icon: Clock },
-  { title: "Em Produção", value: "32", tone: "info" as const, icon: Factory },
-  { title: "Em Espera", value: "12", tone: "neutral" as const, icon: Package },
-  { title: "Entregas", value: "32", tone: "success" as const, icon: Truck },
-];
-
-const modules = [
-  {
-    href: "/gestor-fabrica/sublinhas-producao",
-    title: "Linhas",
-    subtitle: "Visão derivada do cronograma",
-    description: "Acompanhe a linha executora derivada dos produtos e a carga consolidada por dia.",
-    icon: ClipboardList,
-    tone: "emerald" as const,
-  },
-  {
-    href: "/gestor-fabrica/pedidos",
-    title: "Gestão de Pedidos",
-    subtitle: "Pedidos de todas as lojas",
-    description: "Acompanhe pedidos, prazo D+X, datas de recebimento e acesso ao detalhe individual.",
-    icon: ShoppingCart,
-    tone: "violet" as const,
-  },
-  {
-    href: "/gestor-fabrica/ordens-producao",
-    title: "Ordens de Produção",
-    subtitle: "OP por categoria e subcategoria",
-    description: "Visualize as OPs liberadas com progresso derivado por item operacional.",
-    icon: Factory,
-    tone: "amber" as const,
-  },
-  {
-    href: "/gestor-fabrica/expedicao",
-    title: "Expedição",
-    subtitle: "Reconversão e separação",
-    description: "Converta o interno em Kg para unidade de separação de cada pedido de loja.",
-    icon: ListChecks,
-    tone: "emerald" as const,
-  },
-];
+import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { getTodayDateKey } from "@/lib/order-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 export default function GestorFabricaPage() {
+  const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
+  const { planningData, isLoading, error } = useFactoryPlanningSnapshot(referenceDate);
+  const deliveryExecution = useDeliveryExecution(referenceDate);
+
+  const metrics = useMemo(() => {
+    const totalOrders = planningData.orders.length;
+    const awaitingRelease = planningData.orders.filter((item) => !item.releasedToProduction).length;
+    const inProduction = planningData.orders.filter((item) => item.status === "em_producao").length;
+    const checklistPending = planningData.expedition.filter((item) => {
+      if (item.status !== "aguardando_expedicao") {
+        return false;
+      }
+
+      return deliveryExecution.resolveExecution(item.orderId, true).status === "aguardando_expedicao";
+    }).length;
+    const deliveriesInField = planningData.expedition.filter((item) => {
+      const status = deliveryExecution.resolveExecution(item.orderId, item.status === "aguardando_expedicao").status;
+      return status === "em_rota" || status === "no_destino";
+    }).length;
+
+    return {
+      totalOrders,
+      awaitingRelease,
+      inProduction,
+      checklistPending,
+      deliveriesInField,
+      productionOrders: planningData.productionOrders.length,
+      expeditionRows: planningData.expedition.length,
+    };
+  }, [deliveryExecution, planningData.expedition, planningData.orders, planningData.productionOrders.length]);
+
+  const modules = useMemo(
+    () => [
+      {
+        href: "/gestor-fabrica/sublinhas-producao",
+        title: "Linhas",
+        subtitle: "Visão derivada do cronograma",
+        description: "Acompanhe a linha executora derivada dos produtos e a carga consolidada por dia.",
+        icon: ClipboardList,
+        tone: "emerald" as const,
+        items: [
+          `${planningData.productionDates.length} datas produtivas na referência`,
+          `${planningData.productionOrders.length} OPs consolidadas`,
+        ],
+      },
+      {
+        href: "/gestor-fabrica/pedidos",
+        title: "Gestão de Pedidos",
+        subtitle: "Pedidos de todas as lojas",
+        description: "Acompanhe pedidos, prazo D+X, datas de recebimento e acesso ao detalhe individual.",
+        icon: ShoppingCart,
+        tone: "violet" as const,
+        items: [
+          `${metrics.totalOrders} pedidos no dia`,
+          `${metrics.awaitingRelease} aguardando liberação`,
+        ],
+      },
+      {
+        href: "/gestor-fabrica/ordens-producao",
+        title: "Ordens de Produção",
+        subtitle: "OP por categoria e subcategoria",
+        description: "Visualize as OPs liberadas com progresso derivado por item operacional.",
+        icon: Factory,
+        tone: "amber" as const,
+        items: [
+          `${metrics.productionOrders} OPs geradas`,
+          `${metrics.inProduction} pedidos em produção`,
+        ],
+      },
+      {
+        href: "/gestor-fabrica/expedicao",
+        title: "Expedição",
+        subtitle: "Reconversão e separação",
+        description: "Converta o interno em Kg para unidade de separação de cada pedido de loja.",
+        icon: ListChecks,
+        tone: "emerald" as const,
+        items: [
+          `${metrics.checklistPending} checklists pendentes`,
+          `${metrics.deliveriesInField} entregas em campo`,
+        ],
+      },
+    ],
+    [
+      metrics.awaitingRelease,
+      metrics.checklistPending,
+      metrics.deliveriesInField,
+      metrics.inProduction,
+      metrics.productionOrders,
+      metrics.totalOrders,
+      planningData.productionDates.length,
+      planningData.productionOrders.length,
+    ],
+  );
+
   return (
     <PageLayout
-    title="Gestor de Fábrica"
-      description="Gerencie linhas, pedidos, produção e expedição da fábrica"
+      title="Gestor de Fábrica"
+      description="Visão operacional real de pedidos, produção, checklist de expedição e entregas."
       badge="Operacional"
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Gestor de Fábrica" }]}
     >
+      {error ? (
+        <div className="rounded-xl border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="rounded-xl border border-border/80 bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              Referência operacional
+            </p>
+            <p className="text-sm text-muted-foreground">Altere a data para rever o fluxo completo da fábrica.</p>
+          </div>
+          <input
+            type="date"
+            value={referenceDate}
+            onChange={(event) => setReferenceDate(event.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
+          />
+        </div>
+      </div>
+
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.1 }}
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
       >
-        {kpis.map((kpi) => (
-          <KPICard
-            key={kpi.title}
-            title={kpi.title}
-            value={kpi.value}
-            tone={kpi.tone}
-            icon={kpi.icon}
-            compactValue
-          />
-        ))}
+        <KPICard
+          title="Pedidos no dia"
+          value={isLoading ? "..." : metrics.totalOrders}
+          tone="info"
+          icon={ShoppingCart}
+          compactValue
+        />
+        <KPICard
+          title="Aguardando liberação"
+          value={isLoading ? "..." : metrics.awaitingRelease}
+          tone="warning"
+          icon={Clock}
+          compactValue
+        />
+        <KPICard
+          title="Em produção"
+          value={isLoading ? "..." : metrics.inProduction}
+          tone="info"
+          icon={Factory}
+          compactValue
+        />
+        <KPICard
+          title="Checklist pendente"
+          value={isLoading ? "..." : metrics.checklistPending}
+          tone="success"
+          icon={ListChecks}
+          compactValue
+        />
+        <KPICard
+          title="Entregas em campo"
+          value={isLoading ? "..." : metrics.deliveriesInField}
+          tone="neutral"
+          icon={Truck}
+          compactValue
+        />
       </motion.div>
 
       <motion.div
@@ -103,6 +205,7 @@ export default function GestorFabricaPage() {
               description={module.description}
               icon={module.icon}
               tone={module.tone}
+              items={module.items}
               footerLabel="Abrir módulo"
             />
           </motion.div>

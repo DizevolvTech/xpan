@@ -11,6 +11,7 @@
     "supabase:seed:generate": "tsx scripts/supabase/generate-seed.ts",
     "supabase:seed:refresh": "tsx scripts/supabase/generate-seed.ts > supabase/seed.sql",
     "supabase:auth:bootstrap": "tsx scripts/supabase/bootstrap-auth-users.ts",
+    "supabase:test:full-access": "tsx scripts/supabase/grant-full-test-access.ts",
     "supabase:remote:status": "tsx scripts/supabase/check-remote-schema.ts",
     "supabase:sql:bundle": "tsx scripts/supabase/build-bootstrap-sql.ts"
   },

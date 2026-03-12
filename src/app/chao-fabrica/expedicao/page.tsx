@@ -13,6 +13,7 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { type DeliveryExecutionStatus, useDeliveryExecution } from "@/lib/delivery-execution";
 import {
   formatDateKeyBr,
   getTodayDateKey,
@@ -25,7 +26,30 @@ function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
 }
 
-type ExpeditionOrderRow = ExpeditionRow;
+type ExpeditionOrderRow = ExpeditionRow & {
+  checklistReady: boolean;
+  checklistStatus: DeliveryExecutionStatus;
+};
+
+function describeChecklistStatus(item: ExpeditionOrderRow) {
+  if (!item.checklistReady) {
+    return "Aguardando conclusão da produção";
+  }
+  if (item.checklistStatus === "aguardando_expedicao") {
+    return "Checklist pendente";
+  }
+  if (item.checklistStatus === "pronto_coleta") {
+    return "Checklist concluído e pronto para coleta";
+  }
+  if (item.checklistStatus === "em_rota" || item.checklistStatus === "no_destino") {
+    return "Checklist concluído e entrega em andamento";
+  }
+  if (item.checklistStatus === "entregue") {
+    return "Checklist concluído e pedido entregue";
+  }
+
+  return "Checklist concluído com tentativa de entrega falha";
+}
 
 export default function ExpedicaoPage() {
   const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
@@ -36,21 +60,33 @@ export default function ExpedicaoPage() {
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
   const { planningData } = useFactoryPlanningSnapshot(referenceDate);
+  const deliveryExecutionState = useDeliveryExecution(referenceDate);
 
   const orderRows = useMemo<ExpeditionOrderRow[]>(
     () =>
-      [...planningData.expedition].sort((a, b) => {
-        const byDelivery = a.deliveryDate.localeCompare(b.deliveryDate);
-        if (byDelivery !== 0) {
-          return byDelivery;
-        }
-        const byStore = a.storeName.localeCompare(b.storeName);
-        if (byStore !== 0) {
-          return byStore;
-        }
-        return a.orderCode.localeCompare(b.orderCode);
-      }),
-    [planningData.expedition],
+      [...planningData.expedition]
+        .sort((a, b) => {
+          const byDelivery = a.deliveryDate.localeCompare(b.deliveryDate);
+          if (byDelivery !== 0) {
+            return byDelivery;
+          }
+          const byStore = a.storeName.localeCompare(b.storeName);
+          if (byStore !== 0) {
+            return byStore;
+          }
+          return a.orderCode.localeCompare(b.orderCode);
+        })
+        .map((item) => {
+          const checklistReady = item.status === "aguardando_expedicao";
+          const checklistStatus = deliveryExecutionState.resolveExecution(item.orderId, checklistReady).status;
+
+          return {
+            ...item,
+            checklistReady,
+            checklistStatus,
+          };
+        }),
+    [deliveryExecutionState, planningData.expedition],
   );
 
   const filteredOrders = useMemo(() => {
@@ -151,19 +187,24 @@ export default function ExpedicaoPage() {
       key: "actions",
       header: "Checklist",
       render: (item: ExpeditionOrderRow) => (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${referenceDate}`)}>
-            Imprimir
-          </Button>
-          {item.status === "aguardando_expedicao" ? (
-            <Button asChild type="button" size="sm">
-              <Link href={`/chao-fabrica/expedicao/${item.id}?ref=${referenceDate}`}>Abrir checklist</Link>
+        <div className="flex min-w-[240px] flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${referenceDate}`)}>
+              Imprimir
             </Button>
-          ) : (
-            <Button type="button" size="sm" disabled>
-              Aguardando produção
-            </Button>
-          )}
+            {item.checklistReady ? (
+              <Button asChild type="button" size="sm" variant={item.checklistStatus === "aguardando_expedicao" ? "default" : "outline"}>
+                <Link href={`/chao-fabrica/expedicao/${item.id}?ref=${referenceDate}`}>
+                  {item.checklistStatus === "aguardando_expedicao" ? "Abrir checklist" : "Ver checklist"}
+                </Link>
+              </Button>
+            ) : (
+              <Button type="button" size="sm" disabled>
+                Aguardando produção
+              </Button>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">{describeChecklistStatus(item)}</span>
         </div>
       ),
     },

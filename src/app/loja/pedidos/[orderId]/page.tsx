@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { AlertCircle, ArrowLeft, Clock3, ListChecks, Printer, Store, Truck } from "lucide-react";
 
@@ -11,6 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { useStoreOrderDetail } from "@/lib/use-store-orders";
+
+function sanitizeDateKey(raw: string | null) {
+  if (!raw) {
+    return getTodayDateKey();
+  }
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
+}
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -32,8 +40,10 @@ function parseBrDate(dateLabel: string): Date | null {
 
 export default function PedidoLojaDetailsPage() {
   const params = useParams<{ orderId: string }>();
+  const searchParams = useSearchParams();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
-  const { order } = useStoreOrderDetail(orderId, getTodayDateKey());
+  const referenceDate = sanitizeDateKey(searchParams.get("ref"));
+  const { order } = useStoreOrderDetail(orderId, referenceDate);
 
   const itemsCount = useMemo(() => (order ? order.items.length : 0), [order]);
   const totalRequested = useMemo(
@@ -87,7 +97,11 @@ export default function PedidoLojaDetailsPage() {
       ]}
       actions={
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}`)}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${referenceDate}`)}
+          >
             <Printer className="size-4" />
             Imprimir pedido
           </Button>
