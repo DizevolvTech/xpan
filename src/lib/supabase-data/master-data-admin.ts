@@ -32,23 +32,32 @@ export type SubcategoryInput = {
   status: RecordStatus;
 };
 
-export type StoreInput = Omit<StoreMasterData, "id" | "code"> & {
+export type StoreInput = Omit<StoreMasterData, "id" | "code" | "createdAt" | "updatedAt"> & {
   code?: string;
 };
 
-export type IngredientInput = Omit<ProductionIngredient, "id" | "code" | "status"> & {
+export type IngredientInput = Omit<
+  ProductionIngredient,
+  "id" | "code" | "status" | "createdAt" | "updatedAt"
+> & {
   code?: string;
   externalCode?: string;
   status?: RecordStatus;
 };
 
-export type ProductInput = Omit<ProductionProduct, "id" | "code"> & {
+export type ProductInput = Omit<ProductionProduct, "id" | "code" | "createdAt" | "updatedAt"> & {
   code?: string;
   externalCode?: string;
 };
 
+export type OperationalSettingsInput = {
+  orderCutoffTime: string;
+  expeditionLeadDays: number;
+};
+
 type MutationOptions = {
   supabase?: SupabaseDataClient;
+  actingProfileId?: string | null;
 };
 
 function buildGeneratedLegacyId(prefix: string) {
@@ -68,7 +77,7 @@ function buildNextCode(existingCodes: string[], prefix: string, width: number) {
 }
 
 async function resolveRowByIdentifier(
-  table: "categories" | "subcategories" | "stores" | "ingredients" | "products" | "schedule_lines",
+  table: "categories" | "subcategories" | "stores" | "ingredients" | "products" | "schedule_lines" | "profiles",
   identifier: string,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
@@ -140,6 +149,14 @@ async function resolveProductId(
     throw new Error("products not found");
   }
   return idResult.data.id;
+}
+
+async function resolveProfileDbId(
+  identifier: string,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const row = await resolveRowByIdentifier("profiles", identifier, supabase);
+  return String(row.id);
 }
 
 export async function createCategory(input: CategoryInput, options: MutationOptions = {}) {
@@ -340,6 +357,90 @@ async function resolveSubcategoryId(
 function normalizeOptionalCode(value: string | undefined) {
   const normalized = value?.trim() ?? "";
   return normalized ? normalized : null;
+}
+
+function normalizeOperationalSettingsPayload(input: OperationalSettingsInput) {
+  const orderCutoffTime = input.orderCutoffTime.trim();
+  const timeMatch = orderCutoffTime.match(/^(\d{2}):(\d{2})$/);
+
+  if (!timeMatch) {
+    throw new Error("Informe o horário limite no formato HH:MM.");
+  }
+
+  const hours = Number(timeMatch[1]);
+  const minutes = Number(timeMatch[2]);
+
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    throw new Error("Informe um horário limite válido.");
+  }
+
+  const expeditionLeadDays = Number(input.expeditionLeadDays);
+
+  if (!Number.isInteger(expeditionLeadDays) || expeditionLeadDays < 0 || expeditionLeadDays > 30) {
+    throw new Error("Informe um D+X inteiro entre 0 e 30 dias.");
+  }
+
+  return {
+    order_cutoff_time: `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
+    expedition_lead_days: expeditionLeadDays,
+  };
+}
+
+export async function updateOperationalSettings(
+  input: OperationalSettingsInput,
+  options: MutationOptions = {},
+) {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const normalizedInput = normalizeOperationalSettingsPayload(input);
+  const now = new Date().toISOString();
+
+  const settingsResult = await supabase
+    .from("operational_settings")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const currentSettings = assertSupabaseResult(
+    { data: settingsResult.data, error: settingsResult.error },
+    "Failed to load operational settings",
+  );
+
+  if (currentSettings?.id) {
+    const updateResult = await supabase
+      .from("operational_settings")
+      .update({
+        ...normalizedInput,
+        updated_at: now,
+      })
+      .eq("id", currentSettings.id);
+
+    if (updateResult.error) {
+      throw new Error(`Failed to update operational settings: ${updateResult.error.message}`);
+    }
+  } else {
+    const insertResult = await supabase.from("operational_settings").insert({
+      ...normalizedInput,
+      created_at: now,
+      updated_at: now,
+    });
+
+    if (insertResult.error) {
+      throw new Error(`Failed to create operational settings: ${insertResult.error.message}`);
+    }
+  }
+
+  return {
+    orderCutoffTime: normalizedInput.order_cutoff_time,
+    expeditionLeadDays: normalizedInput.expedition_lead_days,
+  };
 }
 
 async function assertExternalCodeAvailable(
@@ -573,6 +674,9 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
   options: MutationOptions = {},
 ) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  const actingProfileDbId = options.actingProfileId
+    ? await resolveProfileDbId(options.actingProfileId, supabase)
+    : null;
   const timestamp = new Date().toISOString();
   const [
     subcategoryResult,
@@ -644,7 +748,7 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
       revision_of_id: activeSchedule?.id ?? null,
       status: "pendente",
       created_at: timestamp,
-      created_by_profile_id: null,
+      created_by_profile_id: actingProfileDbId,
       audited_at: null,
       audited_by_profile_id: null,
       audit_notes: null,
@@ -854,6 +958,9 @@ export async function updateScheduleLineStatus(
   options: MutationOptions = {},
 ) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  const actingProfileDbId = options.actingProfileId
+    ? await resolveProfileDbId(options.actingProfileId, supabase)
+    : null;
   const row = await resolveRowByIdentifier("schedule_lines", identifier, supabase);
   const scheduleId = String(row.id);
   const subcategoryId = String(row.subcategory_id);
@@ -865,6 +972,7 @@ export async function updateScheduleLineStatus(
       .update({
         status: "inativo",
         deactivated_at: timestamp,
+        deactivated_by_profile_id: actingProfileDbId,
       })
       .eq("subcategory_id", subcategoryId)
       .eq("status", "ativo")
@@ -882,12 +990,14 @@ export async function updateScheduleLineStatus(
 
   if (input.status === "ativo") {
     payload.audited_at = timestamp;
+    payload.audited_by_profile_id = actingProfileDbId;
     payload.deactivated_at = null;
     payload.deactivated_by_profile_id = null;
   }
 
   if (input.status === "inativo") {
     payload.deactivated_at = timestamp;
+    payload.deactivated_by_profile_id = actingProfileDbId;
   }
 
   const result = await supabase.from("schedule_lines").update(payload).eq("id", scheduleId);

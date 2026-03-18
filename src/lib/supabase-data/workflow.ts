@@ -14,6 +14,7 @@ import {
 
 export interface PersistedWorkflowState {
   releasedOrders: string[];
+  cancelledOrders: string[];
   productionItemStatuses: Record<string, ProductionItemStatus>;
 }
 
@@ -23,10 +24,18 @@ export async function getPersistedWorkflowState(
   const [releasesResult, statusesResult, ordersResult] = await Promise.all([
     supabase.from("workflow_order_releases").select("order_id"),
     supabase.from("workflow_production_items").select("production_item_key, status"),
-    supabase.from("store_orders").select("id, legacy_id"),
+    supabase.from("store_orders").select("id, legacy_id, management_status"),
   ]);
 
-  const orderRows = assertSupabaseResult(ordersResult, "Failed to load order ids");
+  const orderRows = isSupabaseMissingSchemaError(ordersResult.error, ["management_status"])
+    ? assertSupabaseResult(
+        await supabase.from("store_orders").select("id, legacy_id"),
+        "Failed to load order ids",
+      ).map((row) => ({
+        ...row,
+        management_status: "ativo",
+      }))
+    : assertSupabaseResult(ordersResult, "Failed to load order ids");
   const releaseRows = isSupabaseMissingSchemaError(releasesResult.error, ["workflow_order_releases"])
     ? []
     : assertSupabaseResult(releasesResult, "Failed to load workflow releases");
@@ -40,6 +49,9 @@ export async function getPersistedWorkflowState(
     releasedOrders: releaseRows
       .map((row) => orderLegacyById.get(row.order_id) ?? row.order_id)
       .filter((value, index, all) => all.indexOf(value) === index),
+    cancelledOrders: orderRows
+      .filter((row) => row.management_status === "cancelado")
+      .map((row) => row.legacy_id ?? row.id),
     productionItemStatuses: statusRows.reduce<Record<string, ProductionItemStatus>>((acc, row) => {
       acc[row.production_item_key] = row.status;
       return acc;
@@ -53,13 +65,11 @@ export async function releaseOrder(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const releasedByDatabaseId = await resolveProfileDatabaseId(supabase, releasedByProfileId ?? null);
-  const orderQuery = supabase
-    .from("store_orders")
-    .select("id")
-  const orderResult = await (isUuid(orderId)
-    ? orderQuery.eq("id", orderId)
-    : orderQuery.eq("legacy_id", orderId)).maybeSingle();
-  const orderRow = assertSupabaseResult({ data: orderResult.data, error: orderResult.error }, "Failed to resolve order for release");
+  const orderRow = await resolveOrderRow(orderId, supabase);
+
+  if (orderRow.management_status === "cancelado") {
+    throw new Error("Cancelled orders cannot be released to production");
+  }
 
   const upsertResult = await supabase.from("workflow_order_releases").upsert(
     {
@@ -90,11 +100,15 @@ export async function updateProductionItemStatus(
     .select("status")
     .eq("production_item_key", productionItemKey)
     .maybeSingle();
-  const currentRow = assertSupabaseResult(
-    { data: currentResult.data, error: currentResult.error },
-    "Failed to load current production item status",
-  );
-  const currentStatus = currentRow?.status ?? "nao_iniciado";
+
+  if (
+    currentResult.error &&
+    !isSupabaseMissingSchemaError(currentResult.error, ["workflow_production_items"])
+  ) {
+    throw new Error(`Failed to load current production item status: ${currentResult.error.message}`);
+  }
+
+  const currentStatus = currentResult.data?.status ?? "nao_iniciado";
 
   if (!canTransitionProductionItemStatus(currentStatus, status)) {
     throw new Error("Invalid production workflow transition");
@@ -115,5 +129,101 @@ export async function updateProductionItemStatus(
 
   if (upsertResult.error) {
     throw new Error(`Failed to update production item status: ${upsertResult.error.message}`);
+  }
+}
+
+async function resolveOrderRow(
+  orderId: string,
+  supabase: SupabaseDataClient,
+) {
+  const query = supabase
+    .from("store_orders")
+    .select("id, management_status");
+
+  const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
+  if (isSupabaseMissingSchemaError(result.error, ["management_status"])) {
+    const fallbackQuery = supabase.from("store_orders").select("id");
+    const fallbackResult = await (isUuid(orderId)
+      ? fallbackQuery.eq("id", orderId)
+      : fallbackQuery.eq("legacy_id", orderId)).maybeSingle();
+    const fallbackRow = assertSupabaseResult(
+      { data: fallbackResult.data, error: fallbackResult.error },
+      "Failed to resolve order management",
+    );
+
+    return {
+      ...fallbackRow,
+      management_status: "ativo",
+    };
+  }
+  return assertSupabaseResult({ data: result.data, error: result.error }, "Failed to resolve order management");
+}
+
+export async function cancelOrder(
+  orderId: string,
+  managedByProfileId?: string | null,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const managedByDatabaseId = await resolveProfileDatabaseId(supabase, managedByProfileId ?? null);
+  const orderRow = await resolveOrderRow(orderId, supabase);
+  const releaseResult = await supabase
+    .from("workflow_order_releases")
+    .select("id")
+    .eq("order_id", orderRow.id)
+    .maybeSingle();
+  if (releaseResult.error) {
+    throw new Error(`Failed to verify current order release: ${releaseResult.error.message}`);
+  }
+  const hasRelease = Boolean(releaseResult.data);
+
+  if (hasRelease) {
+    throw new Error("Orders already released to production cannot be cancelled");
+  }
+
+  if (orderRow.management_status === "cancelado") {
+    return;
+  }
+
+  const result = await supabase
+    .from("store_orders")
+    .update({
+      management_status: "cancelado",
+      cancelled_at: new Date().toISOString(),
+      cancelled_by_profile_id: managedByDatabaseId,
+      reopened_at: null,
+      reopened_by_profile_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderRow.id);
+
+  if (result.error) {
+    throw new Error(`Failed to cancel order: ${result.error.message}`);
+  }
+}
+
+export async function reopenOrder(
+  orderId: string,
+  managedByProfileId?: string | null,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const managedByDatabaseId = await resolveProfileDatabaseId(supabase, managedByProfileId ?? null);
+  const orderRow = await resolveOrderRow(orderId, supabase);
+
+  if (orderRow.management_status !== "cancelado") {
+    return;
+  }
+
+  const result = await supabase
+    .from("store_orders")
+    .update({
+      management_status: "ativo",
+      reopened_at: new Date().toISOString(),
+      reopened_by_profile_id: managedByDatabaseId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderRow.id);
+
+  if (result.error) {
+    throw new Error(`Failed to reopen order: ${result.error.message}`);
   }
 }

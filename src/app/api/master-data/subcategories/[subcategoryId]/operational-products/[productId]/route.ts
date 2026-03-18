@@ -26,7 +26,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   try {
     const supabase = createSupabaseAdminClient();
-    await removeProductFromOperationalSubcategory(subcategoryId, productId, { supabase });
+    await removeProductFromOperationalSubcategory(subcategoryId, productId, {
+      supabase,
+      actingProfileId: authorization.user.id,
+    });
     invalidateMasterDataCaches();
     return NextResponse.json({ ok: true });
   } catch (error) {

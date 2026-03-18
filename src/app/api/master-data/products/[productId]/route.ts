@@ -34,7 +34,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const supabase = createSupabaseAdminClient();
-    await updateProduct(productId, payload, { supabase });
+    await updateProduct(productId, payload, {
+      supabase,
+      actingProfileId: authorization.user.id,
+    });
     invalidateMasterDataCaches();
     return NextResponse.json({ ok: true });
   } catch (error) {

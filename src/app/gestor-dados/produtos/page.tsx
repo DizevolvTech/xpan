@@ -269,6 +269,13 @@ export default function ProdutosPage() {
   );
 
   const activeProductsCount = productRows.filter((item) => item.active).length;
+  const operationalPortfolioCount = productRows.filter(
+    (item) => item.active && Boolean(item.operationalLineId),
+  ).length;
+  const outsideOperationalPortfolioCount = Math.max(
+    0,
+    activeProductsCount - operationalPortfolioCount,
+  );
   const lineOptions = snapshot.lines.map((line) => ({
     value: line.id,
     label: `${line.name} · ${sectorNameById.get(line.sectorId) ?? "-"}`,
@@ -756,10 +763,15 @@ export default function ProdutosPage() {
           tone="success"
         />
         <KPICard
-          title="Última Atualização"
-          value={isLoading ? "Carregando..." : `${productRows.length} cadastrados`}
+          title="Carteira Operacional"
+          value={isLoading ? "Carregando..." : `${operationalPortfolioCount} produtos`}
           icon={Clock3}
           tone="neutral"
+          subtitle={
+            isLoading
+              ? undefined
+              : `${outsideOperationalPortfolioCount} ativos fora da carteira operacional`
+          }
         />
       </div>
 

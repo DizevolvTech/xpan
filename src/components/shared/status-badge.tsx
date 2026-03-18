@@ -15,6 +15,7 @@ type StatusType =
   | "embalando"
   | "concluido"
   | "em_espera"
+  | "cancelado"
   | "rota_entrega"
   | "entregue"
   | "pendente"
@@ -55,6 +56,7 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
     label: "Em Espera",
     className: "bg-[oklch(0.88_0.06_295)] text-[oklch(0.43_0.08_293)]",
   },
+  cancelado: { label: "Cancelado", className: "bg-danger text-danger-foreground" },
   rota_entrega: {
     label: "Rota de Entrega",
     className: "bg-[oklch(0.88_0.05_214)] text-[oklch(0.4_0.06_228)]",

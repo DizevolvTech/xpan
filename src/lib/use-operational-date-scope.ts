@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { getTodayDateKey } from "@/lib/order-planning";
 import {
@@ -14,6 +14,36 @@ import {
 } from "@/lib/operational-date-scope";
 
 const OPERATIONAL_SCOPE_STORAGE_KEY = "xpan:operational-date-scope:v1";
+const OPERATIONAL_SCOPE_CHANGE_EVENT = "xpan:operational-date-scope:change";
+let cachedClientSnapshot: { key: string; value: OperationalDateScope } | null = null;
+let cachedServerSnapshot: { key: string; value: OperationalDateScope } | null = null;
+
+function buildOperationalDateScopeCacheKey(scope: OperationalDateScope) {
+  return `${scope.mode}|${scope.date}|${scope.startDate}|${scope.endDate}`;
+}
+
+function memoizeOperationalDateScopeSnapshot(
+  scope: OperationalDateScope,
+  target: "client" | "server",
+) {
+  const key = buildOperationalDateScopeCacheKey(scope);
+  const cache = target === "client" ? cachedClientSnapshot : cachedServerSnapshot;
+
+  if (cache?.key === key) {
+    return cache.value;
+  }
+
+  const value = Object.freeze({ ...scope });
+  const nextCache = { key, value };
+
+  if (target === "client") {
+    cachedClientSnapshot = nextCache;
+  } else {
+    cachedServerSnapshot = nextCache;
+  }
+
+  return value;
+}
 
 function readStoredOperationalDateScope(today: string) {
   if (typeof window === "undefined") {
@@ -82,42 +112,80 @@ function writeOperationalDateScopeToUrl(scope: OperationalDateScope) {
   window.history.replaceState({}, "", `${url.pathname}${search ? `?${search}` : ""}${url.hash}`);
 }
 
-export function useOperationalDateScope() {
-  const [scope, setScope] = useState<OperationalDateScope>(() =>
+function subscribeOperationalDateScope(callback: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const handleChange = () => callback();
+  window.addEventListener("storage", handleChange);
+  window.addEventListener("popstate", handleChange);
+  window.addEventListener(OPERATIONAL_SCOPE_CHANGE_EVENT, handleChange);
+
+  return () => {
+    window.removeEventListener("storage", handleChange);
+    window.removeEventListener("popstate", handleChange);
+    window.removeEventListener(OPERATIONAL_SCOPE_CHANGE_EVENT, handleChange);
+  };
+}
+
+function getOperationalDateScopeClientSnapshot() {
+  return memoizeOperationalDateScopeSnapshot(
     readStoredOperationalDateScope(getTodayDateKey()),
+    "client",
   );
+}
+
+function getOperationalDateScopeServerSnapshot() {
+  return memoizeOperationalDateScopeSnapshot(
+    createDefaultOperationalDateScope(getTodayDateKey()),
+    "server",
+  );
+}
+
+function persistOperationalDateScope(scope: OperationalDateScope) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(OPERATIONAL_SCOPE_STORAGE_KEY, JSON.stringify(scope));
+  writeOperationalDateScopeToUrl(scope);
+  window.dispatchEvent(new Event(OPERATIONAL_SCOPE_CHANGE_EVENT));
+}
+
+export function useOperationalDateScope() {
   const today = getTodayDateKey();
+  const scope = useSyncExternalStore(
+    subscribeOperationalDateScope,
+    getOperationalDateScopeClientSnapshot,
+    getOperationalDateScopeServerSnapshot,
+  );
   const anchorDate = useMemo(() => resolveOperationalScopeAnchorDate(scope, today), [scope, today]);
   const summary = useMemo(() => formatOperationalDateScopeSummary(scope), [scope]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(OPERATIONAL_SCOPE_STORAGE_KEY, JSON.stringify(scope));
-    writeOperationalDateScopeToUrl(scope);
-  }, [scope]);
-
   const setMode = useCallback((nextMode: OperationalDateScopeMode) => {
-    setScope((current) => normalizeOperationalDateScope({ ...current, mode: nextMode }, today));
-  }, [today]);
+    persistOperationalDateScope(
+      normalizeOperationalDateScope({ ...scope, mode: nextMode }, today),
+    );
+  }, [scope, today]);
 
   const setDate = useCallback((nextDate: string) => {
-    setScope((current) => normalizeOperationalDateScope({ ...current, date: nextDate }, today));
-  }, [today]);
+    persistOperationalDateScope(
+      normalizeOperationalDateScope({ ...scope, date: nextDate }, today),
+    );
+  }, [scope, today]);
 
   const setStartDate = useCallback((nextDate: string) => {
-    setScope((current) =>
-      normalizeOperationalDateScope({ ...current, startDate: nextDate }, today),
+    persistOperationalDateScope(
+      normalizeOperationalDateScope({ ...scope, startDate: nextDate }, today),
     );
-  }, [today]);
+  }, [scope, today]);
 
   const setEndDate = useCallback((nextDate: string) => {
-    setScope((current) =>
-      normalizeOperationalDateScope({ ...current, endDate: nextDate }, today),
+    persistOperationalDateScope(
+      normalizeOperationalDateScope({ ...scope, endDate: nextDate }, today),
     );
-  }, [today]);
+  }, [scope, today]);
 
   return useMemo(
     () => ({

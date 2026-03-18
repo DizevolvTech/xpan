@@ -25,6 +25,7 @@ import {
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import { formatDateKeyBr, type ExpeditionRow } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -94,6 +95,7 @@ export default function EntregasPage() {
   const [deliveryDateFilter, setDeliveryDateFilter] = useState("all");
   const [executionStatusFilter, setExecutionStatusFilter] = useState("all");
   const [zoneFilter, setZoneFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -155,8 +157,12 @@ export default function EntregasPage() {
       return matchesSearch && matchesDeliveryDate && matchesExecutionStatus && matchesZone;
     });
   }, [deliveryDateFilter, deliveryRows, executionStatusFilter, searchTerm, zoneFilter]);
+  const sortedRows = useMemo(
+    () => sortItemsByTemporalValue(filteredRows, sortOrder, ["deliveryDate"]),
+    [filteredRows, sortOrder],
+  );
 
-  const paginatedRows = useMemo(() => paginateArray(filteredRows, page, pageSize), [filteredRows, page, pageSize]);
+  const paginatedRows = useMemo(() => paginateArray(sortedRows, page, pageSize), [page, pageSize, sortedRows]);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -501,6 +507,7 @@ export default function EntregasPage() {
               columns={columns}
               keyField="id"
               pagination={false}
+              showFooterControls={false}
               emptyMessage="Nenhum pedido encontrado para execução de entrega"
               stickyHeader
             />
@@ -519,6 +526,11 @@ export default function EntregasPage() {
               setPage(1);
             }}
             label="entregas"
+            sortOrder={sortOrder}
+            onSortOrderChange={(nextSortOrder) => {
+              setSortOrder(nextSortOrder);
+              setPage(1);
+            }}
           />
         </CardContent>
       </Card>

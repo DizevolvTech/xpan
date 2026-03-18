@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { updateScheduleLineStatus } from "@/lib/supabase-data/master-data-admin";
 
 type RouteContext = {
@@ -37,8 +37,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
-    await updateScheduleLineStatus(scheduleId, payload, { supabase });
+    const supabase = createSupabaseAdminClient();
+    await updateScheduleLineStatus(scheduleId, payload, {
+      supabase,
+      actingProfileId: authorization.user.id,
+    });
     invalidateMasterDataCaches();
     return NextResponse.json({ ok: true });
   } catch (error) {

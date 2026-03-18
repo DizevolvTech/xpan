@@ -22,6 +22,7 @@ import {
   type ExpeditionRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -61,6 +62,7 @@ export default function ExpedicaoPage() {
   const [deliveryDateFilter, setDeliveryDateFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
   const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
@@ -119,6 +121,10 @@ export default function ExpedicaoPage() {
       return matchesSearch && matchesDelivery && matchesStore && matchesStatus;
     });
   }, [deliveryDateFilter, orderRows, searchTerm, statusFilter, storeFilter]);
+  const sortedOrders = useMemo(
+    () => sortItemsByTemporalValue(filteredOrders, sortOrder, ["deliveryDate"]),
+    [filteredOrders, sortOrder],
+  );
 
   const storeOptions = useMemo(
     () =>
@@ -134,8 +140,8 @@ export default function ExpedicaoPage() {
   );
 
   const ordersPagination = useMemo(
-    () => paginateArray(filteredOrders, ordersPage, ordersPageSize),
-    [filteredOrders, ordersPage, ordersPageSize],
+    () => paginateArray(sortedOrders, ordersPage, ordersPageSize),
+    [ordersPage, ordersPageSize, sortedOrders],
   );
 
   const kpis = {
@@ -374,6 +380,7 @@ export default function ExpedicaoPage() {
             columns={columns}
             keyField="id"
             pagination={false}
+            showFooterControls={false}
             onRowClick={(item) => {
               if (item.checklistReady) {
                 window.location.assign(`/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
@@ -397,6 +404,11 @@ export default function ExpedicaoPage() {
               setOrdersPage(1);
             }}
             label="pedidos"
+            sortOrder={sortOrder}
+            onSortOrderChange={(nextSortOrder) => {
+              setSortOrder(nextSortOrder);
+              setOrdersPage(1);
+            }}
           />
         </CardContent>
       </Card>

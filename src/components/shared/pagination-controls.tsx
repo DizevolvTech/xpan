@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { TemporalSortOrder } from "@/lib/temporal-table-sort";
 
 interface PaginationControlsProps {
   page: number;
@@ -15,6 +16,10 @@ interface PaginationControlsProps {
   onPageSizeChange: (pageSize: number) => void;
   pageSizeOptions?: number[];
   label?: string;
+  sortOrder?: TemporalSortOrder;
+  onSortOrderChange?: (sortOrder: TemporalSortOrder) => void;
+  showPageSize?: boolean;
+  showNavigation?: boolean;
 }
 
 export function PaginationControls({
@@ -28,6 +33,10 @@ export function PaginationControls({
   onPageSizeChange,
   pageSizeOptions = [10, 20, 30, 50],
   label = "registros",
+  sortOrder = "recent_first",
+  onSortOrderChange,
+  showPageSize = true,
+  showNavigation = true,
 }: PaginationControlsProps) {
   const from = totalItems === 0 ? 0 : startIndex + 1;
   const to = endIndex;
@@ -41,67 +50,85 @@ export function PaginationControls({
           <strong className="text-foreground">{totalItems}</strong> {label}
         </span>
 
-        <label className="inline-flex items-center gap-2">
-          <span>Por página</span>
-          <select
-            value={pageSize}
-            onChange={(event) => onPageSizeChange(Number(event.target.value))}
-            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
-          >
-            {pageSizeOptions.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </label>
+        {showPageSize ? (
+          <label className="inline-flex items-center gap-2">
+            <span>Por página</span>
+            <select
+              value={pageSize}
+              onChange={(event) => onPageSizeChange(Number(event.target.value))}
+              className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+            >
+              {pageSizeOptions.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {onSortOrderChange ? (
+          <label className="inline-flex items-center gap-2">
+            <span>Ordenação</span>
+            <select
+              value={sortOrder}
+              onChange={(event) => onSortOrderChange(event.target.value as TemporalSortOrder)}
+              className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+            >
+              <option value="recent_first">Mais recentes</option>
+              <option value="old_first">Mais antigas</option>
+            </select>
+          </label>
+        ) : null}
       </div>
 
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => onPageChange(1)}
-          disabled={page <= 1}
-          aria-label="Primeira página"
-        >
-          <ChevronsLeft className="size-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          aria-label="Página anterior"
-        >
-          <ChevronLeft className="size-3.5" />
-        </Button>
-        <span className="px-2 text-xs font-semibold text-foreground">
-          Página {page} de {totalPages}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
-          aria-label="Próxima página"
-        >
-          <ChevronRight className="size-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => onPageChange(totalPages)}
-          disabled={page >= totalPages}
-          aria-label="Última página"
-        >
-          <ChevronsRight className="size-3.5" />
-        </Button>
-      </div>
+      {showNavigation ? (
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onPageChange(1)}
+            disabled={page <= 1}
+            aria-label="Primeira página"
+          >
+            <ChevronsLeft className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+            aria-label="Página anterior"
+          >
+            <ChevronLeft className="size-3.5" />
+          </Button>
+          <span className="px-2 text-xs font-semibold text-foreground">
+            Página {page} de {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= totalPages}
+            aria-label="Próxima página"
+          >
+            <ChevronRight className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onPageChange(totalPages)}
+            disabled={page >= totalPages}
+            aria-label="Última página"
+          >
+            <ChevronsRight className="size-3.5" />
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

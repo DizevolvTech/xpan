@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import {
+  CalendarClock,
   ClipboardList,
   Clock,
   Factory,
@@ -9,24 +10,66 @@ import {
   ShoppingCart,
   Truck,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 export default function GestorFabricaPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
-  const { planningData: planningSnapshot, isLoading, error } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData: planningSnapshot, isLoading, error, refresh: refreshPlanning } =
+    useFactoryPlanningSnapshot(anchorDate);
+  const { snapshot: masterDataSnapshot, refresh: refreshMasterData } = useMasterDataSnapshot();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
   );
   const deliveryExecution = useDeliveryExecution();
+  const [settingsDraft, setSettingsDraft] = useState({
+    orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
+    expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsFeedback, setSettingsFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setSettingsDraft({
+      orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
+      expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
+    });
+  }, [
+    masterDataSnapshot.operationalSettings.expeditionLeadDays,
+    masterDataSnapshot.operationalSettings.orderCutoffTime,
+  ]);
+
+  const isSettingsDirty =
+    settingsDraft.orderCutoffTime !== masterDataSnapshot.operationalSettings.orderCutoffTime ||
+    settingsDraft.expeditionLeadDays !== String(masterDataSnapshot.operationalSettings.expeditionLeadDays);
+  const expeditionLeadDaysValue = Number(settingsDraft.expeditionLeadDays);
+  const settingsFormIsValid =
+    /^\d{2}:\d{2}$/.test(settingsDraft.orderCutoffTime) &&
+    Number.isInteger(expeditionLeadDaysValue) &&
+    expeditionLeadDaysValue >= 0 &&
+    expeditionLeadDaysValue <= 30;
+
+  useUnsavedChangesGuard({
+    isDirty: isSettingsDirty,
+    message: "Existem alterações pendentes nas regras de expedição. Deseja sair mesmo assim?",
+  });
 
   const metrics = useMemo(() => {
     const totalOrders = planningData.orders.length;
@@ -55,13 +98,67 @@ export default function GestorFabricaPage() {
     };
   }, [deliveryExecution, planningData.expedition, planningData.orders, planningData.productionOrders.length]);
 
+  const settingsSummary = useMemo(() => {
+    const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
+      ? `D+${Math.max(0, expeditionLeadDaysValue)}`
+      : `D+${masterDataSnapshot.operationalSettings.expeditionLeadDays}`;
+
+    return `Pedidos feitos até ${settingsDraft.orderCutoffTime || masterDataSnapshot.operationalSettings.orderCutoffTime} mantêm a base do dia. Após esse horário, a expedição passa a considerar a próxima base operacional e entrega padrão em ${leadDaysLabel}.`;
+  }, [
+    expeditionLeadDaysValue,
+    masterDataSnapshot.operationalSettings.expeditionLeadDays,
+    masterDataSnapshot.operationalSettings.orderCutoffTime,
+    settingsDraft.orderCutoffTime,
+  ]);
+
+  async function handleSaveOperationalSettings() {
+    if (!settingsFormIsValid || isSavingSettings) {
+      return;
+    }
+
+    setIsSavingSettings(true);
+    setSettingsFeedback(null);
+
+    try {
+      const response = await fetch("/api/master-data/operational-settings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderCutoffTime: settingsDraft.orderCutoffTime,
+          expeditionLeadDays: expeditionLeadDaysValue,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message ?? "Falha ao salvar regras operacionais.");
+      }
+
+      await Promise.all([refreshMasterData(true), refreshPlanning(true)]);
+      setSettingsFeedback({
+        tone: "success",
+        message: "Regras de pedido e expedição atualizadas com sucesso.",
+      });
+    } catch (saveError) {
+      setSettingsFeedback({
+        tone: "error",
+        message: saveError instanceof Error ? saveError.message : "Falha ao salvar regras operacionais.",
+      });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   const modules = useMemo(
     () => [
       {
         href: "/gestor-fabrica/sublinhas-producao",
-        title: "Linhas",
-        subtitle: "Visão derivada do cronograma",
-        description: "Acompanhe a linha executora derivada dos produtos e a carga consolidada por dia.",
+        title: "Linhas - Subcategoria",
+        subtitle: "Auditoria e grade por subcategoria",
+        description: "Acompanhe a linha executora derivada das subcategorias e a carga consolidada por dia.",
         icon: ClipboardList,
         tone: "emerald" as const,
         items: [
@@ -141,6 +238,95 @@ export default function GestorFabricaPage() {
         title="Janela operacional"
         description="Veja a fábrica inteira, um único dia ou um período fechado sem trocar manualmente a referência em cada tela."
       />
+
+      <Card>
+        <CardHeader className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <CalendarClock className="size-4" />
+              Expedição
+            </div>
+            <CardTitle className="text-base">Regras globais de pedido e expedição</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Ajuste o horário limite do pedido e o prazo D+X usado pela fábrica para prometer recebimento às lojas.
+            </p>
+          </div>
+          <div className="max-w-xl rounded-2xl border border-border/70 bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
+            {settingsSummary}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isSettingsDirty ? (
+            <div className="rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Existem alterações pendentes nas regras de expedição.
+            </div>
+          ) : null}
+
+          {settingsFeedback ? (
+            <div
+              className={
+                settingsFeedback.tone === "success"
+                  ? "rounded-xl border border-emerald-300/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+                  : "rounded-xl border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground"
+              }
+            >
+              {settingsFeedback.message}
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,240px)_minmax(0,220px)_1fr] xl:items-end">
+            <div className="space-y-2">
+              <Label htmlFor="factory-order-cutoff-time">Horário limite do pedido</Label>
+              <Input
+                id="factory-order-cutoff-time"
+                type="time"
+                value={settingsDraft.orderCutoffTime}
+                onChange={(event) => {
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    orderCutoffTime: event.target.value,
+                  }));
+                  setSettingsFeedback(null);
+                }}
+                disabled={isSavingSettings}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="factory-expedition-lead-days">Prazo de expedição (D+X)</Label>
+              <Input
+                id="factory-expedition-lead-days"
+                type="number"
+                min={0}
+                max={30}
+                step={1}
+                value={settingsDraft.expeditionLeadDays}
+                onChange={(event) => {
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    expeditionLeadDays: event.target.value,
+                  }));
+                  setSettingsFeedback(null);
+                }}
+                disabled={isSavingSettings}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                onClick={() => void handleSaveOperationalSettings()}
+                disabled={!settingsFormIsValid || !isSettingsDirty || isSavingSettings}
+              >
+                {isSavingSettings ? "Salvando..." : "Salvar regras"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Esse ajuste impacta o catálogo da loja, a promessa de recebimento e o planejamento da expedição.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <motion.div
         initial={{ opacity: 0 }}

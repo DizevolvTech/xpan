@@ -123,6 +123,36 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     [refresh],
   );
 
+  const cancelOrder = useCallback(
+    async (orderId: string) => {
+      await readJson("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "cancel-order",
+          orderId,
+        }),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const reopenOrder = useCallback(
+    async (orderId: string) => {
+      await readJson("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reopen-order",
+          orderId,
+        }),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   const updateProductionItemStatus = useCallback(
     async (productionItemKey: string, status: ProductionItemStatus) => {
       await readJson("/api/factory-planning/workflow", {
@@ -146,8 +176,10 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
       error,
       refresh,
       releaseOrder,
+      cancelOrder,
+      reopenOrder,
       updateProductionItemStatus,
     }),
-    [error, isLoading, planningData, refresh, releaseOrder, updateProductionItemStatus],
+    [cancelOrder, error, isLoading, planningData, refresh, releaseOrder, reopenOrder, updateProductionItemStatus],
   );
 }

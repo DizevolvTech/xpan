@@ -11,7 +11,7 @@ export const PRODUCTION_ITEM_STATUS_FLOW: ProductionItemStatus[] = [
 
 const PRODUCTION_STATUS_LABELS: Record<ProductionItemStatus, string> = {
   nao_iniciado: "Não iniciado",
-  em_preparacao: "Em preparação",
+  em_preparacao: "Preparação",
   em_producao: "Em produção",
   em_forno: "Em forno",
   embalando: "Embalando",
@@ -20,6 +20,40 @@ const PRODUCTION_STATUS_LABELS: Record<ProductionItemStatus, string> = {
 
 export function getProductionStatusLabel(status: ProductionItemStatus) {
   return PRODUCTION_STATUS_LABELS[status];
+}
+
+export function getNextProductionActionLabel(status: ProductionItemStatus) {
+  switch (status) {
+    case "nao_iniciado":
+      return "Iniciar preparação";
+    case "em_preparacao":
+      return "Iniciar produção";
+    case "em_producao":
+      return "Enviar para forno";
+    case "em_forno":
+      return "Iniciar embalagem";
+    case "embalando":
+      return "Marcar como concluído";
+    default:
+      return null;
+  }
+}
+
+export function getPreviousProductionActionLabel(status: ProductionItemStatus) {
+  switch (status) {
+    case "em_preparacao":
+      return "Voltar para não iniciado";
+    case "em_producao":
+      return "Voltar para preparação";
+    case "em_forno":
+      return "Voltar para produção";
+    case "embalando":
+      return "Voltar para forno";
+    case "concluido":
+      return "Voltar para embalagem";
+    default:
+      return null;
+  }
 }
 
 export function canTransitionProductionItemStatus(

@@ -2,6 +2,11 @@
 
 import { useMemo, useState } from "react";
 
+import {
+  hasTemporalSortValue,
+  sortItemsByTemporalValue,
+  type TemporalSortOrder,
+} from "@/lib/temporal-table-sort";
 import { cn } from "@/lib/utils";
 import { LucideIcon, Eye, Pencil, Trash2, Printer, Plus, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +44,8 @@ interface DataTableProps<T> {
   pageSizeOptions?: number[];
   stickyHeader?: boolean;
   compact?: boolean;
+  temporalSortKeys?: string[];
+  showFooterControls?: boolean;
   emptyStateAction?: {
     label: string;
     onClick: () => void;
@@ -64,6 +71,8 @@ export function DataTable<T extends object>({
   pageSizeOptions,
   stickyHeader = false,
   compact = false,
+  temporalSortKeys,
+  showFooterControls = true,
   emptyStateAction,
 }: DataTableProps<T>) {
   const actionIcons: Record<string, LucideIcon> = {
@@ -76,12 +85,28 @@ export function DataTable<T extends object>({
   };
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
+  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
+  const canSortByDate = useMemo(
+    () => hasTemporalSortValue(data, temporalSortKeys),
+    [data, temporalSortKeys],
+  );
+  const sortedData = useMemo(
+    () => (canSortByDate ? sortItemsByTemporalValue(data, sortOrder, temporalSortKeys) : data),
+    [canSortByDate, data, sortOrder, temporalSortKeys],
+  );
   const paginated = useMemo(
-    () => paginateArray(data, page, pageSize),
-    [data, page, pageSize],
+    () => paginateArray(sortedData, page, pageSize),
+    [page, pageSize, sortedData],
   );
 
-  const visibleData = pagination ? paginated.items : data;
+  const footerPagination = useMemo(
+    () =>
+      pagination
+        ? paginated
+        : paginateArray(sortedData, 1, Math.max(sortedData.length, 1)),
+    [paginated, pagination, sortedData],
+  );
+  const visibleData = pagination ? paginated.items : sortedData;
 
   if (isLoading) {
     return (
@@ -252,14 +277,14 @@ export function DataTable<T extends object>({
         </div>
       </div>
 
-      {pagination ? (
+      {showFooterControls && (pagination || canSortByDate) ? (
         <PaginationControls
-          page={paginated.page}
-          pageSize={paginated.pageSize}
-          totalItems={paginated.totalItems}
-          totalPages={paginated.totalPages}
-          startIndex={paginated.startIndex}
-          endIndex={paginated.endIndex}
+          page={footerPagination.page}
+          pageSize={footerPagination.pageSize}
+          totalItems={footerPagination.totalItems}
+          totalPages={footerPagination.totalPages}
+          startIndex={footerPagination.startIndex}
+          endIndex={footerPagination.endIndex}
           onPageChange={setPage}
           onPageSizeChange={(nextPageSize) => {
             setPageSize(nextPageSize);
@@ -267,6 +292,17 @@ export function DataTable<T extends object>({
           }}
           pageSizeOptions={pageSizeOptions}
           label={paginationLabel}
+          sortOrder={sortOrder}
+          onSortOrderChange={
+            canSortByDate
+              ? (nextSortOrder) => {
+                  setSortOrder(nextSortOrder);
+                  setPage(1);
+                }
+              : undefined
+          }
+          showPageSize={pagination}
+          showNavigation={pagination}
         />
       ) : null}
     </div>

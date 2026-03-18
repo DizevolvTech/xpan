@@ -638,7 +638,7 @@ function buildOrders(
   settings: OperationalSettings,
 ): PlannedOrderRow[] {
   return storeOrders
-    .map((order) => {
+    .map<PlannedOrderRow | null>((order) => {
       const store = storeById.get(order.storeId);
       if (!store) {
         return null;
@@ -655,6 +655,7 @@ function buildOrders(
         storeId: store.id,
         storeName: store.name,
         orderedAt: formatDateTimeBr(order.orderedAt),
+        orderedAtKey: order.orderedAt.slice(0, 10),
         dPlusLabel: `D+${settings.expeditionLeadDays}`,
         deliveryDate,
         deliveryDateLabel: formatDateBr(deliveryDate),
@@ -666,7 +667,7 @@ function buildOrders(
         availableForRelease: items.every((item) => item.availableForRelease),
         workflowProgress: getAverageProgress(items),
         status: getOrderStatusFromItems(items),
-      };
+      } satisfies PlannedOrderRow;
     })
     .filter((row): row is PlannedOrderRow => Boolean(row))
     .sort((a, b) => {

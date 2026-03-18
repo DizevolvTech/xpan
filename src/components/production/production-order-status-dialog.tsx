@@ -15,7 +15,9 @@ import {
 } from "@/components/ui/dialog";
 import { type ProductionItemStatus, type ProductionOrderRow } from "@/lib/order-planning";
 import {
+  getNextProductionActionLabel,
   getNextProductionItemStatus,
+  getPreviousProductionActionLabel,
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
@@ -99,6 +101,8 @@ export function ProductionOrderStatusDialog({
                       {paginatedItems.map((item) => {
                     const previousStatus = getPreviousProductionItemStatus(item.status);
                     const nextStatus = getNextProductionItemStatus(item.status);
+                    const previousActionLabel = getPreviousProductionActionLabel(item.status);
+                    const nextActionLabel = getNextProductionActionLabel(item.status);
                     const sourceDates = op.sourceItems.filter(
                       (sourceItem) => sourceItem.productionItemKey === item.productionItemKey,
                     );
@@ -147,7 +151,7 @@ export function ProductionOrderStatusDialog({
                                 disabled={pendingItemKey === item.productionItemKey}
                                 onClick={() => void onUpdateStatus(item.productionItemKey, previousStatus)}
                               >
-                                Voltar para {getProductionStatusLabel(previousStatus)}
+                                {previousActionLabel ?? `Voltar para ${getProductionStatusLabel(previousStatus)}`}
                               </Button>
                             ) : null}
                             {nextStatus ? (
@@ -157,7 +161,7 @@ export function ProductionOrderStatusDialog({
                                 disabled={pendingItemKey === item.productionItemKey}
                                 onClick={() => void onUpdateStatus(item.productionItemKey, nextStatus)}
                               >
-                                Avançar para {getProductionStatusLabel(nextStatus)}
+                                {nextActionLabel ?? `Avançar para ${getProductionStatusLabel(nextStatus)}`}
                               </Button>
                             ) : (
                               <span className="text-xs font-semibold text-success-foreground">Fluxo concluído</span>

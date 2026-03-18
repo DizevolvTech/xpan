@@ -25,7 +25,7 @@ export default function PedidoDetailsPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
-  const { planningData, releaseOrder } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
 
   const order = useMemo(
     () => planningData.orders.find((item) => item.id === orderId) ?? null,
@@ -43,6 +43,7 @@ export default function PedidoDetailsPage() {
   );
 
   const aggregatedOrderItems = useMemo(() => aggregateOrderItems(orderItems), [orderItems]);
+  const canCancelOrder = Boolean(order && !order.releasedToProduction && order.status !== "cancelado");
 
   const flowSteps = [
     {
@@ -182,15 +183,53 @@ export default function PedidoDetailsPage() {
             <Button
               type="button"
               className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
-              disabled={!order.availableForRelease || order.releasedToProduction}
+              disabled={!order.availableForRelease || order.releasedToProduction || order.status === "cancelado"}
               onClick={() => void releaseOrder(order.id)}
             >
               {order.releasedToProduction ? "Pedido liberado" : "Liberar para produção"}
             </Button>
           </div>
+          <div className="space-y-2 sm:col-span-2 lg:col-span-2 xl:col-span-2">
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Gestão do pedido</p>
+            {order.status === "cancelado" ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
+                onClick={() => {
+                  if (window.confirm(`Reabrir o pedido ${order.code}?`)) {
+                    void reopenOrder(order.id);
+                  }
+                }}
+              >
+                Reabrir pedido
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
+                disabled={!canCancelOrder}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Cancelar o pedido ${order.code}? Ele sairá do fluxo operacional até ser reaberto.`,
+                    )
+                  ) {
+                    void cancelOrder(order.id);
+                  }
+                }}
+              >
+                Cancelar pedido
+              </Button>
+            )}
+          </div>
           <div className="sm:col-span-2 lg:col-span-3 xl:col-span-7">
             <div className="rounded-md border border-border/70 bg-panel/40 px-3 py-2 text-sm text-muted-foreground">
-              Progresso derivado: <strong>{order.workflowProgress.toFixed(1)}%</strong>. O pedido só sobe para expedição quando todos os produtos da OP concluírem.
+              Progresso derivado: <strong>{order.workflowProgress.toFixed(1)}%</strong>.{" "}
+              {order.status === "cancelado"
+                ? "Pedido cancelado pela fábrica e fora do fluxo operacional até reabertura."
+                : "O pedido só sobe para expedição quando todos os produtos da OP concluírem."}
             </div>
           </div>
         </CardContent>
@@ -207,7 +246,12 @@ export default function PedidoDetailsPage() {
           <CardTitle>Itens Consolidados do Pedido</CardTitle>
         </CardHeader>
         <CardContent>
-          <PaginatedSection items={aggregatedOrderItems} label="itens consolidados" initialPageSize={8}>
+          <PaginatedSection
+            items={aggregatedOrderItems}
+            label="itens consolidados"
+            initialPageSize={8}
+            temporalSortKeys={["deliveryDate", "productionDate", "saleDate"]}
+          >
             {(paginatedItems) => (
               <div className="overflow-x-auto rounded-xl border border-border/80">
                 <table className="w-full min-w-[980px] border-collapse">
@@ -257,7 +301,12 @@ export default function PedidoDetailsPage() {
           <CardTitle>Itens Originais do Pedido</CardTitle>
         </CardHeader>
         <CardContent>
-          <PaginatedSection items={orderItems} label="itens originais" initialPageSize={8}>
+          <PaginatedSection
+            items={orderItems}
+            label="itens originais"
+            initialPageSize={8}
+            temporalSortKeys={["deliveryDate", "productionDate", "saleDate"]}
+          >
             {(paginatedItems) => (
               <div className="overflow-x-auto rounded-xl border border-border/80">
                 <table className="w-full min-w-[760px] border-collapse">

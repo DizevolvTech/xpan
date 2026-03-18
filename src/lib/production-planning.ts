@@ -62,6 +62,8 @@ export interface ProductionIngredient {
   id: string;
   code: string;
   externalCode?: string;
+  createdAt?: string;
+  updatedAt?: string;
   name: string;
   type: IngredientType;
   unit: UnitCode;
@@ -79,6 +81,8 @@ export interface OperationalSettings {
 export interface StoreMasterData {
   id: string;
   code: string;
+  createdAt?: string;
+  updatedAt?: string;
   name: string;
   responsible: string;
   email: string;
@@ -94,6 +98,8 @@ export interface StoreMasterData {
 export interface ProductionSector {
   id: string;
   code: string;
+  createdAt?: string;
+  updatedAt?: string;
   name: string;
   responsible: string;
   status: RecordStatus;
@@ -102,6 +108,8 @@ export interface ProductionSector {
 export interface ProductionLine {
   id: string;
   code: string;
+  createdAt?: string;
+  updatedAt?: string;
   name: string;
   sectorId: string;
   type: LineType;
@@ -114,6 +122,8 @@ export interface ProductionProduct {
   id: string;
   code: string;
   externalCode?: string;
+  createdAt?: string;
+  updatedAt?: string;
   name: string;
   description: string;
   lineId: string;

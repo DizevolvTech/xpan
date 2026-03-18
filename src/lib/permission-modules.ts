@@ -26,7 +26,7 @@ export const permissionModules = [
   { id: "gestor-dados.linhas", label: "Subcategorias", route: "/gestor-dados/linhas-producao", group: "gestor-dados" },
   { id: "gestor-dados.lojas", label: "Lojas", route: "/gestor-dados/lojas", group: "gestor-dados" },
   { id: "gestor-fabrica.dashboard", label: "Visao geral da fabrica", route: "/gestor-fabrica", group: "gestor-fabrica" },
-  { id: "gestor-fabrica.sublinhas", label: "Linhas", route: "/gestor-fabrica/sublinhas-producao", group: "gestor-fabrica" },
+  { id: "gestor-fabrica.sublinhas", label: "Linhas - Subcategoria", route: "/gestor-fabrica/sublinhas-producao", group: "gestor-fabrica" },
   { id: "gestor-fabrica.pedidos", label: "Pedidos", route: "/gestor-fabrica/pedidos", group: "gestor-fabrica" },
   { id: "gestor-fabrica.ops", label: "Ordens de producao", route: "/gestor-fabrica/ordens-producao", group: "gestor-fabrica" },
   { id: "gestor-fabrica.expedicao", label: "Expedicao", route: "/gestor-fabrica/expedicao", group: "gestor-fabrica" },

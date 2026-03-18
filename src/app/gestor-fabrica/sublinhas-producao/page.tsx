@@ -8,12 +8,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -21,15 +23,27 @@ import {
 import {
   formatDateBr,
   productionWeekDays,
+  type ProductionProduct,
   type WeeklyProductionSchedule,
 } from "@/lib/production-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import {
-  buildLineDaySummariesFromData,
   buildLineById,
   buildSectorNameById,
-  getProductsByLineFromData,
+  getMinimumProductionTotalFromSchedule,
+  getPlannedDaysCountFromSchedule,
 } from "@/lib/production-data-utils";
+
+type AuditableScheduleProduct = {
+  snapshotId: string;
+  productId: string;
+  code: string;
+  name: string;
+  minimumProduction: number;
+  productionDays: ProductionProduct["productionDays"];
+  masterLineName: string;
+  operationalLineName: string;
+};
 
 type SublinhaRow = WeeklyProductionSchedule & {
   lineName: string;
@@ -37,13 +51,59 @@ type SublinhaRow = WeeklyProductionSchedule & {
   itemsCount: number;
   minimumTotal: number;
   plannedDays: number;
-  daySummaries: ReturnType<typeof buildLineDaySummariesFromData>;
+  daySummaries: {
+    day: ProductionProduct["productionDays"][number];
+    shortLabel: string;
+    label: string;
+    productsCount: number;
+    plannedKg: number;
+  }[];
+  snapshotProducts: AuditableScheduleProduct[];
 };
 
 function formatKgLabel(value: number) {
   return new Intl.NumberFormat("pt-BR", {
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function buildScheduleSnapshotProducts(
+  schedule: WeeklyProductionSchedule,
+  productsById: Map<string, ProductionProduct>,
+  lineNameById: Map<string, string>,
+): AuditableScheduleProduct[] {
+  return schedule.items
+    .map((item) => {
+      const product = productsById.get(item.productId);
+      return {
+        snapshotId: item.id,
+        productId: item.productId,
+        code: product?.code ?? item.productId,
+        name: product?.name ?? "Produto não encontrado",
+        minimumProduction: item.minimumProduction,
+        productionDays: item.productionDays,
+        masterLineName: product ? lineNameById.get(product.masterLineId ?? product.lineId) ?? "-" : "-",
+        operationalLineName: product?.operationalLineId
+          ? lineNameById.get(product.operationalLineId) ?? "-"
+          : "Fora da carteira operacional",
+      };
+    })
+    .sort((left, right) => `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, "pt-BR"));
+}
+
+function buildScheduleDaySummariesFromSnapshotProducts(products: AuditableScheduleProduct[]) {
+  return productionWeekDays.map((day) => {
+    const productsForDay = products.filter((product) => product.productionDays.includes(day.key));
+    return {
+      day: day.key,
+      shortLabel: day.shortLabel,
+      label: day.label,
+      productsCount: productsForDay.length,
+      plannedKg: Number(
+        productsForDay.reduce((total, product) => total + product.minimumProduction, 0).toFixed(2),
+      ),
+    };
+  });
 }
 
 export default function SublinhasProducaoPage() {
@@ -59,26 +119,33 @@ export default function SublinhasProducaoPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const linesById = useMemo(() => buildLineById(snapshot.lines), [snapshot.lines]);
   const sectorNameById = useMemo(() => buildSectorNameById(snapshot.sectors), [snapshot.sectors]);
+  const lineNameById = useMemo(
+    () => new Map(snapshot.lines.map((line) => [line.id, line.name])),
+    [snapshot.lines],
+  );
+  const productsById = useMemo(
+    () => new Map(snapshot.products.map((product) => [product.id, product])),
+    [snapshot.products],
+  );
 
   const scheduleRows = useMemo<SublinhaRow[]>(
     () =>
       snapshot.schedules.map((schedule) => {
         const line = linesById.get(schedule.lineId);
-        const lineProducts = getProductsByLineFromData(schedule.lineId, snapshot.products).filter((product) => product.active);
-        const daySummaries = buildLineDaySummariesFromData(schedule.lineId, snapshot.products);
+        const snapshotProducts = buildScheduleSnapshotProducts(schedule, productsById, lineNameById);
+        const daySummaries = buildScheduleDaySummariesFromSnapshotProducts(snapshotProducts);
         return {
           ...schedule,
           lineName: line?.name ?? "-",
           sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
-          itemsCount: lineProducts.length,
-          minimumTotal: Number(
-            lineProducts.reduce((total, product) => total + product.minimumProductionKg, 0).toFixed(2),
-          ),
-          plannedDays: daySummaries.filter((day) => day.productsCount > 0).length,
+          itemsCount: schedule.items.length,
+          minimumTotal: Number(getMinimumProductionTotalFromSchedule(schedule).toFixed(2)),
+          plannedDays: getPlannedDaysCountFromSchedule(schedule),
           daySummaries,
+          snapshotProducts,
         };
       }),
-    [linesById, sectorNameById, snapshot.products, snapshot.schedules],
+    [lineNameById, linesById, productsById, sectorNameById, snapshot.schedules],
   );
 
   const selectedSchedule = useMemo(
@@ -86,11 +153,8 @@ export default function SublinhasProducaoPage() {
     [scheduleRows, selectedScheduleId],
   );
   const selectedLineProducts = useMemo(
-    () =>
-      selectedSchedule
-        ? getProductsByLineFromData(selectedSchedule.lineId, snapshot.products).filter((product) => product.active)
-        : [],
-    [selectedSchedule, snapshot.products],
+    () => selectedSchedule?.snapshotProducts ?? [],
+    [selectedSchedule],
   );
   const selectedDayBoards = useMemo(
     () => {
@@ -101,19 +165,26 @@ export default function SublinhasProducaoPage() {
 
       return orderedDays
         .map((day) => {
-        const products = selectedLineProducts.filter((product) => product.productionDays.includes(day.key));
-        const plannedKg = Number(
-          products.reduce((total, product) => total + product.minimumProductionKg, 0).toFixed(2),
-        );
-        return {
-          ...day,
-          products,
-          plannedKg,
-        };
+          const products = selectedLineProducts.filter((product) => product.productionDays.includes(day.key));
+          const plannedKg = Number(
+            products.reduce((total, product) => total + product.minimumProduction, 0).toFixed(2),
+          );
+          return {
+            ...day,
+            products,
+            plannedKg,
+          };
         })
         .filter((day) => day.key !== "domingo" || day.products.length > 0);
     },
     [selectedLineProducts],
+  );
+  const pendingAuditRows = useMemo(
+    () =>
+      scheduleRows
+        .filter((item) => item.status === "pendente")
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    [scheduleRows],
   );
   const scheduleNameById = useMemo(
     () => new Map(scheduleRows.map((schedule) => [schedule.id, schedule.name])),
@@ -194,12 +265,14 @@ export default function SublinhasProducaoPage() {
       render: (item: SublinhaRow) => formatKgLabel(item.minimumTotal),
     },
     { key: "status", header: "Status", render: (item: SublinhaRow) => <StatusBadge status={item.status} /> },
-    { key: "createdBy", header: "Criado Por" },
+    {
+      key: "createdBy",
+      header: "Criado Por",
+      render: (item: SublinhaRow) => item.createdBy || "Automático",
+    },
   ];
 
   const renderExpandedWeeklyView = (schedule: SublinhaRow) => {
-    const lineProducts = getProductsByLineFromData(schedule.lineId, snapshot.products).filter((product) => product.active);
-
     return (
       <div className="mt-3 overflow-hidden rounded-2xl border border-primary/20 bg-card shadow-[var(--shadow-soft)]">
         <div className="flex flex-col gap-3 border-b border-border/70 bg-primary/[0.05] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
@@ -229,7 +302,9 @@ export default function SublinhasProducaoPage() {
 
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
           {schedule.daySummaries.map((day) => {
-            const productsForDay = lineProducts.filter((product) => product.productionDays.includes(day.day));
+            const productsForDay = schedule.snapshotProducts.filter((product) =>
+              product.productionDays.includes(day.day),
+            );
             const previewProducts = productsForDay.slice(0, 3);
 
             return (
@@ -251,12 +326,12 @@ export default function SublinhasProducaoPage() {
                   {previewProducts.length > 0 ? (
                     previewProducts.map((product) => (
                       <div
-                        key={`${schedule.id}-${day.day}-${product.id}`}
+                        key={`${schedule.id}-${day.day}-${product.snapshotId}`}
                         className="rounded-xl border border-border/60 bg-card px-2.5 py-2 text-xs text-foreground"
                       >
                         <p className="font-medium">{product.name}</p>
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                          {formatKgLabel(product.minimumProductionKg)} Kg base
+                          {formatKgLabel(product.minimumProduction)} Kg base
                         </p>
                       </div>
                     ))
@@ -331,24 +406,61 @@ export default function SublinhasProducaoPage() {
 
   return (
     <PageLayout
-      title="Linhas"
-      description="Visão consolidada por dia da semana, derivada dos produtos vinculados em cada subcategoria."
+      title="Linhas - Subcategoria"
+      description="Acompanhe as revisões pendentes das subcategorias e aprove a grade semanal que será usada pela fábrica."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
-        { label: "Linhas" },
+        { label: "Linhas - Subcategoria" },
       ]}
     >
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Total Linhas" value={String(kpis.total)} icon={Clock} tone="info" />
+        <KPICard title="Total Subcategorias" value={String(kpis.total)} icon={Clock} tone="info" />
         <KPICard title="Pendentes" value={String(kpis.pendentes)} icon={Clock} tone="warning" />
         <KPICard title="Ativas" value={String(kpis.ativas)} icon={PlayCircle} tone="success" />
         <KPICard title="Inativas" value={String(kpis.inativas)} icon={PauseCircle} tone="neutral" />
       </div>
 
+      {pendingAuditRows.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Auditorias pendentes de subcategoria</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 xl:grid-cols-2">
+            {pendingAuditRows.map((schedule) => (
+              <article
+                key={`pending-audit-${schedule.id}`}
+                className="rounded-2xl border border-warning/30 bg-warning/10 p-4"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge status={schedule.status} />
+                      <p className="text-sm font-semibold text-foreground">
+                        {schedule.lineName} · {schedule.code}
+                      </p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {schedule.sectorName} · {schedule.itemsCount} produtos · {schedule.plannedDays} dias ativos ·{" "}
+                      {formatKgLabel(schedule.minimumTotal)} Kg base
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Criada em {formatDateBr(schedule.createdAt)} por {schedule.createdBy || "automação da plataforma"}.
+                    </p>
+                  </div>
+                  <Button type="button" onClick={() => openScheduleDetails(schedule)}>
+                    Auditar subcategoria
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Linhas Executoras</CardTitle>
+          <CardTitle>Lista de Linhas - Subcategoria</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
@@ -404,18 +516,21 @@ export default function SublinhasProducaoPage() {
           }
         }}
       >
-        <DialogContent size="2xl" className="space-y-4">
+        <DialogContent size="full" className="space-y-4">
           <DialogHeader>
             <DialogTitle>
-              {selectedSchedule ? `${selectedSchedule.name} · ${selectedSchedule.code}` : "Auditoria"}
+              {selectedSchedule ? `Auditoria da Subcategoria · ${selectedSchedule.lineName}` : "Auditoria"}
             </DialogTitle>
+            <DialogDescription>
+              Revise a grade completa da subcategoria, com os produtos aprovados e os dias planejados para fabricação.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedSchedule && (
             <div className="space-y-4">
               <div className="grid gap-3 rounded-lg border border-border/80 bg-panel p-4 md:grid-cols-5">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linha</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linha Executora</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{selectedSchedule.name}</p>
                 </div>
                 <div>
@@ -440,6 +555,87 @@ export default function SublinhasProducaoPage() {
                 </div>
               </div>
 
+              <Card>
+                <CardHeader>
+                  <CardTitle>Grade da revisão da subcategoria</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <PaginatedSection
+                    items={selectedLineProducts}
+                    label="produtos da revisão"
+                    initialPageSize={10}
+                    pageSizeOptions={[10, 20, 40]}
+                  >
+                    {(items) => (
+                      <div className="overflow-x-auto overscroll-x-contain">
+                        <table className="w-full min-w-[980px] border-collapse rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
+                          <thead className="bg-panel">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground/95">
+                                Produto
+                              </th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground/95">
+                                Subcategoria Cadastral
+                              </th>
+                              <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground/95">
+                                Base (Kg)
+                              </th>
+                              {productionWeekDays.map((day) => (
+                                <th
+                                  key={`audit-schedule-grid-${day.key}`}
+                                  className="px-3 py-3 text-center text-xs font-semibold text-muted-foreground/95"
+                                >
+                                  {day.shortLabel}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map((product) => (
+                              <tr
+                                key={product.snapshotId}
+                                className="transition-colors duration-200 hover:bg-panel/35"
+                              >
+                                <td className="border-t border-border/70 bg-card px-4 py-3 align-top">
+                                  <div className="font-medium text-foreground">{product.name}</div>
+                                  <div className="text-xs text-muted-foreground">{product.code}</div>
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-4 py-3 align-top text-sm text-muted-foreground">
+                                  {product.masterLineName}
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-4 py-3 text-right align-top text-sm text-foreground">
+                                  {formatKgLabel(product.minimumProduction)}
+                                </td>
+                                {productionWeekDays.map((day) => {
+                                  const isPlannedOnDay = product.productionDays.includes(day.key);
+                                  return (
+                                    <td
+                                      key={`${product.snapshotId}-${day.key}`}
+                                      className="border-t border-border/70 bg-card px-3 py-3 text-center align-middle"
+                                    >
+                                      <span
+                                        className={[
+                                          "inline-flex min-w-10 items-center justify-center rounded-full px-2 py-1 text-xs font-semibold",
+                                          isPlannedOnDay
+                                            ? "bg-primary/15 text-primary"
+                                            : "bg-panel/70 text-muted-foreground",
+                                        ].join(" ")}
+                                      >
+                                        {isPlannedOnDay ? "X" : "-"}
+                                      </span>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </PaginatedSection>
+                </CardContent>
+              </Card>
+
               <div className="overflow-hidden rounded-xl border border-border/80">
                 <div className="grid gap-px bg-border/80 md:grid-cols-2 xl:grid-cols-7">
                   {selectedDayBoards.map((day) => (
@@ -455,12 +651,15 @@ export default function SublinhasProducaoPage() {
                           <p className="text-xs text-muted-foreground">Sem produção programada.</p>
                         ) : (
                           day.products.map((product) => (
-                            <div key={`${day.key}-${product.id}`} className="border-b border-dashed border-border/70 pb-2 last:border-b-0 last:pb-0">
+                            <div
+                              key={`${day.key}-${product.snapshotId}`}
+                              className="border-b border-dashed border-border/70 pb-2 last:border-b-0 last:pb-0"
+                            >
                               <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
                                 {product.code}
                               </p>
                               <p className="text-sm font-medium text-foreground">{product.name}</p>
-                              <p className="text-xs text-muted-foreground">{product.minimumProductionKg} Kg mínimos</p>
+                              <p className="text-xs text-muted-foreground">{product.minimumProduction} Kg mínimos</p>
                             </div>
                           ))
                         )}
@@ -471,9 +670,10 @@ export default function SublinhasProducaoPage() {
               </div>
 
               <div className="grid gap-2 rounded-lg border border-border/80 bg-card p-4">
-                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Resumo da Linha</p>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Resumo da Subcategoria Auditada</p>
                 <p className="text-sm text-foreground">
-                  <strong>{selectedSchedule.name}</strong> criada por <strong>{selectedSchedule.createdBy}</strong> em{" "}
+                  <strong>{selectedSchedule.lineName}</strong> criada por{" "}
+                  <strong>{selectedSchedule.createdBy || "automação da plataforma"}</strong> em{" "}
                   <strong>{formatDateBr(selectedSchedule.createdAt)}</strong> com{" "}
                   <strong>{selectedSchedule.itemsCount} produtos</strong> e mínimo total de{" "}
                   <strong>{selectedSchedule.minimumTotal} Kg</strong>.

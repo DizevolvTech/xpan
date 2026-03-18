@@ -4,13 +4,26 @@ import type { ProductionItemStatus } from "@/lib/order-planning";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { releaseOrder, updateProductionItemStatus } from "@/lib/supabase-data/workflow";
+import {
+  cancelOrder,
+  releaseOrder,
+  reopenOrder,
+  updateProductionItemStatus,
+} from "@/lib/supabase-data/workflow";
 
 export async function PATCH(request: Request) {
   try {
     const body = (await request.json()) as
       | {
           action: "release-order";
+          orderId: string;
+        }
+      | {
+          action: "cancel-order";
+          orderId: string;
+        }
+      | {
+          action: "reopen-order";
           orderId: string;
         }
       | {
@@ -30,6 +43,27 @@ export async function PATCH(request: Request) {
 
       const supabase = createSupabaseAdminClient();
       await releaseOrder(body.orderId, authorization.user.id, supabase);
+      invalidatePlanningCaches();
+      return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === "cancel-order" || body.action === "reopen-order") {
+      const authorization = await authorizeApiRequest({
+        roles: ["gestor-fabrica"],
+      });
+
+      if ("response" in authorization) {
+        return authorization.response;
+      }
+
+      const supabase = createSupabaseAdminClient();
+
+      if (body.action === "cancel-order") {
+        await cancelOrder(body.orderId, authorization.user.id, supabase);
+      } else {
+        await reopenOrder(body.orderId, authorization.user.id, supabase);
+      }
+
       invalidatePlanningCaches();
       return NextResponse.json({ ok: true });
     }

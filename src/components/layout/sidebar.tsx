@@ -70,7 +70,7 @@ const gestorDadosItems: MenuItem[] = [
 
 const gestorFabricaItems: MenuItem[] = [
   { href: "/gestor-fabrica", label: "Visão Geral", icon: LayoutDashboard },
-  { href: "/gestor-fabrica/sublinhas-producao", label: "Linhas", icon: ClipboardList },
+  { href: "/gestor-fabrica/sublinhas-producao", label: "Linhas - Subcategoria", icon: ClipboardList },
   { href: "/gestor-fabrica/pedidos", label: "Pedidos", icon: ShoppingCart },
   { href: "/gestor-fabrica/ordens-producao", label: "Ordens de Produção", icon: Factory },
   { href: "/gestor-fabrica/expedicao", label: "Expedição", icon: Truck },

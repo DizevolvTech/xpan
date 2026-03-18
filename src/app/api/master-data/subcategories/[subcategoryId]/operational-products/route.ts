@@ -37,7 +37,10 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const supabase = createSupabaseAdminClient();
-    await assignProductToOperationalSubcategory(subcategoryId, payload.productId, { supabase });
+    await assignProductToOperationalSubcategory(subcategoryId, payload.productId, {
+      supabase,
+      actingProfileId: authorization.user.id,
+    });
     invalidateMasterDataCaches();
     return NextResponse.json({ ok: true });
   } catch (error) {

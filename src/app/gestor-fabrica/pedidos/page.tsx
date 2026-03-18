@@ -29,6 +29,7 @@ import {
   type PlannedOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -46,6 +47,7 @@ export default function PedidosFabricaPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [deliveryFilter, setDeliveryFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
@@ -53,7 +55,7 @@ export default function PedidosFabricaPage() {
     orderId: string;
     view: "aggregated" | "original";
   } | null>(null);
-  const { planningData: planningSnapshot, releaseOrder } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -93,8 +95,12 @@ export default function PedidosFabricaPage() {
       return matchesSearch && matchesStatus && matchesStore && matchesDelivery;
     });
   }, [deliveryFilter, searchTerm, statusFilter, storeFilter, summaryRows]);
+  const sortedOrders = useMemo(
+    () => sortItemsByTemporalValue(filteredOrders, sortOrder, ["orderedAtKey", "deliveryDate", "orderedAt"]),
+    [filteredOrders, sortOrder],
+  );
 
-  const pagination = useMemo(() => paginateArray(filteredOrders, page, pageSize), [filteredOrders, page, pageSize]);
+  const pagination = useMemo(() => paginateArray(sortedOrders, page, pageSize), [page, pageSize, sortedOrders]);
   const selectedModalOrder = useMemo(
     () => summaryRows.find((item) => item.id === detailModal?.orderId) ?? null,
     [detailModal?.orderId, summaryRows],
@@ -185,6 +191,31 @@ export default function PedidosFabricaPage() {
 
   function openOrderItemsModal(orderId: string, view: "aggregated" | "original") {
     setDetailModal({ orderId, view });
+  }
+
+  function handleCancelOrder(order: OrderSummaryRow) {
+    if (order.releasedToProduction) {
+      window.alert("Pedidos já liberados para produção precisam ser tratados pelo fluxo operacional, não por cancelamento.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Cancelar o pedido ${order.code} da loja ${order.storeName}? Ele sairá da fila operacional até ser reaberto.`,
+    );
+
+    if (confirmed) {
+      void cancelOrder(order.id);
+    }
+  }
+
+  function handleReopenOrder(order: OrderSummaryRow) {
+    const confirmed = window.confirm(
+      `Reabrir o pedido ${order.code}? Ele volta a poder ser liberado para produção.`,
+    );
+
+    if (confirmed) {
+      void reopenOrder(order.id);
+    }
   }
 
   return (
@@ -281,6 +312,7 @@ export default function PedidosFabricaPage() {
                   { value: "agendado", label: "Agendado" },
                   { value: "em_producao", label: "Em Produção" },
                   { value: "aguardando_expedicao", label: "Aguardando Expedição" },
+                  { value: "cancelado", label: "Cancelado" },
                 ],
               },
               {
@@ -385,11 +417,26 @@ export default function PedidosFabricaPage() {
                             <Button
                               type="button"
                               size="sm"
-                              disabled={!order.availableForRelease || order.releasedToProduction}
+                              disabled={!order.availableForRelease || order.releasedToProduction || order.status === "cancelado"}
                               onClick={() => void releaseOrder(order.id)}
                             >
                               {order.releasedToProduction ? "Liberado" : "Liberar para produção"}
                             </Button>
+                            {order.status === "cancelado" ? (
+                              <Button type="button" variant="outline" size="sm" onClick={() => handleReopenOrder(order)}>
+                                Reabrir
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={order.releasedToProduction}
+                                onClick={() => handleCancelOrder(order)}
+                              >
+                                Cancelar
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -463,6 +510,11 @@ export default function PedidosFabricaPage() {
               setPageSize(size);
               setPage(1);
             }}
+            sortOrder={sortOrder}
+            onSortOrderChange={(nextSortOrder) => {
+              setSortOrder(nextSortOrder);
+              setPage(1);
+            }}
           />
         </CardContent>
       </Card>
@@ -512,7 +564,12 @@ export default function PedidosFabricaPage() {
           ) : null}
 
           {detailModal?.view === "aggregated" ? (
-            <PaginatedSection items={selectedModalAggregatedItems} label="itens consolidados" initialPageSize={8}>
+            <PaginatedSection
+              items={selectedModalAggregatedItems}
+              label="itens consolidados"
+              initialPageSize={8}
+              temporalSortKeys={["deliveryDate", "productionDate", "saleDate"]}
+            >
               {(paginatedItems) => (
                 <div className="overflow-x-auto rounded-xl border border-border/70">
                   <table className="w-full min-w-[860px] border-collapse">
@@ -564,7 +621,12 @@ export default function PedidosFabricaPage() {
               )}
             </PaginatedSection>
           ) : (
-            <PaginatedSection items={selectedModalItems} label="itens originais" initialPageSize={8}>
+            <PaginatedSection
+              items={selectedModalItems}
+              label="itens originais"
+              initialPageSize={8}
+              temporalSortKeys={["deliveryDate", "productionDate", "saleDate"]}
+            >
               {(paginatedItems) => (
                 <div className="overflow-x-auto rounded-xl border border-border/70">
                   <table className="w-full min-w-[860px] border-collapse">

@@ -27,7 +27,10 @@ export async function POST(request: Request) {
 
   try {
     const supabase = createSupabaseAdminClient();
-    const created = await createProduct(payload, { supabase });
+    const created = await createProduct(payload, {
+      supabase,
+      actingProfileId: authorization.user.id,
+    });
     invalidateMasterDataCaches();
     return NextResponse.json(created, { status: 201 });
   } catch (error) {

@@ -448,6 +448,11 @@ export type Database = {
           receive_window_snapshot: string;
           expedition_lead_days_snapshot: number;
           note: string;
+          management_status: string;
+          cancelled_at: string | null;
+          cancelled_by_profile_id: string | null;
+          reopened_at: string | null;
+          reopened_by_profile_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -463,6 +468,11 @@ export type Database = {
           receive_window_snapshot: string;
           expedition_lead_days_snapshot: number;
           note?: string;
+          management_status?: string;
+          cancelled_at?: string | null;
+          cancelled_by_profile_id?: string | null;
+          reopened_at?: string | null;
+          reopened_by_profile_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };

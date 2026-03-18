@@ -6,6 +6,7 @@ export type OrderStatus =
   | "em_producao"
   | "em_espera"
   | "aguardando_expedicao"
+  | "cancelado"
   | "rota_entrega";
 export type ProductionItemStatus =
   | "nao_iniciado"
@@ -86,6 +87,7 @@ export interface PlannedOrderRow {
   storeId: string;
   storeName: string;
   orderedAt: string;
+  orderedAtKey?: string;
   dPlusLabel: string;
   deliveryDate: string;
   deliveryDateLabel: string;

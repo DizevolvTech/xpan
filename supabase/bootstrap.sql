@@ -305,6 +305,11 @@ create table if not exists public.store_orders (
   receive_window_snapshot text not null,
   expedition_lead_days_snapshot integer not null check (expedition_lead_days_snapshot >= 0),
   note text not null default '',
+  management_status text not null default 'ativo' check (management_status in ('ativo', 'cancelado')),
+  cancelled_at timestamptz,
+  cancelled_by_profile_id uuid references public.profiles(id) on delete set null,
+  reopened_at timestamptz,
+  reopened_by_profile_id uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );

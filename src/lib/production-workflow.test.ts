@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   canTransitionProductionItemStatus,
+  getNextProductionActionLabel,
   getNextProductionItemStatus,
+  getPreviousProductionActionLabel,
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
@@ -23,4 +25,7 @@ test("production workflow exposes previous and next actions", () => {
   assert.equal(getPreviousProductionItemStatus("em_preparacao"), "nao_iniciado");
   assert.equal(getPreviousProductionItemStatus("nao_iniciado"), null);
   assert.equal(getProductionStatusLabel("em_producao"), "Em produção");
+  assert.equal(getProductionStatusLabel("em_preparacao"), "Preparação");
+  assert.equal(getNextProductionActionLabel("em_preparacao"), "Iniciar produção");
+  assert.equal(getPreviousProductionActionLabel("em_producao"), "Voltar para preparação");
 });

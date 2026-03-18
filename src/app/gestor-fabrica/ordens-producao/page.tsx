@@ -23,6 +23,7 @@ import {
   type ProductionOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { hierarchyLabels } from "@/lib/production-planning";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
@@ -54,6 +55,7 @@ export default function OrdensProducaoPage() {
   const [sectorFilter, setSectorFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [opPage, setOpPage] = useState(1);
   const [opPageSize, setOpPageSize] = useState(20);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
@@ -103,8 +105,12 @@ export default function OrdensProducaoPage() {
       return matchesDate && matchesCategory && matchesSubcategory && matchesSearch;
     });
   }, [lineFilter, opRows, productionDateFilter, searchTerm, sectorFilter]);
+  const sortedOps = useMemo(
+    () => sortItemsByTemporalValue(filteredOps, sortOrder, ["productionDate"]),
+    [filteredOps, sortOrder],
+  );
 
-  const opPagination = useMemo(() => paginateArray(filteredOps, opPage, opPageSize), [filteredOps, opPage, opPageSize]);
+  const opPagination = useMemo(() => paginateArray(sortedOps, opPage, opPageSize), [opPage, opPageSize, sortedOps]);
 
   const categoryOptions = useMemo(
     () =>
@@ -429,6 +435,7 @@ export default function OrdensProducaoPage() {
             columns={columns}
             keyField="id"
             pagination={false}
+            showFooterControls={false}
             onRowClick={(item) => window.location.assign(`/gestor-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`)}
             emptyMessage="Nenhuma OP encontrada para os filtros"
             stickyHeader
@@ -447,6 +454,11 @@ export default function OrdensProducaoPage() {
               setOpPage(1);
             }}
             label="OPs"
+            sortOrder={sortOrder}
+            onSortOrderChange={(nextSortOrder) => {
+              setSortOrder(nextSortOrder);
+              setOpPage(1);
+            }}
           />
         </CardContent>
       </Card>

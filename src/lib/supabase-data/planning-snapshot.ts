@@ -34,6 +34,9 @@ export async function getFactoryPlanningSnapshot(
       isReleased(orderId) {
         return workflowState.releasedOrders.includes(orderId);
       },
+      isCancelled(orderId) {
+        return workflowState.cancelledOrders.includes(orderId);
+      },
       resolveProductionItemStatus(itemKey) {
         if (!itemKey) {
           return null;

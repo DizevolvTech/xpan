@@ -14,7 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { hierarchyLabels } from "@/lib/production-planning";
 import {
+  getNextProductionActionLabel,
   getNextProductionItemStatus,
+  getPreviousProductionActionLabel,
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
@@ -276,7 +278,8 @@ export default function OrdemProducaoDetailsPage() {
                                 )
                               }
                             >
-                              Voltar para {getProductionStatusLabel(getPreviousProductionItemStatus(item.status)!)}
+                              {getPreviousProductionActionLabel(item.status) ??
+                                `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status)!)}`}
                             </Button>
                           ) : null}
                           {getNextProductionItemStatus(item.status) ? (
@@ -291,7 +294,8 @@ export default function OrdemProducaoDetailsPage() {
                                 )
                               }
                             >
-                              Avançar para {getProductionStatusLabel(getNextProductionItemStatus(item.status)!)}
+                              {getNextProductionActionLabel(item.status) ??
+                                `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status)!)}`}
                             </Button>
                           ) : (
                             <span className="text-xs font-semibold text-success-foreground">

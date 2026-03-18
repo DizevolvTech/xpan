@@ -135,22 +135,26 @@ export function filterFactoryPlanningDataByOperationalScope(
     return planningData;
   }
 
+  const scopedOrderItems = planningData.orderItems.filter((item) => orderItemMatchesScope(item, scope));
+  const orderIdsFromItems = new Set(scopedOrderItems.map((item) => item.orderId));
   const orders = planningData.orders.filter((order) =>
+    orderIdsFromItems.has(order.id) ||
+    matchesDateKeyInOperationalScope(order.orderedAtKey, scope) ||
     matchesDateKeyInOperationalScope(order.deliveryDate, scope),
   );
   const orderIds = new Set(orders.map((order) => order.id));
-  const orderItems = planningData.orderItems.filter(
-    (item) => orderIds.has(item.orderId) || orderItemMatchesScope(item, scope),
+  const orderItems = planningData.orderItems.filter((item) => orderIds.has(item.orderId) || orderItemMatchesScope(item, scope));
+  const productionOrders = planningData.productionOrders.filter(
+    (order) =>
+      matchesDateKeyInOperationalScope(order.productionDate, scope) ||
+      order.sourceItems.some((item) => orderIds.has(item.orderId)),
   );
-  const productionOrders = planningData.productionOrders.filter((order) =>
-    matchesDateKeyInOperationalScope(order.productionDate, scope),
-  );
-  const expedition = planningData.expedition.filter((row) =>
-    matchesDateKeyInOperationalScope(row.deliveryDate, scope),
+  const expedition = planningData.expedition.filter(
+    (row) => matchesDateKeyInOperationalScope(row.deliveryDate, scope) || orderIds.has(row.orderId),
   );
   const expeditionIds = new Set(expedition.map((row) => row.id));
   const expeditionItems = planningData.expeditionItems.filter((item) =>
-    expeditionIds.has(item.expeditionId),
+    expeditionIds.has(item.expeditionId) || orderIds.has(item.orderId),
   );
 
   return {
@@ -178,6 +182,7 @@ export function filterStoreOrderSummariesByOperationalScope(
   }
 
   return orders.filter((order) =>
-    matchesDateKeyInOperationalScope(order.deliveryDateKey ?? order.orderedAtKey, scope),
+    matchesDateKeyInOperationalScope(order.orderedAtKey, scope) ||
+    matchesDateKeyInOperationalScope(order.deliveryDateKey, scope),
   );
 }

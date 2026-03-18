@@ -11,6 +11,9 @@ function getWorkflowOrderStatus(items: PlannedOrderItem[]): OrderStatus {
   if (items.length === 0) {
     return "em_espera";
   }
+  if (items.every((item) => item.status === "cancelado")) {
+    return "cancelado";
+  }
   if (items.every((item) => item.status === "aguardando_expedicao")) {
     return "aguardando_expedicao";
   }
@@ -62,10 +65,22 @@ export function applyFactoryWorkflowState(
   data: FactoryPlanningData,
   workflow: {
     isReleased: (orderId: string) => boolean;
+    isCancelled: (orderId: string) => boolean;
     resolveProductionItemStatus: (itemKey: string | null) => ProductionItemStatus | null;
   },
 ): FactoryPlanningData {
   const orderItems = data.orderItems.map((item) => {
+    if (workflow.isCancelled(item.orderId)) {
+      return {
+        ...item,
+        releasedToProduction: false,
+        productionItemStatus: null,
+        workflowProgress: 0,
+        opCode: null,
+        status: "cancelado" as OrderStatus,
+      };
+    }
+
     if (!item.canPlan) {
       return {
         ...item,
@@ -134,20 +149,23 @@ export function applyFactoryWorkflowState(
   const orders = data.orders.map<PlannedOrderRow>((order) => {
     const items = itemsByOrderId.get(order.id) ?? [];
     const opCodes = Array.from(opsByOrderId.get(order.id) ?? []).sort((a, b) => a.localeCompare(b));
+    const cancelled = workflow.isCancelled(order.id);
 
     return {
       ...order,
-      releasedToProduction: items.some((item) => item.releasedToProduction),
-      availableForRelease: items.every((item) => item.availableForRelease) && items.length > 0,
-      workflowProgress: getAverageProgress(items),
+      releasedToProduction: cancelled ? false : items.some((item) => item.releasedToProduction),
+      availableForRelease: cancelled ? false : items.every((item) => item.availableForRelease) && items.length > 0,
+      workflowProgress: cancelled ? 0 : getAverageProgress(items),
       productionDateLabel: buildOrderProductionDateLabel(items),
       opsLabel: buildOpsLabel(opCodes),
-      status: getWorkflowOrderStatus(items),
+      status: cancelled ? "cancelado" : getWorkflowOrderStatus(items),
     };
   });
 
   const orderById = new Map(orders.map((order) => [order.id, order]));
-  const expedition = data.expedition.map((row) => {
+  const expedition = data.expedition
+    .filter((row) => !workflow.isCancelled(row.orderId))
+    .map((row) => {
     const order = orderById.get(row.orderId);
     const items = orderItemsWithOpCodes.filter((item) => item.orderId === row.orderId);
     return {
@@ -163,7 +181,7 @@ export function applyFactoryWorkflowState(
         };
       }),
     };
-  });
+    });
 
   const expeditionItems = expedition.flatMap((row) =>
     row.items.map((item) => ({

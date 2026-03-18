@@ -3,19 +3,12 @@ import { NextResponse } from "next/server";
 import { authorizeApiRequest, canAccessStore, getAllowedStoreIds } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { createStoreOrder } from "@/lib/supabase-data/store-orders";
+import { createStoreOrder, listFactoryStoreOrders } from "@/lib/supabase-data/store-orders";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
   return searchParams.get("referenceDate") ?? new Date().toISOString().slice(0, 10);
-}
-
-function formatDateTimeBr(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
 
 export async function GET(request: Request) {
@@ -30,23 +23,30 @@ export async function GET(request: Request) {
 
   try {
     const supabase = createSupabaseAdminClient();
-    const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), {
-      supabase,
-      includeProfileNames: false,
-    });
+    const referenceDate = getReferenceDate(request);
+    const [planning, storeOrders] = await Promise.all([
+      getFactoryPlanningSnapshot(referenceDate, {
+        supabase,
+        includeProfileNames: false,
+      }),
+      listFactoryStoreOrders(supabase),
+    ]);
     const allowedStoreIds = getAllowedStoreIds(authorization.user);
+    const orderedAtByOrderId = new Map(
+      storeOrders.map((order) => [order.id, order.orderedAt.slice(0, 10)]),
+    );
     const orders = planning.orders
       .filter((order) => (allowedStoreIds ? allowedStoreIds.includes(order.storeId) : true))
       .map((order) => ({
-      id: order.id,
-      code: order.code,
-      storeId: order.storeId,
-      date: formatDateTimeBr(order.orderedAt),
-      orderedAtKey: order.orderedAt.slice(0, 10),
-      deliveryDate: order.deliveryDateLabel,
-      deliveryDateKey: order.deliveryDate,
-      status: order.status,
-      store: order.storeName,
+        id: order.id,
+        code: order.code,
+        storeId: order.storeId,
+        date: order.orderedAt,
+        orderedAtKey: orderedAtByOrderId.get(order.id) ?? referenceDate,
+        deliveryDate: order.deliveryDateLabel,
+        deliveryDateKey: order.deliveryDate,
+        status: order.status,
+        store: order.storeName,
       }));
 
     return NextResponse.json(orders);
