@@ -2,9 +2,11 @@
 
 import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { CheckCircle2 } from "lucide-react";
 
 import { PrintDocument } from "@/components/printing/print-document";
 import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
+import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -24,24 +26,47 @@ function MetaCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function getChecklistItemKey(item: ReturnType<typeof aggregateExpeditionItems>[number]) {
+  return `${item.productId}|${item.requestedUnit}|${item.expeditionUnit}`;
+}
+
 export default function ExpedicaoPrintPage() {
   const params = useParams<{ expeditionId: string }>();
   const searchParams = useSearchParams();
   const expeditionId = typeof params.expeditionId === "string" ? params.expeditionId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
   const { planningData, isLoading } = useFactoryPlanningSnapshot(referenceDate);
+  const deliveryExecutionState = useDeliveryExecution(referenceDate);
 
   const expedition = useMemo(
     () => planningData.expedition.find((item) => item.id === expeditionId) ?? null,
     [expeditionId, planningData.expedition],
   );
   const aggregatedItems = useMemo(() => aggregateExpeditionItems(expedition?.items ?? []), [expedition?.items]);
+  const execution = useMemo(
+    () =>
+      expedition
+        ? deliveryExecutionState.resolveExecution(expedition.orderId, expedition.status === "aguardando_expedicao")
+        : null,
+    [deliveryExecutionState, expedition],
+  );
+  const checkedCount = useMemo(
+    () =>
+      aggregatedItems.filter((item) => {
+        if (execution?.status && execution.status !== "aguardando_expedicao") {
+          return true;
+        }
 
-  if (isLoading) {
+        return execution?.checklistState[getChecklistItemKey(item)] === true;
+      }).length,
+    [aggregatedItems, execution],
+  );
+
+  if (isLoading || !deliveryExecutionState.isHydrated) {
     return (
       <PrintDocument
         title="Preparando checklist de expedição"
-        subtitle="Carregando os dados do pedido para impressão."
+        subtitle="Carregando os dados do pedido e o status da conferência para impressão."
       />
     );
   }
@@ -60,6 +85,7 @@ export default function ExpedicaoPrintPage() {
           <MetaCard label="Loja" value={expedition.storeName} />
           <MetaCard label="Recebimento" value={expedition.deliveryDateLabel} />
           <MetaCard label="Carga" value={`${expedition.totalKg} Kg`} />
+          <MetaCard label="Conferidos" value={`${checkedCount}/${aggregatedItems.length} itens`} />
         </>
       }
     >
@@ -87,7 +113,17 @@ export default function ExpedicaoPrintPage() {
                 <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
                   {item.expeditionQuantity} {item.expeditionUnit}
                 </td>
-                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-400">______________________</td>
+                <td className="border-t border-stone-200 px-4 py-3 text-sm">
+                  {execution?.status !== "aguardando_expedicao" ||
+                  execution?.checklistState[getChecklistItemKey(item)] === true ? (
+                    <span className="inline-flex items-center gap-2 font-semibold text-emerald-700">
+                      <CheckCircle2 className="size-4" />
+                      Conferido
+                    </span>
+                  ) : (
+                    <span className="text-stone-400">______________________</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

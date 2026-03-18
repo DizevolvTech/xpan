@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -19,13 +19,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), {
       supabase,
       includeProfileNames: false,
     });
     return NextResponse.json(planning);
   } catch (error) {
+    console.error("Failed to load factory planning snapshot", error);
     return NextResponse.json(
       {
         message: error instanceof Error ? error.message : "Failed to load factory planning snapshot",

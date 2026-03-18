@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { getCachedServerData } from "@/lib/server-data-cache";
 import { assertSupabaseResult, type SupabaseDataClient } from "@/lib/supabase-data/common";
 import type {
   IngredientCompositionItem,
@@ -31,6 +32,8 @@ type MasterDataSnapshotOptions = {
   supabase?: SupabaseDataClient;
   includeProfileNames?: boolean;
 };
+
+const MASTER_DATA_CACHE_TTL_MS = 15_000;
 
 function coerceUnitProfile(value: unknown): ProductUnitProfile {
   const record = (value ?? {}) as Record<string, unknown>;
@@ -72,7 +75,7 @@ function coerceIngredientProfile(value: unknown): IngredientProfileMirror | unde
   };
 }
 
-export async function getMasterDataSnapshot(
+async function loadMasterDataSnapshot(
   options: MasterDataSnapshotOptions = {},
 ): Promise<MasterDataSnapshot> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
@@ -181,6 +184,7 @@ export async function getMasterDataSnapshot(
   const ingredients: ProductionIngredient[] = ingredientRows.map((row) => ({
     id: row.legacy_id ?? row.id,
     code: row.code,
+    externalCode: row.external_code ?? undefined,
     name: row.name,
     type: row.type,
     unit: row.unit as ProductionIngredient["unit"],
@@ -199,8 +203,10 @@ export async function getMasterDataSnapshot(
     phone: row.phone,
     status: row.status,
     receiveWindow: row.receive_window,
-    orderingDays: row.ordering_days as StoreMasterData["orderingDays"],
-    receivingDays: row.receiving_days as StoreMasterData["receivingDays"],
+    orderingDays: (row.ordering_days ?? []) as StoreMasterData["orderingDays"],
+    receivingDays: (row.receiving_days ?? []) as StoreMasterData["receivingDays"],
+    orderingBlockedDays: (row.ordering_blocked_days ?? []) as StoreMasterData["orderingBlockedDays"],
+    receivingBlockedDays: (row.receiving_blocked_days ?? []) as StoreMasterData["receivingBlockedDays"],
   }));
 
   const recipeByProductId = recipeRows.reduce<Map<string, ProductionProduct["recipe"]>>((acc, row) => {
@@ -224,16 +230,22 @@ export async function getMasterDataSnapshot(
   const products: ProductionProduct[] = productRows.map((row) => ({
     id: row.legacy_id ?? row.id,
     code: row.code,
+    externalCode: row.external_code ?? undefined,
     name: row.name,
     description: row.description,
     lineId: lineLegacyById.get(row.subcategory_id) ?? row.subcategory_id,
+    masterLineId: lineLegacyById.get(row.subcategory_id) ?? row.subcategory_id,
+    operationalLineId: row.operational_subcategory_id
+      ? lineLegacyById.get(row.operational_subcategory_id) ?? row.operational_subcategory_id
+      : undefined,
     active: row.active,
     availableForOrdering: row.available_for_ordering,
     validityDays: row.validity_days,
     minimumProductionKg: Number(row.minimum_production_kg),
     economicProductionKg: Number(row.economic_production_kg),
     allowsStorage: row.allows_storage,
-    productionDays: row.production_days as ProductionProduct["productionDays"],
+    productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
+    saleLeadDays: row.sale_lead_days ?? 0,
     unitProfiles: {
       sales: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).sales),
       production: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).production),
@@ -264,7 +276,7 @@ export async function getMasterDataSnapshot(
       id: row.id,
       productId: productLegacyById.get(row.product_id) ?? row.product_id,
       minimumProduction: Number(row.minimum_production),
-      productionDays: row.production_days as WeeklyScheduleItem["productionDays"],
+      productionDays: (row.production_days ?? []) as WeeklyScheduleItem["productionDays"],
     });
     acc.set(key, current);
     return acc;
@@ -304,4 +316,13 @@ export async function getMasterDataSnapshot(
     products,
     schedules,
   };
+}
+
+export async function getMasterDataSnapshot(
+  options: MasterDataSnapshotOptions = {},
+): Promise<MasterDataSnapshot> {
+  const includeProfileNames = options.includeProfileNames ?? true;
+  const cacheKey = `master-data:${includeProfileNames ? "with-profiles" : "without-profiles"}`;
+
+  return getCachedServerData(cacheKey, MASTER_DATA_CACHE_TTL_MS, () => loadMasterDataSnapshot(options));
 }

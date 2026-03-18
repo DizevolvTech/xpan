@@ -2,16 +2,22 @@
 
 import { motion } from "framer-motion";
 import { Factory, ListChecks, Truck } from "lucide-react";
-import { useState } from "react";
+import { useMemo } from "react";
 
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
-import { getTodayDateKey } from "@/lib/order-planning";
+import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 export default function ChaoFabricaPage() {
-  const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const planningData = useMemo(
+    () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
+    [planningSnapshot, scope],
+  );
 
   const opsCount = planningData.productionOrders.length;
   const productionKg = Number(planningData.productionOrders.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));
@@ -54,22 +60,16 @@ export default function ChaoFabricaPage() {
       badge="Operacional"
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Chão de Fábrica" }]}
     >
-      <div className="rounded-xl border border-border/80 bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Referência operacional
-            </p>
-            <p className="text-sm text-muted-foreground">Use a data para consultar as tarefas do dia.</p>
-          </div>
-          <input
-            type="date"
-            value={referenceDate}
-            onChange={(event) => setReferenceDate(event.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-          />
-        </div>
-      </div>
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela operacional"
+        description="Navegue por todo o backlog, foque em um dia ou feche um período sem trocar a referência manual em cada módulo."
+      />
 
       <motion.div
         initial={{ opacity: 0 }}

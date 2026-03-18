@@ -1,0 +1,64 @@
+import type { OrderStatus } from "@/lib/factory-planning/types";
+
+export type DeliveryExecutionStatus =
+  | "aguardando_expedicao"
+  | "pronto_coleta"
+  | "em_rota"
+  | "no_destino"
+  | "entregue"
+  | "tentativa_falha";
+
+export type DeliveryChecklistState = Record<string, boolean>;
+export type ExpeditionVisibleStatus = OrderStatus | DeliveryExecutionStatus;
+
+const DELIVERY_STATUS_GRAPH: Record<DeliveryExecutionStatus, DeliveryExecutionStatus[]> = {
+  aguardando_expedicao: ["pronto_coleta"],
+  pronto_coleta: ["em_rota"],
+  em_rota: ["no_destino", "tentativa_falha"],
+  no_destino: ["entregue", "tentativa_falha"],
+  entregue: [],
+  tentativa_falha: ["em_rota"],
+};
+
+export function canTransitionDeliveryStatus(
+  currentStatus: DeliveryExecutionStatus,
+  nextStatus: DeliveryExecutionStatus,
+) {
+  if (currentStatus === nextStatus) {
+    return true;
+  }
+
+  return DELIVERY_STATUS_GRAPH[currentStatus].includes(nextStatus);
+}
+
+export function getNextDeliveryAction(status: DeliveryExecutionStatus) {
+  if (status === "pronto_coleta") {
+    return { label: "Iniciar rota", nextStatus: "em_rota" as const };
+  }
+  if (status === "em_rota") {
+    return { label: "Cheguei no destino", nextStatus: "no_destino" as const };
+  }
+  if (status === "no_destino") {
+    return { label: "Confirmar entrega", nextStatus: "entregue" as const };
+  }
+  if (status === "tentativa_falha") {
+    return { label: "Retomar rota", nextStatus: "em_rota" as const };
+  }
+
+  return null;
+}
+
+export function canRegisterDeliveryFailure(status: DeliveryExecutionStatus) {
+  return status === "em_rota" || status === "no_destino";
+}
+
+export function getExpeditionVisibleStatus(
+  orderStatus: OrderStatus,
+  executionStatus: DeliveryExecutionStatus,
+): ExpeditionVisibleStatus {
+  if (executionStatus !== "aguardando_expedicao") {
+    return executionStatus;
+  }
+
+  return orderStatus;
+}

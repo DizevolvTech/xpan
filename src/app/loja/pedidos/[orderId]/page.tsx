@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { AlertCircle, ArrowLeft, Clock3, ListChecks, Printer, Store, Truck } from "lucide-react";
 
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -186,30 +187,34 @@ export default function PedidoLojaDetailsPage() {
           <CardTitle>Itens do Pedido</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[760px] border-collapse">
-              <thead className="bg-panel">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Código</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Categoria</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Un.</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Quantidade</th>
-                </tr>
-              </thead>
-              <tbody>
-                {order.items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-mono">{item.code}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.name}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.category}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.unit}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-semibold">{item.quantity}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedSection items={order.items} label="itens do pedido" initialPageSize={8}>
+            {(paginatedItems) => (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[760px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Código</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Categoria</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Un.</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Quantidade</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map((item) => (
+                      <tr key={item.id}>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-mono">{item.code}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.name}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.category}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.unit}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-semibold">{item.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
         </CardContent>
       </Card>
 

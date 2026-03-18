@@ -9,18 +9,24 @@ import {
   ShoppingCart,
   Truck,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import { getTodayDateKey } from "@/lib/order-planning";
+import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 export default function GestorFabricaPage() {
-  const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
-  const { planningData, isLoading, error } = useFactoryPlanningSnapshot(referenceDate);
-  const deliveryExecution = useDeliveryExecution(referenceDate);
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const { planningData: planningSnapshot, isLoading, error } = useFactoryPlanningSnapshot(anchorDate);
+  const planningData = useMemo(
+    () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
+    [planningSnapshot, scope],
+  );
+  const deliveryExecution = useDeliveryExecution();
 
   const metrics = useMemo(() => {
     const totalOrders = planningData.orders.length;
@@ -125,22 +131,16 @@ export default function GestorFabricaPage() {
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-border/80 bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Referência operacional
-            </p>
-            <p className="text-sm text-muted-foreground">Altere a data para rever o fluxo completo da fábrica.</p>
-          </div>
-          <input
-            type="date"
-            value={referenceDate}
-            onChange={(event) => setReferenceDate(event.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-          />
-        </div>
-      </div>
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela operacional"
+        description="Veja a fábrica inteira, um único dia ou um período fechado sem trocar manualmente a referência em cada tela."
+      />
 
       <motion.div
         initial={{ opacity: 0 }}

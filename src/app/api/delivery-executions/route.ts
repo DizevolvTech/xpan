@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import type { DeliveryChecklistState, DeliveryExecutionStatus } from "@/lib/delivery-workflow";
+import { invalidateDeliveryExecutionCaches } from "@/lib/server-data-cache";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions, updateDeliveryExecution } from "@/lib/supabase-data/delivery";
 
 export async function GET() {
@@ -14,10 +16,11 @@ export async function GET() {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const executions = await getPersistedDeliveryExecutions(supabase);
     return NextResponse.json(executions);
   } catch (error) {
+    console.error("Failed to load delivery executions", error);
     return NextResponse.json(
       {
         message: error instanceof Error ? error.message : "Failed to load delivery executions",
@@ -37,20 +40,35 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const body = (await request.json()) as {
       orderId: string;
-      status: "aguardando_expedicao" | "pronto_coleta" | "em_rota" | "no_destino" | "entregue" | "tentativa_falha";
+      status: DeliveryExecutionStatus;
+      checklistState?: DeliveryChecklistState;
+      checklistCompletedAt?: string | null;
     };
 
-    await updateDeliveryExecution(body.orderId, body.status, authorization.user.id, supabase);
+    await updateDeliveryExecution(
+      body.orderId,
+      body.status,
+      {
+        checklistState: body.checklistState,
+        checklistCompletedAt: body.checklistCompletedAt,
+      },
+      authorization.user.id,
+      supabase,
+    );
+    invalidateDeliveryExecutionCaches();
     return NextResponse.json({ ok: true });
   } catch (error) {
+    console.error("Failed to update delivery execution", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to update delivery execution";
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : "Failed to update delivery execution",
+        message,
       },
-      { status: 500 },
+      { status: message.toLowerCase().includes("invalid") ? 400 : 500 },
     );
   }
 }

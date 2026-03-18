@@ -26,6 +26,8 @@ const storeProfiles: StoreProfile[] = storesMasterData.map((store) => ({
   name: store.name,
   orderingDays: store.orderingDays,
   receivingDays: store.receivingDays,
+  orderingBlockedDays: store.orderingBlockedDays,
+  receivingBlockedDays: store.receivingBlockedDays,
   receiveWindow: store.receiveWindow,
 }));
 
@@ -425,10 +427,10 @@ seedLines.push(
 seedLines.push("");
 
 seedLines.push(
-  `insert into public.products (legacy_id, code, name, description, subcategory_id, active, available_for_ordering, validity_days, minimum_production_kg, economic_production_kg, allows_storage, production_days, unit_profiles, packaging_profile, is_sold_loose, preparation_mode, break_percent, break_stage, break_comment, can_be_ingredient, ingredient_profile, weight_label, production_unit, sales_unit, sales_to_kg_factor, expedition_unit, expedition_to_kg_factor, is_mpi_ingredient) values\n${productionProducts
+  `insert into public.products (legacy_id, code, name, description, subcategory_id, operational_subcategory_id, active, available_for_ordering, validity_days, minimum_production_kg, economic_production_kg, allows_storage, production_days, unit_profiles, packaging_profile, is_sold_loose, preparation_mode, break_percent, break_stage, break_comment, can_be_ingredient, ingredient_profile, weight_label, production_unit, sales_unit, sales_to_kg_factor, expedition_unit, expedition_to_kg_factor, is_mpi_ingredient) values\n${productionProducts
     .map(
       (product) =>
-        `  (${sqlString(product.id)}, ${sqlString(product.code)}, ${sqlString(product.name)}, ${sqlString(product.description)}, (select id from public.subcategories where legacy_id = ${sqlString(product.lineId)}), ${product.active}, ${product.availableForOrdering}, ${product.validityDays}, ${product.minimumProductionKg}, ${product.economicProductionKg}, ${product.allowsStorage}, ${sqlArray(product.productionDays, "public.weekday_code")}, ${sqlJson(product.unitProfiles)}, ${product.packagingProfile ? sqlJson(product.packagingProfile) : "null"}, ${product.isSoldLoose}, ${sqlString(product.preparationMode)}, ${product.breakPercent}, ${sqlString(product.breakStage)}::public.break_stage, ${sqlString(product.breakComment)}, ${product.canBeIngredient}, ${product.ingredientProfile ? sqlJson(product.ingredientProfile) : "null"}, ${sqlString(product.weight)}, ${sqlString(product.productionUnit)}::public.unit_code, ${sqlString(product.salesUnit)}::public.unit_code, ${product.salesToKgFactor}, ${sqlString(product.expeditionUnit)}::public.unit_code, ${product.expeditionToKgFactor}, ${product.isMpiIngredient})`,
+        `  (${sqlString(product.id)}, ${sqlString(product.code)}, ${sqlString(product.name)}, ${sqlString(product.description)}, (select id from public.subcategories where legacy_id = ${sqlString(product.lineId)}), (select id from public.subcategories where legacy_id = ${sqlString(product.operationalLineId ?? product.lineId)}), ${product.active}, ${product.availableForOrdering}, ${product.validityDays}, ${product.minimumProductionKg}, ${product.economicProductionKg}, ${product.allowsStorage}, ${sqlArray(product.productionDays, "public.weekday_code")}, ${sqlJson(product.unitProfiles)}, ${product.packagingProfile ? sqlJson(product.packagingProfile) : "null"}, ${product.isSoldLoose}, ${sqlString(product.preparationMode)}, ${product.breakPercent}, ${sqlString(product.breakStage)}::public.break_stage, ${sqlString(product.breakComment)}, ${product.canBeIngredient}, ${product.ingredientProfile ? sqlJson(product.ingredientProfile) : "null"}, ${sqlString(product.weight)}, ${sqlString(product.productionUnit)}::public.unit_code, ${sqlString(product.salesUnit)}::public.unit_code, ${product.salesToKgFactor}, ${sqlString(product.expeditionUnit)}::public.unit_code, ${product.expeditionToKgFactor}, ${product.isMpiIngredient})`,
     )
     .join(",\n")};`,
 );

@@ -38,11 +38,13 @@ export type StoreInput = Omit<StoreMasterData, "id" | "code"> & {
 
 export type IngredientInput = Omit<ProductionIngredient, "id" | "code" | "status"> & {
   code?: string;
+  externalCode?: string;
   status?: RecordStatus;
 };
 
 export type ProductInput = Omit<ProductionProduct, "id" | "code"> & {
   code?: string;
+  externalCode?: string;
 };
 
 type MutationOptions = {
@@ -252,6 +254,8 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
     receive_window: input.receiveWindow.trim(),
     ordering_days: input.orderingDays,
     receiving_days: input.receivingDays,
+    ordering_blocked_days: input.orderingBlockedDays,
+    receiving_blocked_days: input.receivingBlockedDays,
   });
 
   if (result.error) {
@@ -278,6 +282,8 @@ export async function updateStore(
       receive_window: input.receiveWindow.trim(),
       ordering_days: input.orderingDays,
       receiving_days: input.receivingDays,
+      ordering_blocked_days: input.orderingBlockedDays,
+      receiving_blocked_days: input.receivingBlockedDays,
       updated_at: new Date().toISOString(),
     })
     .eq("id", String(row.id));
@@ -331,17 +337,106 @@ async function resolveSubcategoryId(
   return String(row.id);
 }
 
+function normalizeOptionalCode(value: string | undefined) {
+  const normalized = value?.trim() ?? "";
+  return normalized ? normalized : null;
+}
+
+async function assertExternalCodeAvailable(
+  table: "ingredients" | "products",
+  externalCode: string | null,
+  currentId?: string,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  if (!externalCode) {
+    return;
+  }
+
+  const result = await supabase.from(table).select("id").eq("external_code", externalCode);
+  const rows = assertSupabaseResult(result, `Failed to validate ${table} external code`);
+  const duplicated = rows.some((row) => row.id !== currentId);
+
+  if (duplicated) {
+    throw new Error("O código ERP informado já está em uso.");
+  }
+}
+
+async function assertIngredientExternalCodeEditable(
+  ingredientId: string,
+  nextExternalCode: string | null,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const [ingredientResult, componentUsageResult, recipeUsageResult] = await Promise.all([
+    supabase.from("ingredients").select("external_code").eq("id", ingredientId).maybeSingle(),
+    supabase.from("ingredient_components").select("id").eq("ingredient_reference_id", ingredientId).limit(1),
+    supabase.from("product_recipe_items").select("id").eq("ingredient_source_id", ingredientId).limit(1),
+  ]);
+
+  const ingredient = assertSupabaseResult(
+    { data: ingredientResult.data, error: ingredientResult.error },
+    "Failed to load ingredient external code",
+  );
+  const currentExternalCode = ingredient?.external_code ?? null;
+
+  if (currentExternalCode === nextExternalCode) {
+    return;
+  }
+
+  const hasUsage =
+    assertSupabaseResult(componentUsageResult, "Failed to load ingredient component usage").length > 0 ||
+    assertSupabaseResult(recipeUsageResult, "Failed to load ingredient recipe usage").length > 0;
+
+  if (hasUsage) {
+    throw new Error("O código ERP não pode ser alterado após o ingrediente entrar em movimentação.");
+  }
+}
+
+async function assertProductExternalCodeEditable(
+  productId: string,
+  nextExternalCode: string | null,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const [productResult, recipeUsageResult, componentUsageResult, orderUsageResult] = await Promise.all([
+    supabase.from("products").select("external_code").eq("id", productId).maybeSingle(),
+    supabase.from("product_recipe_items").select("id").eq("product_source_id", productId).limit(1),
+    supabase.from("ingredient_components").select("id").eq("product_reference_id", productId).limit(1),
+    supabase.from("store_order_items").select("id").eq("product_id", productId).limit(1),
+  ]);
+
+  const product = assertSupabaseResult(
+    { data: productResult.data, error: productResult.error },
+    "Failed to load product external code",
+  );
+  const currentExternalCode = product?.external_code ?? null;
+
+  if (currentExternalCode === nextExternalCode) {
+    return;
+  }
+
+  const hasUsage =
+    assertSupabaseResult(recipeUsageResult, "Failed to load product recipe usage").length > 0 ||
+    assertSupabaseResult(componentUsageResult, "Failed to load product component usage").length > 0 ||
+    assertSupabaseResult(orderUsageResult, "Failed to load product order usage").length > 0;
+
+  if (hasUsage) {
+    throw new Error("O código ERP não pode ser alterado após o produto entrar em movimentação.");
+  }
+}
+
 export async function createIngredient(input: IngredientInput, options: MutationOptions = {}) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const existingCodesResult = await supabase.from("ingredients").select("code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load ingredient codes");
   const code = input.code?.trim() || buildNextCode(existingCodes.map((row) => row.code), "IN", 6);
+  const externalCode = normalizeOptionalCode(input.externalCode);
+  await assertExternalCodeAvailable("ingredients", externalCode, undefined, supabase);
 
   const insertResult = await supabase
     .from("ingredients")
     .insert({
       legacy_id: buildGeneratedLegacyId("ingredient"),
       code,
+      external_code: externalCode,
       name: input.name.trim(),
       type: input.type,
       unit: input.unit,
@@ -367,10 +462,15 @@ export async function updateIngredient(
 ) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const row = await resolveRowByIdentifier("ingredients", identifier, supabase);
+  const ingredientId = String(row.id);
+  const externalCode = normalizeOptionalCode(input.externalCode);
+  await assertIngredientExternalCodeEditable(ingredientId, externalCode, supabase);
+  await assertExternalCodeAvailable("ingredients", externalCode, ingredientId, supabase);
 
   const result = await supabase
     .from("ingredients")
     .update({
+      external_code: externalCode,
       name: input.name.trim(),
       type: input.type,
       unit: input.unit,
@@ -379,14 +479,14 @@ export async function updateIngredient(
       status: input.status ?? "ativo",
       updated_at: new Date().toISOString(),
     })
-    .eq("id", String(row.id));
+    .eq("id", ingredientId);
 
   if (result.error) {
     throw new Error(`Failed to update ingredient: ${result.error.message}`);
   }
 
   await replaceIngredientComponents(
-    String(row.id),
+    ingredientId,
     input.type === "misturado" ? input.composition : [],
     supabase,
   );
@@ -430,6 +530,7 @@ async function replaceProductRecipeItems(
 
 function normalizeProductPayload(input: ProductInput) {
   return {
+    external_code: normalizeOptionalCode(input.externalCode),
     name: input.name.trim(),
     description: input.description.trim(),
     active: input.active,
@@ -439,6 +540,7 @@ function normalizeProductPayload(input: ProductInput) {
     economic_production_kg: input.economicProductionKg,
     allows_storage: input.allowsStorage,
     production_days: input.productionDays,
+    sale_lead_days: Math.max(0, Number(input.saleLeadDays ?? 0)),
     unit_profiles: input.unitProfiles,
     packaging_profile: input.isSoldLoose ? null : input.packagingProfile ?? null,
     is_sold_loose: input.isSoldLoose,
@@ -458,6 +560,202 @@ function normalizeProductPayload(input: ProductInput) {
   };
 }
 
+function buildScheduleRevisionName(subcategoryName: string, activeScheduleName?: string | null) {
+  if (activeScheduleName?.trim()) {
+    return activeScheduleName.trim();
+  }
+
+  return `Linha ${subcategoryName.trim()}`;
+}
+
+async function rebuildPendingScheduleRevisionForSubcategoryDbId(
+  subcategoryId: string,
+  options: MutationOptions = {},
+) {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const timestamp = new Date().toISOString();
+  const [
+    subcategoryResult,
+    existingCodesResult,
+    activeScheduleResult,
+    pendingSchedulesResult,
+    productsResult,
+  ] = await Promise.all([
+    supabase
+      .from("subcategories")
+      .select("id, name")
+      .eq("id", subcategoryId)
+      .maybeSingle(),
+    supabase.from("schedule_lines").select("code"),
+    supabase
+      .from("schedule_lines")
+      .select("id, name")
+      .eq("subcategory_id", subcategoryId)
+      .eq("status", "ativo")
+      .order("audited_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("schedule_lines")
+      .select("id")
+      .eq("subcategory_id", subcategoryId)
+      .eq("status", "pendente"),
+    supabase
+      .from("products")
+      .select("id, minimum_production_kg, production_days")
+      .eq("operational_subcategory_id", subcategoryId)
+      .eq("active", true)
+      .order("code", { ascending: true }),
+  ]);
+
+  const subcategory = assertSupabaseResult(
+    { data: subcategoryResult.data, error: subcategoryResult.error },
+    "Failed to load subcategory for schedule revision",
+  );
+  const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load schedule codes");
+  const activeSchedule = activeScheduleResult.error ? null : activeScheduleResult.data;
+  const pendingSchedules = assertSupabaseResult(
+    pendingSchedulesResult,
+    "Failed to load pending schedule revisions",
+  );
+  const products = assertSupabaseResult(
+    productsResult,
+    "Failed to load operational products for schedule revision",
+  );
+
+  if (pendingSchedules.length > 0) {
+    const deleteResult = await supabase
+      .from("schedule_lines")
+      .delete()
+      .in("id", pendingSchedules.map((row) => row.id));
+
+    if (deleteResult.error) {
+      throw new Error(`Failed to reset pending schedule revisions: ${deleteResult.error.message}`);
+    }
+  }
+
+  const insertScheduleResult = await supabase
+    .from("schedule_lines")
+    .insert({
+      legacy_id: buildGeneratedLegacyId("schedule"),
+      code: buildNextCode(existingCodes.map((row) => row.code), "SL", 4),
+      name: buildScheduleRevisionName(subcategory.name, activeSchedule?.name),
+      subcategory_id: subcategoryId,
+      revision_of_id: activeSchedule?.id ?? null,
+      status: "pendente",
+      created_at: timestamp,
+      created_by_profile_id: null,
+      audited_at: null,
+      audited_by_profile_id: null,
+      audit_notes: null,
+      deactivated_at: null,
+      deactivated_by_profile_id: null,
+    })
+    .select("id")
+    .single();
+
+  const scheduleRevision = assertSupabaseResult(
+    insertScheduleResult,
+    "Failed to create pending schedule revision",
+  );
+
+  if (products.length === 0) {
+    return;
+  }
+
+  const insertItemsResult = await supabase.from("schedule_line_item_snapshots").insert(
+    products.map((product) => ({
+      schedule_line_id: scheduleRevision.id,
+      product_id: product.id,
+      minimum_production: Number(product.minimum_production_kg),
+      production_days: product.production_days ?? [],
+    })),
+  );
+
+  if (insertItemsResult.error) {
+    throw new Error(`Failed to save pending schedule revision items: ${insertItemsResult.error.message}`);
+  }
+}
+
+export async function assignProductToOperationalSubcategory(
+  subcategoryIdentifier: string,
+  productIdentifier: string,
+  options: MutationOptions = {},
+) {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const targetSubcategoryId = await resolveSubcategoryId(subcategoryIdentifier, supabase);
+  const productRow = await resolveRowByIdentifier("products", productIdentifier, supabase);
+
+  if (!Boolean(productRow.active)) {
+    throw new Error("Somente produtos ativos podem entrar na carteira operacional.");
+  }
+
+  const productId = String(productRow.id);
+  const previousOperationalSubcategoryId = productRow.operational_subcategory_id
+    ? String(productRow.operational_subcategory_id)
+    : null;
+
+  if (previousOperationalSubcategoryId === targetSubcategoryId) {
+    return;
+  }
+
+  const updateResult = await supabase
+    .from("products")
+    .update({
+      operational_subcategory_id: targetSubcategoryId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", productId);
+
+  if (updateResult.error) {
+    throw new Error(`Failed to assign operational subcategory: ${updateResult.error.message}`);
+  }
+
+  const affectedSubcategoryIds = [
+    ...new Set(
+      [previousOperationalSubcategoryId, targetSubcategoryId].filter(
+        (value): value is string => Boolean(value),
+      ),
+    ),
+  ];
+
+  for (const affectedSubcategoryId of affectedSubcategoryIds) {
+    await rebuildPendingScheduleRevisionForSubcategoryDbId(affectedSubcategoryId, { supabase });
+  }
+}
+
+export async function removeProductFromOperationalSubcategory(
+  subcategoryIdentifier: string,
+  productIdentifier: string,
+  options: MutationOptions = {},
+) {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const sourceSubcategoryId = await resolveSubcategoryId(subcategoryIdentifier, supabase);
+  const productRow = await resolveRowByIdentifier("products", productIdentifier, supabase);
+  const productId = String(productRow.id);
+  const currentOperationalSubcategoryId = productRow.operational_subcategory_id
+    ? String(productRow.operational_subcategory_id)
+    : null;
+
+  if (currentOperationalSubcategoryId !== sourceSubcategoryId) {
+    throw new Error("O produto não está vinculado operacionalmente a esta subcategoria.");
+  }
+
+  const updateResult = await supabase
+    .from("products")
+    .update({
+      operational_subcategory_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", productId);
+
+  if (updateResult.error) {
+    throw new Error(`Failed to remove operational subcategory: ${updateResult.error.message}`);
+  }
+
+  await rebuildPendingScheduleRevisionForSubcategoryDbId(sourceSubcategoryId, { supabase });
+}
+
 export async function createProduct(input: ProductInput, options: MutationOptions = {}) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const existingCodesResult = await supabase.from("products").select("code");
@@ -465,6 +763,7 @@ export async function createProduct(input: ProductInput, options: MutationOption
   const subcategoryId = await resolveSubcategoryId(input.lineId, supabase);
   const code = input.code?.trim() || buildNextCode(existingCodes.map((row) => row.code), "PR", 5);
   const legacyId = buildGeneratedLegacyId("product");
+  await assertExternalCodeAvailable("products", normalizeOptionalCode(input.externalCode), undefined, supabase);
 
   const insertResult = await supabase
     .from("products")
@@ -472,6 +771,9 @@ export async function createProduct(input: ProductInput, options: MutationOption
       legacy_id: legacyId,
       code,
       subcategory_id: subcategoryId,
+      // New products start outside the operational portfolio until a subcategory
+      // explicitly adds them to the audited schedule.
+      operational_subcategory_id: null,
       ...normalizeProductPayload(input),
     })
     .select("id")
@@ -493,7 +795,12 @@ export async function updateProduct(
 ) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const row = await resolveRowByIdentifier("products", identifier, supabase);
+  const productId = String(row.id);
   const subcategoryId = await resolveSubcategoryId(input.lineId, supabase);
+  const operationalSubcategoryId = row.operational_subcategory_id ? String(row.operational_subcategory_id) : null;
+  const externalCode = normalizeOptionalCode(input.externalCode);
+  await assertProductExternalCodeEditable(productId, externalCode, supabase);
+  await assertExternalCodeAvailable("products", externalCode, productId, supabase);
 
   const result = await supabase
     .from("products")
@@ -502,13 +809,17 @@ export async function updateProduct(
       ...normalizeProductPayload(input),
       updated_at: new Date().toISOString(),
     })
-    .eq("id", String(row.id));
+    .eq("id", productId);
 
   if (result.error) {
     throw new Error(`Failed to update product: ${result.error.message}`);
   }
 
   await replaceProductRecipeItems(String(row.id), input.recipe, supabase);
+
+  if (operationalSubcategoryId) {
+    await rebuildPendingScheduleRevisionForSubcategoryDbId(operationalSubcategoryId, { supabase });
+  }
 }
 
 export async function updateScheduleLineStatus(

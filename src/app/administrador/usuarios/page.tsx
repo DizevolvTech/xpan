@@ -50,6 +50,7 @@ import {
   type UserAddress,
   type UserFormState,
 } from "@/lib/admin-users";
+import { formatBrazilPhone } from "@/lib/phone-mask";
 import {
   buildDefaultPermissions,
   countAllowedModules,
@@ -63,9 +64,12 @@ import {
   type PermissionMap,
   type PermissionModuleId,
 } from "@/lib/permission-modules";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useManagedUsers } from "@/lib/use-managed-users";
-
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
+ 
 export default function AdministradorUsuariosPage() {
+  const { snapshot } = useMasterDataSnapshot();
   const {
     users,
     isLoading,
@@ -86,11 +90,13 @@ export default function AdministradorUsuariosPage() {
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [userFormError, setUserFormError] = useState<string | null>(null);
+  const [userFormBaseline, setUserFormBaseline] = useState("");
   const [userForm, setUserForm] = useState<UserFormState>({
     name: "",
     email: "",
     role: "loja",
     status: "ativo",
+    storeIds: [],
   });
 
   const [permissionUserId, setPermissionUserId] = useState<string | null>(null);
@@ -99,10 +105,29 @@ export default function AdministradorUsuariosPage() {
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState | null>(null);
   const [profileFormError, setProfileFormError] = useState<string | null>(null);
+  const [profileFormBaseline, setProfileFormBaseline] = useState("");
   const editingUser = useMemo(
     () => users.find((user) => user.id === editingUserId) ?? null,
     [editingUserId, users],
   );
+  const activeStores = useMemo(
+    () => snapshot.stores.filter((store) => store.status === "ativo"),
+    [snapshot.stores],
+  );
+  const storeNameById = useMemo(
+    () => new Map(snapshot.stores.map((store) => [store.id, store.name])),
+    [snapshot.stores],
+  );
+  const userFormDirty = isUserDialogOpen && JSON.stringify(userForm) !== userFormBaseline;
+  const profileFormDirty = Boolean(profileUserId && profileForm) && JSON.stringify(profileForm) !== profileFormBaseline;
+  const userFormGuard = useUnsavedChangesGuard({
+    enabled: isUserDialogOpen,
+    isDirty: userFormDirty,
+  });
+  const profileFormGuard = useUnsavedChangesGuard({
+    enabled: Boolean(profileUserId),
+    isDirty: profileFormDirty,
+  });
 
   const permissionUser = useMemo(
     () => users.find((user) => user.id === permissionUserId) ?? null,
@@ -211,6 +236,30 @@ export default function AdministradorUsuariosPage() {
       ),
     },
     {
+      key: "storeScope",
+      header: "Escopo Loja",
+      render: (user: ManagedUser) =>
+        user.role === "loja" ? (
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              {user.storeIds?.length
+                ? `${user.storeIds.length} loja${user.storeIds.length > 1 ? "s" : ""} autorizada${user.storeIds.length > 1 ? "s" : ""}`
+                : "Nenhuma loja vinculada"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {user.storeIds?.length
+                ? user.storeIds
+                    .slice(0, 2)
+                    .map((storeId) => storeNameById.get(storeId) ?? storeId)
+                    .join(" · ")
+                : "Defina explicitamente as lojas que esse usuário pode operar."}
+            </p>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">Não se aplica a este perfil.</span>
+        ),
+    },
+    {
       key: "updatedAt",
       header: "Última Atualização",
       render: (user: ManagedUser) => (
@@ -249,7 +298,17 @@ export default function AdministradorUsuariosPage() {
           email: user.email,
           role: user.role,
           status: user.status,
+          storeIds: user.storeIds ?? [],
         });
+        setUserFormBaseline(
+          JSON.stringify({
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            storeIds: user.storeIds ?? [],
+          }),
+        );
         setUserFormError(null);
         setIsUserDialogOpen(true);
       },
@@ -272,17 +331,54 @@ export default function AdministradorUsuariosPage() {
       email: "",
       role: "loja",
       status: "ativo",
+      storeIds: [],
     });
+    setUserFormBaseline(
+      JSON.stringify({
+        name: "",
+        email: "",
+        role: "loja",
+        status: "ativo",
+        storeIds: [],
+      }),
+    );
     setUserFormError(null);
     setIsUserDialogOpen(true);
+  }
+
+  function toggleAuthorizedStore(storeId: string, checked: boolean) {
+    setUserForm((current) => {
+      const currentStoreIds = current.storeIds ?? [];
+
+      if (checked) {
+        return {
+          ...current,
+          storeIds: currentStoreIds.includes(storeId)
+            ? currentStoreIds
+            : [...currentStoreIds, storeId],
+        };
+      }
+
+      return {
+        ...current,
+        storeIds: currentStoreIds.filter((currentStoreId) => currentStoreId !== storeId),
+      };
+    });
+    setUserFormError(null);
   }
 
   async function handleSaveUser() {
     const name = userForm.name.trim();
     const email = userForm.email.trim().toLowerCase();
+    const normalizedStoreIds = Array.from(new Set(userForm.storeIds ?? []));
 
     if (!name || !email) {
       setUserFormError("Preencha nome e e-mail para continuar.");
+      return;
+    }
+
+    if (userForm.role === "loja" && normalizedStoreIds.length === 0) {
+      setUserFormError("Selecione ao menos uma loja autorizada para usuários com perfil Loja.");
       return;
     }
 
@@ -303,7 +399,7 @@ export default function AdministradorUsuariosPage() {
             email,
             role: userForm.role,
             status: userForm.status,
-            storeIds: editingUser?.storeIds,
+            storeIds: userForm.role === "loja" ? normalizedStoreIds : [],
           },
           editingUser?.role !== userForm.role,
         );
@@ -313,6 +409,7 @@ export default function AdministradorUsuariosPage() {
           email,
           role: userForm.role,
           status: userForm.status,
+          storeIds: userForm.role === "loja" ? normalizedStoreIds : [],
         });
 
         if (created?.temporaryPassword) {
@@ -390,14 +487,16 @@ export default function AdministradorUsuariosPage() {
   }
 
   function openProfileDialog(user: ManagedUser) {
-    setProfileUserId(user.id);
-    setProfileForm({
+    const nextProfileForm = {
       avatarUrl: user.profile.avatarUrl,
-      phone: user.profile.phone,
+      phone: formatBrazilPhone(user.profile.phone),
       address: { ...user.profile.address },
       newPassword: "",
       confirmPassword: "",
-    });
+    };
+    setProfileUserId(user.id);
+    setProfileForm(nextProfileForm);
+    setProfileFormBaseline(JSON.stringify(nextProfileForm));
     setProfileFormError(null);
   }
 
@@ -705,18 +804,20 @@ export default function AdministradorUsuariosPage() {
       <Dialog
         open={isUserDialogOpen}
         onOpenChange={(open) => {
-          setIsUserDialogOpen(open);
           if (!open) {
+            if (!userFormGuard.confirmIfNeeded()) {
+              return;
+            }
             setUserFormError(null);
           }
+          setIsUserDialogOpen(open);
         }}
       >
         <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>{editingUserId ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
             <DialogDescription>
-              O perfil base define permissões padrão. Ajustes finos podem ser feitos em
-              delegação de permissões.
+              O perfil base define permissões padrão. Para usuários com perfil Loja, a seleção de lojas abaixo define exatamente quais unidades esse usuário pode visualizar e operar.
             </DialogDescription>
           </DialogHeader>
 
@@ -750,7 +851,11 @@ export default function AdministradorUsuariosPage() {
                 <Select
                   value={userForm.role}
                   onValueChange={(value) =>
-                    setUserForm((current) => ({ ...current, role: value as UserRole }))
+                    setUserForm((current) => ({
+                      ...current,
+                      role: value as UserRole,
+                      storeIds: value === "loja" ? current.storeIds ?? [] : [],
+                    }))
                   }
                 >
                   <SelectTrigger>
@@ -788,6 +893,62 @@ export default function AdministradorUsuariosPage() {
               </div>
             </div>
 
+            {userForm.role === "loja" ? (
+              <section className="space-y-3 rounded-xl border border-border/80 bg-panel/25 p-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground">Escopo operacional da loja</p>
+                  <p className="text-xs text-muted-foreground">
+                    O perfil Loja já libera os módulos operacionais da loja. Aqui você define em quais lojas esse usuário realmente pode entrar, visualizar pedidos e registrar ocorrências.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {userForm.storeIds?.length
+                      ? `${userForm.storeIds.length} loja${userForm.storeIds.length > 1 ? "s" : ""} selecionada${userForm.storeIds.length > 1 ? "s" : ""}.`
+                      : "Nenhuma loja selecionada ainda."}
+                  </p>
+                </div>
+
+                {activeStores.length === 0 ? (
+                  <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                    Não há lojas ativas disponíveis para vínculo neste momento.
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {activeStores.map((store) => {
+                      const isChecked = (userForm.storeIds ?? []).includes(store.id);
+
+                      return (
+                        <label
+                          key={store.id}
+                          className="flex items-start gap-3 rounded-lg border border-border/70 bg-card px-3 py-3 text-sm"
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => toggleAuthorizedStore(store.id, checked === true)}
+                          />
+                          <div className="space-y-1">
+                            <p className="font-medium text-foreground">{store.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {store.code} · Janela {store.receiveWindow}
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : (
+              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                Este perfil não usa escopo por loja. O acesso será controlado pelas permissões do perfil base e pela delegação por módulo.
+              </div>
+            )}
+
+            {userFormDirty ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                Existem alterações pendentes neste cadastro.
+              </div>
+            ) : null}
+
             {userFormError && (
               <div className="rounded-lg border border-danger/40 bg-danger/25 px-3 py-2 text-sm text-danger-foreground">
                 {userFormError}
@@ -799,7 +960,12 @@ export default function AdministradorUsuariosPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsUserDialogOpen(false)}
+              onClick={() => {
+                if (!userFormGuard.confirmIfNeeded()) {
+                  return;
+                }
+                setIsUserDialogOpen(false);
+              }}
               disabled={isSubmitting}
             >
               Cancelar
@@ -815,6 +981,9 @@ export default function AdministradorUsuariosPage() {
         open={Boolean(profileUserId)}
         onOpenChange={(open) => {
           if (!open) {
+            if (!profileFormGuard.confirmIfNeeded()) {
+              return;
+            }
             closeProfileDialog();
           }
         }}
@@ -885,7 +1054,7 @@ export default function AdministradorUsuariosPage() {
                       id="profile-phone"
                       value={profileForm.phone}
                       onChange={(event) =>
-                        updateProfileField("phone", event.target.value)
+                        updateProfileField("phone", formatBrazilPhone(event.target.value))
                       }
                       placeholder="(99) 99999-9999"
                     />
@@ -1049,11 +1218,26 @@ export default function AdministradorUsuariosPage() {
                   {profileFormError}
                 </div>
               )}
+              {profileFormDirty ? (
+                <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                  Existem alterações pendentes no perfil deste usuário.
+                </div>
+              ) : null}
             </div>
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeProfileDialog} disabled={isSubmitting}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!profileFormGuard.confirmIfNeeded()) {
+                  return;
+                }
+                closeProfileDialog();
+              }}
+              disabled={isSubmitting}
+            >
               Cancelar
             </Button>
             <Button type="button" onClick={() => void saveProfileDialog()} disabled={isSubmitting}>

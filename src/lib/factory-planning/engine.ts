@@ -1,5 +1,7 @@
 import {
   formatDateBr,
+  getEnabledOrderingDays,
+  getEnabledReceivingDays,
   type OperationalSettings,
   type ProductionLine,
   type ProductionProduct,
@@ -144,16 +146,16 @@ export function getDeliveryDateByStoreRule(
   settings: OperationalSettings,
 ): string {
   const calculatedDate = addDays(baseDate, settings.expeditionLeadDays);
-  return moveToNextAllowedWeekday(calculatedDate, store.receivingDays);
+  return moveToNextAllowedWeekday(calculatedDate, getEnabledReceivingDays(store));
 }
 
 export function getOperationalBaseDateByStoreRule(
   orderedAt: string,
-  store: Pick<StoreProfile, "orderingDays">,
+  store: Pick<StoreProfile, "orderingDays" | "orderingBlockedDays">,
   settings: Pick<OperationalSettings, "orderCutoffTime">,
 ): string {
   const baseDate = getBaseDateByCutoff(orderedAt, settings.orderCutoffTime);
-  return moveToNextAllowedWeekday(baseDate, store.orderingDays);
+  return moveToNextAllowedWeekday(baseDate, getEnabledOrderingDays(store));
 }
 
 export function getOperationalOrderWindow(
@@ -165,6 +167,29 @@ export function getOperationalOrderWindow(
   const deliveryDate = getDeliveryDateByStoreRule(baseDate, store, settings);
 
   return { baseDate, deliveryDate };
+}
+
+export function getOperationalTimeline(
+  orderedAt: string,
+  store: StoreProfile,
+  settings: OperationalSettings,
+  productionDays: ProductionWeekDay[],
+  saleLeadDays = 0,
+) {
+  const { baseDate, deliveryDate: expectedDeliveryDate } = getOperationalOrderWindow(orderedAt, store, settings);
+  const planning = resolveProductionDateInWindow(baseDate, expectedDeliveryDate, productionDays);
+  const deliveryDate =
+    planning.date && compareDateKeys(planning.date, expectedDeliveryDate) > 0
+      ? moveToNextAllowedWeekday(planning.date, getEnabledReceivingDays(store))
+      : expectedDeliveryDate;
+
+  return {
+    baseDate,
+    deliveryDate,
+    saleDate: addDays(deliveryDate, Math.max(0, saleLeadDays)),
+    productionDate: planning.date,
+    delayed: planning.delayed || deliveryDate !== expectedDeliveryDate,
+  };
 }
 
 export function resolveProductionDateInWindow(
@@ -321,6 +346,13 @@ function getAverageProgress(items: Array<{ workflowProgress: number }>) {
   return Number((items.reduce((sum, item) => sum + item.workflowProgress, 0) / items.length).toFixed(1));
 }
 
+function getLatestDate(items: Array<{ deliveryDate: string }>, fallbackDate: string) {
+  return items.reduce(
+    (latest, item) => (compareDateKeys(item.deliveryDate, latest) > 0 ? item.deliveryDate : latest),
+    fallbackDate,
+  );
+}
+
 function buildPlannedItems(
   input: {
     storeOrders: StoreOrder[];
@@ -337,11 +369,11 @@ function buildPlannedItems(
         return [];
       }
 
-      const { baseDate, deliveryDate } = getOperationalOrderWindow(order.orderedAt, store, input.source.settings);
-
       return order.items.flatMap<PlannedOrderItem>((orderItem) => {
         const product = input.source.productsById.get(orderItem.productId);
-        const line = product ? input.source.linesById.get(product.lineId) : undefined;
+        const line = product?.operationalLineId
+          ? input.source.linesById.get(product.operationalLineId)
+          : undefined;
         const sector = line ? input.source.sectorsById.get(line.sectorId) : undefined;
         const schedule = line ? input.scheduleByLineId.get(line.id) : undefined;
 
@@ -349,7 +381,13 @@ function buildPlannedItems(
           return [];
         }
 
-        const planning = resolveProductionDateInWindow(baseDate, deliveryDate, product.productionDays);
+        const timeline = getOperationalTimeline(
+          order.orderedAt,
+          store,
+          input.source.settings,
+          product.productionDays,
+          product.saleLeadDays ?? 0,
+        );
         const salesFactor = sanitizeFactor(product.salesToKgFactor);
         const expeditionFactor = sanitizeFactor(product.expeditionToKgFactor);
         const internalKg = round2(orderItem.quantity * salesFactor);
@@ -360,10 +398,10 @@ function buildPlannedItems(
             ? round2(internalKg)
             : roundQuantityForUnit(expeditionQuantityRaw, product.expeditionUnit);
 
-        const canPlan = Boolean(schedule && planning.date);
+        const canPlan = Boolean(schedule && timeline.productionDate);
         const productionItemKey = canPlan
           ? getProductionItemKey({
-              productionDate: planning.date,
+              productionDate: timeline.productionDate,
               lineId: line.id,
               scheduleId: schedule?.id ?? null,
               productId: product.id,
@@ -378,10 +416,11 @@ function buildPlannedItems(
           storeId: store.id,
           storeName: store.name,
           orderedAt: formatDateTimeBr(order.orderedAt),
-          baseDate,
-          deliveryDate,
-          productionDate: planning.date,
-          delayed: planning.delayed,
+          baseDate: timeline.baseDate,
+          deliveryDate: timeline.deliveryDate,
+          saleDate: timeline.saleDate,
+          productionDate: timeline.productionDate,
+          delayed: timeline.delayed,
           productId: product.id,
           productCode: product.code,
           productName: product.name,
@@ -405,7 +444,7 @@ function buildPlannedItems(
           productionItemStatus: canPlan ? "nao_iniciado" : null,
           workflowProgress: 0,
           opCode: null,
-          status: getPotentialItemStatus(planning.date, canPlan, referenceDate),
+          status: getPotentialItemStatus(timeline.productionDate, canPlan, referenceDate),
           } satisfies PlannedOrderItem,
         ];
       });
@@ -510,6 +549,8 @@ export function buildProductionOrdersFromPlannedItems(
         internalKg: item.internalKg,
         deliveryDate: item.deliveryDate,
         deliveryDateLabel: formatDateBr(item.deliveryDate),
+        saleDate: item.saleDate,
+        saleDateLabel: formatDateBr(item.saleDate),
         expeditionUnit: item.expeditionUnit,
         expeditionQuantity: item.expeditionQuantity,
         productionItemKey: item.productionItemKey ?? `${planningKey}|${item.productId}`,
@@ -605,7 +646,8 @@ function buildOrders(
 
       const items = orderItemsByOrderId.get(order.id) ?? [];
       const opCodes = Array.from(opsByOrderId.get(order.id) ?? []).sort((a, b) => a.localeCompare(b));
-      const { deliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
+      const { deliveryDate: fallbackDeliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
+      const deliveryDate = items.length > 0 ? getLatestDate(items, fallbackDeliveryDate) : fallbackDeliveryDate;
 
       return {
         id: order.id,
@@ -651,7 +693,8 @@ function buildExpeditionRows(
       }
 
       const items = (orderItemsByOrderId.get(order.id) ?? []).slice().sort((a, b) => a.productCode.localeCompare(b.productCode));
-      const { deliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
+      const { deliveryDate: fallbackDeliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
+      const deliveryDate = items.length > 0 ? getLatestDate(items, fallbackDeliveryDate) : fallbackDeliveryDate;
       const orderSummary = orderByCode.get(order.code);
 
       const expeditionItems: ExpeditionItem[] = items.map((item) => ({
@@ -666,6 +709,7 @@ function buildExpeditionRows(
         expeditionQuantity: item.expeditionQuantity,
         expeditionUnit: item.expeditionUnit,
         productionDate: item.productionDate,
+        saleDate: item.saleDate,
         workflowProgress: item.workflowProgress,
       }));
 

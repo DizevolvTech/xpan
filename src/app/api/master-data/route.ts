@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
 export async function GET() {
@@ -12,7 +12,7 @@ export async function GET() {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const snapshot = await getMasterDataSnapshot({
       supabase,
       includeProfileNames: authorization.user.role !== "loja",

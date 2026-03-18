@@ -9,10 +9,12 @@ type CurrentProfileResponse = {
   id: string;
   name: string;
   email: string;
+  role: NonNullable<Awaited<ReturnType<typeof resolveCurrentManagedUser>>>["role"];
   avatarUrl: string;
   phone: string;
   address: ManagedUserProfileInput["address"];
   passwordUpdatedAt: string;
+  allowedStoreIds: string[];
 };
 
 function buildProfileResponse(user: NonNullable<Awaited<ReturnType<typeof resolveCurrentManagedUser>>>): CurrentProfileResponse {
@@ -20,10 +22,12 @@ function buildProfileResponse(user: NonNullable<Awaited<ReturnType<typeof resolv
     id: user.id,
     name: user.name,
     email: user.email,
+    role: user.role,
     avatarUrl: user.profile.avatarUrl,
     phone: user.profile.phone,
     address: user.profile.address,
     passwordUpdatedAt: user.profile.passwordUpdatedAt,
+    allowedStoreIds: user.storeIds ?? [],
   };
 }
 

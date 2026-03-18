@@ -139,6 +139,8 @@ export type Database = {
           receive_window: string;
           ordering_days: string[];
           receiving_days: string[];
+          ordering_blocked_days: string[];
+          receiving_blocked_days: string[];
           created_at: string;
           updated_at: string;
         };
@@ -154,6 +156,8 @@ export type Database = {
           receive_window: string;
           ordering_days?: string[];
           receiving_days?: string[];
+          ordering_blocked_days?: string[];
+          receiving_blocked_days?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -164,6 +168,7 @@ export type Database = {
           id: string;
           legacy_id: string | null;
           code: string;
+          external_code: string | null;
           name: string;
           responsible: string;
           status: "ativo" | "inativo";
@@ -174,6 +179,7 @@ export type Database = {
           id?: string;
           legacy_id?: string | null;
           code: string;
+          external_code?: string | null;
           name: string;
           responsible: string;
           status?: "ativo" | "inativo";
@@ -187,6 +193,7 @@ export type Database = {
           id: string;
           legacy_id: string | null;
           code: string;
+          external_code: string | null;
           name: string;
           category_id: string;
           type: string;
@@ -200,6 +207,7 @@ export type Database = {
           id?: string;
           legacy_id?: string | null;
           code: string;
+          external_code?: string | null;
           name: string;
           category_id: string;
           type: string;
@@ -328,9 +336,11 @@ export type Database = {
           id: string;
           legacy_id: string | null;
           code: string;
+          external_code: string | null;
           name: string;
           description: string;
           subcategory_id: string;
+          operational_subcategory_id: string | null;
           active: boolean;
           available_for_ordering: boolean;
           validity_days: number;
@@ -338,6 +348,7 @@ export type Database = {
           economic_production_kg: number;
           allows_storage: boolean;
           production_days: string[];
+          sale_lead_days: number;
           unit_profiles: Json;
           packaging_profile: Json | null;
           is_sold_loose: boolean;
@@ -361,9 +372,11 @@ export type Database = {
           id?: string;
           legacy_id?: string | null;
           code: string;
+          external_code?: string | null;
           name: string;
           description?: string;
           subcategory_id: string;
+          operational_subcategory_id?: string | null;
           active?: boolean;
           available_for_ordering?: boolean;
           validity_days?: number;
@@ -371,6 +384,7 @@ export type Database = {
           economic_production_kg?: number;
           allows_storage?: boolean;
           production_days?: string[];
+          sale_lead_days?: number;
           unit_profiles: Json;
           packaging_profile?: Json | null;
           is_sold_loose?: boolean;
@@ -536,6 +550,8 @@ export type Database = {
           id: string;
           order_id: string;
           status: "aguardando_expedicao" | "pronto_coleta" | "em_rota" | "no_destino" | "entregue" | "tentativa_falha";
+          checklist_state: Json;
+          checklist_completed_at: string | null;
           updated_at: string;
           updated_by_profile_id: string | null;
           created_at: string;
@@ -544,6 +560,8 @@ export type Database = {
           id?: string;
           order_id: string;
           status?: "aguardando_expedicao" | "pronto_coleta" | "em_rota" | "no_destino" | "entregue" | "tentativa_falha";
+          checklist_state?: Json;
+          checklist_completed_at?: string | null;
           updated_at?: string;
           updated_by_profile_id?: string | null;
           created_at?: string;

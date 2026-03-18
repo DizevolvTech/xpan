@@ -73,11 +73,7 @@ export async function listStoreOccurrences(
     storeId: storeLegacyById.get(orderById.get(row.order_id)?.store_id ?? "") ?? orderById.get(row.order_id)?.store_id ?? "",
   }));
 
-  return filterByStoreScope(mappedRows, scope.allowedStoreIds).map((row) => {
-    const sanitizedRow = { ...row };
-    delete sanitizedRow.storeId;
-    return sanitizedRow;
-  });
+  return filterByStoreScope(mappedRows, scope.allowedStoreIds);
 }
 
 export async function createStoreOccurrence(
@@ -126,8 +122,9 @@ export async function createStoreOccurrence(
 
   const nextCode = input.code ?? `OC-${String(existingRows.length + 1).padStart(4, "0")}`;
   const openedByProfileId = await resolveProfileDatabaseId(supabase, input.openedByProfileId ?? null);
+  const legacyId = `occ-${crypto.randomUUID()}`;
   const insertResult = await supabase.from("store_occurrences").insert({
-    legacy_id: `occ-${crypto.randomUUID()}`,
+    legacy_id: legacyId,
     code: nextCode,
     order_id: orderRow.id,
     order_item_id: itemRows[0]?.id ?? null,
@@ -145,4 +142,13 @@ export async function createStoreOccurrence(
   if (insertResult.error) {
     throw new Error(`Failed to create occurrence: ${insertResult.error.message}`);
   }
+
+  const createdRows = await listStoreOccurrences(scope, supabase);
+  const createdOccurrence = createdRows.find((row) => row.id === legacyId || row.code === nextCode);
+
+  if (!createdOccurrence) {
+    throw new Error("Occurrence was created but could not be reloaded");
+  }
+
+  return createdOccurrence;
 }

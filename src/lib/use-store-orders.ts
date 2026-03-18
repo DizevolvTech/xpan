@@ -18,28 +18,75 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
+type StoreOrdersCacheEntry = {
+  data: StoreOrderSummary[];
+  fetchedAt: number;
+};
+
+const STORE_ORDERS_CACHE_TTL_MS = 10_000;
+const storeOrdersCache = new Map<string, StoreOrdersCacheEntry>();
+const storeOrdersInflight = new Map<string, Promise<StoreOrderSummary[]>>();
+
+function getStoreOrdersCacheEntry(referenceDate: string) {
+  return storeOrdersCache.get(referenceDate) ?? null;
+}
+
+function isStoreOrdersCacheFresh(entry: StoreOrdersCacheEntry) {
+  return Date.now() - entry.fetchedAt < STORE_ORDERS_CACHE_TTL_MS;
+}
+
+async function fetchStoreOrderSummaries(referenceDate: string, forceRefresh: boolean) {
+  const cachedEntry = getStoreOrdersCacheEntry(referenceDate);
+
+  if (!forceRefresh && cachedEntry && isStoreOrdersCacheFresh(cachedEntry)) {
+    return cachedEntry.data;
+  }
+
+  const inflightRequest = storeOrdersInflight.get(referenceDate);
+  if (inflightRequest) {
+    return inflightRequest;
+  }
+
+  const request = readJson<StoreOrderSummary[]>(`/api/store-orders?referenceDate=${referenceDate}`)
+    .then((data) => {
+      storeOrdersCache.set(referenceDate, {
+        data,
+        fetchedAt: Date.now(),
+      });
+      return data;
+    })
+    .finally(() => {
+      storeOrdersInflight.delete(referenceDate);
+    });
+
+  storeOrdersInflight.set(referenceDate, request);
+  return request;
+}
+
 export function useStoreOrderSummaries(referenceDate: string) {
-  const [orders, setOrders] = useState<StoreOrderSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedEntry = getStoreOrdersCacheEntry(referenceDate);
+  const [orders, setOrders] = useState<StoreOrderSummary[]>(cachedEntry?.data ?? []);
+  const [isLoading, setIsLoading] = useState(!cachedEntry);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true);
+  const refresh = useCallback(async (forceRefresh = true) => {
+    const previousCacheEntry = getStoreOrdersCacheEntry(referenceDate);
+    setIsLoading(forceRefresh || !previousCacheEntry);
     setError(null);
 
     try {
-      const data = await readJson<StoreOrderSummary[]>(`/api/store-orders?referenceDate=${referenceDate}`);
+      const data = await fetchStoreOrderSummaries(referenceDate, forceRefresh);
       setOrders(data);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Falha ao carregar pedidos");
-      setOrders([]);
+      setOrders(previousCacheEntry?.data ?? []);
     } finally {
       setIsLoading(false);
     }
   }, [referenceDate]);
 
   useEffect(() => {
-    void refresh();
+    void refresh(false);
   }, [refresh]);
 
   return useMemo(

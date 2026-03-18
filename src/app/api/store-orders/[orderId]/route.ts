@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, canAccessStore } from "@/lib/api-auth";
 import { formatDateBr } from "@/lib/production-planning";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { assertSupabaseResult, isUuid } from "@/lib/supabase-data/common";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 
@@ -30,8 +30,11 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
 
   try {
     const { orderId } = await context.params;
-    const supabase = await createSupabaseServerClient();
-    const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), { supabase });
+    const supabase = createSupabaseAdminClient();
+    const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), {
+      supabase,
+      includeProfileNames: false,
+    });
     const orderQuery = supabase
       .from("store_orders")
       .select("id, legacy_id, code, store_id, ordered_at, delivery_date, note, receive_window_snapshot, expedition_lead_days_snapshot");
@@ -43,7 +46,7 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
         .select("id, legacy_id, order_id, product_id, product_code_snapshot, product_name_snapshot, requested_quantity, requested_unit, operational_unit_snapshot")
         .order("created_at", { ascending: true }),
       supabase.from("stores").select("id, legacy_id, name, receiving_days"),
-      supabase.from("products").select("id, legacy_id, subcategory_id"),
+      supabase.from("products").select("id, legacy_id, subcategory_id, operational_subcategory_id"),
       supabase.from("subcategories").select("id, category_id"),
       supabase.from("categories").select("id, name"),
       supabase.from("operational_settings").select("order_cutoff_time").limit(1).maybeSingle(),
@@ -76,7 +79,9 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       .filter((row) => row.order_id === orderRow.id)
       .map((row) => {
         const product = productById.get(row.product_id);
-        const line = product ? lineById.get(product.subcategory_id) : undefined;
+        const line = product
+          ? lineById.get(product.operational_subcategory_id ?? product.subcategory_id)
+          : undefined;
         const category = line ? categoryNameById.get(line.category_id) ?? "-" : "-";
 
         return {
@@ -93,8 +98,11 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
     return NextResponse.json({
       id: orderRow.legacy_id ?? orderRow.id,
       code: orderRow.code,
+      storeId: resolvedStoreId,
       date: formatDateTimeBr(orderRow.ordered_at),
+      orderedAtKey: orderRow.ordered_at.slice(0, 10),
       deliveryDate: formatDateBr(orderRow.delivery_date),
+      deliveryDateKey: orderRow.delivery_date,
       status: planningOrder?.status ?? "em_espera",
       store: storeRow?.name ?? "-",
       dPlusLabel: `D+${orderRow.expedition_lead_days_snapshot}`,

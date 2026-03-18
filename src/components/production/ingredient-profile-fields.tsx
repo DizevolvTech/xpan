@@ -1,6 +1,7 @@
 "use client";
 
 import type { UnitCode } from "@/lib/factory-planning/units";
+import { getOperationalUnitLabel } from "@/lib/operational-units";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -71,7 +72,7 @@ export function IngredientProfileFields({
             <SelectContent>
               {unitOptions.map((unit) => (
                 <SelectItem key={unit} value={unit}>
-                  {unit}
+                  {getOperationalUnitLabel(unit)}
                 </SelectItem>
               ))}
             </SelectContent>

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 import type { ProductionItemStatus } from "@/lib/order-planning";
 import { authorizeApiRequest } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { invalidatePlanningCaches } from "@/lib/server-data-cache";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { releaseOrder, updateProductionItemStatus } from "@/lib/supabase-data/workflow";
 
 export async function PATCH(request: Request) {
@@ -27,8 +28,9 @@ export async function PATCH(request: Request) {
         return authorization.response;
       }
 
-      const supabase = await createSupabaseServerClient();
+      const supabase = createSupabaseAdminClient();
       await releaseOrder(body.orderId, authorization.user.id, supabase);
+      invalidatePlanningCaches();
       return NextResponse.json({ ok: true });
     }
 
@@ -41,18 +43,21 @@ export async function PATCH(request: Request) {
         return authorization.response;
       }
 
-      const supabase = await createSupabaseServerClient();
+      const supabase = createSupabaseAdminClient();
       await updateProductionItemStatus(body.productionItemKey, body.status, authorization.user.id, supabase);
+      invalidatePlanningCaches();
       return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ message: "Unsupported workflow action" }, { status: 400 });
   } catch (error) {
+    console.error("Failed to update factory workflow", error);
+    const message = error instanceof Error ? error.message : "Failed to update workflow";
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : "Failed to update workflow",
+        message,
       },
-      { status: 500 },
+      { status: message.toLowerCase().includes("invalid") ? 400 : 500 },
     );
   }
 }

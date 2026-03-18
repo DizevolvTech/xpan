@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, canAccessStore, getAllowedStoreIds } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { invalidatePlanningCaches } from "@/lib/server-data-cache";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createStoreOrder } from "@/lib/supabase-data/store-orders";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 
@@ -28,16 +29,22 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
-    const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), { supabase });
+    const supabase = createSupabaseAdminClient();
+    const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), {
+      supabase,
+      includeProfileNames: false,
+    });
     const allowedStoreIds = getAllowedStoreIds(authorization.user);
     const orders = planning.orders
       .filter((order) => (allowedStoreIds ? allowedStoreIds.includes(order.storeId) : true))
       .map((order) => ({
       id: order.id,
       code: order.code,
+      storeId: order.storeId,
       date: formatDateTimeBr(order.orderedAt),
+      orderedAtKey: order.orderedAt.slice(0, 10),
       deliveryDate: order.deliveryDateLabel,
+      deliveryDateKey: order.deliveryDate,
       status: order.status,
       store: order.storeName,
       }));
@@ -65,7 +72,7 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as Parameters<typeof createStoreOrder>[0];
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
 
     if (!canAccessStore(authorization.user, body.storeId)) {
       return NextResponse.json(
@@ -78,6 +85,7 @@ export async function POST(request: Request) {
       ...body,
       createdByProfileId: authorization.user.id,
     }, supabase);
+    invalidatePlanningCaches();
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return NextResponse.json(

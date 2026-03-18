@@ -15,6 +15,7 @@ export type AggregatedOrderItem = {
   scheduleName: string;
   productionDate: string | null;
   deliveryDate: string;
+  saleDate: string;
   opCode: string | null;
   status: OrderStatus;
   workflowProgress: number;
@@ -61,6 +62,7 @@ export function aggregateOrderItems(items: PlannedOrderItem[]): AggregatedOrderI
         scheduleName: item.scheduleName ?? "Sem linha ativa",
         productionDate: item.productionDate,
         deliveryDate: item.deliveryDate,
+        saleDate: item.saleDate,
         opCode: item.opCode,
         status: item.status,
         workflowProgress: item.workflowProgress,
@@ -91,6 +93,10 @@ export function aggregateOrderItems(items: PlannedOrderItem[]): AggregatedOrderI
     const byDelivery = a.deliveryDate.localeCompare(b.deliveryDate);
     if (byDelivery !== 0) {
       return byDelivery;
+    }
+    const bySale = a.saleDate.localeCompare(b.saleDate);
+    if (bySale !== 0) {
+      return bySale;
     }
     const byProduction = (a.productionDate ?? "").localeCompare(b.productionDate ?? "");
     if (byProduction !== 0) {

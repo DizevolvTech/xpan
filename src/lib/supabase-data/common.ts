@@ -4,7 +4,14 @@ import type { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type SupabaseResult<T> = {
   data: T | null;
-  error: { message: string } | null;
+  error: SupabaseError | null;
+};
+
+export type SupabaseError = {
+  message: string;
+  details?: string | null;
+  hint?: string | null;
+  code?: string | null;
 };
 
 export type SupabaseDataClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -43,4 +50,35 @@ export function assertSupabaseResult<T>(result: SupabaseResult<T>, message: stri
   }
 
   return result.data;
+}
+
+export function isSupabaseMissingSchemaError(
+  error: SupabaseError | null | undefined,
+  identifiers: string[] = [],
+) {
+  if (!error) {
+    return false;
+  }
+
+  const text = [error.code, error.message, error.details, error.hint]
+    .filter((value) => typeof value === "string" && value.length > 0)
+    .join(" ")
+    .toLowerCase();
+
+  const looksLikeMissingSchema =
+    error.code === "42P01" ||
+    error.code === "42703" ||
+    text.includes("does not exist") ||
+    text.includes("schema cache") ||
+    text.includes("could not find");
+
+  if (!looksLikeMissingSchema) {
+    return false;
+  }
+
+  if (identifiers.length === 0) {
+    return true;
+  }
+
+  return identifiers.some((identifier) => text.includes(identifier.toLowerCase()));
 }

@@ -21,12 +21,16 @@ import {
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  getEnabledOrderingDays,
+  getEnabledReceivingDays,
   getStoreCanOrderSunday,
   getStoreReceivesSunday,
   productionWeekDays,
   type StoreMasterData,
 } from "@/lib/production-planning";
+import { formatBrazilPhone } from "@/lib/phone-mask";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import {
   Select,
   SelectContent,
@@ -38,6 +42,7 @@ import {
 type Loja = StoreMasterData;
 
 type LojaFormState = StoreMasterData;
+type StoreDialogMode = "view" | "edit";
 
 function buildLojaFormState(store?: Loja | null): LojaFormState {
   return {
@@ -46,11 +51,13 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
     name: store?.name ?? "",
     responsible: store?.responsible ?? "",
     email: store?.email ?? "",
-    phone: store?.phone ?? "",
+    phone: formatBrazilPhone(store?.phone ?? ""),
     status: store?.status ?? "ativo",
     receiveWindow: store?.receiveWindow ?? "07:00 - 10:00",
     orderingDays: store?.orderingDays ?? ["segunda", "terca", "quarta", "quinta", "sexta"],
     receivingDays: store?.receivingDays ?? ["segunda", "terca", "quarta", "quinta", "sexta"],
+    orderingBlockedDays: store?.orderingBlockedDays ?? [],
+    receivingBlockedDays: store?.receivingBlockedDays ?? [],
   };
 }
 
@@ -59,11 +66,29 @@ export default function LojasPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<Loja | null>(null);
+  const [dialogMode, setDialogMode] = useState<StoreDialogMode>("edit");
   const [formState, setFormState] = useState<LojaFormState>(() => buildLojaFormState());
+  const [formBaseline, setFormBaseline] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isReadOnly = dialogMode === "view";
+  const formDirty = isDialogOpen && !isReadOnly && JSON.stringify(formState) !== formBaseline;
+  const formGuard = useUnsavedChangesGuard({
+    enabled: isDialogOpen && !isReadOnly,
+    isDirty: formDirty,
+  });
 
-  const lojas = snapshot.stores;
+  const lojas = useMemo(
+    () =>
+      snapshot.stores.map((store) => ({
+        ...store,
+        orderingDays: store.orderingDays ?? [],
+        receivingDays: store.receivingDays ?? [],
+        orderingBlockedDays: store.orderingBlockedDays ?? [],
+        receivingBlockedDays: store.receivingBlockedDays ?? [],
+      })),
+    [snapshot.stores],
+  );
 
   const filteredLojas = useMemo(
     () =>
@@ -82,12 +107,18 @@ export default function LojasPage() {
     {
       key: "orderingDays",
       header: "Dias de Pedido",
-      render: (item: Loja) => `${item.orderingDays.length} dias`,
+      render: (item: Loja) => `${(item.orderingDays ?? []).length} dias`,
     },
     {
       key: "receivingDays",
       header: "Dias de Recebimento",
-      render: (item: Loja) => `${item.receivingDays.length} dias`,
+      render: (item: Loja) => `${(item.receivingDays ?? []).length} dias`,
+    },
+    {
+      key: "blockedDays",
+      header: "Bloqueios",
+      render: (item: Loja) =>
+        `${(item.orderingBlockedDays ?? []).length} pedido · ${(item.receivingBlockedDays ?? []).length} receb.`,
     },
     {
       key: "receivesSunday",
@@ -106,8 +137,11 @@ export default function LojasPage() {
       icon: "view" as const,
       label: "Visualizar",
       onClick: (item: Loja) => {
+        setDialogMode("view");
         setEditingStore(item);
-        setFormState(buildLojaFormState(item));
+        const nextFormState = buildLojaFormState(item);
+        setFormState(nextFormState);
+        setFormBaseline(JSON.stringify(nextFormState));
         setFormError(null);
         setIsDialogOpen(true);
       },
@@ -116,26 +150,65 @@ export default function LojasPage() {
       icon: "edit" as const,
       label: "Editar",
       onClick: (item: Loja) => {
+        setDialogMode("edit");
         setEditingStore(item);
-        setFormState(buildLojaFormState(item));
+        const nextFormState = buildLojaFormState(item);
+        setFormState(nextFormState);
+        setFormBaseline(JSON.stringify(nextFormState));
         setFormError(null);
         setIsDialogOpen(true);
       },
     },
   ];
 
-  function toggleDay(scope: "orderingDays" | "receivingDays", day: (typeof productionWeekDays)[number]["key"]) {
-    setFormState((current) => ({
-      ...current,
-      [scope]: current[scope].includes(day)
+  function toggleDay(
+    scope: "orderingDays" | "receivingDays" | "orderingBlockedDays" | "receivingBlockedDays",
+    day: (typeof productionWeekDays)[number]["key"],
+  ) {
+    setFormState((current) => {
+      if (scope === "orderingBlockedDays" && !current.orderingDays.includes(day)) {
+        return current;
+      }
+
+      if (scope === "receivingBlockedDays" && !current.receivingDays.includes(day)) {
+        return current;
+      }
+
+      const nextValues = current[scope].includes(day)
         ? current[scope].filter((item) => item !== day)
-        : [...current[scope], day],
-    }));
+        : [...current[scope], day];
+
+      if (scope === "orderingDays") {
+        const nextOrderingDays = nextValues;
+        return {
+          ...current,
+          orderingDays: nextOrderingDays,
+          orderingBlockedDays: current.orderingBlockedDays.filter((item) => nextOrderingDays.includes(item)),
+        };
+      }
+
+      if (scope === "receivingDays") {
+        const nextReceivingDays = nextValues;
+        return {
+          ...current,
+          receivingDays: nextReceivingDays,
+          receivingBlockedDays: current.receivingBlockedDays.filter((item) => nextReceivingDays.includes(item)),
+        };
+      }
+
+      return {
+        ...current,
+        [scope]: nextValues,
+      };
+    });
   }
 
   function openNewStore() {
+    setDialogMode("edit");
     setEditingStore(null);
-    setFormState(buildLojaFormState());
+    const nextFormState = buildLojaFormState();
+    setFormState(nextFormState);
+    setFormBaseline(JSON.stringify(nextFormState));
     setFormError(null);
     setIsDialogOpen(true);
   }
@@ -240,6 +313,15 @@ export default function LojasPage() {
             columns={columns}
             actions={actions}
             keyField="id"
+            onRowClick={(item) => {
+              setDialogMode("view");
+              setEditingStore(item);
+              const nextFormState = buildLojaFormState(item);
+              setFormState(nextFormState);
+              setFormBaseline(JSON.stringify(nextFormState));
+              setFormError(null);
+              setIsDialogOpen(true);
+            }}
             stickyHeader
             emptyMessage={isLoading ? "Carregando lojas..." : "Nenhuma loja encontrada"}
           />
@@ -249,15 +331,20 @@ export default function LojasPage() {
       <Dialog
         open={isDialogOpen}
         onOpenChange={(open) => {
-          setIsDialogOpen(open);
           if (!open) {
+            if (!formGuard.confirmIfNeeded()) {
+              return;
+            }
             setFormError(null);
           }
+          setIsDialogOpen(open);
         }}
       >
         <DialogContent size="3xl">
           <DialogHeader>
-            <DialogTitle>{editingStore ? "Editar Loja" : "Cadastrar Loja"}</DialogTitle>
+            <DialogTitle>
+              {!editingStore ? "Cadastrar Loja" : isReadOnly ? "Visualizar Loja" : "Editar Loja"}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-6 py-2">
             {formError ? (
@@ -265,7 +352,18 @@ export default function LojasPage() {
                 {formError}
               </div>
             ) : null}
+            {isReadOnly ? (
+              <div className="rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground">
+                Modo visualização: use o lápis para editar esta loja.
+              </div>
+            ) : null}
+            {formDirty ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                Existem alterações pendentes nesta loja.
+              </div>
+            ) : null}
 
+            <fieldset disabled={isReadOnly} className="grid gap-6">
             <div>
               <h3 className="mb-4 text-sm font-semibold">Informações Básicas</h3>
               <div className="grid gap-4 md:grid-cols-2">
@@ -309,7 +407,7 @@ export default function LojasPage() {
                   <Input
                     value={formState.phone}
                     onChange={(event) =>
-                      setFormState((current) => ({ ...current, phone: event.target.value }))
+                      setFormState((current) => ({ ...current, phone: formatBrazilPhone(event.target.value) }))
                     }
                     placeholder="(99) 99999-9999"
                   />
@@ -366,6 +464,32 @@ export default function LojasPage() {
                 <p className="text-xs text-muted-foreground">
                   Pede domingo: <strong>{getStoreCanOrderSunday(formState) ? "sim" : "não"}</strong>
                 </p>
+                <div className="space-y-2 rounded-lg border border-border/70 bg-card/60 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Bloquear pedidos nestes dias
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {productionWeekDays.map((day) => {
+                      const disabled = !formState.orderingDays.includes(day.key);
+
+                      return (
+                        <label key={`order-block-${day.key}`} className="flex items-center gap-3 rounded-lg border border-border/70 bg-card px-3 py-2 text-sm">
+                          <Checkbox
+                            checked={formState.orderingBlockedDays.includes(day.key)}
+                            disabled={disabled}
+                            onCheckedChange={() => toggleDay("orderingBlockedDays", day.key)}
+                          />
+                          <span className={disabled ? "text-muted-foreground" : "text-foreground"}>
+                            {day.label}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Dias realmente liberados para pedido: <strong>{getEnabledOrderingDays(formState).length}</strong>
+                  </p>
+                </div>
               </section>
 
               <section className="space-y-3 rounded-xl border border-border/80 bg-panel/20 p-4">
@@ -389,16 +513,55 @@ export default function LojasPage() {
                 <p className="text-xs text-muted-foreground">
                   Recebe domingo: <strong>{getStoreReceivesSunday(formState) ? "sim" : "não"}</strong>
                 </p>
+                <div className="space-y-2 rounded-lg border border-border/70 bg-card/60 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Bloquear recebimento nestes dias
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {productionWeekDays.map((day) => {
+                      const disabled = !formState.receivingDays.includes(day.key);
+
+                      return (
+                        <label key={`receive-block-${day.key}`} className="flex items-center gap-3 rounded-lg border border-border/70 bg-card px-3 py-2 text-sm">
+                          <Checkbox
+                            checked={formState.receivingBlockedDays.includes(day.key)}
+                            disabled={disabled}
+                            onCheckedChange={() => toggleDay("receivingBlockedDays", day.key)}
+                          />
+                          <span className={disabled ? "text-muted-foreground" : "text-foreground"}>
+                            {day.label}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Dias realmente liberados para recebimento: <strong>{getEnabledReceivingDays(formState).length}</strong>
+                  </p>
+                </div>
               </section>
             </div>
+            </fieldset>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
-              Cancelar
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!formGuard.confirmIfNeeded()) {
+                  return;
+                }
+                setIsDialogOpen(false);
+              }}
+              disabled={isSubmitting}
+            >
+              {isReadOnly ? "Fechar" : "Cancelar"}
             </Button>
-            <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
-              {editingStore ? "Salvar" : "Cadastrar"}
-            </Button>
+            {!isReadOnly ? (
+              <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
+                {editingStore ? "Salvar" : "Cadastrar"}
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

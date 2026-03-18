@@ -17,11 +17,18 @@ export function getLinesBySectorFromData(
   return lines.filter((line) => line.sectorId === sectorId);
 }
 
-export function getProductsByLineFromData(
+export function getProductsByMasterLineFromData<T extends ProductionProduct>(
   lineId: string,
-  products: ProductionProduct[],
+  products: T[],
 ) {
-  return products.filter((product) => product.lineId === lineId);
+  return products.filter((product) => (product.masterLineId ?? product.lineId) === lineId);
+}
+
+export function getProductsByLineFromData<T extends ProductionProduct>(
+  lineId: string,
+  products: T[],
+) {
+  return products.filter((product) => product.operationalLineId === lineId);
 }
 
 export function getSchedulesByLineFromData(
@@ -51,7 +58,7 @@ export function getLinePlannedKgPerDayFromData(
   lineId: string,
   products: ProductionProduct[],
 ) {
-  const relevantProducts = getProductsByLineFromData(lineId, products);
+  const relevantProducts = getProductsByLineFromData(lineId, products).filter((product) => product.active);
 
   return relevantProducts.reduce<Partial<Record<ProductionWeekDay, number>>>((acc, product) => {
     product.productionDays.forEach((day) => {

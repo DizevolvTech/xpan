@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-type StoreOccurrence = {
+export type StoreOccurrence = {
   id: string;
   code: string;
+  storeId: string;
   orderId: string;
   orderCode: string;
   orderItemId: string | null;
@@ -30,7 +31,7 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
-export function useStoreOccurrences() {
+export function useStoreOccurrences(storeId?: string) {
   const [occurrences, setOccurrences] = useState<StoreOccurrence[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,8 @@ export function useStoreOccurrences() {
     setError(null);
 
     try {
-      const data = await readJson<StoreOccurrence[]>("/api/store-occurrences");
+      const query = storeId ? `?storeId=${encodeURIComponent(storeId)}` : "";
+      const data = await readJson<StoreOccurrence[]>(`/api/store-occurrences${query}`);
       setOccurrences(data);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Falha ao carregar ocorrencias");
@@ -48,7 +50,7 @@ export function useStoreOccurrences() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [storeId]);
 
   useEffect(() => {
     void refresh();
@@ -66,7 +68,7 @@ export function useStoreOccurrences() {
       quantityUnitSnapshot: string;
       description: string;
     }) => {
-      await readJson("/api/store-occurrences", {
+      const createdOccurrence = await readJson<StoreOccurrence>("/api/store-occurrences", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -74,6 +76,7 @@ export function useStoreOccurrences() {
         body: JSON.stringify(payload),
       });
       await refresh();
+      return createdOccurrence;
     },
     [refresh],
   );

@@ -4,6 +4,7 @@ import {
   permissionModules,
   type PermissionMap,
 } from "@/lib/permission-modules";
+import { formatBrazilPhone } from "@/lib/phone-mask";
 
 export type ManagedUserStatus = "ativo" | "inativo";
 
@@ -91,7 +92,7 @@ export function buildProfile(
 ): ManagedUserProfile {
   return {
     avatarUrl: profile?.avatarUrl ?? "",
-    phone: profile?.phone ?? "",
+    phone: formatBrazilPhone(profile?.phone ?? ""),
     address: {
       ...buildEmptyAddress(),
       ...profile?.address,

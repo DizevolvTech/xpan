@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
 
 import { FactoryFlow } from "@/components/shared/factory-flow";
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -13,15 +15,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import { getTodayDateKey } from "@/lib/order-planning";
+import { getExpeditionVisibleStatus } from "@/lib/delivery-workflow";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
-
-function sanitizeDateKey(raw: string | null) {
-  if (!raw) {
-    return getTodayDateKey();
-  }
-  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
-}
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -33,12 +29,12 @@ function getChecklistItemKey(item: ReturnType<typeof aggregateExpeditionItems>[n
 
 export default function ExpedicaoDetailsPage() {
   const params = useParams<{ expeditionId: string }>();
-  const searchParams = useSearchParams();
   const expeditionId = typeof params.expeditionId === "string" ? params.expeditionId : "";
-  const [referenceDate, setReferenceDate] = useState(() => sanitizeDateKey(searchParams.get("ref")));
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
-  const deliveryExecutionState = useDeliveryExecution(referenceDate);
-  const [checkedItemsByExpedition, setCheckedItemsByExpedition] = useState<Record<string, Record<string, boolean>>>({});
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isChecklistSaving, setIsChecklistSaving] = useState(false);
+  const { planningData } = useFactoryPlanningSnapshot(anchorDate);
+  const deliveryExecutionState = useDeliveryExecution();
 
   const expedition = useMemo(
     () => planningData.expedition.find((item) => item.id === expeditionId) ?? null,
@@ -52,12 +48,34 @@ export default function ExpedicaoDetailsPage() {
         : null,
     [deliveryExecutionState, expedition],
   );
-  const expeditionCheckedItems = useMemo(
-    () => (expedition ? checkedItemsByExpedition[expedition.id] ?? {} : {}),
-    [checkedItemsByExpedition, expedition],
+  const expeditionCheckedItems = useMemo(() => execution?.checklistState ?? {}, [execution?.checklistState]);
+  const hasChecklistProgress = useMemo(
+    () =>
+      Boolean(
+        execution &&
+          (execution.checklistCompletedAt !== null ||
+            Object.keys(execution.checklistState).length > 0 ||
+            execution.status !== "aguardando_expedicao"),
+      ),
+    [execution],
   );
-  const canSeparate = expedition?.status === "aguardando_expedicao";
+  const canSeparate = Boolean(expedition && (expedition.status === "aguardando_expedicao" || hasChecklistProgress));
   const checklistEditable = Boolean(canSeparate && execution?.status === "aguardando_expedicao");
+  const visibleStatus = useMemo(
+    () =>
+      expedition && execution
+        ? getExpeditionVisibleStatus(expedition.status, execution.status)
+        : expedition?.status ?? null,
+    [execution, expedition],
+  );
+  const allCheckedState = useMemo(
+    () =>
+      aggregatedItems.reduce<Record<string, boolean>>((acc, item) => {
+        acc[getChecklistItemKey(item)] = true;
+        return acc;
+      }, {}),
+    [aggregatedItems],
+  );
   const checkedCount = useMemo(
     () =>
       aggregatedItems.filter((item) => {
@@ -71,12 +89,57 @@ export default function ExpedicaoDetailsPage() {
   );
   const allItemsChecked = aggregatedItems.length > 0 && checkedCount === aggregatedItems.length;
 
+  async function persistChecklist(
+    nextChecklistState: Record<string, boolean>,
+    nextStatus = execution?.status ?? "aguardando_expedicao",
+    nextChecklistCompletedAt = execution?.checklistCompletedAt ?? null,
+  ) {
+    if (!expedition) {
+      return;
+    }
+
+    setActionError(null);
+    setIsChecklistSaving(true);
+
+    try {
+      await deliveryExecutionState.updateExecution(expedition.orderId, nextStatus, {
+        checklistState: nextChecklistState,
+        checklistCompletedAt: nextChecklistCompletedAt,
+      });
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Falha ao atualizar o checklist de expedição.",
+      );
+    } finally {
+      setIsChecklistSaving(false);
+    }
+  }
+
+  async function handleChecklistToggle(itemKey: string, checked: boolean) {
+    if (!checklistEditable) {
+      return;
+    }
+
+    await persistChecklist({
+      ...expeditionCheckedItems,
+      [itemKey]: checked,
+    });
+  }
+
+  async function handleMarkAll() {
+    if (!checklistEditable) {
+      return;
+    }
+
+    await persistChecklist(allCheckedState);
+  }
+
   async function handleCompleteChecklist() {
     if (!expedition || !checklistEditable || !allItemsChecked) {
       return;
     }
 
-    await deliveryExecutionState.updateExecution(expedition.orderId, "pronto_coleta");
+    await persistChecklist(allCheckedState, "pronto_coleta", new Date().toISOString());
   }
 
   const flowSteps = [
@@ -147,13 +210,16 @@ export default function ExpedicaoDetailsPage() {
       ]}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/expedicao/${expedition.id}?ref=${referenceDate}`)}>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/expedicao/${expedition.id}?ref=${anchorDate}`)}>
             <Printer className="size-4" />
             Imprimir checklist
           </Button>
-          <Button type="button" disabled={!checklistEditable || !allItemsChecked} onClick={() => void handleCompleteChecklist()}>
+          <Button type="button" variant="outline" disabled={!checklistEditable || allItemsChecked || isChecklistSaving} onClick={() => void handleMarkAll()}>
+            Marcar todos
+          </Button>
+          <Button type="button" disabled={!checklistEditable || !allItemsChecked || isChecklistSaving} onClick={() => void handleCompleteChecklist()}>
             <CheckCircle2 className="size-4" />
-            {execution?.status === "pronto_coleta" ? "Checklist concluído" : "Concluir checklist"}
+            {execution?.status === "aguardando_expedicao" ? "Continuar para entregas" : "Checklist concluído"}
           </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-fabrica/expedicao">
@@ -170,18 +236,20 @@ export default function ExpedicaoDetailsPage() {
         </div>
       }
     >
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela do checklist"
+        description="O checklist continua aberto pelo pedido, enquanto o contexto temporal segue o mesmo recorte global da expedição."
+      />
+
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader>
           <CardTitle>Resumo do checklist</CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Referência da fábrica</span>
-            <input
-              type="date"
-              value={referenceDate}
-              onChange={(event) => setReferenceDate(event.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-            />
-          </div>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-6">
           <div>
@@ -207,13 +275,21 @@ export default function ExpedicaoDetailsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
             <div className="mt-1">
-              <StatusBadge status={expedition.status} />
+              <StatusBadge status={visibleStatus ?? expedition.status} />
             </div>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Checklist</p>
             <p className="mt-1 text-sm font-semibold">
-              {execution?.status === "pronto_coleta" ? "Concluído" : `${checkedCount}/${aggregatedItems.length} itens`}
+              {execution?.status !== "aguardando_expedicao" ? "Concluído" : `${checkedCount}/${aggregatedItems.length} itens`}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Conferência final</p>
+            <p className="mt-1 text-sm font-semibold">
+              {execution?.checklistCompletedAt
+                ? new Date(execution.checklistCompletedAt).toLocaleString("pt-BR")
+                : "Pendente"}
             </p>
           </div>
           <div className="md:col-span-6">
@@ -222,9 +298,20 @@ export default function ExpedicaoDetailsPage() {
                 ? "Checklist ainda bloqueado. Finalize a produção de todos os itens da OP para liberar esta etapa."
                 : execution?.status === "pronto_coleta"
                   ? "Checklist concluído. O pedido já está pronto para coleta/entrega."
-                  : "Marque os itens conferidos e conclua o checklist para liberar a coleta."}
+                  : execution?.status === "em_rota" || execution?.status === "no_destino"
+                    ? "Checklist concluído. A entrega já está em andamento."
+                    : execution?.status === "entregue"
+                      ? "Checklist concluído. O pedido já foi entregue."
+                      : execution?.status === "tentativa_falha"
+                        ? "Checklist concluído. Houve uma tentativa de entrega que não foi finalizada."
+                        : "Marque os itens conferidos e conclua o checklist para liberar a coleta."}
             </p>
           </div>
+          {actionError ? (
+            <div className="md:col-span-6 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
+              {actionError}
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -239,67 +326,59 @@ export default function ExpedicaoDetailsPage() {
           <CardTitle>Itens consolidados para conferência</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[860px] border-collapse">
-              <thead className="bg-panel">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd pedida</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg interno</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd expedição</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Checklist</th>
-                </tr>
-              </thead>
-              <tbody>
-                {aggregatedItems.map((item) => (
-                  <tr key={getChecklistItemKey(item)}>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.productCode} · {item.productName}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.requestedQuantity} {item.requestedUnit}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.expeditionQuantity} {item.expeditionUnit}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      <label className="inline-flex items-center gap-2">
-                        <Checkbox
-                          checked={
-                            execution?.status !== "aguardando_expedicao"
-                              ? true
-                              : expeditionCheckedItems[getChecklistItemKey(item)] === true
-                          }
-                          disabled={!checklistEditable}
-                          onCheckedChange={(checked) =>
-                            setCheckedItemsByExpedition((current) => {
-                              if (!expedition) {
-                                return current;
+          <PaginatedSection items={aggregatedItems} label="itens da expedição" initialPageSize={8}>
+            {(paginatedItems) => (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[860px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd pedida</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg interno</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd expedição</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Checklist</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map((item) => (
+                      <tr key={getChecklistItemKey(item)}>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.productCode} · {item.productName}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.requestedQuantity} {item.requestedUnit}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.expeditionQuantity} {item.expeditionUnit}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          <label className="inline-flex items-center gap-2">
+                            <Checkbox
+                              checked={
+                                execution?.status !== "aguardando_expedicao"
+                                  ? true
+                                  : expeditionCheckedItems[getChecklistItemKey(item)] === true
                               }
-
-                              return {
-                                ...current,
-                                [expedition.id]: {
-                                  ...(current[expedition.id] ?? {}),
-                                  [getChecklistItemKey(item)]: checked === true,
-                                },
-                              };
-                            })
-                          }
-                        />
-                        <span className="text-sm text-foreground">
-                          {execution?.status !== "aguardando_expedicao" || expeditionCheckedItems[getChecklistItemKey(item)] === true
-                            ? "Conferido"
-                            : "Pendente"}
-                        </span>
-                      </label>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                              disabled={!checklistEditable || isChecklistSaving}
+                              onCheckedChange={(checked) =>
+                                void handleChecklistToggle(getChecklistItemKey(item), checked === true)
+                              }
+                            />
+                            <span className="text-sm text-foreground">
+                              {execution?.status !== "aguardando_expedicao" || expeditionCheckedItems[getChecklistItemKey(item)] === true
+                                ? "Conferido"
+                                : "Pendente"}
+                            </span>
+                          </label>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
         </CardContent>
       </Card>
     </PageLayout>

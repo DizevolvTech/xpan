@@ -265,7 +265,6 @@ async function syncStoreAccess(
   storeIds?: string[],
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
-
   const deleteResult = await supabase.from("profile_store_access").delete().eq("profile_id", profileId);
   if (deleteResult.error) {
     throw new Error(`Failed to reset store access: ${deleteResult.error.message}`);
@@ -281,7 +280,7 @@ async function syncStoreAccess(
       ? storeRows
           .filter((row) => storeIds.includes(row.legacy_id ?? row.id))
           .map((row) => row.id)
-      : storeRows.filter((row) => row.status === "ativo").map((row) => row.id);
+      : [];
 
   if (storeIdsToAssign.length === 0) {
     return;

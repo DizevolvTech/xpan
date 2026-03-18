@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "supabase:gen-types": "npx supabase gen types typescript --project-id $SUPABASE_PROJECT_REF --schema public > src/lib/database.types.ts",
     "supabase:seed:generate": "tsx scripts/supabase/generate-seed.ts",
     "supabase:seed:refresh": "tsx scripts/supabase/generate-seed.ts > supabase/seed.sql",

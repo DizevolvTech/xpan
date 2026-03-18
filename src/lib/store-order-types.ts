@@ -5,8 +5,11 @@ import type { ProductionWeekDay } from "@/lib/production-planning";
 export interface StoreOrderSummary {
   id: string;
   code: string;
+  storeId: string;
   date: string;
+  orderedAtKey: string;
   deliveryDate: string;
+  deliveryDateKey: string;
   status: OrderStatus;
   store: string;
 }

@@ -2,14 +2,19 @@
 
 import { motion } from "framer-motion";
 import { AlertCircle, Clock, Package, ShoppingCart, Truck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
-import { getTodayDateKey } from "@/lib/order-planning";
+import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import { useCurrentProfile } from "@/lib/use-current-profile";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreOrderSummaries } from "@/lib/use-store-orders";
+import { useStoreScope } from "@/lib/use-store-scope";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function getFirstName(fullName: string | undefined) {
   if (!fullName) {
@@ -20,17 +25,39 @@ function getFirstName(fullName: string | undefined) {
 }
 
 export default function LojaPage() {
-  const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const { profile, isLoading: isProfileLoading, error: profileError } = useCurrentProfile();
-  const { orders, isLoading: isOrdersLoading, error: ordersError } = useStoreOrderSummaries(referenceDate);
+  const { snapshot } = useMasterDataSnapshot();
+  const { orders, isLoading: isOrdersLoading, error: ordersError } = useStoreOrderSummaries(anchorDate);
   const { occurrences, isLoading: isOccurrencesLoading, error: occurrencesError } = useStoreOccurrences();
+  const {
+    availableStores,
+    activeStoreId,
+    activeStore,
+    setActiveStoreId,
+    shouldShowStoreSelector,
+  } = useStoreScope(snapshot.stores.filter((store) => store.status === "ativo"), profile?.allowedStoreIds);
+
+  const scopedOrders = useMemo(
+    () => {
+      const timeScopedOrders = filterStoreOrderSummariesByOperationalScope(orders, scope);
+      return activeStoreId
+        ? timeScopedOrders.filter((item) => item.storeId === activeStoreId)
+        : timeScopedOrders;
+    },
+    [activeStoreId, orders, scope],
+  );
+  const scopedOccurrences = useMemo(
+    () => (activeStoreId ? occurrences.filter((item) => item.storeId === activeStoreId) : occurrences),
+    [activeStoreId, occurrences],
+  );
 
   const metrics = useMemo(() => {
-    const totalOrders = orders.length;
-    const scheduled = orders.filter((item) => item.status === "agendado").length;
-    const inProduction = orders.filter((item) => item.status === "em_producao").length;
-    const readyToReceive = orders.filter((item) => item.status === "aguardando_expedicao").length;
-    const openOccurrences = occurrences.filter(
+    const totalOrders = scopedOrders.length;
+    const scheduled = scopedOrders.filter((item) => item.status === "agendado").length;
+    const inProduction = scopedOrders.filter((item) => item.status === "em_producao").length;
+    const readyToReceive = scopedOrders.filter((item) => item.status === "aguardando_expedicao").length;
+    const openOccurrences = scopedOccurrences.filter(
       (item) => item.status === "aberta" || item.status === "em_analise",
     ).length;
 
@@ -41,7 +68,7 @@ export default function LojaPage() {
       readyToReceive,
       openOccurrences,
     };
-  }, [occurrences, orders]);
+  }, [scopedOccurrences, scopedOrders]);
 
   const modules = useMemo(
     () => [
@@ -65,12 +92,12 @@ export default function LojaPage() {
         icon: AlertCircle,
         tone: "rose" as const,
         items: [
-          `${occurrences.length} ocorrências registradas`,
+          `${scopedOccurrences.length} ocorrências registradas`,
           `${metrics.openOccurrences} em aberto`,
         ],
       },
     ],
-    [metrics.openOccurrences, metrics.readyToReceive, metrics.totalOrders, occurrences.length],
+    [metrics.openOccurrences, metrics.readyToReceive, metrics.totalOrders, scopedOccurrences.length],
   );
 
   const combinedError = profileError ?? ordersError ?? occurrencesError;
@@ -90,22 +117,42 @@ export default function LojaPage() {
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-border/80 bg-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Referência da loja
-            </p>
-            <p className="text-sm text-muted-foreground">Os indicadores abaixo seguem a data usada no módulo de pedidos.</p>
-          </div>
-          <input
-            type="date"
-            value={referenceDate}
-            onChange={(event) => setReferenceDate(event.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-          />
-        </div>
-      </div>
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela da loja"
+        description="Os indicadores seguem o mesmo recorte temporal do módulo de pedidos."
+        extraControls={
+          shouldShowStoreSelector ? (
+            <div className="min-w-[220px] space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Loja</p>
+              <Select value={activeStoreId} onValueChange={setActiveStoreId}>
+                <SelectTrigger className="w-[220px] bg-background/80">
+                  <SelectValue placeholder="Filtrar por loja" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStores.map((store) => (
+                    <SelectItem key={store.id} value={store.id}>
+                      {store.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : activeStore ? (
+            <div className="min-w-[220px] space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Loja</p>
+              <span className="flex min-h-10 items-center rounded-md border border-border/70 bg-panel px-3 text-sm text-foreground">
+                {activeStore.name}
+              </span>
+            </div>
+          ) : null
+        }
+      />
 
       <motion.div
         initial={{ opacity: 0 }}

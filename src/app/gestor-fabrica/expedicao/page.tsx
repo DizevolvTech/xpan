@@ -7,6 +7,7 @@ import { ArrowLeft, Factory, ListChecks, Package, ShoppingCart, Truck } from "lu
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
@@ -14,12 +15,14 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type DeliveryExecutionStatus, useDeliveryExecution } from "@/lib/delivery-execution";
+import { getExpeditionVisibleStatus, type ExpeditionVisibleStatus } from "@/lib/delivery-workflow";
+import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
-  getTodayDateKey,
   type ExpeditionRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 function openPrintPage(pathname: string) {
@@ -29,6 +32,7 @@ function openPrintPage(pathname: string) {
 type ExpeditionOrderRow = ExpeditionRow & {
   checklistReady: boolean;
   checklistStatus: DeliveryExecutionStatus;
+  visibleStatus: ExpeditionVisibleStatus;
 };
 
 function describeChecklistStatus(item: ExpeditionOrderRow) {
@@ -52,15 +56,19 @@ function describeChecklistStatus(item: ExpeditionOrderRow) {
 }
 
 export default function ExpedicaoPage() {
-  const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [searchTerm, setSearchTerm] = useState("");
   const [deliveryDateFilter, setDeliveryDateFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
-  const deliveryExecutionState = useDeliveryExecution(referenceDate);
+  const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const planningData = useMemo(
+    () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
+    [planningSnapshot, scope],
+  );
+  const deliveryExecutionState = useDeliveryExecution();
 
   const orderRows = useMemo<ExpeditionOrderRow[]>(
     () =>
@@ -77,13 +85,20 @@ export default function ExpedicaoPage() {
           return a.orderCode.localeCompare(b.orderCode);
         })
         .map((item) => {
-          const checklistReady = item.status === "aguardando_expedicao";
-          const checklistStatus = deliveryExecutionState.resolveExecution(item.orderId, checklistReady).status;
+          const productionReady = item.status === "aguardando_expedicao";
+          const execution = deliveryExecutionState.resolveExecution(item.orderId, productionReady);
+          const hasChecklistProgress =
+            execution.checklistCompletedAt !== null ||
+            Object.keys(execution.checklistState).length > 0 ||
+            execution.status !== "aguardando_expedicao";
+          const checklistReady = productionReady || hasChecklistProgress;
+          const checklistStatus = execution.status;
 
           return {
             ...item,
             checklistReady,
             checklistStatus,
+            visibleStatus: getExpeditionVisibleStatus(item.status, checklistStatus),
           };
         }),
     [deliveryExecutionState, planningData.expedition],
@@ -99,7 +114,7 @@ export default function ExpedicaoPage() {
         item.storeName.toLowerCase().includes(normalizedTerm);
       const matchesDelivery = deliveryDateFilter === "all" || item.deliveryDate === deliveryDateFilter;
       const matchesStore = storeFilter === "all" || item.storeName === storeFilter;
-      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesStatus = statusFilter === "all" || item.visibleStatus === statusFilter;
 
       return matchesSearch && matchesDelivery && matchesStore && matchesStatus;
     });
@@ -127,7 +142,7 @@ export default function ExpedicaoPage() {
     pedidos: orderRows.length,
     itens: orderRows.reduce((sum, item) => sum + item.itemsCount, 0),
     totalKg: Number(orderRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
-    prontos: orderRows.filter((item) => item.status === "aguardando_expedicao").length,
+    prontos: orderRows.filter((item) => item.checklistReady && item.checklistStatus === "aguardando_expedicao").length,
   };
 
   const flowSteps = [
@@ -189,7 +204,7 @@ export default function ExpedicaoPage() {
     {
       key: "status",
       header: "Status",
-      render: (item: ExpeditionOrderRow) => <StatusBadge status={item.status} />,
+      render: (item: ExpeditionOrderRow) => <StatusBadge status={item.visibleStatus} />,
     },
     {
       key: "actions",
@@ -197,12 +212,12 @@ export default function ExpedicaoPage() {
       render: (item: ExpeditionOrderRow) => (
         <div className="flex min-w-[240px] flex-col gap-2">
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${referenceDate}`)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${anchorDate}`)}>
               Imprimir
             </Button>
             {item.checklistReady ? (
               <Button asChild type="button" size="sm" variant={item.checklistStatus === "aguardando_expedicao" ? "default" : "outline"}>
-                <Link href={`/gestor-fabrica/expedicao/${item.id}?ref=${referenceDate}`}>
+                <Link href={`/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`}>
                   {item.checklistStatus === "aguardando_expedicao" ? "Abrir checklist" : "Ver checklist"}
                 </Link>
               </Button>
@@ -258,20 +273,16 @@ export default function ExpedicaoPage() {
         <KPICard title="Prontos para checklist" value={kpis.prontos} icon={ShoppingCart} tone="warning" compactValue />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Controle de Referência</CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Referência da fábrica</span>
-            <input
-              type="date"
-              value={referenceDate}
-              onChange={(event) => setReferenceDate(event.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-            />
-          </div>
-        </CardHeader>
-      </Card>
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela da expedição"
+        description="Veja toda a fila, um único recebimento ou um período fechado mantendo a mesma leitura entre checklist e entrega."
+      />
 
       <FactoryFlow
         currentKey="expedicao"
@@ -308,7 +319,7 @@ export default function ExpedicaoPage() {
         }}
         activeFiltersCount={activeFiltersCount}
         onClear={clearFilters}
-        helperText="O status mostrado nesta etapa é derivado do progresso da produção."
+        helperText="O status mostrado nesta etapa combina a liberação da produção com o avanço real do checklist e da entrega."
         fields={[
           {
             key: "deliveryDate",
@@ -343,6 +354,11 @@ export default function ExpedicaoPage() {
               { value: "agendado", label: "Agendado" },
               { value: "em_producao", label: "Em produção" },
               { value: "aguardando_expedicao", label: "Aguardando expedição" },
+              { value: "pronto_coleta", label: "Pronto para coleta" },
+              { value: "em_rota", label: "Em rota" },
+              { value: "no_destino", label: "No destino" },
+              { value: "entregue", label: "Entregue" },
+              { value: "tentativa_falha", label: "Tentativa falha" },
             ],
           },
         ]}
@@ -357,6 +373,13 @@ export default function ExpedicaoPage() {
             data={ordersPagination.items}
             columns={columns}
             keyField="id"
+            pagination={false}
+            onRowClick={(item) => {
+              if (item.checklistReady) {
+                window.location.assign(`/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
+              }
+            }}
+            isRowClickable={(item) => item.checklistReady}
             emptyMessage="Nenhum pedido encontrado para os filtros"
             stickyHeader
           />

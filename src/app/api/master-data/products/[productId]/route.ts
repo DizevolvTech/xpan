@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { ProductInput } from "@/lib/supabase-data/master-data-admin";
 import { updateProduct } from "@/lib/supabase-data/master-data-admin";
 
@@ -32,8 +33,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     await updateProduct(productId, payload, { supabase });
+    invalidateMasterDataCaches();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

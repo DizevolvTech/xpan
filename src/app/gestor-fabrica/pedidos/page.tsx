@@ -4,21 +4,32 @@ import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
 import { ArrowDown, ArrowRight, Factory, ListChecks, ShoppingCart, Truck } from "lucide-react";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { aggregateOrderItems } from "@/lib/order-item-aggregation";
+import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
-  getTodayDateKey,
   type PlannedOrderItem,
   type PlannedOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 type OrderSummaryRow = PlannedOrderRow & {
@@ -30,7 +41,7 @@ function openPrintPage(pathname: string) {
 }
 
 export default function PedidosFabricaPage() {
-  const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
@@ -38,7 +49,15 @@ export default function PedidosFabricaPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
-  const { planningData, releaseOrder } = useFactoryPlanningSnapshot(referenceDate);
+  const [detailModal, setDetailModal] = useState<{
+    orderId: string;
+    view: "aggregated" | "original";
+  } | null>(null);
+  const { planningData: planningSnapshot, releaseOrder } = useFactoryPlanningSnapshot(anchorDate);
+  const planningData = useMemo(
+    () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
+    [planningSnapshot, scope],
+  );
 
   const orderItemsByOrderId = useMemo(() => {
     const map = new Map<string, PlannedOrderItem[]>();
@@ -76,6 +95,18 @@ export default function PedidosFabricaPage() {
   }, [deliveryFilter, searchTerm, statusFilter, storeFilter, summaryRows]);
 
   const pagination = useMemo(() => paginateArray(filteredOrders, page, pageSize), [filteredOrders, page, pageSize]);
+  const selectedModalOrder = useMemo(
+    () => summaryRows.find((item) => item.id === detailModal?.orderId) ?? null,
+    [detailModal?.orderId, summaryRows],
+  );
+  const selectedModalItems = useMemo(
+    () => (detailModal ? orderItemsByOrderId.get(detailModal.orderId) ?? [] : []),
+    [detailModal, orderItemsByOrderId],
+  );
+  const selectedModalAggregatedItems = useMemo(
+    () => aggregateOrderItems(selectedModalItems),
+    [selectedModalItems],
+  );
 
   const flowSteps = [
     {
@@ -152,6 +183,10 @@ export default function PedidosFabricaPage() {
     setPage(1);
   }
 
+  function openOrderItemsModal(orderId: string, view: "aggregated" | "original") {
+    setDetailModal({ orderId, view });
+  }
+
   return (
     <PageLayout
       title="Pedidos"
@@ -169,22 +204,16 @@ export default function PedidosFabricaPage() {
         <KPICard title="Prontos p/ Expedição" value={kpis.aguardandoExpedicao} icon={Truck} tone="success" compactValue />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Controle de Referência</CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Referência da fábrica
-            </span>
-            <input
-              type="date"
-              value={referenceDate}
-              onChange={(event) => setReferenceDate(event.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-            />
-          </div>
-        </CardHeader>
-      </Card>
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela da fábrica"
+        description="Use o mesmo recorte temporal em pedidos, produção e expedição sem ficar trocando referência por tela."
+      />
 
       <FactoryFlow
         currentKey="pedidos"
@@ -199,7 +228,7 @@ export default function PedidosFabricaPage() {
         <CardContent className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 1</p>
-            <p className="mt-1 font-medium text-foreground">Audite o pedido e expanda os itens sem sair da lista.</p>
+            <p className="mt-1 font-medium text-foreground">Audite o pedido e expanda apenas o resumo operacional da linha.</p>
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 2</p>
@@ -222,7 +251,7 @@ export default function PedidosFabricaPage() {
               </p>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={toggleExpandAll}>
-              {allExpanded ? "Recolher todos" : "Expandir todos"}
+              {allExpanded ? "Recolher todos" : "Expandir resumos"}
             </Button>
           </div>
         </CardHeader>
@@ -301,6 +330,7 @@ export default function PedidosFabricaPage() {
               <tbody>
                 {pagination.items.map((order) => {
                   const items = orderItemsByOrderId.get(order.id) ?? [];
+                  const aggregatedItems = aggregateOrderItems(items);
                   const isExpanded = expandedOrderIds.includes(order.id);
                   return (
                     <Fragment key={order.id}>
@@ -342,13 +372,13 @@ export default function PedidosFabricaPage() {
                         <td className="min-w-[360px] align-top border-t border-border/70 bg-card px-4 py-3 text-right">
                           <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                             <Button asChild type="button" variant="outline" size="sm">
-                              <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${referenceDate}`}>Detalhe</Link>
+                              <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>Detalhe</Link>
                             </Button>
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${referenceDate}`)}
+                              onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${anchorDate}`)}
                             >
                               Folha Loja
                             </Button>
@@ -366,39 +396,49 @@ export default function PedidosFabricaPage() {
                       {isExpanded ? (
                         <tr key={`${order.id}-expanded`}>
                           <td colSpan={8} className="border-t border-border/70 bg-panel/10 px-4 py-4">
-                            <div className="overflow-x-auto rounded-xl border border-border/70">
-                              <table className="w-full min-w-[880px] border-collapse">
-                                <thead className="bg-card">
-                                  <tr>
-                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
-                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
-                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
-                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Linha</th>
-                                    <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {items.map((item) => (
-                                    <tr key={item.id}>
-                                      <td className="min-w-[260px] align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                        {item.productCode} · {item.productName}
-                                      </td>
-                                      <td className="whitespace-nowrap align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                        {item.requestedQuantity} {item.requestedUnit}
-                                      </td>
-                                      <td className="whitespace-nowrap align-top border-t border-border/70 bg-card px-3 py-3 text-sm">{item.internalKg}</td>
-                                      <td className="whitespace-nowrap align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                        {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
-                                      </td>
-                                      <td className="min-w-[180px] align-top border-t border-border/70 bg-card px-3 py-3 text-sm">{item.scheduleName ?? "Sem linha"}</td>
-                                      <td className="min-w-[180px] align-top border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                        <StatusBadge status={item.status} />
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                            <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 xl:grid-cols-[1.4fr_0.9fr]">
+                              <div className="space-y-3">
+                                <div>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                                    Resumo operacional do pedido
+                                  </p>
+                                  <p className="mt-1 text-sm text-muted-foreground">
+                                    Abra os itens em modal para revisar com calma sem poluir a grade principal.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <span className="rounded-full border border-border/70 bg-panel px-2.5 py-1 text-[11px] font-semibold text-foreground">
+                                    {items.length} itens originais
+                                  </span>
+                                  <span className="rounded-full border border-info/30 bg-info/10 px-2.5 py-1 text-[11px] font-semibold text-info-foreground">
+                                    {aggregatedItems.length} itens consolidados
+                                  </span>
+                                  <span className="rounded-full border border-border/70 bg-panel px-2.5 py-1 text-[11px] font-semibold text-foreground">
+                                    {order.totalKg} Kg totais
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="justify-between"
+                                  onClick={() => openOrderItemsModal(order.id, "aggregated")}
+                                >
+                                  <span>Itens consolidados</span>
+                                  <span className="text-xs text-muted-foreground">{aggregatedItems.length}</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="justify-between"
+                                  onClick={() => openOrderItemsModal(order.id, "original")}
+                                >
+                                  <span>Itens originais</span>
+                                  <span className="text-xs text-muted-foreground">{items.length}</span>
+                                </Button>
+                              </div>
                             </div>
                           </td>
                         </tr>
@@ -426,6 +466,151 @@ export default function PedidosFabricaPage() {
           />
         </CardContent>
       </Card>
+
+      <Dialog
+        open={detailModal !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailModal(null);
+          }
+        }}
+      >
+        <DialogContent size="3xl" className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>
+              {detailModal?.view === "aggregated" ? "Itens consolidados" : "Itens originais"}
+              {selectedModalOrder ? ` · ${selectedModalOrder.code}` : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {detailModal?.view === "aggregated"
+                ? "Visão consolidada que a fábrica usa para gerar OPs e carga operacional."
+                : "Visão original do que a loja pediu antes da consolidação operacional."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedModalOrder ? (
+            <div className="grid gap-3 rounded-xl border border-border/70 bg-panel/20 p-4 md:grid-cols-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Pedido</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedModalOrder.code}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Loja</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedModalOrder.storeName}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Recebimento</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedModalOrder.deliveryDateLabel}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
+                <div className="mt-1">
+                  <StatusBadge status={selectedModalOrder.status} />
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {detailModal?.view === "aggregated" ? (
+            <PaginatedSection items={selectedModalAggregatedItems} label="itens consolidados" initialPageSize={8}>
+              {(paginatedItems) => (
+                <div className="overflow-x-auto rounded-xl border border-border/70">
+                  <table className="w-full min-w-[860px] border-collapse">
+                    <thead className="bg-panel">
+                      <tr>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Origens</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedItems.map((item) => (
+                        <tr key={item.aggregationKey}>
+                          <td className="min-w-[220px] border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            <div className="font-medium text-foreground">
+                              {item.productCode} · {item.productName}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{item.scheduleName}</div>
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {item.sourceItemsCount} itens
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {item.requestedQuantity} {item.requestedUnit}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">{item.internalKg}</td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {formatDateKeyBr(item.deliveryDate)}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {formatDateKeyBr(item.saleDate)}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {item.opCode ?? "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedSection>
+          ) : (
+            <PaginatedSection items={selectedModalItems} label="itens originais" initialPageSize={8}>
+              {(paginatedItems) => (
+                <div className="overflow-x-auto rounded-xl border border-border/70">
+                  <table className="w-full min-w-[860px] border-collapse">
+                    <thead className="bg-panel">
+                      <tr>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedItems.map((item) => (
+                        <tr key={item.id}>
+                          <td className="min-w-[220px] border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {item.productCode} · {item.productName}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {item.requestedQuantity} {item.requestedUnit}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">{item.internalKg}</td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {formatDateKeyBr(item.deliveryDate)}
+                          </td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            {formatDateKeyBr(item.saleDate)}
+                          </td>
+                          <td className="min-w-[180px] border-t border-border/70 bg-card px-3 py-3 text-sm">
+                            <StatusBadge status={item.status} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedSection>
+          )}
+        </DialogContent>
+      </Dialog>
     </PageLayout>
   );
 }

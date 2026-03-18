@@ -1,9 +1,11 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 
 import type { UnitCode } from "@/lib/factory-planning/units";
+import { getOperationalUnitLabel, preferredOperationalUnits } from "@/lib/operational-units";
 import type { IngredientCompositionItem } from "@/lib/production-planning";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,10 +40,15 @@ interface IngredientCompositionEditorProps {
   onDraftChange?: (patch: Partial<CompositionDraft>) => void;
   onAdd?: () => void;
   onRemove?: (itemId: string) => void;
+  onMove?: (itemId: string, direction: "up" | "down") => void;
+  onUpdate?: (
+    itemId: string,
+    patch: Partial<Pick<IngredientCompositionItem, "quantity" | "unit" | "observation">>,
+  ) => void;
   readOnly?: boolean;
 }
 
-const defaultUnitOptions = ["Kg", "L", "g", "Un"] as const satisfies readonly UnitCode[];
+const defaultUnitOptions = preferredOperationalUnits;
 
 export function IngredientCompositionEditor({
   title,
@@ -54,6 +61,8 @@ export function IngredientCompositionEditor({
   onDraftChange,
   onAdd,
   onRemove,
+  onMove,
+  onUpdate,
   readOnly = false,
 }: IngredientCompositionEditorProps) {
   return (
@@ -102,7 +111,7 @@ export function IngredientCompositionEditor({
               <SelectContent>
                 {unitOptions.map((unit) => (
                   <SelectItem key={unit} value={unit}>
-                    {unit}
+                    {getOperationalUnitLabel(unit)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -127,54 +136,122 @@ export function IngredientCompositionEditor({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-xl border border-border/70">
-        <table className="w-full border-collapse">
-          <thead className="bg-card">
-            <tr>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Componente</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Quantidade</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Unidade</th>
-              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Observação</th>
-              <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {composition.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
-                  {emptyMessage}
-                </td>
-              </tr>
-            ) : (
-              composition.map((item) => (
-                <tr key={item.id}>
+      <PaginatedSection items={composition} label="componentes" initialPageSize={5}>
+        {(paginatedComposition) => (
+          <div className="overflow-hidden rounded-xl border border-border/70">
+            <table className="w-full border-collapse">
+              <thead className="bg-card">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Componente</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Quantidade</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Unidade</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Observação</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {composition.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
+                      {emptyMessage}
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedComposition.map((item) => (
+                    <tr key={item.id}>
                   <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.name}</td>
-                  <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.quantity}</td>
-                  <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.unit}</td>
                   <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
-                    {item.observation?.trim() ? item.observation : "-"}
+                    {readOnly || !onUpdate ? (
+                      item.quantity
+                    ) : (
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={item.quantity}
+                        onChange={(event) => onUpdate(item.id, { quantity: Number(event.target.value) })}
+                      />
+                    )}
+                  </td>
+                  <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                    {readOnly || !onUpdate ? (
+                      item.unit
+                    ) : (
+                      <Select
+                        value={item.unit}
+                        onValueChange={(value) => onUpdate(item.id, { unit: value as UnitCode })}
+                      >
+                        <SelectTrigger className="h-9 bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {unitOptions.map((unit) => (
+                            <SelectItem key={unit} value={unit}>
+                              {getOperationalUnitLabel(unit)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </td>
+                  <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                    {readOnly || !onUpdate ? (
+                      item.observation?.trim() ? item.observation : "-"
+                    ) : (
+                      <Input
+                        value={item.observation ?? ""}
+                        onChange={(event) => onUpdate(item.id, { observation: event.target.value })}
+                        placeholder="Observação operacional"
+                      />
+                    )}
                   </td>
                   <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
                     {readOnly || !onRemove ? (
                       <span className="text-xs text-muted-foreground">Somente leitura</span>
                     ) : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
-                        onClick={() => onRemove(item.id)}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => onMove?.(item.id, "up")}
+                          disabled={composition.findIndex((entry) => entry.id === item.id) === 0}
+                          title="Mover para cima"
+                        >
+                          <ChevronUp className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => onMove?.(item.id, "down")}
+                          disabled={composition.findIndex((entry) => entry.id === item.id) === composition.length - 1}
+                          title="Mover para baixo"
+                        >
+                          <ChevronDown className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
+                          onClick={() => onRemove(item.id)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
                     )}
                   </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </PaginatedSection>
     </section>
   );
 }

@@ -1,8 +1,12 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
 import { cn } from "@/lib/utils";
 import { LucideIcon, Eye, Pencil, Trash2, Printer, Plus, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PaginationControls } from "@/components/shared/pagination-controls";
+import { paginateArray } from "@/lib/pagination";
 
 interface Column<T> {
   key: string;
@@ -25,6 +29,14 @@ interface DataTableProps<T> {
   emptyMessage?: string;
   isLoading?: boolean;
   rowClassName?: (item: T) => string;
+  onRowClick?: (item: T) => void;
+  isRowClickable?: (item: T) => boolean;
+  isRowExpanded?: (item: T) => boolean;
+  renderExpandedRow?: (item: T) => React.ReactNode;
+  pagination?: boolean;
+  paginationLabel?: string;
+  initialPageSize?: number;
+  pageSizeOptions?: number[];
   stickyHeader?: boolean;
   compact?: boolean;
   emptyStateAction?: {
@@ -42,6 +54,14 @@ export function DataTable<T extends object>({
   emptyMessage = "Nenhum registro encontrado",
   isLoading,
   rowClassName,
+  onRowClick,
+  isRowClickable,
+  isRowExpanded,
+  renderExpandedRow,
+  pagination = true,
+  paginationLabel = "registros",
+  initialPageSize = 10,
+  pageSizeOptions,
   stickyHeader = false,
   compact = false,
   emptyStateAction,
@@ -54,6 +74,14 @@ export function DataTable<T extends object>({
     add: Plus,
     user: UserRound,
   };
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const paginated = useMemo(
+    () => paginateArray(data, page, pageSize),
+    [data, page, pageSize],
+  );
+
+  const visibleData = pagination ? paginated.items : data;
 
   if (isLoading) {
     return (
@@ -81,8 +109,9 @@ export function DataTable<T extends object>({
   }
 
   return (
-    <div className="rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
-      <div className="overflow-x-auto overscroll-x-contain">
+    <div className="space-y-3">
+      <div className="rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
+        <div className="overflow-x-auto overscroll-x-contain">
         <table className="w-full min-w-[640px] border-collapse bg-card xl:min-w-full">
           <thead
             className={cn(
@@ -116,19 +145,46 @@ export function DataTable<T extends object>({
           </thead>
 
           <tbody>
-            {data.map((item) => (
-              <tr
-                key={String(item[keyField])}
-                className={cn(
-                  "transition-colors duration-200 hover:bg-panel/45",
-                  rowClassName?.(item),
-                )}
-              >
+            {visibleData.flatMap((item) => {
+              const rowClickable = onRowClick ? (isRowClickable?.(item) ?? true) : false;
+              const handleRowClick = onRowClick;
+              const rowExpanded = isRowExpanded?.(item) ?? false;
+              const rowKey = String(item[keyField]);
+              const cellsCount = columns.length + (actions && actions.length > 0 ? 1 : 0);
+
+              return [
+                <tr
+                  key={rowKey}
+                  className={cn(
+                    "transition-colors duration-200 hover:bg-panel/45",
+                    rowClickable && "cursor-pointer",
+                    rowExpanded && "bg-primary/[0.04]",
+                    rowClassName?.(item),
+                  )}
+                  onClick={
+                    rowClickable
+                      ? (event) => {
+                          const target = event.target as HTMLElement;
+                          if (
+                            target.closest(
+                              "button, a, input, select, textarea, [role='button'], [data-stop-row-click='true']",
+                            )
+                          ) {
+                            return;
+                          }
+                          handleRowClick?.(item);
+                        }
+                      : undefined
+                  }
+                >
                 {columns.map((column) => (
                   <td
                     key={column.key}
                     className={cn(
-                      "align-top border-t border-border/70 bg-card px-4 text-sm text-foreground",
+                      "align-top border-t border-border/70 px-4 text-sm text-foreground",
+                      rowExpanded
+                        ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
+                        : "bg-card",
                       compact ? "py-2.5" : "py-3",
                     )}
                   >
@@ -141,7 +197,10 @@ export function DataTable<T extends object>({
                 {actions && actions.length > 0 && (
                   <td
                     className={cn(
-                      "align-top border-t border-border/70 bg-card px-4 text-right",
+                      "align-top border-t border-border/70 px-4 text-right",
+                      rowExpanded
+                        ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
+                        : "bg-card",
                       compact ? "py-2.5" : "py-3",
                     )}
                   >
@@ -161,7 +220,10 @@ export function DataTable<T extends object>({
                                 ? "text-danger-foreground/80 hover:bg-danger/40 hover:text-danger-foreground"
                                 : "text-muted-foreground hover:text-foreground",
                             )}
-                            onClick={() => action.onClick(item)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              action.onClick(item);
+                            }}
                             title={action.label}
                             aria-label={action.label}
                           >
@@ -172,11 +234,41 @@ export function DataTable<T extends object>({
                     </div>
                   </td>
                 )}
-              </tr>
-            ))}
+                </tr>,
+                rowExpanded && renderExpandedRow ? (
+                  <tr key={`${rowKey}-expanded`}>
+                    <td
+                      colSpan={cellsCount}
+                      className="border-t border-border/60 bg-primary/[0.03] px-4 pb-4 pt-0"
+                    >
+                      {renderExpandedRow(item)}
+                    </td>
+                  </tr>
+                ) : null,
+              ].filter(Boolean);
+            })}
           </tbody>
         </table>
+        </div>
       </div>
+
+      {pagination ? (
+        <PaginationControls
+          page={paginated.page}
+          pageSize={paginated.pageSize}
+          totalItems={paginated.totalItems}
+          totalPages={paginated.totalPages}
+          startIndex={paginated.startIndex}
+          endIndex={paginated.endIndex}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+          pageSizeOptions={pageSizeOptions}
+          label={paginationLabel}
+        />
+      ) : null}
     </div>
   );
 }

@@ -139,6 +139,8 @@ create table if not exists public.stores (
   receive_window text not null,
   ordering_days public.weekday_code[] not null default '{}'::public.weekday_code[],
   receiving_days public.weekday_code[] not null default '{}'::public.weekday_code[],
+  ordering_blocked_days public.weekday_code[] not null default '{}'::public.weekday_code[],
+  receiving_blocked_days public.weekday_code[] not null default '{}'::public.weekday_code[],
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -197,6 +199,7 @@ create table if not exists public.ingredients (
   id uuid primary key default gen_random_uuid(),
   legacy_id text unique,
   code text not null unique,
+  external_code text,
   name text not null,
   type public.ingredient_type not null,
   unit public.unit_code not null,
@@ -211,9 +214,11 @@ create table if not exists public.products (
   id uuid primary key default gen_random_uuid(),
   legacy_id text unique,
   code text not null unique,
+  external_code text,
   name text not null,
   description text not null default '',
   subcategory_id uuid not null references public.subcategories(id) on delete restrict,
+  operational_subcategory_id uuid references public.subcategories(id) on delete set null,
   active boolean not null default true,
   available_for_ordering boolean not null default true,
   validity_days integer not null default 0,
@@ -221,6 +226,7 @@ create table if not exists public.products (
   economic_production_kg numeric(12, 3) not null default 0,
   allows_storage boolean not null default false,
   production_days public.weekday_code[] not null default '{}'::public.weekday_code[],
+  sale_lead_days integer not null default 0,
   unit_profiles jsonb not null default '{}'::jsonb,
   packaging_profile jsonb,
   is_sold_loose boolean not null default false,
@@ -344,6 +350,8 @@ create table if not exists public.delivery_executions (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null unique references public.store_orders(id) on delete cascade,
   status public.delivery_execution_status not null default 'aguardando_expedicao',
+  checklist_state jsonb not null default '{}'::jsonb,
+  checklist_completed_at timestamptz,
   updated_at timestamptz not null default timezone('utc', now()),
   updated_by_profile_id uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default timezone('utc', now())
@@ -376,10 +384,17 @@ create index if not exists idx_profile_store_access_profile on public.profile_st
 create index if not exists idx_subcategories_category on public.subcategories(category_id);
 create index if not exists idx_schedule_lines_subcategory on public.schedule_lines(subcategory_id);
 create index if not exists idx_products_subcategory on public.products(subcategory_id);
+create index if not exists idx_products_operational_subcategory on public.products(operational_subcategory_id);
 create index if not exists idx_store_orders_store_date on public.store_orders(store_id, delivery_date);
 create index if not exists idx_store_order_items_order on public.store_order_items(order_id);
 create index if not exists idx_workflow_production_items_status on public.workflow_production_items(status);
 create index if not exists idx_store_occurrences_order on public.store_occurrences(order_id);
+create unique index if not exists idx_ingredients_external_code_unique
+on public.ingredients (lower(external_code))
+where external_code is not null and btrim(external_code) <> '';
+create unique index if not exists idx_products_external_code_unique
+on public.products (lower(external_code))
+where external_code is not null and btrim(external_code) <> '';
 
 drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at before update on public.profiles for each row execute function public.set_updated_at();
@@ -912,5 +927,3 @@ with check (
 -- Seed
 -- Source: supabase/seed.sql
 -- ============================================================
-
-

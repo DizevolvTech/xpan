@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { ProductInput } from "@/lib/supabase-data/master-data-admin";
 import { createProduct } from "@/lib/supabase-data/master-data-admin";
 
@@ -25,8 +26,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const created = await createProduct(payload, { supabase });
+    invalidateMasterDataCaches();
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return NextResponse.json(

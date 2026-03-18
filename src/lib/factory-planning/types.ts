@@ -22,6 +22,8 @@ export interface StoreProfile {
   name: string;
   orderingDays: ProductionWeekDay[];
   receivingDays: ProductionWeekDay[];
+  orderingBlockedDays: ProductionWeekDay[];
+  receivingBlockedDays: ProductionWeekDay[];
   receiveWindow: string;
 }
 
@@ -49,6 +51,7 @@ export interface PlannedOrderItem {
   orderedAt: string;
   baseDate: string;
   deliveryDate: string;
+  saleDate: string;
   productionDate: string | null;
   delayed: boolean;
   productId: string;
@@ -120,6 +123,8 @@ export interface ProductionOrderSourceItem {
   internalKg: number;
   deliveryDate: string;
   deliveryDateLabel: string;
+  saleDate: string;
+  saleDateLabel: string;
   expeditionUnit: OrderUnit;
   expeditionQuantity: number;
   productionItemKey: string;
@@ -163,6 +168,7 @@ export interface ExpeditionItem {
   expeditionQuantity: number;
   expeditionUnit: OrderUnit;
   productionDate: string | null;
+  saleDate: string;
   workflowProgress: number;
 }
 

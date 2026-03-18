@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Factory, Users } from "lucide-react";
 
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,14 @@ export default function SetorDetailsPage() {
               Voltar para categorias
             </Link>
           </Button>
+          {sector ? (
+            <Button asChild type="button">
+              <Link href={`/gestor-dados/linhas-producao?sectorId=${sector.id}&new=1`}>
+                <Users className="size-4" />
+                Nova subcategoria
+              </Link>
+            </Button>
+          ) : null}
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/linhas-producao">
               <Factory className="size-4" />
@@ -110,59 +119,73 @@ export default function SetorDetailsPage() {
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Subcategorias Vinculadas</CardTitle>
-          <Button asChild type="button" variant="outline">
-            <Link href="/gestor-dados/linhas-producao">
-              <Users className="size-4" />
-              Ir para módulo de subcategorias
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {sector ? (
+              <Button asChild type="button">
+                <Link href={`/gestor-dados/linhas-producao?sectorId=${sector.id}&new=1`}>
+                  <Users className="size-4" />
+                  Criar subcategoria
+                </Link>
+              </Button>
+            ) : null}
+            <Button asChild type="button" variant="outline">
+              <Link href="/gestor-dados/linhas-producao">
+                <Users className="size-4" />
+                Ir para módulo de subcategorias
+              </Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[920px] border-collapse">
-              <thead className="bg-panel">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Código</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Subcategoria</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Tipo</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Horário</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Capacidade/dia</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="border-t border-border/70 bg-card px-4 py-3 text-sm text-muted-foreground"
-                    >
-                      Esta categoria ainda não possui subcategorias vinculadas.
-                    </td>
-                  </tr>
-                ) : (
-                  lines.map((line) => (
-                    <tr key={line.id}>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.code}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.name}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.type}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.operatingHours}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.capacityPerDayKg} Kg</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3">
-                        <StatusBadge status={line.status} />
-                      </td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
-                        <Button asChild type="button" size="sm" variant="outline">
-                          <Link href={`/gestor-dados/linhas-producao/${line.id}`}>Abrir subcategoria</Link>
-                        </Button>
-                      </td>
+          <PaginatedSection items={lines} label="subcategorias" initialPageSize={8}>
+            {(paginatedLines) => (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[920px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Código</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Subcategoria</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Tipo</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Horário</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Capacidade/dia</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Ações</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {lines.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={7}
+                          className="border-t border-border/70 bg-card px-4 py-3 text-sm text-muted-foreground"
+                        >
+                          Esta categoria ainda não possui subcategorias vinculadas.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedLines.map((line) => (
+                        <tr key={line.id}>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.code}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.name}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.type}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.operatingHours}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.capacityPerDayKg} Kg</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3">
+                            <StatusBadge status={line.status} />
+                          </td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
+                            <Button asChild type="button" size="sm" variant="outline">
+                              <Link href={`/gestor-dados/linhas-producao/${line.id}`}>Abrir subcategoria</Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
         </CardContent>
       </Card>
     </PageLayout>

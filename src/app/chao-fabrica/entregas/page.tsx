@@ -7,6 +7,7 @@ import { ArrowLeft, CheckCircle2, MapPinned, Navigation, Package, Truck, XCircle
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
@@ -14,11 +15,17 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  type DeliveryExecutionStatus,
   useDeliveryExecution,
 } from "@/lib/delivery-execution";
-import { formatDateKeyBr, getTodayDateKey, type ExpeditionRow } from "@/lib/order-planning";
+import {
+  canRegisterDeliveryFailure,
+  getNextDeliveryAction,
+  type DeliveryExecutionStatus,
+} from "@/lib/delivery-workflow";
+import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import { formatDateKeyBr, type ExpeditionRow } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 type DeliveryRow = ExpeditionRow & {
@@ -64,25 +71,25 @@ function formatLastUpdate(dateIso: string) {
   })}`;
 }
 
-function getMainAction(status: DeliveryExecutionStatus) {
-  if (status === "pronto_coleta") {
-    return { label: "Iniciar rota", nextStatus: "em_rota" as const, icon: Navigation };
-  }
-  if (status === "em_rota") {
-    return { label: "Cheguei no destino", nextStatus: "no_destino" as const, icon: MapPinned };
-  }
-  if (status === "no_destino") {
-    return { label: "Confirmar entrega", nextStatus: "entregue" as const, icon: CheckCircle2 };
-  }
-  if (status === "tentativa_falha") {
-    return { label: "Retomar rota", nextStatus: "em_rota" as const, icon: Navigation };
+function getMainActionMeta(status: DeliveryExecutionStatus) {
+  const action = getNextDeliveryAction(status);
+  if (!action) {
+    return null;
   }
 
-  return null;
+  return {
+    ...action,
+    icon:
+      action.nextStatus === "no_destino"
+        ? MapPinned
+        : action.nextStatus === "entregue"
+          ? CheckCircle2
+          : Navigation,
+  };
 }
 
 export default function EntregasPage() {
-  const [referenceDate, setReferenceDate] = useState(getTodayDateKey());
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [searchTerm, setSearchTerm] = useState("");
   const [deliveryDateFilter, setDeliveryDateFilter] = useState("all");
   const [executionStatusFilter, setExecutionStatusFilter] = useState("all");
@@ -90,8 +97,12 @@ export default function EntregasPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
-  const deliveryExecutionState = useDeliveryExecution(referenceDate);
+  const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const planningData = useMemo(
+    () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
+    [planningSnapshot, scope],
+  );
+  const deliveryExecutionState = useDeliveryExecution();
 
   const deliveryRows = useMemo<DeliveryRow[]>(
     () =>
@@ -225,8 +236,8 @@ export default function EntregasPage() {
       key: "actions",
       header: "Ações",
       render: (item: DeliveryRow) => {
-        const mainAction = getMainAction(item.executionStatus);
-        const canMarkFailure = item.executionStatus === "em_rota" || item.executionStatus === "no_destino";
+        const mainAction = getMainActionMeta(item.executionStatus);
+        const canMarkFailure = canRegisterDeliveryFailure(item.executionStatus);
 
         if (item.executionStatus === "aguardando_expedicao") {
           return (
@@ -257,7 +268,7 @@ export default function EntregasPage() {
                 type="button"
                 variant="default"
                 size="sm"
-                onClick={() => deliveryExecutionState.updateExecution(item.orderId, mainAction.nextStatus)}
+                onClick={() => void deliveryExecutionState.updateExecution(item.orderId, mainAction.nextStatus)}
               >
                 <mainAction.icon className="size-4" />
                 {mainAction.label}
@@ -268,7 +279,7 @@ export default function EntregasPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => deliveryExecutionState.updateExecution(item.orderId, "tentativa_falha")}
+                onClick={() => void deliveryExecutionState.updateExecution(item.orderId, "tentativa_falha")}
               >
                 <XCircle className="size-4" />
                 Falha
@@ -311,20 +322,16 @@ export default function EntregasPage() {
         <KPICard title="Falhas de tentativa" value={kpis.falhas} tone="danger" icon={XCircle} compactValue />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Referência da operação</CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Data de planejamento</span>
-            <input
-              type="date"
-              value={referenceDate}
-              onChange={(event) => setReferenceDate(event.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-            />
-          </div>
-        </CardHeader>
-      </Card>
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela das entregas"
+        description="Acompanhe toda a malha, um único dia de entrega ou um período fechado sem refazer o planejamento."
+      />
 
       <FactoryFlow
         currentKey="entregas"
@@ -403,8 +410,8 @@ export default function EntregasPage() {
 
           <div className="grid gap-3 md:hidden">
             {paginatedRows.items.map((item) => {
-              const mainAction = getMainAction(item.executionStatus);
-              const canMarkFailure = item.executionStatus === "em_rota" || item.executionStatus === "no_destino";
+              const mainAction = getMainActionMeta(item.executionStatus);
+              const canMarkFailure = canRegisterDeliveryFailure(item.executionStatus);
 
               return (
                 <article key={item.id} className="rounded-xl border border-border/75 bg-card p-3 shadow-[var(--shadow-soft)]">
@@ -463,7 +470,7 @@ export default function EntregasPage() {
                           <Button
                             type="button"
                             size="sm"
-                            onClick={() => deliveryExecutionState.updateExecution(item.orderId, mainAction.nextStatus)}
+                            onClick={() => void deliveryExecutionState.updateExecution(item.orderId, mainAction.nextStatus)}
                           >
                             <mainAction.icon className="size-4" />
                             {mainAction.label}
@@ -474,7 +481,7 @@ export default function EntregasPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => deliveryExecutionState.updateExecution(item.orderId, "tentativa_falha")}
+                            onClick={() => void deliveryExecutionState.updateExecution(item.orderId, "tentativa_falha")}
                           >
                             <XCircle className="size-4" />
                             Registrar falha
@@ -493,6 +500,7 @@ export default function EntregasPage() {
               data={paginatedRows.items}
               columns={columns}
               keyField="id"
+              pagination={false}
               emptyMessage="Nenhum pedido encontrado para execução de entrega"
               stickyHeader
             />

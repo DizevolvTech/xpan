@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import {
   Factory,
   LayoutDashboard,
@@ -15,13 +15,16 @@ import {
   Users,
 } from "lucide-react";
 
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard, type ModuleTone } from "@/components/shared/module-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import { getTodayDateKey, type FactoryPlanningData } from "@/lib/order-planning";
+import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 
 type QuickAccessModule = {
   href: string;
@@ -169,8 +172,6 @@ const statusConfig: Record<DashboardStatus, { label: string; barClassName: strin
   },
 };
 
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
 function addDays(dateKey: string, days: number) {
   const date = new Date(`${dateKey}T00:00:00`);
   date.setDate(date.getDate() + days);
@@ -197,41 +198,26 @@ function formatCompactValue(value: number, unit?: string) {
   return unit ? `${compactValue} ${unit}` : compactValue;
 }
 
-function isValidDateKey(value: string) {
-  return DATE_KEY_PATTERN.test(value);
-}
+function buildDateRange(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  let current = startDate;
 
-function getInitialReferenceDate() {
-  const today = getTodayDateKey();
-  if (typeof window === "undefined") {
-    return today;
+  while (current <= endDate) {
+    dates.push(current);
+    current = addDays(current, 1);
   }
 
-  const refFromQuery = new URLSearchParams(window.location.search).get("ref");
-  return refFromQuery && isValidDateKey(refFromQuery) ? refFromQuery : today;
+  return dates;
 }
 
 export default function AdministradorPage() {
-  const [referenceDate, setReferenceDate] = useState(getInitialReferenceDate);
-  const [loadTrend, setLoadTrend] = useState<
-    Array<{ dateKey: string; label: string; productionKg: number; expeditionKg: number; totalOrders: number }>
-  >([]);
-
-  function handleReferenceDateChange(nextDate: string) {
-    if (!isValidDateKey(nextDate) || nextDate === referenceDate) {
-      return;
-    }
-
-    setReferenceDate(nextDate);
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      url.searchParams.set("ref", nextDate);
-      window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}`);
-    }
-  }
-
-  const { planningData } = useFactoryPlanningSnapshot(referenceDate);
-  const deliveryExecution = useDeliveryExecution(referenceDate);
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const planningData = useMemo(
+    () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
+    [planningSnapshot, scope],
+  );
+  const deliveryExecution = useDeliveryExecution();
   const { snapshot } = useMasterDataSnapshot();
 
   const activeLineCapacityByName = useMemo(
@@ -445,45 +431,65 @@ export default function AdministradorPage() {
     };
   }, [statusDistribution, totalOrders]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadTrend = useMemo(() => {
+    const pointMap = new Map<
+      string,
+      { productionKg: number; expeditionKg: number; totalOrders: number }
+    >();
 
-    async function loadTrendSeries() {
-      const dayOffsets = [-3, -2, -1, 0, 1, 2, 3];
-      const data = await Promise.all(
-        dayOffsets.map(async (offset) => {
-          const dateKey = addDays(referenceDate, offset);
-          const response = await fetch(`/api/factory-planning?referenceDate=${dateKey}`);
-          if (!response.ok) {
-            throw new Error("Falha ao carregar tendencia operacional");
-          }
-          const dayPlanning = (await response.json()) as FactoryPlanningData;
-
-          return {
-            dateKey,
-            label: formatShortDate(dateKey),
-            productionKg: Number(dayPlanning.productionOrders.reduce((sum, op) => sum + op.totalKg, 0).toFixed(2)),
-            expeditionKg: Number(dayPlanning.expedition.reduce((sum, expeditionRow) => sum + expeditionRow.totalKg, 0).toFixed(2)),
-            totalOrders: dayPlanning.orders.length,
-          };
-        }),
-      );
-
-      if (!cancelled) {
-        setLoadTrend(data);
-      }
-    }
-
-    void loadTrendSeries().catch(() => {
-      if (!cancelled) {
-        setLoadTrend([]);
-      }
+    planningData.productionOrders.forEach((op) => {
+      const current = pointMap.get(op.productionDate) ?? {
+        productionKg: 0,
+        expeditionKg: 0,
+        totalOrders: 0,
+      };
+      current.productionKg = Number((current.productionKg + op.totalKg).toFixed(2));
+      pointMap.set(op.productionDate, current);
     });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [referenceDate]);
+    planningData.expedition.forEach((row) => {
+      const current = pointMap.get(row.deliveryDate) ?? {
+        productionKg: 0,
+        expeditionKg: 0,
+        totalOrders: 0,
+      };
+      current.expeditionKg = Number((current.expeditionKg + row.totalKg).toFixed(2));
+      pointMap.set(row.deliveryDate, current);
+    });
+
+    planningData.orders.forEach((order) => {
+      const current = pointMap.get(order.deliveryDate) ?? {
+        productionKg: 0,
+        expeditionKg: 0,
+        totalOrders: 0,
+      };
+      current.totalOrders += 1;
+      pointMap.set(order.deliveryDate, current);
+    });
+
+    const dateKeys =
+      scope.mode === "all"
+        ? Array.from(pointMap.keys()).sort((a, b) => a.localeCompare(b)).slice(-7)
+        : scope.mode === "day"
+          ? [scope.date]
+          : buildDateRange(scope.startDate, scope.endDate);
+
+    return dateKeys.map((dateKey) => {
+      const point = pointMap.get(dateKey) ?? {
+        productionKg: 0,
+        expeditionKg: 0,
+        totalOrders: 0,
+      };
+
+      return {
+        dateKey,
+        label: formatShortDate(dateKey),
+        productionKg: point.productionKg,
+        expeditionKg: point.expeditionKg,
+        totalOrders: point.totalOrders,
+      };
+    });
+  }, [planningData.expedition, planningData.orders, planningData.productionOrders, scope]);
 
   const trendMaxKg = useMemo(
     () =>
@@ -501,22 +507,16 @@ export default function AdministradorPage() {
       badge="Governança"
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Administrador" }]}
     >
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Referência Operacional</CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Data de referência
-            </span>
-            <input
-              type="date"
-              value={referenceDate}
-              onChange={(event) => handleReferenceDateChange(event.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-            />
-          </div>
-        </CardHeader>
-      </Card>
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela executiva"
+        description="Use um recorte global para comparar demanda, produção, expedição e entrega sem disparar várias leituras extras."
+      />
 
       <motion.div
         initial={{ opacity: 0 }}
@@ -558,11 +558,20 @@ export default function AdministradorPage() {
       >
         <Card>
           <CardHeader>
-            <CardTitle>Tendência de Carga (7 dias)</CardTitle>
+            <CardTitle>
+              {scope.mode === "all"
+                ? "Tendência de Carga (últimos 7 dias ativos)"
+                : scope.mode === "day"
+                  ? "Tendência de Carga (dia selecionado)"
+                  : `Tendência de Carga (${loadTrend.length} dias)`}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-lg border border-border/70 bg-panel/45 p-4">
-              <div className="grid h-52 grid-cols-7 items-end gap-3">
+              <div
+                className="grid h-52 items-end gap-3"
+                style={{ gridTemplateColumns: `repeat(${Math.max(loadTrend.length, 1)}, minmax(0, 1fr))` }}
+              >
                 {loadTrend.map((point) => {
                   const productionHeight =
                     point.productionKg > 0
@@ -572,7 +581,7 @@ export default function AdministradorPage() {
                     point.expeditionKg > 0
                       ? Math.max((point.expeditionKg / trendMaxKg) * 100, 4)
                       : 0;
-                  const isReference = point.dateKey === referenceDate;
+                  const isReference = point.dateKey === anchorDate;
 
                   return (
                     <div key={point.dateKey} className="flex flex-col items-center gap-2">
@@ -714,48 +723,52 @@ export default function AdministradorPage() {
           <CardTitle>Carga por Categoria da Fábrica</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-xl border border-border/75">
-            <table className="w-full min-w-[680px] border-collapse">
-              <thead className="bg-panel">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Categoria</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OPs</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Carga (Kg)</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Utilização média</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OPs críticas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sectorSummary.map((sector) => (
-                  <tr key={sector.sectorName}>
-                    <td className="border-t border-border/70 bg-card px-3 py-2 text-sm font-medium text-foreground">
-                      {sector.sectorName}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
-                      {sector.ops}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
-                      {sector.totalKg}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
-                      {sector.averageUtilization}%
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-3 py-2 text-sm">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          sector.criticalOps > 0
-                            ? "bg-danger/40 text-danger-foreground"
-                            : "bg-success/35 text-success-foreground"
-                        }`}
-                      >
-                        {sector.criticalOps}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedSection items={sectorSummary} label="categorias" initialPageSize={6}>
+            {(paginatedSectors) => (
+              <div className="overflow-x-auto rounded-xl border border-border/75">
+                <table className="w-full min-w-[680px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Categoria</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OPs</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Carga (Kg)</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Utilização média</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OPs críticas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedSectors.map((sector) => (
+                      <tr key={sector.sectorName}>
+                        <td className="border-t border-border/70 bg-card px-3 py-2 text-sm font-medium text-foreground">
+                          {sector.sectorName}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
+                          {sector.ops}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
+                          {sector.totalKg}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
+                          {sector.averageUtilization}%
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-3 py-2 text-sm">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              sector.criticalOps > 0
+                                ? "bg-danger/40 text-danger-foreground"
+                                : "bg-success/35 text-success-foreground"
+                            }`}
+                          >
+                            {sector.criticalOps}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
         </CardContent>
       </Card>
 

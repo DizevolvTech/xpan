@@ -2,9 +2,11 @@ import "server-only";
 
 import type { ProductionItemStatus } from "@/lib/order-planning";
 import { productionStageProgress } from "@/lib/order-planning";
+import { canTransitionProductionItemStatus } from "@/lib/production-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   assertSupabaseResult,
+  isSupabaseMissingSchemaError,
   isUuid,
   resolveProfileDatabaseId,
   type SupabaseDataClient,
@@ -24,9 +26,13 @@ export async function getPersistedWorkflowState(
     supabase.from("store_orders").select("id, legacy_id"),
   ]);
 
-  const releaseRows = assertSupabaseResult(releasesResult, "Failed to load workflow releases");
-  const statusRows = assertSupabaseResult(statusesResult, "Failed to load workflow statuses");
   const orderRows = assertSupabaseResult(ordersResult, "Failed to load order ids");
+  const releaseRows = isSupabaseMissingSchemaError(releasesResult.error, ["workflow_order_releases"])
+    ? []
+    : assertSupabaseResult(releasesResult, "Failed to load workflow releases");
+  const statusRows = isSupabaseMissingSchemaError(statusesResult.error, ["workflow_production_items"])
+    ? []
+    : assertSupabaseResult(statusesResult, "Failed to load workflow statuses");
 
   const orderLegacyById = new Map(orderRows.map((row) => [row.id, row.legacy_id ?? row.id]));
 
@@ -79,6 +85,21 @@ export async function updateProductionItemStatus(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
+  const currentResult = await supabase
+    .from("workflow_production_items")
+    .select("status")
+    .eq("production_item_key", productionItemKey)
+    .maybeSingle();
+  const currentRow = assertSupabaseResult(
+    { data: currentResult.data, error: currentResult.error },
+    "Failed to load current production item status",
+  );
+  const currentStatus = currentRow?.status ?? "nao_iniciado";
+
+  if (!canTransitionProductionItemStatus(currentStatus, status)) {
+    throw new Error("Invalid production workflow transition");
+  }
+
   const upsertResult = await supabase.from("workflow_production_items").upsert(
     {
       production_item_key: productionItemKey,

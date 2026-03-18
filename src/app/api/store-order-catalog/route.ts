@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, buildStoreScopeResponse, canAccessStore, getAllowedStoreIds } from "@/lib/api-auth";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
 export async function GET(request: Request) {
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
       return buildStoreScopeResponse();
     }
 
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const snapshot = await getMasterDataSnapshot({
       supabase,
       includeProfileNames: false,

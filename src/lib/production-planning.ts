@@ -61,6 +61,7 @@ export interface RecipeIngredientReference {
 export interface ProductionIngredient {
   id: string;
   code: string;
+  externalCode?: string;
   name: string;
   type: IngredientType;
   unit: UnitCode;
@@ -86,6 +87,8 @@ export interface StoreMasterData {
   receiveWindow: string;
   orderingDays: ProductionWeekDay[];
   receivingDays: ProductionWeekDay[];
+  orderingBlockedDays: ProductionWeekDay[];
+  receivingBlockedDays: ProductionWeekDay[];
 }
 
 export interface ProductionSector {
@@ -110,9 +113,12 @@ export interface ProductionLine {
 export interface ProductionProduct {
   id: string;
   code: string;
+  externalCode?: string;
   name: string;
   description: string;
   lineId: string;
+  masterLineId?: string;
+  operationalLineId?: string;
   active: boolean;
   availableForOrdering: boolean;
   validityDays: number;
@@ -120,6 +126,7 @@ export interface ProductionProduct {
   economicProductionKg: number;
   allowsStorage: boolean;
   productionDays: ProductionWeekDay[];
+  saleLeadDays?: number;
   unitProfiles: {
     sales: ProductUnitProfile;
     production: ProductUnitProfile;
@@ -266,6 +273,7 @@ export const productionIngredients: ProductionIngredient[] = [
     observation: "",
     composition: [],
     status: "ativo",
+    externalCode: undefined,
   },
   {
     id: "ing-acucar",
@@ -383,6 +391,8 @@ export const storesMasterData: StoreMasterData[] = [
     receiveWindow: "07:00 - 10:00",
     orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
     receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
   },
   {
     id: "store-02",
@@ -395,6 +405,8 @@ export const storesMasterData: StoreMasterData[] = [
     receiveWindow: "08:00 - 11:00",
     orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"],
     receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
   },
   {
     id: "store-03",
@@ -407,6 +419,8 @@ export const storesMasterData: StoreMasterData[] = [
     receiveWindow: "06:30 - 09:00",
     orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
     receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
   },
 ];
 
@@ -1161,7 +1175,7 @@ function sortProductionDays(days: ProductionWeekDay[]) {
 
 function buildDerivedScheduleItems(lineId: string, products = productionProducts): WeeklyScheduleItem[] {
   return products
-    .filter((product) => product.lineId === lineId && product.active)
+    .filter((product) => (product.operationalLineId ?? product.lineId) === lineId && product.active)
     .map((product) => ({
       id: `item-${lineId}-${product.id}`,
       productId: product.id,
@@ -1180,12 +1194,15 @@ export function getLinesBySector(sectorId: string) {
 }
 
 export function getProductsByLine(lineId: string) {
-  return productionProducts.filter((product) => product.lineId === lineId);
+  return productionProducts.filter((product) => (product.operationalLineId ?? product.lineId) === lineId);
 }
 
 export function getOrderableProductsByLine(lineId: string) {
   return productionProducts.filter(
-    (product) => product.lineId === lineId && product.active && product.availableForOrdering,
+    (product) =>
+      (product.operationalLineId ?? product.lineId) === lineId &&
+      product.active &&
+      product.availableForOrdering,
   );
 }
 
@@ -1207,11 +1224,29 @@ export function getPlannedDaysCount(schedule: WeeklyProductionSchedule) {
 }
 
 export function getStoreReceivesSunday(store: Pick<StoreMasterData, "receivingDays">) {
-  return store.receivingDays.includes("domingo");
+  return (store.receivingDays ?? []).includes("domingo");
 }
 
 export function getStoreCanOrderSunday(store: Pick<StoreMasterData, "orderingDays">) {
-  return store.orderingDays.includes("domingo");
+  return (store.orderingDays ?? []).includes("domingo");
+}
+
+export function getEnabledOrderingDays(
+  store: Pick<StoreMasterData, "orderingDays" | "orderingBlockedDays">,
+) {
+  const orderingDays = store.orderingDays ?? [];
+  const blockedDays = store.orderingBlockedDays ?? [];
+
+  return orderingDays.filter((day) => !blockedDays.includes(day));
+}
+
+export function getEnabledReceivingDays(
+  store: Pick<StoreMasterData, "receivingDays" | "receivingBlockedDays">,
+) {
+  const receivingDays = store.receivingDays ?? [];
+  const blockedDays = store.receivingBlockedDays ?? [];
+
+  return receivingDays.filter((day) => !blockedDays.includes(day));
 }
 
 function convertKnownUnitToKg(quantity: number, unit: UnitCode): number {

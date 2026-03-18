@@ -91,6 +91,8 @@ export async function buildFactoryInputFromDb(
       name: store.name,
       orderingDays: store.orderingDays,
       receivingDays: store.receivingDays,
+      orderingBlockedDays: store.orderingBlockedDays,
+      receivingBlockedDays: store.receivingBlockedDays,
       receiveWindow: store.receiveWindow,
     })),
     storeOrders,
@@ -128,6 +130,8 @@ export async function createStoreOrder(
     name: store.name,
     orderingDays: store.orderingDays,
     receivingDays: store.receivingDays,
+    orderingBlockedDays: store.orderingBlockedDays,
+    receivingBlockedDays: store.receivingBlockedDays,
     receiveWindow: store.receiveWindow,
   }, snapshot.operationalSettings);
   const availableCatalog = buildStoreOrderCatalog(snapshot, {

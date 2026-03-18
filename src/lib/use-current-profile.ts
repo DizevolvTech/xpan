@@ -6,6 +6,7 @@ type CurrentProfile = {
   id: string;
   name: string;
   email: string;
+  role: "administrador" | "gestor-dados" | "gestor-fabrica" | "chao-fabrica" | "loja";
   avatarUrl: string;
   phone: string;
   address: {
@@ -18,6 +19,7 @@ type CurrentProfile = {
     zipCode: string;
   };
   passwordUpdatedAt: string;
+  allowedStoreIds: string[];
 };
 
 export function useCurrentProfile() {

@@ -1,25 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+import { useMemo } from "react";
 import { ArrowLeft, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
 
 import { FactoryFlow } from "@/components/shared/factory-flow";
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
-import { formatDateKeyBr, getTodayDateKey } from "@/lib/order-planning";
+import { formatDateKeyBr } from "@/lib/order-planning";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
-
-function sanitizeDateKey(raw: string | null) {
-  if (!raw) {
-    return getTodayDateKey();
-  }
-  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
-}
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -27,10 +23,9 @@ function openPrintPage(pathname: string) {
 
 export default function PedidoDetailsPage() {
   const params = useParams<{ orderId: string }>();
-  const searchParams = useSearchParams();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
-  const [referenceDate, setReferenceDate] = useState(() => sanitizeDateKey(searchParams.get("ref")));
-  const { planningData, releaseOrder } = useFactoryPlanningSnapshot(referenceDate);
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const { planningData, releaseOrder } = useFactoryPlanningSnapshot(anchorDate);
 
   const order = useMemo(
     () => planningData.orders.find((item) => item.id === orderId) ?? null,
@@ -120,7 +115,7 @@ export default function PedidoDetailsPage() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${referenceDate}`)}
+            onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${anchorDate}`)}
           >
             <Printer className="size-4" />
             Folha da Loja
@@ -140,22 +135,22 @@ export default function PedidoDetailsPage() {
         </div>
       }
     >
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela do pedido"
+        description="O pedido continua aberto pelo identificador, mas o contexto temporal do fluxo segue o recorte global da operação."
+      />
+
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader>
           <CardTitle>Resumo do Pedido</CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Referência da fábrica
-            </span>
-            <input
-              type="date"
-              value={referenceDate}
-              onChange={(event) => setReferenceDate(event.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground"
-            />
-          </div>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-7">
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Pedido</p>
             <p className="mt-1 text-sm font-semibold">{order.code}</p>
@@ -182,18 +177,18 @@ export default function PedidoDetailsPage() {
               <StatusBadge status={order.status} />
             </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 sm:col-span-2 lg:col-span-1 xl:col-span-1">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Liberação</p>
             <Button
               type="button"
-              className="w-full"
+              className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
               disabled={!order.availableForRelease || order.releasedToProduction}
               onClick={() => void releaseOrder(order.id)}
             >
               {order.releasedToProduction ? "Pedido liberado" : "Liberar para produção"}
             </Button>
           </div>
-          <div className="md:col-span-7">
+          <div className="sm:col-span-2 lg:col-span-3 xl:col-span-7">
             <div className="rounded-md border border-border/70 bg-panel/40 px-3 py-2 text-sm text-muted-foreground">
               Progresso derivado: <strong>{order.workflowProgress.toFixed(1)}%</strong>. O pedido só sobe para expedição quando todos os produtos da OP concluírem.
             </div>
@@ -212,42 +207,48 @@ export default function PedidoDetailsPage() {
           <CardTitle>Itens Consolidados do Pedido</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[980px] border-collapse">
-              <thead className="bg-panel">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {aggregatedOrderItems.map((item) => (
-                  <tr key={item.aggregationKey}>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.productCode} · {item.productName}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.requestedQuantity} {item.requestedUnit}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.scheduleName}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      <StatusBadge status={item.status} />
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.opCode ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedSection items={aggregatedOrderItems} label="itens consolidados" initialPageSize={8}>
+            {(paginatedItems) => (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[980px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map((item) => (
+                      <tr key={item.aggregationKey}>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.productCode} · {item.productName}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.requestedQuantity} {item.requestedUnit}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.scheduleName}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          <StatusBadge status={item.status} />
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.opCode ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
         </CardContent>
       </Card>
 
@@ -256,34 +257,40 @@ export default function PedidoDetailsPage() {
           <CardTitle>Itens Originais do Pedido</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[760px] border-collapse">
-              <thead className="bg-panel">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orderItems.map((item) => (
-                  <tr key={item.id}>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.productCode} · {item.productName}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      {item.requestedQuantity} {item.requestedUnit}
-                    </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                      <StatusBadge status={item.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PaginatedSection items={orderItems} label="itens originais" initialPageSize={8}>
+            {(paginatedItems) => (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[760px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map((item) => (
+                      <tr key={item.id}>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.productCode} · {item.productName}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.requestedQuantity} {item.requestedUnit}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          <StatusBadge status={item.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
         </CardContent>
       </Card>
 
@@ -295,36 +302,40 @@ export default function PedidoDetailsPage() {
           {relatedOps.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhuma OP gerada. Libere o pedido para produção.</p>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-border/80">
-              <table className="w-full min-w-[860px] border-collapse">
-                <thead className="bg-panel">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {relatedOps.map((op) => (
-                    <tr key={op.id}>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.code}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.productionDateLabel}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.scheduleName}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.totalKg}</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.progress.toFixed(1)}%</td>
-                      <td className="border-t border-border/70 bg-card px-4 py-3">
-                        <Button asChild type="button" size="sm" variant="ghost">
-                          <Link href={`/gestor-fabrica/ordens-producao/${op.id}?ref=${referenceDate}`}>Abrir</Link>
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <PaginatedSection items={relatedOps} label="OPs relacionadas" initialPageSize={6}>
+              {(paginatedOps) => (
+                <div className="overflow-x-auto rounded-xl border border-border/80">
+                  <table className="w-full min-w-[860px] border-collapse">
+                    <thead className="bg-panel">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedOps.map((op) => (
+                        <tr key={op.id}>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.code}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.productionDateLabel}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.scheduleName}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.totalKg}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.progress.toFixed(1)}%</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3">
+                            <Button asChild type="button" size="sm" variant="ghost">
+                              <Link href={`/gestor-fabrica/ordens-producao/${op.id}?ref=${anchorDate}`}>Abrir</Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedSection>
           )}
         </CardContent>
       </Card>

@@ -4,7 +4,22 @@ import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import { createStoreOccurrence, listStoreOccurrences } from "@/lib/supabase-data/store-occurrences";
 
-export async function GET() {
+function resolveScopedStoreIds(
+  allowedStoreIds: string[] | null | undefined,
+  requestedStoreId?: string,
+) {
+  if (!requestedStoreId) {
+    return allowedStoreIds;
+  }
+
+  if (!allowedStoreIds || allowedStoreIds.length === 0) {
+    return [requestedStoreId];
+  }
+
+  return allowedStoreIds.includes(requestedStoreId) ? [requestedStoreId] : [];
+}
+
+export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
     permission: "loja.ocorrencias",
     minimumLevel: "operar",
@@ -16,8 +31,11 @@ export async function GET() {
 
   try {
     const supabase = await createSupabaseServerClient();
+    const { searchParams } = new URL(request.url);
+    const storeId = searchParams.get("storeId") ?? undefined;
+    const allowedStoreIds = getAllowedStoreIds(authorization.user);
     const occurrences = await listStoreOccurrences({
-      allowedStoreIds: getAllowedStoreIds(authorization.user),
+      allowedStoreIds: resolveScopedStoreIds(allowedStoreIds, storeId),
     }, supabase);
     return NextResponse.json(occurrences);
   } catch (error) {
@@ -42,7 +60,7 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as Parameters<typeof createStoreOccurrence>[0];
-    await createStoreOccurrence(
+    const occurrence = await createStoreOccurrence(
       {
         ...body,
         openedByProfileId: authorization.user.id,
@@ -51,7 +69,7 @@ export async function POST(request: Request) {
         allowedStoreIds: getAllowedStoreIds(authorization.user),
       },
     );
-    return NextResponse.json({ ok: true }, { status: 201 });
+    return NextResponse.json(occurrence, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "Authenticated store does not have access to this order") {
       return NextResponse.json(

@@ -29,6 +29,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import type { ProductionSector } from "@/lib/production-planning";
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 
 type SetorRow = ProductionSector & {
   lines: number;
@@ -55,8 +56,14 @@ export default function SetoresPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSetor, setEditingSetor] = useState<SetorRow | null>(null);
   const [formState, setFormState] = useState<CategoryFormState>(() => buildFormState());
+  const [formBaseline, setFormBaseline] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const formDirty = isDialogOpen && JSON.stringify(formState) !== formBaseline;
+  const formGuard = useUnsavedChangesGuard({
+    enabled: isDialogOpen,
+    isDirty: formDirty,
+  });
 
   const setorRows = useMemo<SetorRow[]>(
     () =>
@@ -102,7 +109,9 @@ export default function SetoresPage() {
       label: "Editar",
       onClick: (item: SetorRow) => {
         setEditingSetor(item);
-        setFormState(buildFormState(item));
+        const nextFormState = buildFormState(item);
+        setFormState(nextFormState);
+        setFormBaseline(JSON.stringify(nextFormState));
         setFormError(null);
         setIsDialogOpen(true);
       },
@@ -111,7 +120,9 @@ export default function SetoresPage() {
 
   function openNewCategory() {
     setEditingSetor(null);
-    setFormState(buildFormState());
+    const nextFormState = buildFormState();
+    setFormState(nextFormState);
+    setFormBaseline(JSON.stringify(nextFormState));
     setFormError(null);
     setIsDialogOpen(true);
   }
@@ -198,6 +209,7 @@ export default function SetoresPage() {
             columns={columns}
             actions={actions}
             keyField="id"
+            onRowClick={(item) => router.push(`/gestor-dados/setores/${item.id}`)}
             stickyHeader
             emptyMessage={isLoading ? "Carregando categorias..." : "Nenhuma categoria encontrada"}
           />
@@ -207,10 +219,13 @@ export default function SetoresPage() {
       <Dialog
         open={isDialogOpen}
         onOpenChange={(open) => {
-          setIsDialogOpen(open);
           if (!open) {
+            if (!formGuard.confirmIfNeeded()) {
+              return;
+            }
             setFormError(null);
           }
+          setIsDialogOpen(open);
         }}
       >
         <DialogContent size="lg">
@@ -221,6 +236,11 @@ export default function SetoresPage() {
             {formError ? (
               <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
                 {formError}
+              </div>
+            ) : null}
+            {formDirty ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                Existem alterações pendentes nesta categoria.
               </div>
             ) : null}
             <div className="grid gap-2">
@@ -271,7 +291,17 @@ export default function SetoresPage() {
             ) : null}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!formGuard.confirmIfNeeded()) {
+                  return;
+                }
+                setIsDialogOpen(false);
+              }}
+              disabled={isSubmitting}
+            >
               Cancelar
             </Button>
             <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>

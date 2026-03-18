@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Box, Clock3, Plus, Trash2 } from "lucide-react";
+import { Box, ChevronDown, ChevronUp, Clock3, Plus, Trash2 } from "lucide-react";
 
 import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
 import { IngredientProfileFields } from "@/components/production/ingredient-profile-fields";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -44,17 +45,25 @@ import {
   type ProductionProduct,
   type RecipeIngredientReference,
 } from "@/lib/production-planning";
+import {
+  getOperationalUnitLabel,
+  getOperationalUnitOptions,
+  preferredOperationalUnits,
+} from "@/lib/operational-units";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 
 type ProductRow = ProductionProduct & {
   lineName: string;
+  operationalLineName: string;
   sectorName: string;
   validityLabel: string;
   productionDaysLabel: string;
 };
 
 type ProductFormState = ProductionProduct;
+type ProductDialogMode = "view" | "edit";
 
 type LineDraftState = {
   name: string;
@@ -70,8 +79,6 @@ type RecipeSourceOption = {
   sourceType: RecipeIngredientReference["sourceType"];
 };
 
-const unitOptions = ["Kg", "Un", "Forma", "Assadeira", "Bandeja", "Pacote", "Caixa", "Travessa", "L", "g"] as const;
-const packagingUnitOptions = ["Kg", "Un", "Pacote", "Caixa", "Bandeja"] as const;
 const breakStageLabels: Record<BreakStage, string> = {
   antes_divisao: "Antes da divisão",
   depois_divisao: "Depois da divisão",
@@ -100,6 +107,7 @@ function buildProductFormState(lines: ProductionLine[], product?: ProductRow | n
       packagingProfile: product.packagingProfile ? { ...product.packagingProfile } : undefined,
       ingredientProfile: product.ingredientProfile ? { ...product.ingredientProfile } : undefined,
       productionDays: [...product.productionDays],
+      saleLeadDays: product.saleLeadDays ?? 0,
     };
   }
 
@@ -107,6 +115,7 @@ function buildProductFormState(lines: ProductionLine[], product?: ProductRow | n
   return {
     id: `product-${Date.now()}`,
     code: `PR-${String(Date.now()).slice(-5)}`,
+    externalCode: "",
     name: "",
     description: "",
     lineId: defaultLine?.id ?? "",
@@ -117,6 +126,7 @@ function buildProductFormState(lines: ProductionLine[], product?: ProductRow | n
     economicProductionKg: 140,
     allowsStorage: false,
     productionDays: ["segunda", "quarta", "sexta"],
+    saleLeadDays: 0,
     unitProfiles: {
       sales: createUnitProfile("Kg", "Unidade de venda", 1),
       production: createUnitProfile("Kg", "Unidade de produção", 1),
@@ -161,12 +171,32 @@ function buildLineDraft(sectorId: string): LineDraftState {
   };
 }
 
-function getPackagingUnitsForSalesUnit(unit: ProductUnitProfile["unit"]): ProductUnitProfile["unit"][] {
-  if (unit === "Kg") {
-    return ["Un", "Kg"];
+function getPackagingUnitsForSalesUnit(
+  unit: ProductUnitProfile["unit"],
+  currentPackagingUnit?: ProductUnitProfile["unit"],
+): ProductUnitProfile["unit"][] {
+  const baseUnits: ProductUnitProfile["unit"][] =
+    unit === "Kg" ? ["Kg", "Un"] : [...preferredOperationalUnits];
+  const options = [...baseUnits];
+
+  if (currentPackagingUnit && !options.includes(currentPackagingUnit)) {
+    options.push(currentPackagingUnit);
   }
 
-  return [...packagingUnitOptions];
+  return options;
+}
+
+function calculateQuantityPerPackage(unitWeightKg: number, packagingWeightKg: number) {
+  if (
+    !Number.isFinite(unitWeightKg) ||
+    unitWeightKg <= 0 ||
+    !Number.isFinite(packagingWeightKg) ||
+    packagingWeightKg <= 0
+  ) {
+    return 0;
+  }
+
+  return Number((packagingWeightKg / unitWeightKg).toFixed(3));
 }
 
 export default function ProdutosPage() {
@@ -175,13 +205,29 @@ export default function ProdutosPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
+  const [dialogMode, setDialogMode] = useState<ProductDialogMode>("edit");
   const [formState, setFormState] = useState<ProductFormState>(() => buildProductFormState([]));
+  const [formBaseline, setFormBaseline] = useState("");
   const [lineDraft, setLineDraft] = useState<LineDraftState>(() => buildLineDraft(""));
   const [draftRecipeSourceId, setDraftRecipeSourceId] = useState("");
   const [draftRecipeQuantity, setDraftRecipeQuantity] = useState("");
   const [draftRecipeUnit, setDraftRecipeUnit] = useState<RecipeIngredientReference["unit"]>("Kg");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isReadOnly = dialogMode === "view";
+  const formDirty =
+    isDialogOpen &&
+    !isReadOnly &&
+    JSON.stringify({
+      formState,
+      draftRecipeSourceId,
+      draftRecipeQuantity,
+      draftRecipeUnit,
+    }) !== formBaseline;
+  const formGuard = useUnsavedChangesGuard({
+    enabled: isDialogOpen && !isReadOnly,
+    isDirty: formDirty,
+  });
 
   const sectorNameById = useMemo(
     () => new Map(snapshot.sectors.map((sector) => [sector.id, sector.name])),
@@ -192,12 +238,18 @@ export default function ProdutosPage() {
     () =>
       snapshot.products.map((product) => {
         const line = snapshot.lines.find((item) => item.id === product.lineId);
+        const operationalLine = snapshot.lines.find((item) => item.id === product.operationalLineId);
         return {
           ...product,
           lineName: line?.name ?? "-",
+          operationalLineName: operationalLine?.name ?? (product.operationalLineId ? "-" : "Fora da carteira operacional"),
           sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
           validityLabel: `${product.validityDays} dias`,
-          productionDaysLabel: product.productionDays.map((day) => day.slice(0, 3)).join(" · "),
+          productionDaysLabel: `${product.productionDays.map((day) => day.slice(0, 3)).join(" · ")} · ${
+            (product.saleLeadDays ?? 0) === 0
+              ? "venda no receb."
+              : `venda +${product.saleLeadDays}d`
+          }`,
         };
       }),
     [sectorNameById, snapshot.lines, snapshot.products],
@@ -209,7 +261,9 @@ export default function ProdutosPage() {
         (item) =>
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.lineName.toLowerCase().includes(searchTerm.toLowerCase()),
+          (item.externalCode ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.lineName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.operationalLineName.toLowerCase().includes(searchTerm.toLowerCase()),
       ),
     [productRows, searchTerm],
   );
@@ -240,8 +294,27 @@ export default function ProdutosPage() {
     [formState, snapshot.ingredients, snapshot.products],
   );
   const availablePackagingUnits = useMemo(
-    () => getPackagingUnitsForSalesUnit(formState.unitProfiles.sales.unit),
-    [formState.unitProfiles.sales.unit],
+    () => getPackagingUnitsForSalesUnit(formState.unitProfiles.sales.unit, formState.packagingProfile?.unit),
+    [formState.packagingProfile?.unit, formState.unitProfiles.sales.unit],
+  );
+  const productUnitOptions = useMemo(
+    () =>
+      getOperationalUnitOptions(
+        formState.unitProfiles.sales.unit,
+        formState.unitProfiles.production.unit,
+        formState.unitProfiles.expedition.unit,
+        formState.ingredientProfile?.unit,
+        draftRecipeUnit,
+        ...formState.recipe.map((item) => item.unit),
+      ),
+    [
+      draftRecipeUnit,
+      formState.ingredientProfile?.unit,
+      formState.recipe,
+      formState.unitProfiles.expedition.unit,
+      formState.unitProfiles.production.unit,
+      formState.unitProfiles.sales.unit,
+    ],
   );
   const currentPackagingUnit = useMemo(
     () =>
@@ -251,6 +324,24 @@ export default function ProdutosPage() {
     [availablePackagingUnits, formState.packagingProfile?.unit],
   );
   const packagingWeightLockedToKg = currentPackagingUnit === "Kg";
+  const calculatedQuantityPerPackage = useMemo(() => {
+    if (formState.isSoldLoose || !formState.packagingProfile) {
+      return 0;
+    }
+
+    const salesWeightKg =
+      formState.unitProfiles.sales.unit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
+    const packagingWeightKg =
+      currentPackagingUnit === "Kg" ? 1 : formState.packagingProfile.weightKg;
+
+    return calculateQuantityPerPackage(salesWeightKg, packagingWeightKg);
+  }, [
+    currentPackagingUnit,
+    formState.isSoldLoose,
+    formState.packagingProfile,
+    formState.unitProfiles.sales.unit,
+    formState.unitProfiles.sales.weightKg,
+  ]);
   const mpiCompositionPreview = useMemo<IngredientCompositionItem[]>(
     () =>
       formState.recipe.map((item) => ({
@@ -267,9 +358,15 @@ export default function ProdutosPage() {
   const yieldPercent = useMemo(() => Math.max(0, Number((100 - formState.breakPercent).toFixed(2))), [formState.breakPercent]);
 
   const columns = [
-    { key: "code", header: "Código" },
+    { key: "code", header: "Código XPAN" },
+    {
+      key: "externalCode",
+      header: "Código ERP",
+      render: (item: ProductRow) => item.externalCode || "-",
+    },
     { key: "name", header: "Nome" },
-    { key: "lineName", header: hierarchyLabels.line },
+    { key: "lineName", header: `${hierarchyLabels.line} Cadastral` },
+    { key: "operationalLineName", header: `${hierarchyLabels.line} Operacional` },
     { key: "sectorName", header: hierarchyLabels.sector },
     {
       key: "active",
@@ -291,8 +388,18 @@ export default function ProdutosPage() {
       icon: "view" as const,
       label: "Visualizar",
       onClick: (item: ProductRow) => {
+        const nextFormState = buildProductFormState(snapshot.lines, item);
+        setDialogMode("view");
         setEditingProduct(item);
-        setFormState(buildProductFormState(snapshot.lines, item));
+        setFormState(nextFormState);
+        setFormBaseline(
+          JSON.stringify({
+            formState: nextFormState,
+            draftRecipeSourceId: "",
+            draftRecipeQuantity: "",
+            draftRecipeUnit: "Kg",
+          }),
+        );
         setFormError(null);
         setIsDialogOpen(true);
       },
@@ -301,8 +408,18 @@ export default function ProdutosPage() {
       icon: "edit" as const,
       label: "Editar",
       onClick: (item: ProductRow) => {
+        const nextFormState = buildProductFormState(snapshot.lines, item);
+        setDialogMode("edit");
         setEditingProduct(item);
-        setFormState(buildProductFormState(snapshot.lines, item));
+        setFormState(nextFormState);
+        setFormBaseline(
+          JSON.stringify({
+            formState: nextFormState,
+            draftRecipeSourceId: "",
+            draftRecipeQuantity: "",
+            draftRecipeUnit: "Kg",
+          }),
+        );
         setFormError(null);
         setIsDialogOpen(true);
       },
@@ -310,12 +427,22 @@ export default function ProdutosPage() {
   ];
 
   function openNewProduct() {
+    setDialogMode("edit");
     setEditingProduct(null);
-    setFormState(buildProductFormState(snapshot.lines));
+    const nextFormState = buildProductFormState(snapshot.lines);
+    setFormState(nextFormState);
     setLineDraft(buildLineDraft(snapshot.sectors[0]?.id ?? ""));
-    setDraftRecipeSourceId(recipeSourceOptions[0]?.id ?? "");
+    setDraftRecipeSourceId("");
     setDraftRecipeQuantity("");
     setDraftRecipeUnit("Kg");
+    setFormBaseline(
+      JSON.stringify({
+        formState: nextFormState,
+        draftRecipeSourceId: "",
+        draftRecipeQuantity: "",
+        draftRecipeUnit: "Kg",
+      }),
+    );
     setFormError(null);
   }
 
@@ -418,6 +545,7 @@ export default function ProdutosPage() {
         },
       ],
     }));
+    setDraftRecipeSourceId("");
     setDraftRecipeQuantity("");
   }
 
@@ -426,6 +554,47 @@ export default function ProdutosPage() {
       ...current,
       recipe: current.recipe.filter((item) => item.id !== recipeId),
     }));
+  }
+
+  function updateRecipeItem(
+    recipeId: string,
+    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit">>,
+  ) {
+    setFormState((current) => ({
+      ...current,
+      recipe: current.recipe.map((item) =>
+        item.id === recipeId
+          ? {
+              ...item,
+              quantity: patch.quantity ?? item.quantity,
+              unit: patch.unit ?? item.unit,
+            }
+          : item,
+      ),
+    }));
+  }
+
+  function moveRecipeItem(recipeId: string, direction: "up" | "down") {
+    setFormState((current) => {
+      const currentIndex = current.recipe.findIndex((item) => item.id === recipeId);
+      if (currentIndex === -1) {
+        return current;
+      }
+
+      const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (nextIndex < 0 || nextIndex >= current.recipe.length) {
+        return current;
+      }
+
+      const nextRecipe = [...current.recipe];
+      const [movedItem] = nextRecipe.splice(currentIndex, 1);
+      nextRecipe.splice(nextIndex, 0, movedItem);
+
+      return {
+        ...current,
+        recipe: nextRecipe,
+      };
+    });
   }
 
   async function handleSaveProduct() {
@@ -460,21 +629,24 @@ export default function ProdutosPage() {
       }
     }
 
-    if (
-      !formState.isSoldLoose &&
-      normalizedPackagingProfile &&
-      (!Number.isFinite(normalizedPackagingProfile.quantityPerPackage) || normalizedPackagingProfile.quantityPerPackage <= 0)
-    ) {
-      setFormError("Informe uma quantidade por embalagem maior que zero.");
-      return;
-    }
-
     const salesWeight = formState.unitProfiles.sales.unit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
     const expeditionWeight =
       formState.unitProfiles.expedition.unit === "Kg" ? 1 : formState.unitProfiles.expedition.weightKg;
+    const normalizedQuantityPerPackage = formState.isSoldLoose
+      ? 0
+      : calculateQuantityPerPackage(
+          salesWeight,
+          normalizedPackagingProfile?.unit === "Kg" ? 1 : normalizedPackagingProfile?.weightKg ?? 0,
+        );
+
+    if (!formState.isSoldLoose && normalizedPackagingProfile && normalizedQuantityPerPackage <= 0) {
+      setFormError("Informe pesos válidos para calcular o conteúdo por embalagem.");
+      return;
+    }
 
     const nextProduct: ProductFormState = {
       ...formState,
+      saleLeadDays: Math.max(0, Math.round(formState.saleLeadDays ?? 0)),
       salesUnit: formState.unitProfiles.sales.unit,
       productionUnit: formState.unitProfiles.production.unit,
       expeditionUnit: formState.unitProfiles.expedition.unit,
@@ -486,6 +658,7 @@ export default function ProdutosPage() {
         ? {
             ...normalizedPackagingProfile,
             weightKg: normalizedPackagingProfile.unit === "Kg" ? 1 : normalizedPackagingProfile.weightKg,
+            quantityPerPackage: normalizedQuantityPerPackage,
           }
         : undefined,
     };
@@ -596,10 +769,13 @@ export default function ProdutosPage() {
           <Dialog
             open={isDialogOpen}
             onOpenChange={(open) => {
-              setIsDialogOpen(open);
               if (!open) {
+                if (!formGuard.confirmIfNeeded()) {
+                  return;
+                }
                 setFormError(null);
               }
+              setIsDialogOpen(open);
             }}
           >
             <DialogTrigger asChild>
@@ -611,16 +787,32 @@ export default function ProdutosPage() {
             <DialogContent size="3xl" className="max-h-[92vh] overflow-y-auto rounded-[28px] bg-white p-5 sm:max-w-[1080px]">
               <DialogHeader>
                 <DialogTitle className="text-xl">
-                  {editingProduct ? "Editar Produto" : "Cadastrar Novo Produto"}
+                  {!editingProduct
+                    ? "Cadastrar Novo Produto"
+                    : isReadOnly
+                      ? "Visualizar Produto"
+                      : "Editar Produto"}
                 </DialogTitle>
                 <DialogDescription>
-                  Preencha dados, engenharia, receita, cronograma e reaproveitamento MPI no mesmo cadastro.
+                  {isReadOnly
+                    ? "Consulte dados, engenharia, receita, cronograma e reaproveitamento MPI sem alterar o cadastro."
+                    : "Preencha dados, engenharia, receita, cronograma e reaproveitamento MPI no mesmo cadastro."}
                 </DialogDescription>
               </DialogHeader>
 
               {formError ? (
                 <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
                   {formError}
+                </div>
+              ) : null}
+              {isReadOnly ? (
+                <div className="rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground">
+                  Modo visualização: use o lápis para editar este produto.
+                </div>
+              ) : null}
+              {formDirty ? (
+                <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                  Existem alterações pendentes neste produto.
                 </div>
               ) : null}
 
@@ -632,15 +824,16 @@ export default function ProdutosPage() {
                   <TabsTrigger value="mpi">Produto como MPI</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="cadastro" className="space-y-5">
+                <TabsContent value="cadastro">
+                  <fieldset disabled={isReadOnly} className="space-y-5">
                   <section className="space-y-4 rounded-xl border border-border/80 p-4">
                     <div>
                       <h3 className="text-sm font-semibold text-foreground">Dados do Produto</h3>
                       <p className="text-xs text-muted-foreground">
-                        Nome, código, descrição e vínculo com a linha principal de produção.
+                        Nome, código XPAN, código ERP, descrição e vínculo com a linha principal de produção.
                       </p>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-4 md:grid-cols-3">
                       <div className="grid gap-2">
                         <Label htmlFor="product-name">Nome do Produto *</Label>
                         <Input
@@ -653,10 +846,21 @@ export default function ProdutosPage() {
                         />
                       </div>
                       <div className="grid gap-2">
-                        <Label>Código</Label>
+                        <Label>Código XPAN</Label>
                         <Input value={formState.code} disabled className="bg-muted" />
                       </div>
-                      <div className="grid gap-2 md:col-span-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="product-external-code">Código ERP</Label>
+                        <Input
+                          id="product-external-code"
+                          value={formState.externalCode ?? ""}
+                          onChange={(event) =>
+                            setFormState((current) => ({ ...current, externalCode: event.target.value }))
+                          }
+                          placeholder="Código externo do ERP"
+                        />
+                      </div>
+                      <div className="grid gap-2 md:col-span-3">
                         <Label>Descrição</Label>
                         <Input
                           value={formState.description}
@@ -670,7 +874,7 @@ export default function ProdutosPage() {
 
                     <div className="grid gap-4 md:grid-cols-[1fr_auto]">
                       <div className="grid gap-2">
-                        <Label>{hierarchyLabels.line} *</Label>
+                        <Label>{hierarchyLabels.line} Cadastral *</Label>
                         <Select
                           value={formState.lineId}
                           onValueChange={(value) =>
@@ -688,6 +892,9 @@ export default function ProdutosPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                        <p className="text-xs text-muted-foreground">
+                          A carteira operacional do cronograma passa a ser gerenciada dentro da tela da subcategoria.
+                        </p>
                       </div>
                       <div className="flex items-end">
                         <Dialog
@@ -806,98 +1013,6 @@ export default function ProdutosPage() {
 
                   <section className="space-y-4 rounded-xl border border-border/80 p-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-foreground">Quebra e Rendimento</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Controle a quebra principal do produto e acompanhe o rendimento líquido estimado.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-4 lg:grid-cols-[1.2fr_320px]">
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2">
-                          <Label>Quebra (%)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={formState.breakPercent}
-                            onChange={(event) =>
-                              setFormState((current) => ({
-                                ...current,
-                                breakPercent: Number(event.target.value),
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Validade (dias)</Label>
-                          <Input
-                            type="number"
-                            value={formState.validityDays}
-                            onChange={(event) =>
-                              setFormState((current) => ({
-                                ...current,
-                                validityDays: Number(event.target.value),
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Produção mínima (Kg)</Label>
-                          <Input
-                            type="number"
-                            value={formState.minimumProductionKg}
-                            onChange={(event) =>
-                              setFormState((current) => ({
-                                ...current,
-                                minimumProductionKg: Number(event.target.value),
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="grid gap-2 md:col-span-2">
-                          <Label>Produção econômica (Kg)</Label>
-                          <Input
-                            type="number"
-                            value={formState.economicProductionKg}
-                            onChange={(event) =>
-                              setFormState((current) => ({
-                                ...current,
-                                economicProductionKg: Number(event.target.value),
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="flex items-end">
-                          <div className="flex items-center gap-2 pb-2">
-                            <Checkbox
-                              id="storage"
-                              checked={formState.allowsStorage}
-                              onCheckedChange={(checked) =>
-                                setFormState((current) => ({
-                                  ...current,
-                                  allowsStorage: checked === true,
-                                }))
-                              }
-                            />
-                            <Label htmlFor="storage">Permite armazenamento?</Label>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                          Rendimento (%)
-                        </p>
-                        <p className="mt-2 text-3xl font-semibold text-emerald-900">{yieldPercent.toFixed(2)}</p>
-                        <p className="mt-2 text-xs text-emerald-800">
-                          Campo de destaque para o rendimento líquido após a quebra principal informada.
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
-                    <div>
                       <h3 className="text-sm font-semibold text-foreground">Resumo Operacional</h3>
                       <p className="text-xs text-muted-foreground">
                         Conversões principais usadas no planejamento e na expedição deste produto.
@@ -907,7 +1022,7 @@ export default function ProdutosPage() {
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="grid gap-2">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                          Venda
+                          Peso final de venda
                         </p>
                         <div className="rounded-lg border border-border/70 bg-panel/25 px-3 py-3 text-sm text-foreground">
                           {formState.unitProfiles.sales.unit} · {formState.salesToKgFactor.toFixed(3)} Kg
@@ -972,11 +1087,11 @@ export default function ProdutosPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {availablePackagingUnits.map((unit) => (
-                                <SelectItem key={unit} value={unit}>
-                                  {unit}
-                                </SelectItem>
-                              ))}
+                                  {availablePackagingUnits.map((unit) => (
+                                    <SelectItem key={unit} value={unit}>
+                                      {getOperationalUnitLabel(unit)}
+                                    </SelectItem>
+                                  ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -1002,9 +1117,9 @@ export default function ProdutosPage() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {unitOptions.map((unit) => (
+                                  {productUnitOptions.map((unit) => (
                                     <SelectItem key={unit} value={unit}>
-                                      {unit}
+                                      {getOperationalUnitLabel(unit)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -1119,24 +1234,116 @@ export default function ProdutosPage() {
                       </div>
 
                       <div className="grid gap-2">
-                        <Label>Qtd por embalagem</Label>
+                        <Label>Conteúdo por embalagem</Label>
                         <Input
                           type="number"
-                          value={formState.isSoldLoose ? "" : formState.packagingProfile?.quantityPerPackage ?? ""}
+                          value={formState.isSoldLoose ? "" : calculatedQuantityPerPackage || ""}
                           disabled={formState.isSoldLoose}
-                          onChange={(event) =>
-                            updatePackagingProfile({ quantityPerPackage: Number(event.target.value) })
-                          }
+                          readOnly
                         />
                         <p className="text-xs text-muted-foreground">
-                          Use este campo para informar quantas unidades operacionais compõem cada embalagem.
+                          Calculado automaticamente a partir do peso unitário de venda e do peso total da embalagem.
                         </p>
                       </div>
                     </div>
                   </section>
+
+                  <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground">Bases de Produção e Quebra</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Defina a base mínima, a base econômica e a perda principal para chegar ao peso final vendido.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-[1.2fr_320px]">
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="grid gap-2">
+                          <Label>Perda principal (%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={formState.breakPercent}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                breakPercent: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Validade após produção (dias)</Label>
+                          <Input
+                            type="number"
+                            value={formState.validityDays}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                validityDays: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label>Base mínima de produção (Kg)</Label>
+                          <Input
+                            type="number"
+                            value={formState.minimumProductionKg}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                minimumProductionKg: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="grid gap-2 md:col-span-2">
+                          <Label>Base econômica de produção (Kg)</Label>
+                          <Input
+                            type="number"
+                            value={formState.economicProductionKg}
+                            onChange={(event) =>
+                              setFormState((current) => ({
+                                ...current,
+                                economicProductionKg: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="flex items-end">
+                          <div className="flex items-center gap-2 pb-2">
+                            <Checkbox
+                              id="storage"
+                              checked={formState.allowsStorage}
+                              onCheckedChange={(checked) =>
+                                setFormState((current) => ({
+                                  ...current,
+                                  allowsStorage: checked === true,
+                                }))
+                              }
+                            />
+                            <Label htmlFor="storage">Permite armazenar após produzir?</Label>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                          Peso final / rendimento
+                        </p>
+                        <p className="mt-2 text-3xl font-semibold text-emerald-900">{yieldPercent.toFixed(2)}%</p>
+                        <p className="mt-2 text-xs text-emerald-800">
+                          Percentual líquido estimado depois da perda principal informada.
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                  </fieldset>
                 </TabsContent>
 
-                <TabsContent value="receita" className="space-y-5">
+                <TabsContent value="receita">
+                  <fieldset disabled={isReadOnly} className="space-y-5">
                   <section className="space-y-4 rounded-xl border border-border/80 p-4">
                     <div>
                       <h3 className="text-sm font-semibold text-foreground">Ingredientes da Receita</h3>
@@ -1177,10 +1384,11 @@ export default function ProdutosPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Kg">Kg</SelectItem>
-                            <SelectItem value="L">L</SelectItem>
-                            <SelectItem value="g">g</SelectItem>
-                            <SelectItem value="Un">Un</SelectItem>
+                            {productUnitOptions.map((unit) => (
+                              <SelectItem key={unit} value={unit}>
+                                {getOperationalUnitLabel(unit)}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -1192,46 +1400,102 @@ export default function ProdutosPage() {
                       </Button>
                     </div>
 
-                    <div className="overflow-x-auto rounded-xl border border-border/70">
-                      <table className="w-full min-w-[640px] border-collapse">
-                        <thead className="bg-card">
-                          <tr>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Referência</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd</th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Unidade</th>
-                            <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {formState.recipe.length === 0 ? (
-                            <tr>
-                              <td colSpan={4} className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
-                                Nenhum item na receita.
-                              </td>
-                            </tr>
-                          ) : (
-                            formState.recipe.map((item) => (
-                              <tr key={item.id}>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.label}</td>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.quantity}</td>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.unit}</td>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
-                                    onClick={() => removeRecipeItem(item.id)}
-                                  >
-                                    <Trash2 className="size-4" />
-                                  </Button>
-                                </td>
+                    <PaginatedSection items={formState.recipe} label="itens da receita" initialPageSize={6}>
+                      {(paginatedRecipe) => (
+                        <div className="overflow-x-auto rounded-xl border border-border/70">
+                          <table className="w-full min-w-[640px] border-collapse">
+                            <thead className="bg-card">
+                              <tr>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Referência</th>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Qtd</th>
+                                <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Unidade</th>
+                                <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Ações</th>
                               </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                            </thead>
+                            <tbody>
+                              {formState.recipe.length === 0 ? (
+                                <tr>
+                                  <td colSpan={4} className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
+                                    Nenhum item na receita.
+                                  </td>
+                                </tr>
+                              ) : (
+                                paginatedRecipe.map((item) => (
+                                  <tr key={item.id}>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">{item.label}</td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.001"
+                                    value={item.quantity}
+                                    onChange={(event) =>
+                                      updateRecipeItem(item.id, { quantity: Number(event.target.value) })
+                                    }
+                                  />
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                  <Select
+                                    value={item.unit}
+                                    onValueChange={(value) =>
+                                      updateRecipeItem(item.id, { unit: value as RecipeIngredientReference["unit"] })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-9 bg-background">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {productUnitOptions.map((unit) => (
+                                        <SelectItem key={unit} value={unit}>
+                                          {getOperationalUnitLabel(unit)}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
+                                  <div className="flex justify-end gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      className="text-muted-foreground hover:text-foreground"
+                                      onClick={() => moveRecipeItem(item.id, "up")}
+                                      disabled={formState.recipe.findIndex((entry) => entry.id === item.id) === 0}
+                                      title="Mover para cima"
+                                    >
+                                      <ChevronUp className="size-4" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      className="text-muted-foreground hover:text-foreground"
+                                      onClick={() => moveRecipeItem(item.id, "down")}
+                                      disabled={formState.recipe.findIndex((entry) => entry.id === item.id) === formState.recipe.length - 1}
+                                      title="Mover para baixo"
+                                    >
+                                      <ChevronDown className="size-4" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
+                                      onClick={() => removeRecipeItem(item.id)}
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </Button>
+                                  </div>
+                                </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </PaginatedSection>
                   </section>
 
                   <section className="grid gap-4 md:grid-cols-2">
@@ -1243,12 +1507,12 @@ export default function ProdutosPage() {
                         Total de ingredientes: {recipeTotals.totalIngredientsKg.toFixed(3)} Kg
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Total após quebra: {recipeTotals.outputAfterBreakKg.toFixed(3)} Kg
+                        Peso final após a perda principal: {recipeTotals.outputAfterBreakKg.toFixed(3)} Kg
                       </p>
                     </div>
                     <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
                       <div className="grid gap-2">
-                        <Label>Momento da quebra</Label>
+                        <Label>Em qual etapa a perda acontece</Label>
                         <Select
                           value={formState.breakStage}
                           onValueChange={(value) =>
@@ -1271,7 +1535,7 @@ export default function ProdutosPage() {
                         </Select>
                       </div>
                       <div className="grid gap-2">
-                        <Label>Comentário da quebra</Label>
+                        <Label>Comentário operacional da perda</Label>
                         <Input
                           value={formState.breakComment}
                           onChange={(event) =>
@@ -1294,15 +1558,54 @@ export default function ProdutosPage() {
                       placeholder="Descreva o modo de preparo passo a passo..."
                     />
                   </section>
+                  </fieldset>
                 </TabsContent>
 
-                <TabsContent value="cronograma" className="space-y-5">
+                <TabsContent value="cronograma">
+                  <fieldset disabled={isReadOnly} className="space-y-5">
                   <section className="space-y-4 rounded-xl border border-border/80 p-4">
                     <div>
                       <h3 className="text-sm font-semibold text-foreground">Cronograma definido pelo produto</h3>
                       <p className="text-xs text-muted-foreground">
-                        A {hierarchyLabels.line.toLowerCase()} apenas consolida os dias configurados aqui.
+                        Defina quando a fábrica produz e quantos dias a loja leva para vender depois do recebimento.
                       </p>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <div className="rounded-xl border border-border/70 bg-panel/25 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Produção
+                        </p>
+                        <p className="mt-2 text-sm text-foreground">
+                          O produto só entra em OP nos dias marcados abaixo.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/70 bg-panel/25 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Recebimento
+                        </p>
+                        <p className="mt-2 text-sm text-foreground">
+                          A loja recebe em D+{snapshot.operationalSettings.expeditionLeadDays}, respeitando os dias operacionais da loja.
+                        </p>
+                      </div>
+                      <div className="grid gap-2 rounded-xl border border-border/70 bg-card p-4">
+                        <Label htmlFor="sale-lead-days">Dias entre recebimento e venda</Label>
+                        <Input
+                          id="sale-lead-days"
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={formState.saleLeadDays ?? 0}
+                          onChange={(event) =>
+                            setFormState((current) => ({
+                              ...current,
+                              saleLeadDays: Math.max(0, Number(event.target.value)),
+                            }))
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Use 0 para vender no mesmo dia do recebimento, 1 para vender no dia seguinte e assim por diante.
+                        </p>
+                      </div>
                     </div>
                     <div className="grid gap-3 md:grid-cols-4">
                       {productionWeekDays.map((day) => {
@@ -1325,13 +1628,14 @@ export default function ProdutosPage() {
                       })}
                     </div>
                     <div className="rounded-xl border border-border/70 bg-panel/25 p-4 text-sm text-muted-foreground">
-                      A visão da {hierarchyLabels.line.toLowerCase()} passa a exibir quantos produtos estão vinculados e
-                      em quais dias cada produto produz. Não há mais edição do cronograma no cadastro da linha executora.
+                      Exemplo operacional: produzir hoje e vender hoje usa 0. Produzir hoje, entregar amanhã e vender depois usa o D+X global mais os dias informados acima para venda.
                     </div>
                   </section>
+                  </fieldset>
                 </TabsContent>
 
-                <TabsContent value="mpi" className="space-y-5">
+                <TabsContent value="mpi">
+                  <fieldset disabled={isReadOnly} className="space-y-5">
                   <section className="space-y-4 rounded-xl border border-border/80 p-4">
                     <div className="flex items-start gap-3">
                       <Checkbox
@@ -1369,7 +1673,7 @@ export default function ProdutosPage() {
                             metadata: formState.ingredientProfile?.metadata ?? "",
                             observation: formState.ingredientProfile?.observation ?? "",
                           }}
-                          unitOptions={unitOptions}
+                          unitOptions={productUnitOptions}
                           metadataPlaceholder="Ex: usar como base de sanduíches"
                           observationPlaceholder="Ex: consumir após resfriar"
                           onChange={(patch) =>
@@ -1404,16 +1708,29 @@ export default function ProdutosPage() {
                       </div>
                     )}
                   </section>
+                  </fieldset>
                 </TabsContent>
               </Tabs>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
-                  Cancelar
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (!formGuard.confirmIfNeeded()) {
+                      return;
+                    }
+                    setIsDialogOpen(false);
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {isReadOnly ? "Fechar" : "Cancelar"}
                 </Button>
-                <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting}>
-                  {editingProduct ? "Salvar Alterações" : "Cadastrar Produto"}
-                </Button>
+                {!isReadOnly ? (
+                  <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting}>
+                    {editingProduct ? "Salvar Alterações" : "Cadastrar Produto"}
+                  </Button>
+                ) : null}
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -1421,7 +1738,7 @@ export default function ProdutosPage() {
 
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código ou nome..."
+            searchPlaceholder="Buscar por código XPAN, ERP ou nome..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}
@@ -1436,6 +1753,22 @@ export default function ProdutosPage() {
             columns={columns}
             actions={actions}
             keyField="id"
+            onRowClick={(item) => {
+              const nextFormState = buildProductFormState(snapshot.lines, item);
+              setDialogMode("view");
+              setEditingProduct(item);
+              setFormState(nextFormState);
+              setFormBaseline(
+                JSON.stringify({
+                  formState: nextFormState,
+                  draftRecipeSourceId: "",
+                  draftRecipeQuantity: "",
+                  draftRecipeUnit: "Kg",
+                }),
+              );
+              setFormError(null);
+              setIsDialogOpen(true);
+            }}
             emptyMessage={isLoading ? "Carregando produtos..." : "Nenhum produto encontrado"}
             stickyHeader
           />

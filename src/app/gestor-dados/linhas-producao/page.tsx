@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Clock3, Layers3, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,10 +29,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import type { ProductionLine } from "@/lib/production-planning";
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 
 type LinhaRow = ProductionLine & {
   sectorName: string;
   productCount: number;
+  masterProductCount: number;
   pendingAudits: number;
 };
 
@@ -61,13 +63,20 @@ function buildFormState(
 
 export default function LinhasProducaoPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<LinhaRow | null>(null);
   const [formState, setFormState] = useState<SubcategoryFormState>(() => buildFormState([]));
+  const [formBaseline, setFormBaseline] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const formDirty = isDialogOpen && JSON.stringify(formState) !== formBaseline;
+  const formGuard = useUnsavedChangesGuard({
+    enabled: isDialogOpen,
+    isDirty: formDirty,
+  });
 
   const sectorNameById = useMemo(
     () => new Map(snapshot.sectors.map((sector) => [sector.id, sector.name])),
@@ -79,7 +88,12 @@ export default function LinhasProducaoPage() {
       snapshot.lines.map((line) => ({
         ...line,
         sectorName: sectorNameById.get(line.sectorId) ?? "-",
-        productCount: snapshot.products.filter((product) => product.lineId === line.id).length,
+        productCount: snapshot.products.filter(
+          (product) => product.operationalLineId === line.id && product.active,
+        ).length,
+        masterProductCount: snapshot.products.filter(
+          (product) => (product.masterLineId ?? product.lineId) === line.id,
+        ).length,
         pendingAudits: snapshot.schedules.filter(
           (schedule) => schedule.lineId === line.id && schedule.status === "pendente",
         ).length,
@@ -101,12 +115,42 @@ export default function LinhasProducaoPage() {
   const activeLines = lineRows.filter((item) => item.status === "ativo").length;
   const pendingAudits = snapshot.schedules.filter((item) => item.status === "pendente").length;
 
+  useEffect(() => {
+    const shouldCreate = searchParams.get("new") === "1";
+    const sectorIdFromQuery = searchParams.get("sectorId");
+
+    if (!shouldCreate || snapshot.sectors.length === 0 || isDialogOpen) {
+      return;
+    }
+
+    const nextFormState = buildFormState(snapshot.sectors);
+    if (sectorIdFromQuery && snapshot.sectors.some((sector) => sector.id === sectorIdFromQuery)) {
+      nextFormState.sectorId = sectorIdFromQuery;
+    }
+
+    setEditingLine(null);
+    setFormState(nextFormState);
+    setFormBaseline(JSON.stringify(nextFormState));
+    setFormError(null);
+    setIsDialogOpen(true);
+    router.replace("/gestor-dados/linhas-producao");
+  }, [isDialogOpen, router, searchParams, snapshot.sectors]);
+
   const columns = [
     { key: "code", header: "Código" },
     { key: "name", header: "Subcategoria" },
     { key: "sectorName", header: "Categoria" },
     { key: "type", header: "Tipo" },
-    { key: "productCount", header: "Produtos" },
+    {
+      key: "productCount",
+      header: "Produtos",
+      render: (item: LinhaRow) => (
+        <div className="space-y-0.5">
+          <p className="text-sm font-semibold text-foreground">{item.productCount} operacionais</p>
+          <p className="text-xs text-muted-foreground">{item.masterProductCount} no cadastro base</p>
+        </div>
+      ),
+    },
     { key: "operatingHours", header: "Horário" },
     {
       key: "pendingAudits",
@@ -133,7 +177,9 @@ export default function LinhasProducaoPage() {
       label: "Editar",
       onClick: (item: LinhaRow) => {
         setEditingLine(item);
-        setFormState(buildFormState(snapshot.sectors, item));
+        const nextFormState = buildFormState(snapshot.sectors, item);
+        setFormState(nextFormState);
+        setFormBaseline(JSON.stringify(nextFormState));
         setFormError(null);
         setIsDialogOpen(true);
       },
@@ -142,7 +188,9 @@ export default function LinhasProducaoPage() {
 
   function openNewLine() {
     setEditingLine(null);
-    setFormState(buildFormState(snapshot.sectors));
+    const nextFormState = buildFormState(snapshot.sectors);
+    setFormState(nextFormState);
+    setFormBaseline(JSON.stringify(nextFormState));
     setFormError(null);
     setIsDialogOpen(true);
   }
@@ -187,7 +235,7 @@ export default function LinhasProducaoPage() {
   return (
     <PageLayout
       title="Subcategorias"
-      description="Cada subcategoria pertence a uma categoria e consolida os produtos que definem o cronograma."
+      description="Cada subcategoria pertence a uma categoria e agora controla sua carteira operacional de produtos para cronograma e auditoria."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
@@ -235,6 +283,7 @@ export default function LinhasProducaoPage() {
             columns={columns}
             actions={actions}
             keyField="id"
+            onRowClick={(item) => router.push(`/gestor-dados/linhas-producao/${item.id}`)}
             stickyHeader
             emptyMessage={isLoading ? "Carregando subcategorias..." : "Nenhuma subcategoria encontrada"}
           />
@@ -244,10 +293,13 @@ export default function LinhasProducaoPage() {
       <Dialog
         open={isDialogOpen}
         onOpenChange={(open) => {
-          setIsDialogOpen(open);
           if (!open) {
+            if (!formGuard.confirmIfNeeded()) {
+              return;
+            }
             setFormError(null);
           }
+          setIsDialogOpen(open);
         }}
       >
         <DialogContent size="xl">
@@ -258,6 +310,11 @@ export default function LinhasProducaoPage() {
             {formError ? (
               <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
                 {formError}
+              </div>
+            ) : null}
+            {formDirty ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                Existem alterações pendentes nesta subcategoria.
               </div>
             ) : null}
             <div className="grid gap-2">
@@ -355,7 +412,17 @@ export default function LinhasProducaoPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!formGuard.confirmIfNeeded()) {
+                  return;
+                }
+                setIsDialogOpen(false);
+              }}
+              disabled={isSubmitting}
+            >
               Cancelar
             </Button>
             <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>

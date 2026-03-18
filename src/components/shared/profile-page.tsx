@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatBrazilPhone } from "@/lib/phone-mask";
+import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 
 type ProfilePageProps = {
   homeHref: string;
@@ -104,6 +106,18 @@ export function ProfilePage({
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [passwordUpdatedAt, setPasswordUpdatedAt] = useState("-");
+  const [savedSnapshot, setSavedSnapshot] = useState(() =>
+    JSON.stringify(buildInitialForm(initialName, initialEmail)),
+  );
+  const isDirty =
+    !isLoadingProfile &&
+    (JSON.stringify(form) !== savedSnapshot ||
+      Boolean(currentPassword.trim()) ||
+      Boolean(newPassword.trim()) ||
+      Boolean(confirmPassword.trim()));
+  useUnsavedChangesGuard({
+    isDirty,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -122,9 +136,18 @@ export function ProfilePage({
           avatarUrl: profile.avatarUrl,
           name: profile.name,
           email: profile.email,
-          phone: profile.phone,
+          phone: formatBrazilPhone(profile.phone),
           address: profile.address,
         });
+        setSavedSnapshot(
+          JSON.stringify({
+            avatarUrl: profile.avatarUrl,
+            name: profile.name,
+            email: profile.email,
+            phone: formatBrazilPhone(profile.phone),
+            address: profile.address,
+          }),
+        );
         setPasswordUpdatedAt(profile.passwordUpdatedAt);
         setErrorMessage(null);
       } catch (error) {
@@ -273,9 +296,18 @@ export function ProfilePage({
         avatarUrl: updatedProfile.avatarUrl,
         name: updatedProfile.name,
         email: updatedProfile.email,
-        phone: updatedProfile.phone,
+        phone: formatBrazilPhone(updatedProfile.phone),
         address: updatedProfile.address,
       });
+      setSavedSnapshot(
+        JSON.stringify({
+          avatarUrl: updatedProfile.avatarUrl,
+          name: updatedProfile.name,
+          email: updatedProfile.email,
+          phone: formatBrazilPhone(updatedProfile.phone),
+          address: updatedProfile.address,
+        }),
+      );
       setPasswordUpdatedAt(updatedProfile.passwordUpdatedAt);
       setCurrentPassword("");
       setNewPassword("");
@@ -375,7 +407,7 @@ export function ProfilePage({
               <Input
                 id="profile-phone"
                 value={form.phone}
-                onChange={(event) => updateFormField("phone", event.target.value)}
+                onChange={(event) => updateFormField("phone", formatBrazilPhone(event.target.value))}
                 placeholder="(99) 99999-9999"
                 disabled={isSaving || isLoadingProfile}
               />
@@ -540,6 +572,9 @@ export function ProfilePage({
             <p className="text-xs text-muted-foreground">
               Última atualização de senha: {passwordUpdatedAt}
             </p>
+            {isDirty ? (
+              <p className="text-xs font-semibold text-warning-foreground">Alterações pendentes de salvamento.</p>
+            ) : null}
           </div>
           <Button
             type="button"

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
+import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 import type { SubcategoryInput } from "@/lib/supabase-data/master-data-admin";
 import { createSubcategory } from "@/lib/supabase-data/master-data-admin";
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
   try {
     const supabase = await createSupabaseServerClient();
     const created = await createSubcategory(payload, { supabase });
+    invalidateMasterDataCaches();
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return NextResponse.json(

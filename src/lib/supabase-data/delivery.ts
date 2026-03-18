@@ -1,9 +1,15 @@
 import "server-only";
 
-import type { DeliveryExecutionStatus } from "@/lib/delivery-execution";
+import {
+  canTransitionDeliveryStatus,
+  type DeliveryChecklistState,
+  type DeliveryExecutionStatus,
+} from "@/lib/delivery-workflow";
+import { getCachedServerData } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   assertSupabaseResult,
+  isSupabaseMissingSchemaError,
   isUuid,
   resolveProfileDatabaseId,
   type SupabaseDataClient,
@@ -11,36 +17,81 @@ import {
 
 export interface PersistedDeliveryExecutionEntry {
   status: DeliveryExecutionStatus;
+  checklistState: DeliveryChecklistState;
+  checklistCompletedAt: string | null;
   updatedAt: string;
 }
 
 export type PersistedDeliveryExecutionState = Record<string, PersistedDeliveryExecutionEntry>;
+const DELIVERY_EXECUTION_CACHE_TTL_MS = 10_000;
+
+type LegacyDeliveryExecutionRow = {
+  order_id: string;
+  status: DeliveryExecutionStatus;
+  updated_at: string;
+};
+
+async function loadLegacyExecutionRows(
+  supabase: SupabaseDataClient,
+): Promise<LegacyDeliveryExecutionRow[]> {
+  const legacyRowsResult = await supabase
+    .from("delivery_executions")
+    .select("order_id, status, updated_at");
+
+  return assertSupabaseResult(
+    legacyRowsResult as {
+      data: LegacyDeliveryExecutionRow[] | null;
+      error: { message: string } | null;
+    },
+    "Failed to load legacy delivery executions",
+  );
+}
+
+function isMissingDeliveryExecutionSchema(error: { message: string; code?: string | null } | null | undefined) {
+  return isSupabaseMissingSchemaError(error, [
+    "delivery_executions",
+    "checklist_state",
+    "checklist_completed_at",
+  ]);
+}
 
 export async function getPersistedDeliveryExecutions(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<PersistedDeliveryExecutionState> {
-  const [executionRowsResult, orderRowsResult] = await Promise.all([
-    supabase.from("delivery_executions").select("order_id, status, updated_at"),
-    supabase.from("store_orders").select("id, legacy_id"),
-  ]);
+  return getCachedServerData("delivery-executions:all", DELIVERY_EXECUTION_CACHE_TTL_MS, async () => {
+    const [executionRowsResult, orderRowsResult] = await Promise.all([
+      supabase.from("delivery_executions").select("order_id, status, checklist_state, checklist_completed_at, updated_at"),
+      supabase.from("store_orders").select("id, legacy_id"),
+    ]);
 
-  const executionRows = assertSupabaseResult(executionRowsResult, "Failed to load delivery executions");
-  const orderRows = assertSupabaseResult(orderRowsResult, "Failed to load order ids for delivery executions");
-  const orderLegacyById = new Map(orderRows.map((row) => [row.id, row.legacy_id ?? row.id]));
+    const orderRows = assertSupabaseResult(orderRowsResult, "Failed to load order ids for delivery executions");
+    const executionRows = isMissingDeliveryExecutionSchema(executionRowsResult.error)
+      ? await loadLegacyExecutionRows(supabase)
+      : assertSupabaseResult(executionRowsResult, "Failed to load delivery executions");
+    const orderLegacyById = new Map(orderRows.map((row) => [row.id, row.legacy_id ?? row.id]));
 
-  return executionRows.reduce<PersistedDeliveryExecutionState>((acc, row) => {
-    const key = orderLegacyById.get(row.order_id) ?? row.order_id;
-    acc[key] = {
-      status: row.status,
-      updatedAt: row.updated_at,
-    };
-    return acc;
-  }, {});
+    return executionRows.reduce<PersistedDeliveryExecutionState>((acc, row) => {
+      const key = orderLegacyById.get(row.order_id) ?? row.order_id;
+      acc[key] = {
+        status: row.status,
+        checklistState:
+          "checklist_state" in row ? ((row.checklist_state as DeliveryChecklistState | null) ?? {}) : {},
+        checklistCompletedAt:
+          "checklist_completed_at" in row ? (row.checklist_completed_at ?? null) : null,
+        updatedAt: row.updated_at,
+      };
+      return acc;
+    }, {});
+  });
 }
 
 export async function updateDeliveryExecution(
   orderId: string,
   status: DeliveryExecutionStatus,
+  options: {
+    checklistState?: DeliveryChecklistState;
+    checklistCompletedAt?: string | null;
+  } = {},
   updatedByProfileId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
@@ -52,20 +103,73 @@ export async function updateDeliveryExecution(
     ? orderQuery.eq("id", orderId)
     : orderQuery.eq("legacy_id", orderId)).maybeSingle();
   const orderRow = assertSupabaseResult({ data: orderResult.data, error: orderResult.error }, "Failed to resolve order for delivery execution");
+  const currentExecutionResult = await supabase
+    .from("delivery_executions")
+    .select("status, checklist_state, checklist_completed_at")
+    .eq("order_id", orderRow.id)
+    .maybeSingle();
+  const usingLegacyDeliverySchema = isMissingDeliveryExecutionSchema(currentExecutionResult.error);
+  const currentModernExecution = usingLegacyDeliverySchema
+    ? null
+    : assertSupabaseResult(
+        { data: currentExecutionResult.data, error: currentExecutionResult.error },
+        "Failed to resolve current delivery execution",
+      );
+  const currentLegacyExecutionResult = usingLegacyDeliverySchema
+    ? await supabase
+        .from("delivery_executions")
+        .select("status")
+        .eq("order_id", orderRow.id)
+        .maybeSingle()
+    : null;
+  const currentLegacyExecution = currentLegacyExecutionResult
+    ? assertSupabaseResult(
+        {
+          data: currentLegacyExecutionResult.data,
+          error: currentLegacyExecutionResult.error,
+        },
+        "Failed to resolve current legacy delivery execution",
+      )
+    : null;
+  const resolvedCurrentExecution = usingLegacyDeliverySchema ? currentLegacyExecution : currentModernExecution;
+  const currentStatus = resolvedCurrentExecution?.status ?? "aguardando_expedicao";
 
-  const upsertResult = await supabase.from("delivery_executions").upsert(
-    {
-      order_id: orderRow.id,
-      status,
-      updated_at: new Date().toISOString(),
-      updated_by_profile_id: updatedByDatabaseId,
-    },
-    {
-      onConflict: "order_id",
-    },
-  );
+  if (!canTransitionDeliveryStatus(currentStatus, status)) {
+    throw new Error("Invalid delivery status transition");
+  }
+
+  const checklistState =
+    options.checklistState ??
+    (usingLegacyDeliverySchema
+      ? {}
+      : ((currentModernExecution?.checklist_state as DeliveryChecklistState | null) ?? {}));
+  const checklistCompletedAt =
+    options.checklistCompletedAt ??
+    (usingLegacyDeliverySchema ? null : (currentModernExecution?.checklist_completed_at ?? null));
+
+  const upsertPayload = usingLegacyDeliverySchema
+    ? {
+        order_id: orderRow.id,
+        status,
+        updated_at: new Date().toISOString(),
+        updated_by_profile_id: updatedByDatabaseId,
+      }
+    : {
+        order_id: orderRow.id,
+        status,
+        checklist_state: checklistState,
+        checklist_completed_at: checklistCompletedAt,
+        updated_at: new Date().toISOString(),
+        updated_by_profile_id: updatedByDatabaseId,
+      };
+  const upsertResult = await supabase.from("delivery_executions").upsert(upsertPayload, {
+    onConflict: "order_id",
+  });
 
   if (upsertResult.error) {
+    if (isMissingDeliveryExecutionSchema(upsertResult.error)) {
+      throw new Error("O banco ainda nao tem a estrutura completa de expedicao aplicada.");
+    }
     throw new Error(`Failed to update delivery execution: ${upsertResult.error.message}`);
   }
 }

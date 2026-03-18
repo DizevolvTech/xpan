@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
+import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
+import { PaginatedSection } from "@/components/shared/paginated-section";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -30,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import {
   getDeliveryDateByStoreRule,
   getOperationalBaseDateByStoreRule,
@@ -41,7 +44,10 @@ import {
   type ProductionWeekDay,
 } from "@/lib/production-planning";
 import type { StoreOrderCatalogProduct, StoreOrderSummary } from "@/lib/store-order-types";
+import { useCurrentProfile } from "@/lib/use-current-profile";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
+import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderSummaries } from "@/lib/use-store-orders";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
@@ -87,22 +93,29 @@ function buildOrderDetailPath(orderId: string, referenceDate: string) {
 
 export default function PedidosLojaPage() {
   const router = useRouter();
+  const { profile } = useCurrentProfile();
   const { snapshot } = useMasterDataSnapshot();
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [searchTerm, setSearchTerm] = useState("");
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
-  const [selectedStoreId, setSelectedStoreId] = useState("");
   const [orderProducts, setOrderProducts] = useState<StoreOrderCatalogProduct[]>([]);
   const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
-  const referenceDateKey = useMemo(() => referenceDate.toISOString().slice(0, 10), [referenceDate]);
-  const { orders: storeOrderSummaries, refresh: refreshStoreOrders } = useStoreOrderSummaries(referenceDateKey);
+  const { orders: storeOrderSummaries, refresh: refreshStoreOrders } = useStoreOrderSummaries(anchorDate);
   const activeStores = useMemo(
     () => snapshot.stores.filter((store) => store.status === "ativo"),
     [snapshot.stores],
   );
+  const {
+    availableStores,
+    activeStoreId: selectedStoreId,
+    activeStore: selectedStore,
+    setActiveStoreId: setSelectedStoreId,
+    shouldShowStoreSelector,
+  } = useStoreScope(activeStores, profile?.allowedStoreIds);
   const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso);
   const { createOrder, isSubmitting } = useCreateStoreOrder(() => {
     void refreshStoreOrders();
@@ -110,25 +123,8 @@ export default function PedidosLojaPage() {
   });
 
   useEffect(() => {
-    const currentStoreStillAvailable = activeStores.some((store) => store.id === selectedStoreId);
-
-    if ((!selectedStoreId || !currentStoreStillAvailable) && activeStores[0]) {
-      setSelectedStoreId(activeStores[0].id);
-      return;
-    }
-
-    if (activeStores.length === 0 && selectedStoreId) {
-      setSelectedStoreId("");
-    }
-  }, [activeStores, selectedStoreId]);
-
-  useEffect(() => {
     setOrderProducts(catalog);
   }, [catalog]);
-  const selectedStore = useMemo(
-    () => activeStores.find((store) => store.id === selectedStoreId) ?? null,
-    [activeStores, selectedStoreId],
-  );
   const effectiveBaseDateKey = useMemo(() => {
     return selectedStore
       ? getOperationalBaseDateByStoreRule(orderedAtIso, selectedStore, snapshot.operationalSettings)
@@ -154,24 +150,35 @@ export default function PedidosLojaPage() {
     [selectedStore],
   );
 
+  const scopedStoreOrderSummaries = useMemo(
+    () =>
+      {
+        const timeScopedOrders = filterStoreOrderSummariesByOperationalScope(storeOrderSummaries, scope);
+        return selectedStoreId
+          ? timeScopedOrders.filter((item) => item.storeId === selectedStoreId)
+          : timeScopedOrders;
+      },
+    [scope, selectedStoreId, storeOrderSummaries],
+  );
+
   const filteredPedidos = useMemo(
     () =>
-      storeOrderSummaries.filter(
+      scopedStoreOrderSummaries.filter(
         (item) =>
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.store.toLowerCase().includes(searchTerm.toLowerCase()),
       ),
-    [searchTerm, storeOrderSummaries],
+    [scopedStoreOrderSummaries, searchTerm],
   );
 
   const orderKpis = useMemo(
     () => ({
-      total: storeOrderSummaries.length,
-      agendado: storeOrderSummaries.filter((item) => item.status === "agendado").length,
-      emProducao: storeOrderSummaries.filter((item) => item.status === "em_producao").length,
-      rotaEntrega: storeOrderSummaries.filter((item) => item.status === "aguardando_expedicao").length,
+      total: scopedStoreOrderSummaries.length,
+      agendado: scopedStoreOrderSummaries.filter((item) => item.status === "agendado").length,
+      emProducao: scopedStoreOrderSummaries.filter((item) => item.status === "em_producao").length,
+      rotaEntrega: scopedStoreOrderSummaries.filter((item) => item.status === "aguardando_expedicao").length,
     }),
-    [storeOrderSummaries],
+    [scopedStoreOrderSummaries],
   );
 
   const categoryOptions = useMemo(
@@ -217,13 +224,13 @@ export default function PedidosLojaPage() {
     {
       icon: "view" as const,
       label: "Visualizar",
-      onClick: (item: StoreOrderSummary) => router.push(buildOrderDetailPath(item.id, referenceDateKey)),
+      onClick: (item: StoreOrderSummary) => router.push(buildOrderDetailPath(item.id, anchorDate)),
     },
     {
       icon: "print" as const,
       label: "Imprimir",
       onClick: (item: StoreOrderSummary) =>
-        window.open(buildOrderPrintPath(item.id, referenceDateKey), "_blank", "noopener,noreferrer"),
+        window.open(buildOrderPrintPath(item.id, anchorDate), "_blank", "noopener,noreferrer"),
     },
   ];
 
@@ -285,6 +292,43 @@ export default function PedidosLojaPage() {
       badge="Loja"
       breadcrumbs={[{ label: "Loja", href: "/loja" }, { label: "Pedidos" }]}
     >
+      <OperationalDateScopeCard
+        scope={scope}
+        summary={summary}
+        setMode={setMode}
+        setDate={setDate}
+        setStartDate={setStartDate}
+        setEndDate={setEndDate}
+        title="Janela da loja"
+        description="Pedidos e catálogo respeitam as lojas autorizadas e o mesmo recorte temporal do restante da operação."
+        extraControls={
+          shouldShowStoreSelector ? (
+            <div className="min-w-[260px] space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Loja</p>
+              <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+                <SelectTrigger className="w-[260px] bg-background/80">
+                  <SelectValue placeholder="Filtrar por loja" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStores.map((store) => (
+                    <SelectItem key={store.id} value={store.id}>
+                      {store.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : selectedStore ? (
+            <div className="min-w-[260px] space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Loja</p>
+              <span className="flex min-h-10 items-center rounded-md border border-border/70 bg-panel px-3 text-sm text-foreground">
+                {selectedStore.name}
+              </span>
+            </div>
+          ) : null
+        }
+      />
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KPICard title="Total de Pedidos" value={orderKpis.total} icon={ShoppingCart} tone="info" />
         <KPICard title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
@@ -310,7 +354,7 @@ export default function PedidosLojaPage() {
               </DialogHeader>
 
               <div className="space-y-6 py-2">
-                {activeStores.length === 0 ? (
+                {availableStores.length === 0 ? (
                   <div className="rounded-lg border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
                     Nenhuma loja ativa está vinculada ao seu perfil. Revise os vínculos de loja antes de criar pedidos.
                   </div>
@@ -320,12 +364,12 @@ export default function PedidosLojaPage() {
                   <div className="grid gap-4 md:grid-cols-4">
                     <div className="grid gap-2">
                       <Label className="text-xs text-muted-foreground">Nome da Loja</Label>
-                      <Select value={selectedStore?.id ?? ""} onValueChange={setSelectedStoreId} disabled={activeStores.length === 0}>
+                      <Select value={selectedStore?.id ?? ""} onValueChange={setSelectedStoreId} disabled={availableStores.length === 0}>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione uma loja" />
                         </SelectTrigger>
                         <SelectContent>
-                          {activeStores.map((store) => (
+                          {availableStores.map((store) => (
                             <SelectItem key={store.id} value={store.id}>
                               {store.name}
                             </SelectItem>
@@ -402,72 +446,76 @@ export default function PedidosLojaPage() {
                   </p>
                 </div>
 
-                <div className="max-h-[420px] overflow-auto rounded-lg border border-border/80">
-                  <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="bg-secondary/85">
-                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Código</th>
-                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
-                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Categoria</th>
-                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Un.</th>
-                        {dayColumns.map((dayField, index) => (
-                          <th
-                            key={dayField}
-                            className={cn(
-                              "px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.08em]",
-                              index === 0 && "bg-success/40",
-                            )}
-                          >
-                            {WEEK_LABEL[dayField]}
-                          </th>
-                        ))}
-                        <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredOrderProducts.length === 0 ? (
-                        <tr>
-                          <td colSpan={12} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                            Nenhum produto encontrado para os filtros selecionados.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredOrderProducts.map((product) => (
-                          <tr key={product.id} className="border-t border-border/70">
-                            <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
-                            <td className="px-2 py-2 text-sm">
-                              {product.name}
-                            </td>
-                            <td className="px-2 py-2 text-sm">{product.category}</td>
-                            <td className="px-2 py-2 text-sm">{product.unit}</td>
-                            {dayColumns.map((dayField, index) => {
-                              const isActiveColumn = index === 0;
-                              const canEdit = isActiveColumn;
-
-                              return (
-                                <td
-                                  key={`${product.id}-${dayField}`}
-                                  className={cn("px-1 py-1", isActiveColumn && "bg-success/25")}
-                                >
-                                  <Input
-                                    type="number"
-                                    className="h-8 w-16 text-center"
-                                    value={product[dayField]}
-                                    onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
-                                    disabled={!canEdit}
-                                  />
-                                </td>
-                              );
-                            })}
-                            <td className="px-2 py-2 text-sm font-semibold">
-                              {product[highlightedDay]} {product.unit}
-                            </td>
+                <PaginatedSection items={filteredOrderProducts} label="produtos disponíveis" initialPageSize={8}>
+                  {(paginatedProducts) => (
+                    <div className="max-h-[420px] overflow-auto rounded-lg border border-border/80">
+                      <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
+                        <thead className="sticky top-0 z-10">
+                          <tr className="bg-secondary/85">
+                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Código</th>
+                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
+                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Categoria</th>
+                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Un.</th>
+                            {dayColumns.map((dayField, index) => (
+                              <th
+                                key={dayField}
+                                className={cn(
+                                  "px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.08em]",
+                                  index === 0 && "bg-success/40",
+                                )}
+                              >
+                                {WEEK_LABEL[dayField]}
+                              </th>
+                            ))}
+                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Total</th>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                        </thead>
+                        <tbody>
+                          {filteredOrderProducts.length === 0 ? (
+                            <tr>
+                              <td colSpan={12} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                                Nenhum produto encontrado para os filtros selecionados.
+                              </td>
+                            </tr>
+                          ) : (
+                            paginatedProducts.map((product) => (
+                              <tr key={product.id} className="border-t border-border/70">
+                                <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
+                                <td className="px-2 py-2 text-sm">
+                                  {product.name}
+                                </td>
+                                <td className="px-2 py-2 text-sm">{product.category}</td>
+                                <td className="px-2 py-2 text-sm">{product.unit}</td>
+                                {dayColumns.map((dayField, index) => {
+                                  const isActiveColumn = index === 0;
+                                  const canEdit = isActiveColumn;
+
+                                  return (
+                                    <td
+                                      key={`${product.id}-${dayField}`}
+                                      className={cn("px-1 py-1", isActiveColumn && "bg-success/25")}
+                                    >
+                                      <Input
+                                        type="number"
+                                        className="h-8 w-16 text-center"
+                                        value={product[dayField]}
+                                        onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
+                                        disabled={!canEdit}
+                                      />
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-2 py-2 text-sm font-semibold">
+                                  {product[highlightedDay]} {product.unit}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PaginatedSection>
               </div>
 
               <DialogFooter>
@@ -494,6 +542,7 @@ export default function PedidosLojaPage() {
             columns={columns}
             actions={actions}
             keyField="id"
+            onRowClick={(item) => router.push(buildOrderDetailPath(item.id, anchorDate))}
             emptyMessage="Nenhum pedido encontrado"
             stickyHeader
           />

@@ -1,5 +1,5 @@
 import type { LineType } from "@/lib/production-planning";
-import { getOperationalOrderWindow, resolveProductionDateInWindow } from "@/lib/order-planning";
+import { getOperationalTimeline } from "@/lib/order-planning";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import type { StoreOrderCatalogProduct } from "@/lib/store-order-types";
 
@@ -34,56 +34,64 @@ export function buildStoreOrderCatalog(
     throw new Error("Store not found");
   }
 
-  const { baseDate, deliveryDate } = getOperationalOrderWindow(options.orderedAt, store, snapshot.operationalSettings);
   const sectorById = new Map(snapshot.sectors.map((sector) => [sector.id, sector]));
   const lineById = new Map(snapshot.lines.map((line) => [line.id, line]));
-  const productById = new Map(snapshot.products.map((product) => [product.id, product]));
+  const activeScheduleByLineId = new Map(
+    snapshot.schedules
+      .filter((schedule) => schedule.status === "ativo")
+      .map((schedule) => [schedule.lineId, schedule]),
+  );
   const entries = new Map<string, ApprovedCatalogEntry>();
 
-  snapshot.schedules
-    .filter((schedule) => schedule.status === "ativo")
-    .forEach((schedule) => {
-      const line = lineById.get(schedule.lineId);
-      if (!line || line.status !== "ativo") {
-        return;
-      }
+  snapshot.products.forEach((product) => {
+    if (!product.active || !product.availableForOrdering || !product.operationalLineId) {
+      return;
+    }
 
-      const sector = sectorById.get(line.sectorId);
-      if (!sector || sector.status !== "ativo") {
-        return;
-      }
+    const line = lineById.get(product.operationalLineId);
+    if (!line || line.status !== "ativo") {
+      return;
+    }
 
-      schedule.items.forEach((scheduleItem) => {
-        const product = productById.get(scheduleItem.productId);
+    const sector = sectorById.get(line.sectorId);
+    if (!sector || sector.status !== "ativo") {
+      return;
+    }
 
-        if (!product || !product.active || !product.availableForOrdering) {
-          return;
-        }
+    const schedule = activeScheduleByLineId.get(line.id);
+    if (!schedule) {
+      return;
+    }
 
-        const planning = resolveProductionDateInWindow(baseDate, deliveryDate, product.productionDays);
-        if (!planning.date || planning.delayed) {
-          return;
-        }
+    const timeline = getOperationalTimeline(
+      options.orderedAt,
+      store,
+      snapshot.operationalSettings,
+      product.productionDays,
+      product.saleLeadDays ?? 0,
+    );
+    if (!timeline.productionDate || timeline.delayed) {
+      return;
+    }
 
-        const key = `${schedule.id}|${product.id}`;
-        if (entries.has(key)) {
-          return;
-        }
+    const key = `${schedule.id}|${product.id}`;
+    if (entries.has(key)) {
+      return;
+    }
 
-        entries.set(key, {
-          productId: product.id,
-          code: product.code,
-          name: product.name,
-          unit: product.salesUnit,
-          category: sector.name,
-          sectorName: sector.name,
-          lineName: line.name,
-          lineType: line.type,
-          scheduleName: schedule.name,
-          productionDays: product.productionDays,
-        });
-      });
+    entries.set(key, {
+      productId: product.id,
+      code: product.code,
+      name: product.name,
+      unit: product.salesUnit,
+      category: sector.name,
+      sectorName: sector.name,
+      lineName: line.name,
+      lineType: line.type,
+      scheduleName: schedule.name,
+      productionDays: product.productionDays,
     });
+  });
 
   return Array.from(entries.values())
     .map<StoreOrderCatalogProduct>((entry) => {
