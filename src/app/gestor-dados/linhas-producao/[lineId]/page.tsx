@@ -30,7 +30,7 @@ import {
   getSchedulesByLineFromData,
 } from "@/lib/production-data-utils";
 
-type ProductScopeFilter = "all" | "unassigned" | "assigned-elsewhere" | "current";
+type ProductScopeFilter = "all" | "outside-portfolio" | "current";
 
 type ProductRow = ProductionProduct & {
   masterLineName: string;
@@ -100,6 +100,10 @@ export default function LinhaProducaoDetailsPage() {
     () => (line ? getProductsByMasterLineFromData(line.id, productRows) : []),
     [line, productRows],
   );
+  const masterActiveProducts = useMemo(
+    () => masterProducts.filter((product) => product.active),
+    [masterProducts],
+  );
   const schedules = useMemo<ScheduleRow[]>(
     () =>
       (line ? getSchedulesByLineFromData(line.id, snapshot.schedules) : [])
@@ -122,8 +126,7 @@ export default function LinhaProducaoDetailsPage() {
 
   const filteredActiveProducts = useMemo(
     () =>
-      productRows
-        .filter((product) => product.active)
+      masterActiveProducts
         .filter((product) => {
           const normalizedSearch = searchTerm.trim().toLowerCase();
           const matchesSearch =
@@ -138,17 +141,15 @@ export default function LinhaProducaoDetailsPage() {
           }
 
           switch (scopeFilter) {
-            case "unassigned":
+            case "outside-portfolio":
               return !product.operationalLineId;
-            case "assigned-elsewhere":
-              return Boolean(product.operationalLineId && product.operationalLineId !== lineId);
             case "current":
               return product.operationalLineId === lineId;
             default:
               return true;
           }
         }),
-    [lineId, productRows, scopeFilter, searchTerm],
+    [lineId, masterActiveProducts, scopeFilter, searchTerm],
   );
 
   const activeSchedule = schedules.find((schedule) => schedule.status === "ativo") ?? null;
@@ -326,7 +327,7 @@ export default function LinhaProducaoDetailsPage() {
                   Subcategoria operacional
                 </p>
                 <p className="mt-2 text-sm text-foreground">
-                  Só os produtos adicionados abaixo entram na revisão de auditoria e no cronograma desta subcategoria.
+                  Só os produtos cadastrados nesta subcategoria podem ser adicionados abaixo e entrar na revisão de auditoria e no cronograma.
                 </p>
               </div>
             </CardContent>
@@ -375,11 +376,11 @@ export default function LinhaProducaoDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Banco de produtos ativos</CardTitle>
+              <CardTitle>Produtos ativos desta subcategoria</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <SearchFilter
-                searchPlaceholder="Buscar por código, produto ou subcategoria..."
+                searchPlaceholder="Buscar por código, produto ou status operacional..."
                 onSearch={setSearchTerm}
                 searchValue={searchTerm}
                 filters={[
@@ -389,8 +390,7 @@ export default function LinhaProducaoDetailsPage() {
                     value: scopeFilter,
                     onChange: (value) => setScopeFilter(value as ProductScopeFilter),
                     options: [
-                      { value: "unassigned", label: "Sem subcategoria operacional" },
-                      { value: "assigned-elsewhere", label: "Alocados em outra subcategoria" },
+                      { value: "outside-portfolio", label: "Fora da carteira operacional" },
                       { value: "current", label: "Já nesta subcategoria" },
                     ],
                   },
@@ -426,20 +426,27 @@ export default function LinhaProducaoDetailsPage() {
                         return <span className="text-sm text-muted-foreground">Já alocado aqui</span>;
                       }
 
+                      if (product.operationalLineId && product.operationalLineId !== lineId) {
+                        return (
+                          <span className="text-sm text-muted-foreground">
+                            Realoque no cadastro do produto
+                          </span>
+                        );
+                      }
+
                       const isBusy = isSubmittingProductId === product.id;
-                      const isRelocation = Boolean(product.operationalLineId && product.operationalLineId !== lineId);
 
                       return (
                         <Button
                           type="button"
                           size="sm"
-                          variant={isRelocation ? "secondary" : "outline"}
+                          variant="outline"
                           className="gap-1.5"
                           disabled={isBusy}
                           onClick={() => void handleAssignProduct(product.id)}
                         >
                           <Plus className="size-4" />
-                          {isRelocation ? "Realocar" : "Adicionar"}
+                          Adicionar
                         </Button>
                       );
                     },
@@ -450,7 +457,7 @@ export default function LinhaProducaoDetailsPage() {
                 emptyMessage={
                   isLoading
                     ? "Carregando produtos..."
-                    : "Nenhum produto ativo encontrado para este filtro."
+                    : "Nenhum produto ativo desta subcategoria foi encontrado para este filtro."
                 }
               />
             </CardContent>

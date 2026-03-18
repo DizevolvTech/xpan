@@ -685,9 +685,16 @@ export async function assignProductToOperationalSubcategory(
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const targetSubcategoryId = await resolveSubcategoryId(subcategoryIdentifier, supabase);
   const productRow = await resolveRowByIdentifier("products", productIdentifier, supabase);
+  const productMasterSubcategoryId = productRow.subcategory_id ? String(productRow.subcategory_id) : null;
 
   if (!Boolean(productRow.active)) {
     throw new Error("Somente produtos ativos podem entrar na carteira operacional.");
+  }
+
+  if (productMasterSubcategoryId !== targetSubcategoryId) {
+    throw new Error(
+      "Somente produtos cadastrados nesta subcategoria podem entrar no cronograma operacional. Para realocar, edite o cadastro do produto.",
+    );
   }
 
   const productId = String(productRow.id);
@@ -797,8 +804,15 @@ export async function updateProduct(
   const row = await resolveRowByIdentifier("products", identifier, supabase);
   const productId = String(row.id);
   const subcategoryId = await resolveSubcategoryId(input.lineId, supabase);
+  const currentSubcategoryId = row.subcategory_id ? String(row.subcategory_id) : null;
   const operationalSubcategoryId = row.operational_subcategory_id ? String(row.operational_subcategory_id) : null;
   const externalCode = normalizeOptionalCode(input.externalCode);
+  let nextOperationalSubcategoryId = operationalSubcategoryId;
+
+  if (currentSubcategoryId !== subcategoryId) {
+    nextOperationalSubcategoryId = operationalSubcategoryId ? subcategoryId : null;
+  }
+
   await assertProductExternalCodeEditable(productId, externalCode, supabase);
   await assertExternalCodeAvailable("products", externalCode, productId, supabase);
 
@@ -806,6 +820,7 @@ export async function updateProduct(
     .from("products")
     .update({
       subcategory_id: subcategoryId,
+      operational_subcategory_id: nextOperationalSubcategoryId,
       ...normalizeProductPayload(input),
       updated_at: new Date().toISOString(),
     })
@@ -817,8 +832,16 @@ export async function updateProduct(
 
   await replaceProductRecipeItems(String(row.id), input.recipe, supabase);
 
-  if (operationalSubcategoryId) {
-    await rebuildPendingScheduleRevisionForSubcategoryDbId(operationalSubcategoryId, { supabase });
+  const affectedOperationalSubcategoryIds = [
+    ...new Set(
+      [operationalSubcategoryId, nextOperationalSubcategoryId].filter(
+        (value): value is string => Boolean(value),
+      ),
+    ),
+  ];
+
+  for (const affectedOperationalSubcategoryId of affectedOperationalSubcategoryIds) {
+    await rebuildPendingScheduleRevisionForSubcategoryDbId(affectedOperationalSubcategoryId, { supabase });
   }
 }
 

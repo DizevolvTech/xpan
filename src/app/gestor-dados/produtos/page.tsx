@@ -893,7 +893,7 @@ export default function ProdutosPage() {
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          A carteira operacional do cronograma passa a ser gerenciada dentro da tela da subcategoria.
+                          A carteira operacional do cronograma é gerenciada na tela da subcategoria. Se precisar realocar o produto entre subcategorias, faça a alteração aqui no cadastro.
                         </p>
                       </div>
                       <div className="flex items-end">
