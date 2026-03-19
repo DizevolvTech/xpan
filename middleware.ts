@@ -1,30 +1,23 @@
-import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
-import {
-  getRoleForPath,
-  roleHomePath,
-  type UserRole,
-} from "@/lib/auth";
+import { logMiddlewareRedirect } from "@/lib/access-audit";
+import { resolveMiddlewareRouting } from "@/lib/middleware-routing";
 import { createSupabaseRequestClient } from "@/lib/supabase-request-client";
 
-function resolveRoleFromAuthUser(user: User | null): UserRole | null {
-  const metadataRole = user?.user_metadata?.role ?? user?.app_metadata?.role;
-
-  if (typeof metadataRole !== "string") {
-    return null;
-  }
-
-  const role = metadataRole as UserRole;
-  return role in roleHomePath ? role : null;
-}
-
-function buildRedirectResponse(
+function buildNextResponse(
   request: NextRequest,
-  pathname: string,
   applyResponseCookies: (response: NextResponse) => NextResponse,
 ) {
-  return applyResponseCookies(NextResponse.redirect(new URL(pathname, request.url)));
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-app-pathname", request.nextUrl.pathname);
+
+  return applyResponseCookies(
+    NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    }),
+  );
 }
 
 export async function middleware(request: NextRequest) {
@@ -36,41 +29,21 @@ export async function middleware(request: NextRequest) {
 
   const { supabase, applyResponseCookies } = createSupabaseRequestClient(request);
   const authResult = await supabase.auth.getUser();
-  const supabaseRole = resolveRoleFromAuthUser(authResult.data.user);
-  const role = supabaseRole;
+  const hasSession = Boolean(authResult.data.user);
+  const decision = resolveMiddlewareRouting({ pathname, search, hasSession });
 
-  if (pathname === "/") {
-    return buildRedirectResponse(request, role ? roleHomePath[role] : "/login", applyResponseCookies);
+  if (decision.kind === "redirect") {
+    logMiddlewareRedirect({
+      currentPath: `${pathname}${search}`,
+      redirectTo: decision.pathname,
+      reason: decision.reason,
+    });
+    return applyResponseCookies(
+      NextResponse.redirect(new URL(decision.pathname, request.url)),
+    );
   }
 
-  if (pathname === "/login") {
-    if (role) {
-      return buildRedirectResponse(request, roleHomePath[role], applyResponseCookies);
-    }
-
-    return applyResponseCookies(NextResponse.next());
-  }
-
-  const requiredRole = getRoleForPath(pathname);
-  if (!requiredRole) {
-    return applyResponseCookies(NextResponse.next());
-  }
-
-  if (!role) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("next", `${pathname}${search}`);
-    return applyResponseCookies(NextResponse.redirect(loginUrl));
-  }
-
-  if (role === "administrador") {
-    return applyResponseCookies(NextResponse.next());
-  }
-
-  if (requiredRole !== role) {
-    return buildRedirectResponse(request, roleHomePath[role], applyResponseCookies);
-  }
-
-  return applyResponseCookies(NextResponse.next());
+  return buildNextResponse(request, applyResponseCookies);
 }
 
 export const config = {

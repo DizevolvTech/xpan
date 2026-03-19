@@ -8,6 +8,7 @@ import { createSubcategory } from "@/lib/supabase-data/master-data-admin";
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/master-data/subcategories",
     permission: "gestor-dados.linhas",
     minimumLevel: "gerenciar",
   });

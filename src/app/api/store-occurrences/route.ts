@@ -21,6 +21,7 @@ function resolveScopedStoreIds(
 
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "GET /api/store-occurrences",
     permission: "loja.ocorrencias",
     minimumLevel: "operar",
   });
@@ -50,6 +51,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/store-occurrences",
     permission: "loja.ocorrencias",
     minimumLevel: "operar",
   });
@@ -73,7 +75,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof Error && error.message === "Authenticated store does not have access to this order") {
       return NextResponse.json(
-        { message: "A loja autenticada não tem acesso ao pedido informado." },
+        { message: "O usuário autenticado não tem acesso ao pedido informado." },
         { status: 403 },
       );
     }

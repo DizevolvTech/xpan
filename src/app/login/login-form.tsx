@@ -81,7 +81,7 @@ export default function LoginForm() {
               </div>
             </div>
             <CardDescription>
-              Faça login com seu usuário para acessar o fluxo operacional correspondente ao seu perfil.
+              Faça login com seu usuário para acessar os módulos liberados para o seu perfil-base, permissões e escopos.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -147,7 +147,7 @@ export default function LoginForm() {
           <CardHeader>
             <CardTitle className="font-heading text-lg">Sessão e Segurança</CardTitle>
             <CardDescription>
-              O acesso depende de um usuário ativo e de um perfil operacional válido.
+              O acesso depende de um usuário ativo, de um perfil-base válido e das permissões delegadas.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -158,9 +158,9 @@ export default function LoginForm() {
               </div>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>O usuário precisa estar cadastrado e ativo.</li>
-                <li>O e-mail precisa estar vinculado a um perfil operacional.</li>
+                <li>O e-mail precisa estar vinculado a um cadastro operacional válido.</li>
                 <li>Perfis inativos não conseguem iniciar sessão.</li>
-                <li>O acesso às telas segue o papel operacional associado ao perfil.</li>
+                <li>O acesso às telas segue permissões por módulo e escopos delegados.</li>
               </ul>
             </div>
 

@@ -7,24 +7,9 @@ import { createManagedUser, listManagedUsers } from "@/lib/supabase-data/admin-u
 
 type CreateUserBody = UserFormState | null;
 
-function validateStoreScope(payload: UserFormState | null) {
-  if (!payload) {
-    return "Payload inválido.";
-  }
-
-  if (payload.role !== "loja") {
-    return null;
-  }
-
-  if (!payload.storeIds || payload.storeIds.length === 0) {
-    return "Selecione ao menos uma loja autorizada para usuários com perfil Loja.";
-  }
-
-  return null;
-}
-
 export async function GET() {
   const authorization = await authorizeApiRequest({
+    contextLabel: "GET /api/admin/users",
     permission: "administrador.usuarios",
     minimumLevel: "gerenciar",
   });
@@ -49,6 +34,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/admin/users",
     permission: "administrador.usuarios",
     minimumLevel: "gerenciar",
   });
@@ -62,14 +48,6 @@ export async function POST(request: Request) {
   if (!payload?.name?.trim() || !payload?.email?.trim()) {
     return NextResponse.json(
       { message: "Informe nome e e-mail para continuar." },
-      { status: 400 },
-    );
-  }
-
-  const storeScopeError = validateStoreScope(payload);
-  if (storeScopeError) {
-    return NextResponse.json(
-      { message: storeScopeError },
       { status: 400 },
     );
   }

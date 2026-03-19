@@ -34,7 +34,9 @@ export async function PATCH(request: Request) {
 
     if (body.action === "release-order") {
       const authorization = await authorizeApiRequest({
-        roles: ["gestor-fabrica"],
+        contextLabel: "PATCH /api/factory-planning/workflow release-order",
+        permission: "gestor-fabrica.pedidos",
+        minimumLevel: "operar",
       });
 
       if ("response" in authorization) {
@@ -49,7 +51,9 @@ export async function PATCH(request: Request) {
 
     if (body.action === "cancel-order" || body.action === "reopen-order") {
       const authorization = await authorizeApiRequest({
-        roles: ["gestor-fabrica"],
+        contextLabel: `PATCH /api/factory-planning/workflow ${body.action}`,
+        permission: "gestor-fabrica.pedidos",
+        minimumLevel: "operar",
       });
 
       if ("response" in authorization) {
@@ -70,7 +74,9 @@ export async function PATCH(request: Request) {
 
     if (body.action === "update-production-item-status") {
       const authorization = await authorizeApiRequest({
-        roles: ["gestor-fabrica", "chao-fabrica"],
+        contextLabel: "PATCH /api/factory-planning/workflow update-production-item-status",
+        anyOfPermissions: ["gestor-fabrica.ops", "chao-fabrica.ops"],
+        minimumLevel: "operar",
       });
 
       if ("response" in authorization) {

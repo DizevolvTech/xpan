@@ -18,6 +18,7 @@ type UpdateScheduleBody = {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "PATCH /api/master-data/schedules/[scheduleId]",
     permission: "gestor-fabrica.sublinhas",
     minimumLevel: "gerenciar",
   });

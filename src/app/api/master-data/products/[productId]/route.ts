@@ -14,6 +14,7 @@ type RouteContext = {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "PATCH /api/master-data/products/[productId]",
     permission: "gestor-dados.produtos",
     minimumLevel: "gerenciar",
   });

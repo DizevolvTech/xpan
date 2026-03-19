@@ -8,7 +8,9 @@ import { getPersistedDeliveryExecutions, updateDeliveryExecution } from "@/lib/s
 
 export async function GET() {
   const authorization = await authorizeApiRequest({
-    roles: ["gestor-fabrica", "chao-fabrica"],
+    contextLabel: "GET /api/delivery-executions",
+    anyOfPermissions: ["gestor-fabrica.expedicao", "chao-fabrica.expedicao"],
+    minimumLevel: "visualizar",
   });
 
   if ("response" in authorization) {
@@ -32,7 +34,9 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   const authorization = await authorizeApiRequest({
-    roles: ["gestor-fabrica", "chao-fabrica"],
+    contextLabel: "PATCH /api/delivery-executions",
+    anyOfPermissions: ["gestor-fabrica.expedicao", "chao-fabrica.expedicao"],
+    minimumLevel: "operar",
   });
 
   if ("response" in authorization) {

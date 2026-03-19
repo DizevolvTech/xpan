@@ -51,7 +51,7 @@ const quickAccessGroups: Array<{ label: string; modules: QuickAccessModule[] }> 
         href: "/administrador/usuarios",
         title: "Gestão de Usuários",
         subtitle: "Delegação de acessos",
-        description: "Gerencie perfis, ativações e permissões por módulo e tipo de usuário.",
+        description: "Gerencie perfis-base, ativações e permissões por módulo e escopo operacional.",
         icon: ShieldCheck,
         tone: "blue",
       },
@@ -780,9 +780,9 @@ export default function AdministradorPage() {
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Acesso por Tipo de Usuário</h2>
+            <h2 className="text-lg font-semibold text-foreground">Acesso por Capacidade</h2>
             <p className="text-sm text-muted-foreground">
-              O administrador acessa todos os módulos, separados por perfil para navegação rápida.
+              A navegação global respeita módulos liberados por permissão, sem prender a experiência ao tipo de usuário.
             </p>
           </div>
         </div>

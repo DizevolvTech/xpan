@@ -261,17 +261,12 @@ async function resolveStoreRows(
 
 async function syncStoreAccess(
   profileId: string,
-  role: ManagedUser["role"],
   storeIds?: string[],
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const deleteResult = await supabase.from("profile_store_access").delete().eq("profile_id", profileId);
   if (deleteResult.error) {
     throw new Error(`Failed to reset store access: ${deleteResult.error.message}`);
-  }
-
-  if (role !== "loja") {
-    return;
   }
 
   const storeRows = await resolveStoreRows(supabase);
@@ -458,7 +453,7 @@ export async function createManagedUser(
 
   const profile = assertSupabaseResult(insertResult, "Failed to create user") as ProfileRow;
   await upsertPermissions(profile.id, buildDefaultPermissions(input.role), supabase);
-  await syncStoreAccess(profile.id, input.role, input.storeIds, supabase);
+  await syncStoreAccess(profile.id, input.storeIds, supabase);
   const authProvisioning = await syncProfileAuthUser(profile, {
     email: profile.email,
     name: profile.name,
@@ -506,8 +501,8 @@ export async function updateManagedUser(
     await upsertPermissions(updatedProfile.id, buildDefaultPermissions(input.role), supabase);
   }
 
-  if (input.storeIds || profile.role !== input.role) {
-    await syncStoreAccess(updatedProfile.id, input.role, input.storeIds, supabase);
+  if (input.storeIds !== undefined) {
+    await syncStoreAccess(updatedProfile.id, input.storeIds, supabase);
   }
   await syncProfileAuthUser(updatedProfile, {
     email: updatedProfile.email,

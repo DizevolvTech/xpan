@@ -1,14 +1,14 @@
 import { redirect } from "next/navigation";
 
-import { roleHomePath } from "@/lib/auth";
-import { resolveServerSession } from "@/lib/server-session";
+import { resolveLandingPath } from "@/lib/permission-modules";
+import { resolveCurrentManagedUser } from "@/lib/server-session";
 
 export default async function HomePage() {
-  const session = await resolveServerSession();
+  const user = await resolveCurrentManagedUser();
 
-  if (!session) {
+  if (!user) {
     redirect("/login");
   }
 
-  redirect(roleHomePath[session.role]);
+  redirect(resolveLandingPath(user.permissions, user.role));
 }

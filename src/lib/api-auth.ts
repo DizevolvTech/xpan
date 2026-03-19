@@ -1,21 +1,17 @@
 import { NextResponse } from "next/server";
 
 import type { ManagedUser } from "@/lib/admin-users";
-import type { UserRole } from "@/lib/auth";
-import type { PermissionLevel, PermissionModuleId } from "@/lib/permission-modules";
+import { resolveAuthorizationDecision } from "@/lib/authorization-decision";
+import { logApiAuthorizationFailure } from "@/lib/access-audit";
 import { resolveCurrentManagedUser } from "@/lib/server-session";
-
-const permissionRank: Record<PermissionLevel, number> = {
-  sem_acesso: 0,
-  visualizar: 1,
-  operar: 2,
-  gerenciar: 3,
-};
+import { hasStoreAccess, resolveAllowedStoreIds } from "@/lib/store-access";
+import type { PermissionLevel, PermissionModuleId } from "@/lib/permission-modules";
 
 type AuthorizeApiOptions = {
-  roles?: UserRole[];
   permission?: PermissionModuleId;
+  anyOfPermissions?: PermissionModuleId[];
   minimumLevel?: PermissionLevel;
+  contextLabel?: string;
 };
 
 function buildUnauthorizedResponse() {
@@ -30,50 +26,49 @@ export async function authorizeApiRequest(
   options: AuthorizeApiOptions = {},
 ): Promise<{ user: ManagedUser } | { response: NextResponse }> {
   const user = await resolveCurrentManagedUser();
+  const decision = resolveAuthorizationDecision(user, options);
 
-  if (!user) {
+  if (decision.kind === "unauthorized") {
+    logApiAuthorizationFailure({
+      event: "unauthorized",
+      reason: decision.reason,
+      permission: decision.permission,
+      anyOfPermissions: decision.anyOfPermissions,
+      minimumLevel: decision.minimumLevel,
+      contextLabel: options.contextLabel,
+    });
     return {
       response: buildUnauthorizedResponse(),
     };
   }
 
-  if (user.role === "administrador") {
-    return { user };
-  }
-
-  if (options.roles && !options.roles.includes(user.role)) {
+  if (decision.kind === "forbidden") {
+    logApiAuthorizationFailure({
+      event: "forbidden",
+      reason: decision.reason,
+      permission: decision.permission,
+      anyOfPermissions: decision.anyOfPermissions,
+      minimumLevel: decision.minimumLevel,
+      baseRole: decision.user.role,
+      userEmail: decision.user.email,
+      contextLabel: options.contextLabel,
+    });
     return {
       response: buildForbiddenResponse(),
     };
   }
 
-  if (options.permission) {
-    const currentLevel = user.permissions[options.permission];
-    const minimumLevel = options.minimumLevel ?? "visualizar";
-
-    if (permissionRank[currentLevel] < permissionRank[minimumLevel]) {
-      return {
-        response: buildForbiddenResponse(),
-      };
-    }
-  }
-
-  return { user };
+  return { user: decision.user };
 }
 
 export function getAllowedStoreIds(user: ManagedUser): string[] | null {
-  if (user.role !== "loja") {
-    return null;
-  }
-
-  return user.storeIds ?? [];
+  return resolveAllowedStoreIds(user.storeIds);
 }
 
 export function canAccessStore(user: ManagedUser, storeId: string) {
-  const allowedStoreIds = getAllowedStoreIds(user);
-  return allowedStoreIds === null ? true : allowedStoreIds.includes(storeId);
+  return hasStoreAccess(storeId, getAllowedStoreIds(user));
 }
 
 export function buildStoreScopeResponse() {
-  return buildForbiddenResponse("A loja autenticada não tem acesso a este registro.");
+  return buildForbiddenResponse("O usuário autenticado não tem acesso a este registro.");
 }

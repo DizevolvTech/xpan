@@ -8,6 +8,7 @@ import { createIngredient } from "@/lib/supabase-data/master-data-admin";
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/master-data/ingredients",
     permission: "gestor-dados.ingredientes",
     minimumLevel: "gerenciar",
   });

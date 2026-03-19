@@ -14,6 +14,7 @@ type RouteContext = {
 
 export async function DELETE(_request: Request, context: RouteContext) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "DELETE /api/master-data/subcategories/[subcategoryId]/operational-products/[productId]",
     permission: "gestor-dados.linhas",
     minimumLevel: "gerenciar",
   });

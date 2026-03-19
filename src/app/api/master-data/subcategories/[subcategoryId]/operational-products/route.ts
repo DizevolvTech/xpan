@@ -17,6 +17,7 @@ type AssignOperationalProductBody = {
 
 export async function POST(request: Request, context: RouteContext) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/master-data/subcategories/[subcategoryId]/operational-products",
     permission: "gestor-dados.linhas",
     minimumLevel: "gerenciar",
   });

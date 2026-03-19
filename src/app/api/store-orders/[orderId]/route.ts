@@ -20,6 +20,7 @@ function getReferenceDate(request: Request) {
 
 export async function GET(request: Request, context: { params: Promise<{ orderId: string }> }) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "GET /api/store-orders/[orderId]",
     permission: "loja.pedidos",
     minimumLevel: "operar",
   });
@@ -65,7 +66,7 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
 
     if (!canAccessStore(authorization.user, resolvedStoreId)) {
       return NextResponse.json(
-        { message: "A loja autenticada não tem acesso a este pedido." },
+        { message: "O usuário autenticado não tem acesso a este pedido." },
         { status: 403 },
       );
     }

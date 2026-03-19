@@ -34,20 +34,9 @@ type RouteContext = {
   }>;
 };
 
-function validateStoreScope(user: UserFormState) {
-  if (user.role !== "loja") {
-    return null;
-  }
-
-  if (!user.storeIds || user.storeIds.length === 0) {
-    return "Selecione ao menos uma loja autorizada para usuários com perfil Loja.";
-  }
-
-  return null;
-}
-
 export async function PATCH(request: Request, context: RouteContext) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "PATCH /api/admin/users/[userId]",
     permission: "administrador.usuarios",
     minimumLevel: "gerenciar",
   });
@@ -73,14 +62,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (!payload.user.name.trim() || !payload.user.email.trim()) {
         return NextResponse.json(
           { message: "Informe nome e e-mail para continuar." },
-          { status: 400 },
-        );
-      }
-
-      const storeScopeError = validateStoreScope(payload.user);
-      if (storeScopeError) {
-        return NextResponse.json(
-          { message: storeScopeError },
           { status: 400 },
         );
       }

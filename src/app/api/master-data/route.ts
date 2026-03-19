@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
+import { hasAnyNonStoreAccess } from "@/lib/permission-modules";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
 export async function GET() {
-  const authorization = await authorizeApiRequest();
+  const authorization = await authorizeApiRequest({
+    contextLabel: "GET /api/master-data",
+  });
 
   if ("response" in authorization) {
     return authorization.response;
@@ -15,7 +18,7 @@ export async function GET() {
     const supabase = createSupabaseAdminClient();
     const snapshot = await getMasterDataSnapshot({
       supabase,
-      includeProfileNames: authorization.user.role !== "loja",
+      includeProfileNames: hasAnyNonStoreAccess(authorization.user.permissions),
     });
     const allowedStoreIds = getAllowedStoreIds(authorization.user);
 

@@ -13,6 +13,7 @@ function getReferenceDate(request: Request) {
 
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "GET /api/store-orders",
     permission: "loja.pedidos",
     minimumLevel: "operar",
   });
@@ -62,6 +63,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/store-orders",
     permission: "loja.pedidos",
     minimumLevel: "operar",
   });
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
 
     if (!canAccessStore(authorization.user, body.storeId)) {
       return NextResponse.json(
-        { message: "A loja autenticada não tem acesso à loja selecionada." },
+        { message: "O usuário autenticado não tem acesso à loja selecionada." },
         { status: 403 },
       );
     }

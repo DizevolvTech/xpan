@@ -8,6 +8,7 @@ import { updateOperationalSettings } from "@/lib/supabase-data/master-data-admin
 
 export async function PATCH(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "PATCH /api/master-data/operational-settings",
     permission: "gestor-fabrica.dashboard",
     minimumLevel: "gerenciar",
   });

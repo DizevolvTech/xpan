@@ -11,7 +11,9 @@ function getReferenceDate(request: Request) {
 
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
-    roles: ["gestor-fabrica", "chao-fabrica"],
+    contextLabel: "GET /api/factory-planning",
+    anyOfPermissions: ["gestor-fabrica.dashboard", "chao-fabrica.dashboard"],
+    minimumLevel: "visualizar",
   });
 
   if ("response" in authorization) {

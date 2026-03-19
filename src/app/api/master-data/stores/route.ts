@@ -8,6 +8,7 @@ import { createStore } from "@/lib/supabase-data/master-data-admin";
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/master-data/stores",
     permission: "gestor-dados.lojas",
     minimumLevel: "gerenciar",
   });

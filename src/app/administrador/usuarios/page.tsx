@@ -55,6 +55,7 @@ import {
   buildDefaultPermissions,
   countAllowedModules,
   countManagementPermissions,
+  describeNavigationAccess,
   hasAdministrativeAccess,
   permissionGroupLabels,
   permissionGroupOrder,
@@ -67,7 +68,47 @@ import {
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useManagedUsers } from "@/lib/use-managed-users";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
- 
+
+function formatNavigationGroupSummary(groupLabels: string[]) {
+  if (groupLabels.length === 0) {
+    return "Somente Meu Perfil";
+  }
+
+  if (groupLabels.length <= 2) {
+    return groupLabels.join(" · ");
+  }
+
+  return `${groupLabels.slice(0, 2).join(" · ")} +${groupLabels.length - 2}`;
+}
+
+function formatNavigationModuleSummary(moduleLabels: string[]) {
+  if (moduleLabels.length === 0) {
+    return "Nenhum módulo liberado";
+  }
+
+  if (moduleLabels.length <= 3) {
+    return moduleLabels.join(" · ");
+  }
+
+  return `${moduleLabels.slice(0, 3).join(" · ")} +${moduleLabels.length - 3}`;
+}
+
+function buildNavigationPreview(permissions: PermissionMap, baseRole: UserRole) {
+  const summary = describeNavigationAccess(permissions, baseRole);
+  const groupLabels = summary.sections.map((section) => section.label);
+  const moduleLabels = summary.sections.flatMap((section) =>
+    section.items.map((item) => item.label),
+  );
+
+  return {
+    landingPath: summary.landingPath,
+    visibleModuleCount: summary.visibleModuleCount,
+    visibleGroupCount: summary.visibleGroupCount,
+    groupSummary: formatNavigationGroupSummary(groupLabels),
+    moduleSummary: formatNavigationModuleSummary(moduleLabels),
+  };
+}
+
 export default function AdministradorUsuariosPage() {
   const { snapshot } = useMasterDataSnapshot();
   const {
@@ -137,6 +178,17 @@ export default function AdministradorUsuariosPage() {
     () => users.find((user) => user.id === profileUserId) ?? null,
     [profileUserId, users],
   );
+  const baseRoleTemplatePreview = useMemo(
+    () => buildNavigationPreview(buildDefaultPermissions(userForm.role), userForm.role),
+    [userForm.role],
+  );
+  const permissionNavigationPreview = useMemo(() => {
+    if (!permissionUser || !permissionDraft) {
+      return null;
+    }
+
+    return buildNavigationPreview(permissionDraft, permissionUser.role);
+  }, [permissionDraft, permissionUser]);
 
   const filteredUsers = useMemo(
     () =>
@@ -236,28 +288,39 @@ export default function AdministradorUsuariosPage() {
       ),
     },
     {
+      key: "navigation",
+      header: "Entrada Inicial",
+      render: (user: ManagedUser) => {
+        const preview = buildNavigationPreview(user.permissions, user.role);
+
+        return (
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-foreground">{preview.landingPath}</p>
+            <p className="text-xs text-muted-foreground">{preview.groupSummary}</p>
+          </div>
+        );
+      },
+    },
+    {
       key: "storeScope",
       header: "Escopo Loja",
-      render: (user: ManagedUser) =>
-        user.role === "loja" ? (
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">
-              {user.storeIds?.length
-                ? `${user.storeIds.length} loja${user.storeIds.length > 1 ? "s" : ""} autorizada${user.storeIds.length > 1 ? "s" : ""}`
-                : "Nenhuma loja vinculada"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {user.storeIds?.length
-                ? user.storeIds
-                    .slice(0, 2)
-                    .map((storeId) => storeNameById.get(storeId) ?? storeId)
-                    .join(" · ")
-                : "Defina explicitamente as lojas que esse usuário pode operar."}
-            </p>
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground">Não se aplica a este perfil.</span>
-        ),
+      render: (user: ManagedUser) => (
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">
+            {user.storeIds?.length
+              ? `${user.storeIds.length} loja${user.storeIds.length > 1 ? "s" : ""} autorizada${user.storeIds.length > 1 ? "s" : ""}`
+              : "Sem restrição cadastrada"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {user.storeIds?.length
+              ? user.storeIds
+                  .slice(0, 2)
+                  .map((storeId) => storeNameById.get(storeId) ?? storeId)
+                  .join(" · ")
+              : "Quando houver módulos da loja liberados, o usuário poderá operar todas as lojas disponíveis."}
+          </p>
+        </div>
+      ),
     },
     {
       key: "updatedAt",
@@ -377,11 +440,6 @@ export default function AdministradorUsuariosPage() {
       return;
     }
 
-    if (userForm.role === "loja" && normalizedStoreIds.length === 0) {
-      setUserFormError("Selecione ao menos uma loja autorizada para usuários com perfil Loja.");
-      return;
-    }
-
     const hasDuplicatedEmail = users.some(
       (user) => user.email.toLowerCase() === email && user.id !== editingUserId,
     );
@@ -399,7 +457,7 @@ export default function AdministradorUsuariosPage() {
             email,
             role: userForm.role,
             status: userForm.status,
-            storeIds: userForm.role === "loja" ? normalizedStoreIds : [],
+            storeIds: normalizedStoreIds,
           },
           editingUser?.role !== userForm.role,
         );
@@ -409,7 +467,7 @@ export default function AdministradorUsuariosPage() {
           email,
           role: userForm.role,
           status: userForm.status,
-          storeIds: userForm.role === "loja" ? normalizedStoreIds : [],
+          storeIds: normalizedStoreIds,
         });
 
         if (created?.temporaryPassword) {
@@ -771,7 +829,7 @@ export default function AdministradorUsuariosPage() {
               Passo 1
             </p>
             <p className="mt-1 font-medium text-foreground">
-              Defina o perfil base do usuário ao criar ou editar o cadastro.
+              Defina o perfil-base do usuário para aplicar o template inicial de acesso.
             </p>
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
@@ -787,7 +845,7 @@ export default function AdministradorUsuariosPage() {
               Passo 3
             </p>
             <p className="mt-1 font-medium text-foreground">
-              Abra a delegação e habilite os módulos necessários por tipo de usuário.
+              Abra a delegação e habilite os módulos realmente necessários para esse usuário.
             </p>
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
@@ -817,7 +875,7 @@ export default function AdministradorUsuariosPage() {
           <DialogHeader>
             <DialogTitle>{editingUserId ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
             <DialogDescription>
-              O perfil base define permissões padrão. Para usuários com perfil Loja, a seleção de lojas abaixo define exatamente quais unidades esse usuário pode visualizar e operar.
+              O perfil-base define as permissões padrão. O escopo de lojas abaixo é opcional e funciona como uma segunda camada: quando preenchido, limita em quais unidades o usuário pode operar sempre que tiver módulos da loja liberados.
             </DialogDescription>
           </DialogHeader>
 
@@ -854,7 +912,6 @@ export default function AdministradorUsuariosPage() {
                     setUserForm((current) => ({
                       ...current,
                       role: value as UserRole,
-                      storeIds: value === "loja" ? current.storeIds ?? [] : [],
                     }))
                   }
                 >
@@ -893,55 +950,87 @@ export default function AdministradorUsuariosPage() {
               </div>
             </div>
 
-            {userForm.role === "loja" ? (
-              <section className="space-y-3 rounded-xl border border-border/80 bg-panel/25 p-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">Escopo operacional da loja</p>
-                  <p className="text-xs text-muted-foreground">
-                    O perfil Loja já libera os módulos operacionais da loja. Aqui você define em quais lojas esse usuário realmente pode entrar, visualizar pedidos e registrar ocorrências.
+            <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-foreground">Preview do template do perfil-base</p>
+                <p className="text-xs text-muted-foreground">
+                  Esse preview mostra a rota inicial e os módulos liberados ao aplicar o perfil-base atual como padrão.
+                </p>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-border/70 bg-card px-3 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Entrada inicial
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    {userForm.storeIds?.length
-                      ? `${userForm.storeIds.length} loja${userForm.storeIds.length > 1 ? "s" : ""} selecionada${userForm.storeIds.length > 1 ? "s" : ""}.`
-                      : "Nenhuma loja selecionada ainda."}
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {baseRoleTemplatePreview.landingPath}
                   </p>
                 </div>
-
-                {activeStores.length === 0 ? (
-                  <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
-                    Não há lojas ativas disponíveis para vínculo neste momento.
-                  </div>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {activeStores.map((store) => {
-                      const isChecked = (userForm.storeIds ?? []).includes(store.id);
-
-                      return (
-                        <label
-                          key={store.id}
-                          className="flex items-start gap-3 rounded-lg border border-border/70 bg-card px-3 py-3 text-sm"
-                        >
-                          <Checkbox
-                            checked={isChecked}
-                            onCheckedChange={(checked) => toggleAuthorizedStore(store.id, checked === true)}
-                          />
-                          <div className="space-y-1">
-                            <p className="font-medium text-foreground">{store.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {store.code} · Janela {store.receiveWindow}
-                            </p>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-            ) : (
-              <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                Este perfil não usa escopo por loja. O acesso será controlado pelas permissões do perfil base e pela delegação por módulo.
+                <div className="rounded-lg border border-border/70 bg-card px-3 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Áreas visíveis
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {baseRoleTemplatePreview.groupSummary}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-card px-3 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Módulos padrão
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {baseRoleTemplatePreview.visibleModuleCount}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {baseRoleTemplatePreview.moduleSummary}
+                  </p>
+                </div>
               </div>
-            )}
+            </div>
+
+            <section className="space-y-3 rounded-xl border border-border/80 bg-panel/25 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-foreground">Escopo operacional da loja</p>
+                <p className="text-xs text-muted-foreground">
+                  Selecione lojas apenas quando quiser restringir o acesso. Sem seleção, o usuário permanece sem limitação por unidade e o escopo só entra em ação quando houver módulos da loja delegados.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {userForm.storeIds?.length
+                    ? `${userForm.storeIds.length} loja${userForm.storeIds.length > 1 ? "s" : ""} selecionada${userForm.storeIds.length > 1 ? "s" : ""}.`
+                    : "Nenhuma loja selecionada. O acesso ficará sem restrição por unidade."}
+                </p>
+              </div>
+
+              {activeStores.length === 0 ? (
+                <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                  Não há lojas ativas disponíveis para vínculo neste momento.
+                </div>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {activeStores.map((store) => {
+                    const isChecked = (userForm.storeIds ?? []).includes(store.id);
+
+                    return (
+                      <label
+                        key={store.id}
+                        className="flex items-start gap-3 rounded-lg border border-border/70 bg-card px-3 py-3 text-sm"
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) => toggleAuthorizedStore(store.id, checked === true)}
+                        />
+                        <div className="space-y-1">
+                          <p className="font-medium text-foreground">{store.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {store.code} · Janela {store.receiveWindow}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
 
             {userFormDirty ? (
               <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
@@ -1260,13 +1349,51 @@ export default function AdministradorUsuariosPage() {
             <DialogTitle>Delegação de Permissões</DialogTitle>
             <DialogDescription>
               {permissionUser
-                ? `Usuário: ${permissionUser.name} (${roleLabels[permissionUser.role]}).`
+                ? `Usuário: ${permissionUser.name} (${roleLabels[permissionUser.role]} como perfil-base).`
                 : "Ajuste os níveis de acesso por módulo."}
             </DialogDescription>
           </DialogHeader>
 
           {permissionUser && permissionDraft && (
             <div className="space-y-4 py-1">
+              {permissionNavigationPreview ? (
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Entrada inicial
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-foreground">
+                      {permissionNavigationPreview.landingPath}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      A primeira rota liberada por esta delegação.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Áreas visíveis
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-foreground">
+                      {permissionNavigationPreview.groupSummary}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {permissionNavigationPreview.visibleGroupCount} área{permissionNavigationPreview.visibleGroupCount === 1 ? "" : "s"} com navegação disponível.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Módulos visíveis
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-foreground">
+                      {permissionNavigationPreview.visibleModuleCount} módulo{permissionNavigationPreview.visibleModuleCount === 1 ? "" : "s"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {permissionNavigationPreview.moduleSummary}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
               {permissionFormError ? (
                 <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
                   {permissionFormError}

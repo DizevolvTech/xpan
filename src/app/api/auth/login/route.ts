@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import {
-  roleHomePath,
-} from "@/lib/auth";
+import { resolveLandingPath } from "@/lib/permission-modules";
 import {
   findManagedUserByAuthUserId,
 } from "@/lib/supabase-data/admin-users";
@@ -50,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     return applyResponseCookies(
       NextResponse.json(
-        { message: "Usuário autenticado, mas sem perfil operacional cadastrado." },
+        { message: "Usuário autenticado, mas sem cadastro operacional válido." },
         { status: 403 },
       ),
     );
@@ -61,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     return applyResponseCookies(
       NextResponse.json(
-        { message: "Usuário autenticado, mas o perfil está inativo." },
+        { message: "Usuário autenticado, mas o cadastro está inativo." },
         { status: 403 },
       ),
     );
@@ -73,7 +71,7 @@ export async function POST(request: NextRequest) {
       email: managedUser.email,
       name: managedUser.name,
     },
-    redirectTo: roleHomePath[managedUser.role],
+    redirectTo: resolveLandingPath(managedUser.permissions, managedUser.role),
   });
 
   return applyResponseCookies(response);

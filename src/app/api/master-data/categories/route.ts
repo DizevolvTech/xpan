@@ -8,6 +8,7 @@ import { createCategory } from "@/lib/supabase-data/master-data-admin";
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
+    contextLabel: "POST /api/master-data/categories",
     permission: "gestor-dados.setores",
     minimumLevel: "gerenciar",
   });

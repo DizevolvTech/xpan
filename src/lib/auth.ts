@@ -12,27 +12,3 @@ export type SessionUser = {
 };
 
 export const SESSION_COOKIE_NAME = "da_session";
-
-export const roleHomePath: Record<UserRole, string> = {
-  administrador: "/administrador",
-  "gestor-dados": "/gestor-dados",
-  "gestor-fabrica": "/gestor-fabrica",
-  "chao-fabrica": "/chao-fabrica",
-  loja: "/loja",
-};
-
-const roleRoutePrefix: Record<UserRole, string> = {
-  administrador: "/administrador",
-  "gestor-dados": "/gestor-dados",
-  "gestor-fabrica": "/gestor-fabrica",
-  "chao-fabrica": "/chao-fabrica",
-  loja: "/loja",
-};
-
-export function getRoleForPath(pathname: string): UserRole | null {
-  const match = (Object.entries(roleRoutePrefix) as Array<[UserRole, string]>).find(([, prefix]) =>
-    pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
-
-  return match?.[0] ?? null;
-}
