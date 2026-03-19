@@ -49,17 +49,7 @@ export default function ExpedicaoDetailsPage() {
     [deliveryExecutionState, expedition],
   );
   const expeditionCheckedItems = useMemo(() => execution?.checklistState ?? {}, [execution?.checklistState]);
-  const hasChecklistProgress = useMemo(
-    () =>
-      Boolean(
-        execution &&
-          (execution.checklistCompletedAt !== null ||
-            Object.keys(execution.checklistState).length > 0 ||
-            execution.status !== "aguardando_expedicao"),
-      ),
-    [execution],
-  );
-  const canSeparate = Boolean(expedition && (expedition.status === "aguardando_expedicao" || hasChecklistProgress));
+  const canSeparate = Boolean(expedition && expedition.status === "aguardando_expedicao");
   const checklistEditable = Boolean(canSeparate && execution?.status === "aguardando_expedicao");
   const visibleStatus = useMemo(
     () =>

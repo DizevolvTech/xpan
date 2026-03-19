@@ -6,6 +6,17 @@ import { invalidateDeliveryExecutionCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions, updateDeliveryExecution } from "@/lib/supabase-data/delivery";
 
+function isClientValidationError(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("invalid") ||
+    normalized.includes("checklist") ||
+    normalized.includes("expedi") ||
+    normalized.includes("pronto para expedi")
+  );
+}
+
 export async function GET() {
   const authorization = await authorizeApiRequest({
     contextLabel: "GET /api/delivery-executions",
@@ -72,7 +83,7 @@ export async function PATCH(request: Request) {
       {
         message,
       },
-      { status: message.toLowerCase().includes("invalid") ? 400 : 500 },
+      { status: isClientValidationError(message) ? 400 : 500 },
     );
   }
 }

@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  areAllChecklistItemsChecked,
   canRegisterDeliveryFailure,
   canTransitionDeliveryStatus,
   getExpeditionVisibleStatus,
+  isOrderReadyForDeliveryExecution,
   getNextDeliveryAction,
+  resolveEffectiveDeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
 
 test("delivery workflow only allows valid transitions", () => {
@@ -38,4 +41,17 @@ test("expedition visible status prioritizes the delivery execution stage when it
   assert.equal(getExpeditionVisibleStatus("aguardando_expedicao", "pronto_coleta"), "pronto_coleta");
   assert.equal(getExpeditionVisibleStatus("aguardando_expedicao", "em_rota"), "em_rota");
   assert.equal(getExpeditionVisibleStatus("em_producao", "aguardando_expedicao"), "em_producao");
+});
+
+test("delivery execution is clamped while the order is not ready for expedition", () => {
+  assert.equal(isOrderReadyForDeliveryExecution("aguardando_expedicao"), true);
+  assert.equal(isOrderReadyForDeliveryExecution("em_producao"), false);
+  assert.equal(resolveEffectiveDeliveryExecutionStatus("em_producao", "entregue"), "aguardando_expedicao");
+  assert.equal(getExpeditionVisibleStatus("em_producao", "entregue"), "em_producao");
+});
+
+test("checklist completeness requires every aggregated expedition item", () => {
+  assert.equal(areAllChecklistItemsChecked(["a", "b"], { a: true }), false);
+  assert.equal(areAllChecklistItemsChecked(["a", "b"], { a: true, b: true }), true);
+  assert.equal(areAllChecklistItemsChecked([], { a: true }), false);
 });

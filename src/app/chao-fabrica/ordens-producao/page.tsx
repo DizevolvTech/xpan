@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowLeft, ClipboardList, Factory, Layers, PackageCheck, Truck } from "lucide-react";
 
+import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
@@ -247,20 +248,13 @@ export default function OrdensProducaoPage() {
       key: "documents",
       header: "Ações",
       render: (item: OpQueueRow) => (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" onClick={() => openWorkflowDialog(item.id)}>
-            Atualizar itens
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/pre-pesagem/${item.id}?ref=${anchorDate}`)}>
-            Pré-pesagem
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/producao/${item.id}?ref=${anchorDate}`)}>
-            Produção
-          </Button>
-          <Button asChild type="button" size="sm">
-            <Link href={`/chao-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`}>Abrir</Link>
-          </Button>
-        </div>
+        <ProductionOrderActionsMenu
+          detailHref={`/chao-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`}
+          preWeighingHref={`/impressao/pre-pesagem/${item.id}?ref=${anchorDate}`}
+          productionPrintHref={`/impressao/producao/${item.id}?ref=${anchorDate}`}
+          onOpenWorkflow={() => openWorkflowDialog(item.id)}
+          onOpenPrint={openPrintPage}
+        />
       ),
     },
   ];

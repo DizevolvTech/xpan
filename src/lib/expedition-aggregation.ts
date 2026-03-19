@@ -1,5 +1,3 @@
-"use client";
-
 import type { ExpeditionItem } from "@/lib/order-planning";
 
 export type AggregatedExpeditionItem = {
@@ -18,11 +16,23 @@ function round2(value: number) {
   return Number(value.toFixed(2));
 }
 
+export function getAggregatedExpeditionItemKey(input: {
+  productId: string;
+  requestedUnit: string;
+  expeditionUnit: string;
+}) {
+  return `${input.productId}|${input.requestedUnit}|${input.expeditionUnit}`;
+}
+
 export function aggregateExpeditionItems(items: ExpeditionItem[]): AggregatedExpeditionItem[] {
   const map = new Map<string, AggregatedExpeditionItem>();
 
   items.forEach((item) => {
-    const key = `${item.productId}|${item.requestedUnit}|${item.expeditionUnit}`;
+    const key = getAggregatedExpeditionItemKey({
+      productId: item.productId,
+      requestedUnit: item.requestedUnit,
+      expeditionUnit: item.expeditionUnit,
+    });
     if (!map.has(key)) {
       map.set(key, {
         productId: item.productId,

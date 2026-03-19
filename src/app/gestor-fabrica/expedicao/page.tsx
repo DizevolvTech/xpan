@@ -89,11 +89,7 @@ export default function ExpedicaoPage() {
         .map((item) => {
           const productionReady = item.status === "aguardando_expedicao";
           const execution = deliveryExecutionState.resolveExecution(item.orderId, productionReady);
-          const hasChecklistProgress =
-            execution.checklistCompletedAt !== null ||
-            Object.keys(execution.checklistState).length > 0 ||
-            execution.status !== "aguardando_expedicao";
-          const checklistReady = productionReady || hasChecklistProgress;
+          const checklistReady = productionReady;
           const checklistStatus = execution.status;
 
           return {

@@ -8,8 +8,10 @@ import {
   type StoreOccurrenceActorRole,
   validateStoreOccurrenceDraft,
 } from "@/lib/store-occurrence-workflow";
+import { resolveEffectiveDeliveryExecutionStatus } from "@/lib/delivery-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { allocateBusinessCode } from "@/lib/supabase-data/business-codes";
+import { resolveOrderDeliveryExecutionContext } from "@/lib/supabase-data/delivery";
 import { appendStoreOccurrenceEvent, listStoreOccurrenceEvents } from "@/lib/supabase-data/store-occurrence-events";
 import {
   assertSupabaseResult,
@@ -108,6 +110,7 @@ async function assertOccurrenceCanBeOpened(
   orderDatabaseId: string,
   supabase: SupabaseDataClient,
 ) {
+  const { orderStatus } = await resolveOrderDeliveryExecutionContext(orderDatabaseId, supabase);
   const executionResult = await supabase
     .from("delivery_executions")
     .select("status")
@@ -118,7 +121,12 @@ async function assertOccurrenceCanBeOpened(
     throw new Error(`Failed to resolve delivery execution for occurrence: ${executionResult.error.message}`);
   }
 
-  if (!canOpenOccurrenceForDeliveryStatus(executionResult.data?.status ?? null)) {
+  const effectiveExecutionStatus = resolveEffectiveDeliveryExecutionStatus(
+    orderStatus,
+    executionResult.data?.status ?? null,
+  );
+
+  if (!canOpenOccurrenceForDeliveryStatus(effectiveExecutionStatus)) {
     throw new Error("Occurrences can only be opened for orders already on route or delivered");
   }
 }

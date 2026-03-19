@@ -52,12 +52,36 @@ export function canRegisterDeliveryFailure(status: DeliveryExecutionStatus) {
   return status === "em_rota" || status === "no_destino";
 }
 
+export function isOrderReadyForDeliveryExecution(orderStatus: OrderStatus) {
+  return orderStatus === "aguardando_expedicao";
+}
+
+export function resolveEffectiveDeliveryExecutionStatus(
+  orderStatus: OrderStatus,
+  executionStatus: DeliveryExecutionStatus | null | undefined,
+) {
+  if (!isOrderReadyForDeliveryExecution(orderStatus)) {
+    return "aguardando_expedicao";
+  }
+
+  return executionStatus ?? "aguardando_expedicao";
+}
+
+export function areAllChecklistItemsChecked(
+  checklistItemKeys: string[],
+  checklistState: DeliveryChecklistState | null | undefined,
+) {
+  return checklistItemKeys.length > 0 && checklistItemKeys.every((key) => checklistState?.[key] === true);
+}
+
 export function getExpeditionVisibleStatus(
   orderStatus: OrderStatus,
-  executionStatus: DeliveryExecutionStatus,
+  executionStatus: DeliveryExecutionStatus | null | undefined,
 ): ExpeditionVisibleStatus {
-  if (executionStatus !== "aguardando_expedicao") {
-    return executionStatus;
+  const effectiveExecutionStatus = resolveEffectiveDeliveryExecutionStatus(orderStatus, executionStatus);
+
+  if (effectiveExecutionStatus !== "aguardando_expedicao") {
+    return effectiveExecutionStatus;
   }
 
   return orderStatus;

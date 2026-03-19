@@ -1,5 +1,6 @@
 import {
   getExpeditionVisibleStatus,
+  resolveEffectiveDeliveryExecutionStatus,
   type DeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
 import type { OrderStatus } from "@/lib/order-planning";
@@ -10,8 +11,10 @@ export function resolveStoreVisibleOrderStatus(
   orderStatus: OrderStatus,
   executionStatus: DeliveryExecutionStatus | null | undefined,
 ) {
-  if (executionStatus && executionStatus !== "aguardando_expedicao") {
-    return getExpeditionVisibleStatus(orderStatus, executionStatus);
+  const effectiveExecutionStatus = resolveEffectiveDeliveryExecutionStatus(orderStatus, executionStatus);
+
+  if (effectiveExecutionStatus !== "aguardando_expedicao") {
+    return getExpeditionVisibleStatus(orderStatus, effectiveExecutionStatus);
   }
 
   return orderStatus;
@@ -32,16 +35,20 @@ export function canCancelStoreOrder(
 }
 
 export function canOpenOccurrenceForOrderExecution(
+  orderStatus: OrderStatus,
   executionStatus: DeliveryExecutionStatus | null | undefined,
 ) {
+  const effectiveExecutionStatus = resolveEffectiveDeliveryExecutionStatus(orderStatus, executionStatus);
+
   return (
-    executionStatus === "em_rota" ||
-    executionStatus === "no_destino" ||
-    executionStatus === "entregue"
+    effectiveExecutionStatus === "em_rota" ||
+    effectiveExecutionStatus === "no_destino" ||
+    effectiveExecutionStatus === "entregue"
   );
 }
 
 export function buildStoreOrderCapabilities(input: {
+  orderStatus: OrderStatus;
   managementStatus: StoreOrderManagementStatus;
   isReleasedToProduction: boolean;
   executionStatus: DeliveryExecutionStatus | null | undefined;
@@ -49,6 +56,6 @@ export function buildStoreOrderCapabilities(input: {
   return {
     canEdit: canEditStoreOrder(input.managementStatus, input.isReleasedToProduction),
     canCancel: canCancelStoreOrder(input.managementStatus, input.isReleasedToProduction),
-    canOpenOccurrence: canOpenOccurrenceForOrderExecution(input.executionStatus),
+    canOpenOccurrence: canOpenOccurrenceForOrderExecution(input.orderStatus, input.executionStatus),
   };
 }

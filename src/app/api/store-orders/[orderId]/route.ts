@@ -133,11 +133,13 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
 
     const planningOrder = planning.orders.find((item) => item.id === (orderRow.legacy_id ?? orderRow.id));
     const execution = deliveryExecutions[orderRow.legacy_id ?? orderRow.id];
+    const resolvedOrderStatus = planningOrder?.status ?? "em_espera";
     const visibleStatus = resolveStoreVisibleOrderStatus(
-      planningOrder?.status ?? "em_espera",
+      resolvedOrderStatus,
       execution?.status,
     );
     const capabilities = buildStoreOrderCapabilities({
+      orderStatus: resolvedOrderStatus,
       managementStatus: orderRow.management_status,
       isReleasedToProduction: isReleased,
       executionStatus: execution?.status,

@@ -1,17 +1,23 @@
 import "server-only";
 
 import {
+  areAllChecklistItemsChecked,
   canTransitionDeliveryStatus,
+  isOrderReadyForDeliveryExecution,
+  resolveEffectiveDeliveryExecutionStatus,
   type DeliveryChecklistState,
   type DeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
+import { aggregateExpeditionItems, getAggregatedExpeditionItemKey } from "@/lib/expedition-aggregation";
 import { getCachedServerData } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
+import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import {
   assertSupabaseResult,
   isSupabaseMissingSchemaError,
   isUuid,
+  resolveOptionalSupabaseResult,
   resolveProfileDatabaseId,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
@@ -31,6 +37,59 @@ type LegacyDeliveryExecutionRow = {
   status: DeliveryExecutionStatus;
   updated_at: string;
 };
+
+type DeliveryOrderRow = {
+  id: string;
+  legacy_id: string | null;
+  code: string;
+  delivery_date: string;
+};
+
+export async function resolveOrderDeliveryExecutionContext(
+  orderId: string,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const orderQuery = supabase
+    .from("store_orders")
+    .select("id, legacy_id, code, delivery_date");
+  const orderResult = await (isUuid(orderId)
+    ? orderQuery.eq("id", orderId)
+    : orderQuery.eq("legacy_id", orderId)).maybeSingle();
+  const orderRow = assertSupabaseResult(
+    { data: orderResult.data, error: orderResult.error },
+    "Failed to resolve order for delivery execution",
+  ) as DeliveryOrderRow;
+  const orderKey = orderRow.legacy_id ?? orderRow.id;
+  const planning = await getFactoryPlanningSnapshot(orderRow.delivery_date, {
+    supabase,
+    includeProfileNames: false,
+  });
+  const planningOrder = planning.orders.find((item) => item.id === orderKey);
+  const expedition = planning.expedition.find((item) => item.orderId === orderKey) ?? null;
+
+  return {
+    orderKey,
+    orderRow,
+    orderStatus: planningOrder?.status ?? "em_espera",
+    expedition,
+  };
+}
+
+function buildChecklistItemKeys(
+  expedition: Awaited<ReturnType<typeof resolveOrderDeliveryExecutionContext>>["expedition"],
+) {
+  if (!expedition) {
+    return [];
+  }
+
+  return aggregateExpeditionItems(expedition.items).map((item) =>
+    getAggregatedExpeditionItemKey({
+      productId: item.productId,
+      requestedUnit: item.requestedUnit,
+      expeditionUnit: item.expeditionUnit,
+    }),
+  );
+}
 
 async function loadLegacyExecutionRows(
   supabase: SupabaseDataClient,
@@ -97,13 +156,12 @@ export async function updateDeliveryExecution(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
-  const orderQuery = supabase
-    .from("store_orders")
-    .select("id")
-  const orderResult = await (isUuid(orderId)
-    ? orderQuery.eq("id", orderId)
-    : orderQuery.eq("legacy_id", orderId)).maybeSingle();
-  const orderRow = assertSupabaseResult({ data: orderResult.data, error: orderResult.error }, "Failed to resolve order for delivery execution");
+  const { orderRow, orderStatus, expedition } = await resolveOrderDeliveryExecutionContext(orderId, supabase);
+
+  if (!isOrderReadyForDeliveryExecution(orderStatus)) {
+    throw new Error("O pedido ainda não está pronto para expedição.");
+  }
+
   const currentExecutionResult = await supabase
     .from("delivery_executions")
     .select("status, checklist_state, checklist_completed_at")
@@ -112,7 +170,7 @@ export async function updateDeliveryExecution(
   const usingLegacyDeliverySchema = isMissingDeliveryExecutionSchema(currentExecutionResult.error);
   const currentModernExecution = usingLegacyDeliverySchema
     ? null
-    : assertSupabaseResult(
+    : resolveOptionalSupabaseResult(
         { data: currentExecutionResult.data, error: currentExecutionResult.error },
         "Failed to resolve current delivery execution",
       );
@@ -124,7 +182,7 @@ export async function updateDeliveryExecution(
         .maybeSingle()
     : null;
   const currentLegacyExecution = currentLegacyExecutionResult
-    ? assertSupabaseResult(
+    ? resolveOptionalSupabaseResult(
         {
           data: currentLegacyExecutionResult.data,
           error: currentLegacyExecutionResult.error,
@@ -133,7 +191,7 @@ export async function updateDeliveryExecution(
       )
     : null;
   const resolvedCurrentExecution = usingLegacyDeliverySchema ? currentLegacyExecution : currentModernExecution;
-  const currentStatus = resolvedCurrentExecution?.status ?? "aguardando_expedicao";
+  const currentStatus = resolveEffectiveDeliveryExecutionStatus(orderStatus, resolvedCurrentExecution?.status);
 
   if (!canTransitionDeliveryStatus(currentStatus, status)) {
     throw new Error("Invalid delivery status transition");
@@ -147,6 +205,14 @@ export async function updateDeliveryExecution(
   const checklistCompletedAt =
     options.checklistCompletedAt ??
     (usingLegacyDeliverySchema ? null : (currentModernExecution?.checklist_completed_at ?? null));
+  const checklistItemKeys = buildChecklistItemKeys(expedition);
+  const checklistIsComplete = usingLegacyDeliverySchema
+    ? currentStatus !== "aguardando_expedicao"
+    : areAllChecklistItemsChecked(checklistItemKeys, checklistState);
+
+  if (status !== "aguardando_expedicao" && !checklistIsComplete) {
+    throw new Error("Conclua o checklist de todos os itens antes de avançar para entrega.");
+  }
 
   const upsertPayload = usingLegacyDeliverySchema
     ? {
@@ -159,7 +225,10 @@ export async function updateDeliveryExecution(
         order_id: orderRow.id,
         status,
         checklist_state: checklistState,
-        checklist_completed_at: checklistCompletedAt,
+        checklist_completed_at:
+          status === "pronto_coleta"
+            ? checklistCompletedAt ?? new Date().toISOString()
+            : checklistCompletedAt,
         updated_at: new Date().toISOString(),
         updated_by_profile_id: updatedByDatabaseId,
       };

@@ -115,7 +115,7 @@ export function useDeliveryExecution(_referenceDate?: string) {
     (orderId: string, expeditionReady: boolean): DeliveryExecutionEntry => {
       const persistedExecution = executionState[orderId];
 
-      if (persistedExecution) {
+      if (persistedExecution && expeditionReady) {
         return persistedExecution;
       }
 
@@ -186,6 +186,7 @@ export function useDeliveryExecution(_referenceDate?: string) {
       });
 
       if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
         setExecutionState((current) => {
           if (!previousEntry) {
             const nextState = { ...current };
@@ -201,7 +202,7 @@ export function useDeliveryExecution(_referenceDate?: string) {
           setDeliveryExecutionCache(nextState);
           return nextState;
         });
-        throw new Error("Falha ao atualizar entrega");
+        throw new Error(payload?.message ?? "Falha ao atualizar entrega");
       }
     },
     [executionState],

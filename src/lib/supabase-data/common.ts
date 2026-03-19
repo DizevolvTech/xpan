@@ -1,18 +1,12 @@
 import "server-only";
 
 import type { createSupabaseAdminClient } from "@/lib/supabase-admin";
-
-type SupabaseResult<T> = {
-  data: T | null;
-  error: SupabaseError | null;
-};
-
-export type SupabaseError = {
-  message: string;
-  details?: string | null;
-  hint?: string | null;
-  code?: string | null;
-};
+export {
+  assertSupabaseResult,
+  resolveOptionalSupabaseResult,
+  type SupabaseError,
+} from "@/lib/supabase-data/result-helpers";
+import type { SupabaseError } from "@/lib/supabase-data/result-helpers";
 
 export type SupabaseDataClient = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -38,18 +32,6 @@ export async function resolveProfileDatabaseId(
   }
 
   return result.data?.id ?? null;
-}
-
-export function assertSupabaseResult<T>(result: SupabaseResult<T>, message: string): T {
-  if (result.error) {
-    throw new Error(`${message}: ${result.error.message}`);
-  }
-
-  if (result.data === null) {
-    throw new Error(`${message}: no data returned`);
-  }
-
-  return result.data;
 }
 
 export function isSupabaseMissingSchemaError(
