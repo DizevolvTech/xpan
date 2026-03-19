@@ -2,13 +2,31 @@ import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, canAccessStore, getAllowedStoreIds } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
+import { resolveStoreVisibleOrderStatus } from "@/lib/store-order-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { getPersistedDeliveryExecutions } from "@/lib/supabase-data/delivery";
 import { createStoreOrder, listFactoryStoreOrders } from "@/lib/supabase-data/store-orders";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
   return searchParams.get("referenceDate") ?? new Date().toISOString().slice(0, 10);
+}
+
+function isClientValidationError(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("invalid") ||
+    normalized.includes("unavailable") ||
+    normalized.includes("must contain at least one item") ||
+    normalized.includes("produto repetido") ||
+    normalized.includes("not found") ||
+    normalized.includes("sublinha") ||
+    normalized.includes("cronograma") ||
+    normalized.includes("dia de entrega") ||
+    normalized.includes("whole numbers")
+  );
 }
 
 export async function GET(request: Request) {
@@ -26,12 +44,13 @@ export async function GET(request: Request) {
   try {
     const supabase = createSupabaseAdminClient();
     const referenceDate = getReferenceDate(request);
-    const [planning, storeOrders] = await Promise.all([
+    const [planning, storeOrders, deliveryExecutions] = await Promise.all([
       getFactoryPlanningSnapshot(referenceDate, {
         supabase,
         includeProfileNames: false,
       }),
       listFactoryStoreOrders(supabase),
+      getPersistedDeliveryExecutions(supabase),
     ]);
     const allowedStoreIds = getAllowedStoreIds(authorization.user);
     const orderedAtByOrderId = new Map(
@@ -39,17 +58,21 @@ export async function GET(request: Request) {
     );
     const orders = planning.orders
       .filter((order) => (allowedStoreIds ? allowedStoreIds.includes(order.storeId) : true))
-      .map((order) => ({
-        id: order.id,
-        code: order.code,
-        storeId: order.storeId,
-        date: order.orderedAt,
-        orderedAtKey: orderedAtByOrderId.get(order.id) ?? referenceDate,
-        deliveryDate: order.deliveryDateLabel,
-        deliveryDateKey: order.deliveryDate,
-        status: order.status,
-        store: order.storeName,
-      }));
+      .map((order) => {
+        const execution = deliveryExecutions[order.id];
+
+        return {
+          id: order.id,
+          code: order.code,
+          storeId: order.storeId,
+          date: order.orderedAt,
+          orderedAtKey: orderedAtByOrderId.get(order.id) ?? referenceDate,
+          deliveryDate: order.deliveryDateLabel,
+          deliveryDateKey: order.deliveryDate,
+          status: resolveStoreVisibleOrderStatus(order.status, execution?.status),
+          store: order.storeName,
+        };
+      });
 
     return NextResponse.json(orders);
   } catch (error) {
@@ -92,11 +115,12 @@ export async function POST(request: Request) {
     invalidatePlanningCaches();
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create store order";
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : "Failed to create store order",
+        message,
       },
-      { status: 500 },
+      { status: isClientValidationError(message) ? 400 : 500 },
     );
   }
 }

@@ -21,6 +21,20 @@ export type StoreOccurrence = {
   updatedAt: string;
 };
 
+export type StoreOccurrenceEvent = {
+  id: string;
+  occurrenceId: string;
+  type: string;
+  content: string;
+  createdAt: string;
+  actorName: string | null;
+};
+
+export type StoreOccurrenceDetail = StoreOccurrence & {
+  canComment: boolean;
+  events: StoreOccurrenceEvent[];
+};
+
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, init);
   if (!response.ok) {
@@ -68,7 +82,7 @@ export function useStoreOccurrences(storeId?: string) {
       quantityUnitSnapshot: string;
       description: string;
     }) => {
-      const createdOccurrence = await readJson<StoreOccurrence>("/api/store-occurrences", {
+      const createdOccurrence = await readJson<StoreOccurrenceDetail>("/api/store-occurrences", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -81,6 +95,43 @@ export function useStoreOccurrences(storeId?: string) {
     [refresh],
   );
 
+  const fetchOccurrenceDetail = useCallback(async (occurrenceId: string) => {
+    return readJson<StoreOccurrenceDetail>(`/api/store-occurrences/${occurrenceId}`);
+  }, []);
+
+  const updateOccurrenceStatus = useCallback(
+    async (
+      occurrenceId: string,
+      status: StoreOccurrence["status"],
+    ) => {
+      const updated = await readJson<StoreOccurrenceDetail>(`/api/store-occurrences/${occurrenceId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
+      await refresh();
+      return updated;
+    },
+    [refresh],
+  );
+
+  const addOccurrenceComment = useCallback(
+    async (occurrenceId: string, content: string) => {
+      const updated = await readJson<StoreOccurrenceDetail>(`/api/store-occurrences/${occurrenceId}/events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content }),
+      });
+      await refresh();
+      return updated;
+    },
+    [refresh],
+  );
+
   return useMemo(
     () => ({
       occurrences,
@@ -88,7 +139,10 @@ export function useStoreOccurrences(storeId?: string) {
       error,
       refresh,
       createOccurrence,
+      fetchOccurrenceDetail,
+      updateOccurrenceStatus,
+      addOccurrenceComment,
     }),
-    [createOccurrence, error, isLoading, occurrences, refresh],
+    [addOccurrenceComment, createOccurrence, error, fetchOccurrenceDetail, isLoading, occurrences, refresh, updateOccurrenceStatus],
   );
 }

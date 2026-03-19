@@ -216,3 +216,61 @@ export function useCreateStoreOrder(onCreated?: () => void) {
     [createOrder, isSubmitting],
   );
 }
+
+export function useUpdateStoreOrder(onUpdated?: () => void) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const updateOrder = useCallback(
+    async (
+      orderId: string,
+      payload: {
+        note?: string;
+        items: Array<{ productId: string; quantity: number; unit: string }>;
+      },
+    ) => {
+      setIsSubmitting(true);
+      try {
+        await readJson(`/api/store-orders/${orderId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        onUpdated?.();
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [onUpdated],
+  );
+
+  return useMemo(
+    () => ({ updateOrder, isSubmitting }),
+    [isSubmitting, updateOrder],
+  );
+}
+
+export function useCancelStoreOrder(onCancelled?: () => void) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const cancelOrder = useCallback(
+    async (orderId: string) => {
+      setIsSubmitting(true);
+      try {
+        await readJson(`/api/store-orders/${orderId}`, {
+          method: "DELETE",
+        });
+        onCancelled?.();
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [onCancelled],
+  );
+
+  return useMemo(
+    () => ({ cancelOrder, isSubmitting }),
+    [cancelOrder, isSubmitting],
+  );
+}

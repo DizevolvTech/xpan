@@ -1,9 +1,11 @@
 import "server-only";
 
 import type { ProductionItemStatus } from "@/lib/order-planning";
-import { productionStageProgress } from "@/lib/order-planning";
+import { buildFactoryPlanningData, productionStageProgress } from "@/lib/order-planning";
 import { canTransitionProductionItemStatus } from "@/lib/production-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { buildFactoryInputFromDb } from "@/lib/supabase-data/store-orders";
+import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
 import {
   assertSupabaseResult,
   isSupabaseMissingSchemaError,
@@ -59,6 +61,45 @@ export async function getPersistedWorkflowState(
   };
 }
 
+async function appendOrderEventsForProductionItem(
+  productionItemKey: string,
+  status: ProductionItemStatus,
+  updatedByProfileId: string | null | undefined,
+  supabase: SupabaseDataClient,
+) {
+  const [referenceDate] = productionItemKey.split("|");
+  if (!referenceDate || !/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
+    return;
+  }
+
+  const input = await buildFactoryInputFromDb({
+    supabase,
+    includeProfileNames: false,
+  });
+  const planning = buildFactoryPlanningData(referenceDate, input);
+  const matchingItems = planning.orderItems.filter((item) => item.productionItemKey === productionItemKey);
+  const uniqueOrders = Array.from(new Set(matchingItems.map((item) => item.orderId)));
+
+  await Promise.all(
+    uniqueOrders.map((orderId) =>
+      appendStoreOrderEvent(
+        {
+          orderId,
+          type: "producao_status",
+          title: "Andamento de produção atualizado",
+          description: `Item operacional avançou para o status "${status}".`,
+          createdByProfileId: updatedByProfileId ?? null,
+          metadata: {
+            productionItemKey,
+            status,
+          },
+        },
+        supabase,
+      ),
+    ),
+  );
+}
+
 export async function releaseOrder(
   orderId: string,
   releasedByProfileId?: string | null,
@@ -86,6 +127,17 @@ export async function releaseOrder(
   if (upsertResult.error) {
     throw new Error(`Failed to release order: ${upsertResult.error.message}`);
   }
+
+  await appendStoreOrderEvent(
+    {
+      orderId: orderRow.id,
+      type: "liberacao_producao",
+      title: "Pedido liberado para produção",
+      description: "O pedido entrou no fluxo operacional da fábrica.",
+      createdByProfileId: releasedByProfileId ?? null,
+    },
+    supabase,
+  );
 }
 
 export async function updateProductionItemStatus(
@@ -130,6 +182,8 @@ export async function updateProductionItemStatus(
   if (upsertResult.error) {
     throw new Error(`Failed to update production item status: ${upsertResult.error.message}`);
   }
+
+  await appendOrderEventsForProductionItem(productionItemKey, status, updatedByProfileId, supabase);
 }
 
 async function resolveOrderRow(
@@ -199,6 +253,17 @@ export async function cancelOrder(
   if (result.error) {
     throw new Error(`Failed to cancel order: ${result.error.message}`);
   }
+
+  await appendStoreOrderEvent(
+    {
+      orderId: orderRow.id,
+      type: "cancelamento",
+      title: "Pedido cancelado",
+      description: "O pedido foi retirado do fluxo operacional antes da liberação para produção.",
+      createdByProfileId: managedByProfileId ?? null,
+    },
+    supabase,
+  );
 }
 
 export async function reopenOrder(
@@ -226,4 +291,15 @@ export async function reopenOrder(
   if (result.error) {
     throw new Error(`Failed to reopen order: ${result.error.message}`);
   }
+
+  await appendStoreOrderEvent(
+    {
+      orderId: orderRow.id,
+      type: "reabertura",
+      title: "Pedido reaberto",
+      description: "O pedido voltou a ficar elegível para liberação operacional.",
+      createdByProfileId: managedByProfileId ?? null,
+    },
+    supabase,
+  );
 }

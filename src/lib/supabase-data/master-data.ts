@@ -255,7 +255,6 @@ async function loadMasterDataSnapshot(
     economicProductionKg: Number(row.economic_production_kg),
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
-    saleLeadDays: row.sale_lead_days ?? 0,
     unitProfiles: {
       sales: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).sales),
       production: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).production),

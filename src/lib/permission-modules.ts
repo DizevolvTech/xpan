@@ -292,6 +292,17 @@ export const permissionModules = [
     matchSubRoutes: true,
   },
   {
+    id: "gestor-fabrica.ocorrencias",
+    label: "Ocorrências",
+    route: "/gestor-fabrica/ocorrencias",
+    group: "gestor-fabrica",
+    icon: "alert-circle",
+    sidebarOrder: 60,
+    landingOrder: 260,
+    minimumNavLevel: "visualizar",
+    matchSubRoutes: true,
+  },
+  {
     id: "chao-fabrica.dashboard",
     label: "Visão Geral",
     route: "/chao-fabrica",

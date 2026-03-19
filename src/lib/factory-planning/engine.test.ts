@@ -5,6 +5,7 @@ import {
   buildFactoryPlanningData,
   getOperationalOrderWindow,
   getOperationalTimeline,
+  resolveScheduledProductAvailability,
   resolveProductionDateInWindow,
 } from "@/lib/factory-planning/engine";
 import type {
@@ -54,33 +55,52 @@ test("production date resolves inside the base/delivery window when possible", (
   });
 });
 
-test("operational timeline falls forward when no production day exists inside the window", () => {
-  const timeline = getOperationalTimeline("2026-03-17T19:30:00", baseStore, settings, [
-    "segunda",
-  ]);
+test("scheduled availability requires schedule item membership", () => {
+  const availability = resolveScheduledProductAvailability(
+    "2026-03-17T09:00:00",
+    baseStore,
+    settings,
+    {
+      productProductionDays: ["quinta"],
+      scheduleItem: null,
+    },
+  );
 
-  assert.deepEqual(timeline, {
-    baseDate: "2026-03-19",
-    deliveryDate: "2026-03-23",
-    saleDate: "2026-03-23",
-    productionDate: "2026-03-23",
-    delayed: true,
-  });
+  assert.equal(availability.available, false);
+  assert.equal(availability.blockedReason, "Produto fora da sublinha ativa.");
 });
 
-test("operational timeline calculates sale date after delivery lead time", () => {
+test("scheduled availability requires intersection between product and schedule days", () => {
+  const availability = resolveScheduledProductAvailability(
+    "2026-03-17T09:00:00",
+    baseStore,
+    settings,
+    {
+      productProductionDays: ["quinta"],
+      scheduleItem: {
+        id: "schedule-item-1",
+        productionDays: ["segunda"],
+      },
+    },
+  );
+
+  assert.equal(availability.available, false);
+  assert.equal(availability.blockedReason, "Dias da ficha do produto não coincidem com a sublinha ativa.");
+});
+
+test("operational timeline uses delivery day and ignores sale lead days", () => {
   const timeline = getOperationalTimeline(
     "2026-03-17T09:00:00",
     baseStore,
     settings,
-    ["quinta", "sabado"],
-    2,
+    ["quinta"],
+    99,
   );
 
   assert.deepEqual(timeline, {
     baseDate: "2026-03-17",
     deliveryDate: "2026-03-19",
-    saleDate: "2026-03-21",
+    saleDate: "2026-03-19",
     productionDate: "2026-03-19",
     delayed: false,
   });
@@ -134,7 +154,128 @@ test("factory planning uses operational subcategory instead of cadastral subcate
       economicProductionKg: 15,
       allowsStorage: false,
       productionDays: ["quinta"],
-      saleLeadDays: 0,
+      unitProfiles: {
+        sales: { unit: "Un", description: "Unidade", weightKg: 0.1 },
+        production: { unit: "Kg", description: "Kg", weightKg: 1 },
+        expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+      },
+      packagingProfile: undefined,
+      isSoldLoose: true,
+      recipe: [],
+      preparationMode: "",
+      breakPercent: 0,
+      breakStage: "antes_divisao",
+      breakComment: "",
+      canBeIngredient: false,
+      ingredientProfile: undefined,
+      weight: "",
+      productionUnit: "Kg",
+      salesUnit: "Un",
+      salesToKgFactor: 0.1,
+      expeditionUnit: "Caixa",
+      expeditionToKgFactor: 1,
+      isMpiIngredient: false,
+    },
+  ];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-17T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [
+        {
+          id: "schedule-item-1",
+          productId: "product-1",
+          productionDays: ["quinta"],
+          minimumProduction: 15,
+        },
+      ],
+    },
+  ];
+
+  const planning = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [
+          {
+            id: "item-1",
+            productId: "product-1",
+            quantity: 10,
+            unit: "Un",
+          },
+        ],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products,
+    schedules,
+  });
+
+  assert.equal(planning.orderItems.length, 1);
+  assert.equal(planning.orderItems[0]?.lineId, "line-operational");
+  assert.equal(planning.orderItems[0]?.lineName, "Carteira Operacional");
+  assert.equal(planning.orderItems[0]?.scheduleId, "schedule-1");
+});
+
+test("factory planning keeps non-scheduled products out of production and expedition", () => {
+  const sectors: ProductionSector[] = [
+    {
+      id: "sector-1",
+      code: "SE-001",
+      name: "Panificacao",
+      responsible: "Maria",
+      status: "ativo",
+    },
+  ];
+  const lines: ProductionLine[] = [
+    {
+      id: "line-master",
+      code: "LP-001",
+      name: "Cadastro Base",
+      sectorId: "sector-1",
+      type: "Seco",
+      operatingHours: "05:00 - 14:00",
+      capacityPerDayKg: 1000,
+      status: "ativo",
+    },
+    {
+      id: "line-operational",
+      code: "LP-002",
+      name: "Carteira Operacional",
+      sectorId: "sector-1",
+      type: "Seco",
+      operatingHours: "05:00 - 14:00",
+      capacityPerDayKg: 1000,
+      status: "ativo",
+    },
+  ];
+  const products: ProductionProduct[] = [
+    {
+      id: "product-1",
+      code: "PR-0001",
+      name: "Pao Frances",
+      description: "",
+      lineId: "line-master",
+      masterLineId: "line-master",
+      operationalLineId: "line-operational",
+      active: true,
+      availableForOrdering: true,
+      validityDays: 2,
+      minimumProductionKg: 15,
+      economicProductionKg: 15,
+      allowsStorage: false,
+      productionDays: ["quinta"],
       unitProfiles: {
         sales: { unit: "Un", description: "Unidade", weightKg: 0.1 },
         production: { unit: "Kg", description: "Kg", weightKg: 1 },
@@ -197,7 +338,8 @@ test("factory planning uses operational subcategory instead of cadastral subcate
   });
 
   assert.equal(planning.orderItems.length, 1);
-  assert.equal(planning.orderItems[0]?.lineId, "line-operational");
-  assert.equal(planning.orderItems[0]?.lineName, "Carteira Operacional");
-  assert.equal(planning.orderItems[0]?.scheduleId, "schedule-1");
+  assert.equal(planning.orderItems[0]?.canPlan, false);
+  assert.equal(planning.orderItems[0]?.productionDate, null);
+  assert.equal(planning.productionOrders.length, 0);
+  assert.equal(planning.orders[0]?.status, "em_espera");
 });

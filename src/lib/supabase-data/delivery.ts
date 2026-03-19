@@ -7,6 +7,7 @@ import {
 } from "@/lib/delivery-workflow";
 import { getCachedServerData } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
 import {
   assertSupabaseResult,
   isSupabaseMissingSchemaError,
@@ -172,4 +173,28 @@ export async function updateDeliveryExecution(
     }
     throw new Error(`Failed to update delivery execution: ${upsertResult.error.message}`);
   }
+
+  const deliveryLabels: Record<DeliveryExecutionStatus, string> = {
+    aguardando_expedicao: "Aguardando expedição",
+    pronto_coleta: "Pronto para coleta",
+    em_rota: "Em rota",
+    no_destino: "No destino",
+    entregue: "Entregue",
+    tentativa_falha: "Tentativa de entrega falhou",
+  };
+
+  await appendStoreOrderEvent(
+    {
+      orderId: orderRow.id,
+      type: "entrega_status",
+      title: "Entrega atualizada",
+      description: `O pedido mudou para "${deliveryLabels[status]}".`,
+      createdByProfileId: updatedByProfileId ?? null,
+      metadata: {
+        status,
+        checklistCompletedAt,
+      },
+    },
+    supabase,
+  );
 }

@@ -8,6 +8,7 @@ import {
   type ProductionSector,
   type ProductionWeekDay,
   type WeeklyProductionSchedule,
+  type WeeklyScheduleItem,
 } from "@/lib/production-planning";
 import type {
   ExpeditionItem,
@@ -169,6 +170,104 @@ export function getOperationalOrderWindow(
   return { baseDate, deliveryDate };
 }
 
+export interface OperationalAvailabilityResult {
+  baseDate: string;
+  deliveryDate: string;
+  deliveryWeekDay: ProductionWeekDay;
+  productionDate: string | null;
+  available: boolean;
+  delayed: boolean;
+  blockedReason: string | null;
+  matchingDays: ProductionWeekDay[];
+  scheduleItemId: string | null;
+}
+
+function getMatchingProductionDays(
+  productDays: ProductionWeekDay[],
+  scheduleItemDays: ProductionWeekDay[] | null,
+) {
+  const uniqueProductDays = Array.from(new Set(productDays));
+  const uniqueScheduleDays = scheduleItemDays ? Array.from(new Set(scheduleItemDays)) : null;
+
+  if (!uniqueScheduleDays) {
+    return uniqueProductDays;
+  }
+
+  return uniqueProductDays.filter((day) => uniqueScheduleDays.includes(day));
+}
+
+export function resolveScheduledProductAvailability(
+  orderedAt: string,
+  store: StoreProfile,
+  settings: OperationalSettings,
+  options: {
+    productProductionDays: ProductionWeekDay[];
+    scheduleItem?: Pick<WeeklyScheduleItem, "id" | "productionDays"> | null;
+  },
+): OperationalAvailabilityResult {
+  const { baseDate, deliveryDate } = getOperationalOrderWindow(orderedAt, store, settings);
+  const deliveryWeekDay = getWeekDayKey(deliveryDate);
+
+  if (!options.scheduleItem) {
+    return {
+      baseDate,
+      deliveryDate,
+      deliveryWeekDay,
+      productionDate: null,
+      available: false,
+      delayed: false,
+      blockedReason: "Produto fora da sublinha ativa.",
+      matchingDays: [],
+      scheduleItemId: null,
+    };
+  }
+
+  const matchingDays = getMatchingProductionDays(
+    options.productProductionDays,
+    options.scheduleItem.productionDays,
+  );
+
+  if (matchingDays.length === 0) {
+    return {
+      baseDate,
+      deliveryDate,
+      deliveryWeekDay,
+      productionDate: null,
+      available: false,
+      delayed: false,
+      blockedReason: "Dias da ficha do produto não coincidem com a sublinha ativa.",
+      matchingDays,
+      scheduleItemId: options.scheduleItem.id,
+    };
+  }
+
+  if (!matchingDays.includes(deliveryWeekDay)) {
+    return {
+      baseDate,
+      deliveryDate,
+      deliveryWeekDay,
+      productionDate: null,
+      available: false,
+      delayed: false,
+      blockedReason: "Dia de entrega fora do cronograma de fabricação do produto.",
+      matchingDays,
+      scheduleItemId: options.scheduleItem.id,
+    };
+  }
+
+  return {
+    baseDate,
+    deliveryDate,
+    deliveryWeekDay,
+    productionDate: deliveryDate,
+    available: true,
+    delayed: false,
+    blockedReason: null,
+    matchingDays,
+    scheduleItemId: options.scheduleItem.id,
+  };
+}
+
 export function getOperationalTimeline(
   orderedAt: string,
   store: StoreProfile,
@@ -176,19 +275,21 @@ export function getOperationalTimeline(
   productionDays: ProductionWeekDay[],
   saleLeadDays = 0,
 ) {
-  const { baseDate, deliveryDate: expectedDeliveryDate } = getOperationalOrderWindow(orderedAt, store, settings);
-  const planning = resolveProductionDateInWindow(baseDate, expectedDeliveryDate, productionDays);
-  const deliveryDate =
-    planning.date && compareDateKeys(planning.date, expectedDeliveryDate) > 0
-      ? moveToNextAllowedWeekday(planning.date, getEnabledReceivingDays(store))
-      : expectedDeliveryDate;
+  void saleLeadDays;
+  const availability = resolveScheduledProductAvailability(orderedAt, store, settings, {
+    productProductionDays: productionDays,
+    scheduleItem: {
+      id: "virtual-schedule-item",
+      productionDays,
+    },
+  });
 
   return {
-    baseDate,
-    deliveryDate,
-    saleDate: addDays(deliveryDate, Math.max(0, saleLeadDays)),
-    productionDate: planning.date,
-    delayed: planning.delayed || deliveryDate !== expectedDeliveryDate,
+    baseDate: availability.baseDate,
+    deliveryDate: availability.deliveryDate,
+    saleDate: availability.deliveryDate,
+    productionDate: availability.productionDate,
+    delayed: availability.delayed,
   };
 }
 
@@ -376,17 +477,20 @@ function buildPlannedItems(
           : undefined;
         const sector = line ? input.source.sectorsById.get(line.sectorId) : undefined;
         const schedule = line ? input.scheduleByLineId.get(line.id) : undefined;
+        const scheduleItem = schedule?.items.find((item) => item.productId === product?.id) ?? null;
 
         if (!product || !line || !sector) {
           return [];
         }
 
-        const timeline = getOperationalTimeline(
+        const availability = resolveScheduledProductAvailability(
           order.orderedAt,
           store,
           input.source.settings,
-          product.productionDays,
-          product.saleLeadDays ?? 0,
+          {
+            productProductionDays: product.productionDays,
+            scheduleItem,
+          },
         );
         const salesFactor = sanitizeFactor(product.salesToKgFactor);
         const expeditionFactor = sanitizeFactor(product.expeditionToKgFactor);
@@ -398,10 +502,10 @@ function buildPlannedItems(
             ? round2(internalKg)
             : roundQuantityForUnit(expeditionQuantityRaw, product.expeditionUnit);
 
-        const canPlan = Boolean(schedule && timeline.productionDate);
+        const canPlan = Boolean(schedule && availability.available && availability.productionDate);
         const productionItemKey = canPlan
           ? getProductionItemKey({
-              productionDate: timeline.productionDate,
+              productionDate: availability.productionDate,
               lineId: line.id,
               scheduleId: schedule?.id ?? null,
               productId: product.id,
@@ -416,11 +520,11 @@ function buildPlannedItems(
           storeId: store.id,
           storeName: store.name,
           orderedAt: formatDateTimeBr(order.orderedAt),
-          baseDate: timeline.baseDate,
-          deliveryDate: timeline.deliveryDate,
-          saleDate: timeline.saleDate,
-          productionDate: timeline.productionDate,
-          delayed: timeline.delayed,
+          baseDate: availability.baseDate,
+          deliveryDate: availability.deliveryDate,
+          saleDate: availability.deliveryDate,
+          productionDate: availability.productionDate,
+          delayed: availability.delayed,
           productId: product.id,
           productCode: product.code,
           productName: product.name,
@@ -444,7 +548,7 @@ function buildPlannedItems(
           productionItemStatus: canPlan ? "nao_iniciado" : null,
           workflowProgress: 0,
           opCode: null,
-          status: getPotentialItemStatus(timeline.productionDate, canPlan, referenceDate),
+          status: getPotentialItemStatus(availability.productionDate, canPlan, referenceDate),
           } satisfies PlannedOrderItem,
         ];
       });

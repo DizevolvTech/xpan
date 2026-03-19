@@ -19,11 +19,26 @@ function resolveScopedStoreIds(
   return allowedStoreIds.includes(requestedStoreId) ? [requestedStoreId] : [];
 }
 
+function isOccurrenceValidationError(message: string) {
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("can only be opened") ||
+    normalized.includes("invalid") ||
+    normalized.includes("not found") ||
+    normalized.includes("does not belong") ||
+    normalized.includes("does not match") ||
+    normalized.includes("required") ||
+    normalized.includes("cannot") ||
+    normalized.includes("at least")
+  );
+}
+
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
     contextLabel: "GET /api/store-occurrences",
-    permission: "loja.ocorrencias",
-    minimumLevel: "operar",
+    anyOfPermissions: ["loja.ocorrencias", "gestor-fabrica.ocorrencias"],
+    minimumLevel: "visualizar",
     includeStoreScope: true,
   });
 
@@ -82,11 +97,13 @@ export async function POST(request: Request) {
       );
     }
 
+    const message = error instanceof Error ? error.message : "Failed to create store occurrence";
+
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : "Failed to create store occurrence",
+        message,
       },
-      { status: 500 },
+      { status: isOccurrenceValidationError(message) ? 400 : 500 },
     );
   }
 }

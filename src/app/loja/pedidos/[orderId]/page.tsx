@@ -1,17 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
-import { AlertCircle, ArrowLeft, Clock3, ListChecks, Printer, Store, Truck } from "lucide-react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Clock3,
+  ListChecks,
+  PencilLine,
+  Printer,
+  Save,
+  Store,
+  Trash2,
+  Truck,
+  X,
+} from "lucide-react";
 
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import { getTodayDateKey } from "@/lib/order-planning";
-import { useStoreOrderDetail } from "@/lib/use-store-orders";
+import type { StoreOrderCatalogProduct } from "@/lib/store-order-types";
+import {
+  useCancelStoreOrder,
+  useStoreOrderCatalog,
+  useStoreOrderDetail,
+  useUpdateStoreOrder,
+} from "@/lib/use-store-orders";
+
+type DraftAddedOrderItem = {
+  id: string;
+  productId: string;
+  code: string;
+  name: string;
+  category: string;
+  unit: UnitCode;
+  operationalUnit: UnitCode;
+  quantity: number;
+  minimumProductionKg: number;
+  salesToKgFactor: number;
+};
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -39,23 +75,187 @@ function parseBrDate(dateLabel: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function getMinimumProductionHint(product: Pick<StoreOrderCatalogProduct, "minimumProductionKg" | "salesToKgFactor">, quantity: number) {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return null;
+  }
+
+  const requestedKg = Number((quantity * product.salesToKgFactor).toFixed(3));
+  if (requestedKg >= product.minimumProductionKg) {
+    return null;
+  }
+
+  return `Abaixo do mínimo produtivo: ${requestedKg} Kg para mínimo de ${product.minimumProductionKg} Kg.`;
+}
+
 export default function PedidoLojaDetailsPage() {
   const params = useParams<{ orderId: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { order } = useStoreOrderDetail(orderId, referenceDate);
+  const { order, refresh } = useStoreOrderDetail(orderId, referenceDate);
+  const { catalog } = useStoreOrderCatalog(order?.storeId ?? "", order?.orderedAtIso ?? "");
+  const { updateOrder, isSubmitting: isUpdating } = useUpdateStoreOrder(() => {
+    void refresh();
+  });
+  const { cancelOrder, isSubmitting: isCancelling } = useCancelStoreOrder(() => {
+    router.push("/loja/pedidos");
+  });
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftNote, setDraftNote] = useState("");
+  const [draftItems, setDraftItems] = useState<Record<string, number>>({});
+  const [draftAddedItems, setDraftAddedItems] = useState<DraftAddedOrderItem[]>([]);
+  const [selectedCatalogProductId, setSelectedCatalogProductId] = useState("");
 
-  const itemsCount = useMemo(() => (order ? order.items.length : 0), [order]);
+  const visibleItems = useMemo(
+    () => (order ? (isEditing ? [...order.items, ...draftAddedItems] : order.items) : []),
+    [draftAddedItems, isEditing, order],
+  );
+  const availableCatalogProducts = useMemo(() => {
+    if (!order) {
+      return [];
+    }
+
+    const existingProductIds = new Set(order.items.map((item) => item.productId));
+    const addedProductIds = new Set(draftAddedItems.map((item) => item.productId));
+
+    return catalog.filter(
+      (product) =>
+        product.available &&
+        !existingProductIds.has(product.productId) &&
+        !addedProductIds.has(product.productId),
+    );
+  }, [catalog, draftAddedItems, order]);
+  const selectedCatalogProduct = useMemo(
+    () => availableCatalogProducts.find((product) => product.productId === selectedCatalogProductId) ?? null,
+    [availableCatalogProducts, selectedCatalogProductId],
+  );
+  const itemsCount = useMemo(() => visibleItems.length, [visibleItems]);
   const totalRequested = useMemo(
-    () => (order ? order.items.reduce((sum, item) => sum + item.quantity, 0) : 0),
-    [order],
+    () => {
+      if (!order) {
+        return 0;
+      }
+
+      if (!isEditing) {
+        return order.items.reduce((sum, item) => sum + item.quantity, 0);
+      }
+
+      return (
+        order.items.reduce((sum, item) => sum + Number(draftItems[item.id] ?? item.quantity), 0) +
+        draftAddedItems.reduce((sum, item) => sum + item.quantity, 0)
+      );
+    },
+    [draftAddedItems, draftItems, isEditing, order],
   );
-  const deliveryDate = useMemo(
-    () => (order ? parseBrDate(order.deliveryDate) : null),
-    [order],
-  );
+  const deliveryDate = useMemo(() => (order ? parseBrDate(order.deliveryDate) : null), [order]);
   const deliveryOnSunday = deliveryDate ? deliveryDate.getDay() === 0 : false;
+
+  function startEditing() {
+    if (!order) {
+      return;
+    }
+
+    setDraftNote(order.note ?? "");
+    setDraftItems(
+      order.items.reduce<Record<string, number>>((acc, item) => {
+        acc[item.id] = item.quantity;
+        return acc;
+      }, {}),
+    );
+    setDraftAddedItems([]);
+    setSelectedCatalogProductId("");
+    setIsEditing(true);
+  }
+
+  async function handleSave() {
+    if (!order) {
+      return;
+    }
+
+    const items = [
+      ...order.items.map((item) => ({
+        productId: item.productId,
+        quantity: Number(draftItems[item.id] ?? item.quantity),
+        unit: item.unit,
+      })),
+      ...draftAddedItems.map((item) => ({
+        productId: item.productId,
+        quantity: Number(item.quantity),
+        unit: item.unit,
+      })),
+    ]
+      .filter((item) => Number.isFinite(item.quantity) && item.quantity > 0);
+
+    if (items.length === 0) {
+      window.alert("O pedido precisa manter pelo menos um item com quantidade positiva.");
+      return;
+    }
+
+    await updateOrder(order.id, {
+      note: draftNote,
+      items,
+    });
+    setIsEditing(false);
+  }
+
+  function handleAddCatalogProduct() {
+    const product = availableCatalogProducts.find((entry) => entry.productId === selectedCatalogProductId);
+    if (!product) {
+      return;
+    }
+
+    setDraftAddedItems((current) => [
+      ...current,
+      {
+        id: `draft-${product.productId}`,
+        productId: product.productId,
+        code: product.code,
+        name: product.name,
+        category: product.category,
+        unit: product.unit,
+        operationalUnit: product.unit,
+        quantity: product.unitKind === "discrete" ? 1 : 0.1,
+        minimumProductionKg: product.minimumProductionKg,
+        salesToKgFactor: product.salesToKgFactor,
+      },
+    ]);
+    setSelectedCatalogProductId("");
+  }
+
+  function handleAddedItemQuantityChange(itemId: string, rawValue: number) {
+    setDraftAddedItems((current) =>
+      current.map((item) => {
+        if (item.id !== itemId) {
+          return item;
+        }
+
+        const sanitized = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0;
+        return {
+          ...item,
+          quantity: isDiscreteUnit(item.unit) ? Math.round(sanitized) : Number(sanitized.toFixed(3)),
+        };
+      }),
+    );
+  }
+
+  function handleRemoveAddedItem(itemId: string) {
+    setDraftAddedItems((current) => current.filter((item) => item.id !== itemId));
+  }
+
+  async function handleCancelOrder() {
+    if (!order) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Cancelar o pedido ${order.code}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    await cancelOrder(order.id);
+  }
 
   if (!order) {
     return (
@@ -97,7 +297,7 @@ export default function PedidoLojaDetailsPage() {
         { label: order.code },
       ]}
       actions={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -106,18 +306,69 @@ export default function PedidoLojaDetailsPage() {
             <Printer className="size-4" />
             Imprimir pedido
           </Button>
+
+          {order.canEdit ? (
+            isEditing ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setDraftNote(order.note ?? "");
+                    setDraftItems(
+                      order.items.reduce<Record<string, number>>((acc, item) => {
+                        acc[item.id] = item.quantity;
+                        return acc;
+                      }, {}),
+                    );
+                    setDraftAddedItems([]);
+                    setSelectedCatalogProductId("");
+                    setIsEditing(false);
+                  }}
+                >
+                  <X className="size-4" />
+                  Cancelar edição
+                </Button>
+                <Button type="button" onClick={() => void handleSave()} disabled={isUpdating}>
+                  <Save className="size-4" />
+                  {isUpdating ? "Salvando..." : "Salvar pedido"}
+                </Button>
+              </>
+            ) : (
+              <Button type="button" variant="outline" onClick={startEditing}>
+                <PencilLine className="size-4" />
+                Editar pedido
+              </Button>
+            )
+          ) : null}
+
+          {order.canCancel ? (
+            <Button type="button" variant="outline" onClick={() => void handleCancelOrder()} disabled={isCancelling}>
+              <Trash2 className="size-4" />
+              {isCancelling ? "Cancelando..." : "Cancelar pedido"}
+            </Button>
+          ) : null}
+
           <Button asChild type="button" variant="outline">
             <Link href="/loja/pedidos">
               <ArrowLeft className="size-4" />
               Voltar para pedidos
             </Link>
           </Button>
-          <Button asChild type="button" variant="outline">
-            <Link href="/loja/ocorrencias">
+
+          {order.canOpenOccurrence ? (
+            <Button asChild type="button" variant="outline">
+              <Link href={`/loja/ocorrencias?orderId=${order.id}`}>
+                <AlertCircle className="size-4" />
+                Abrir ocorrência
+              </Link>
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" disabled>
               <AlertCircle className="size-4" />
-              Abrir ocorrência
-            </Link>
-          </Button>
+              Ocorrência disponível após sair para entrega
+            </Button>
+          )}
         </div>
       }
     >
@@ -186,8 +437,49 @@ export default function PedidoLojaDetailsPage() {
         <CardHeader>
           <CardTitle>Itens do Pedido</CardTitle>
         </CardHeader>
-        <CardContent>
-          <PaginatedSection items={order.items} label="itens do pedido" initialPageSize={8}>
+        <CardContent className="space-y-4">
+          {isEditing ? (
+            <div className="rounded-lg border border-border/70 bg-panel/30 p-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                <div className="grid gap-2">
+                  <Label>Adicionar item da mesma janela operacional</Label>
+                  <Select value={selectedCatalogProductId} onValueChange={setSelectedCatalogProductId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um produto para adicionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableCatalogProducts.map((product) => (
+                        <SelectItem key={product.productId} value={product.productId}>
+                          {product.code} - {product.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    O catálogo usado aqui respeita a mesma data/hora original do pedido, sem recalcular a janela de entrega.
+                  </p>
+                  {selectedCatalogProduct ? (
+                    <p className="text-xs text-muted-foreground">
+                      Mínimo produtivo: {selectedCatalogProduct.minimumProductionKg} Kg. Dias válidos: {selectedCatalogProduct.productionDays.join(" · ")}.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex items-end">
+                  <Button type="button" variant="outline" onClick={handleAddCatalogProduct} disabled={!selectedCatalogProductId}>
+                    <PencilLine className="size-4" />
+                    Adicionar item
+                  </Button>
+                </div>
+              </div>
+              {availableCatalogProducts.length === 0 ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Não há mais produtos elegíveis para adicionar dentro da janela original deste pedido.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <PaginatedSection items={visibleItems} label="itens do pedido" initialPageSize={8}>
             {(paginatedItems) => (
               <div className="overflow-x-auto rounded-xl border border-border/80">
                 <table className="w-full min-w-[760px] border-collapse">
@@ -198,23 +490,121 @@ export default function PedidoLojaDetailsPage() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Categoria</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Un.</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Quantidade</th>
+                      {isEditing ? (
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Ações</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedItems.map((item) => (
+                    {paginatedItems.map((item) => {
+                      const isAddedItem = item.id.startsWith("draft-");
+                      const addedItem = isAddedItem
+                        ? draftAddedItems.find((entry) => entry.id === item.id) ?? null
+                        : null;
+
+                      return (
                       <tr key={item.id}>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-mono">{item.code}</td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.name}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          <div>{item.name}</div>
+                          {isAddedItem ? (
+                            <div className="text-xs text-muted-foreground">Novo item adicionado nesta edição.</div>
+                          ) : null}
+                        </td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.category}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.unit}</td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-semibold">{item.quantity}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-semibold">
+                          {isEditing ? (
+                            <div className="space-y-1">
+                              <Input
+                                type="number"
+                                min="0"
+                                step={isDiscreteUnit(item.unit) ? "1" : "0.1"}
+                                value={isAddedItem ? item.quantity : draftItems[item.id] ?? item.quantity}
+                                onChange={(event) => {
+                                  const nextValue = Number(event.target.value);
+                                  if (isAddedItem) {
+                                    handleAddedItemQuantityChange(item.id, nextValue);
+                                    return;
+                                  }
+
+                                  setDraftItems((current) => ({
+                                    ...current,
+                                    [item.id]: nextValue,
+                                  }));
+                                }}
+                              />
+                              {addedItem && getMinimumProductionHint(addedItem, addedItem.quantity) ? (
+                                <p className="text-xs font-normal text-warning-foreground">
+                                  {getMinimumProductionHint(addedItem, addedItem.quantity)}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : (
+                            item.quantity
+                          )}
+                        </td>
+                        {isEditing ? (
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                            {isAddedItem ? (
+                              <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveAddedItem(item.id)}>
+                                <X className="size-4" />
+                                Remover
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Zere a quantidade para remover.</span>
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
             )}
           </PaginatedSection>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Observações do Pedido</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isEditing ? (
+            <Textarea
+              value={draftNote}
+              onChange={(event) => setDraftNote(event.target.value)}
+              placeholder="Observações operacionais do pedido"
+              className="min-h-[120px]"
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">{order.note?.trim() || "Sem observações registradas."}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Linha do Tempo</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {order.events.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum evento registrado até o momento.</p>
+          ) : (
+            order.events.map((event) => (
+              <article key={event.id} className="rounded-lg border border-border/70 bg-panel/35 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">{event.title}</p>
+                  <span className="text-xs text-muted-foreground">{event.createdAt}</span>
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">{event.description}</p>
+                {event.actorName ? (
+                  <p className="mt-2 text-xs text-muted-foreground">Responsável: {event.actorName}</p>
+                ) : null}
+              </article>
+            ))
+          )}
         </CardContent>
       </Card>
 
@@ -239,7 +629,9 @@ export default function PedidoLojaDetailsPage() {
           </p>
           <p className="rounded-lg border border-border/70 bg-panel/40 px-3 py-2 text-sm text-muted-foreground">
             <ListChecks className="mr-1 inline size-4 align-text-bottom" />
-            {order.note}
+            {order.canOpenOccurrence
+              ? "Ocorrência habilitada: pedido já entrou na etapa de entrega."
+              : "Ocorrência será habilitada quando o pedido entrar em rota ou for entregue."}
           </p>
         </CardContent>
       </Card>

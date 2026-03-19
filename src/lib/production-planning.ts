@@ -136,7 +136,6 @@ export interface ProductionProduct {
   economicProductionKg: number;
   allowsStorage: boolean;
   productionDays: ProductionWeekDay[];
-  saleLeadDays?: number;
   unitProfiles: {
     sales: ProductUnitProfile;
     production: ProductUnitProfile;

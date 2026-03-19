@@ -641,7 +641,7 @@ function normalizeProductPayload(input: ProductInput) {
     economic_production_kg: input.economicProductionKg,
     allows_storage: input.allowsStorage,
     production_days: input.productionDays,
-    sale_lead_days: Math.max(0, Number(input.saleLeadDays ?? 0)),
+    sale_lead_days: 0,
     unit_profiles: input.unitProfiles,
     packaging_profile: input.isSoldLoose ? null : input.packagingProfile ?? null,
     is_sold_loose: input.isSoldLoose,

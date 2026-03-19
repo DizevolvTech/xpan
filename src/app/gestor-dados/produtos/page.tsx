@@ -107,7 +107,6 @@ function buildProductFormState(lines: ProductionLine[], product?: ProductRow | n
       packagingProfile: product.packagingProfile ? { ...product.packagingProfile } : undefined,
       ingredientProfile: product.ingredientProfile ? { ...product.ingredientProfile } : undefined,
       productionDays: [...product.productionDays],
-      saleLeadDays: product.saleLeadDays ?? 0,
     };
   }
 
@@ -126,7 +125,6 @@ function buildProductFormState(lines: ProductionLine[], product?: ProductRow | n
     economicProductionKg: 140,
     allowsStorage: false,
     productionDays: ["segunda", "quarta", "sexta"],
-    saleLeadDays: 0,
     unitProfiles: {
       sales: createUnitProfile("Kg", "Unidade de venda", 1),
       production: createUnitProfile("Kg", "Unidade de produção", 1),
@@ -245,11 +243,7 @@ export default function ProdutosPage() {
           operationalLineName: operationalLine?.name ?? (product.operationalLineId ? "-" : "Fora da carteira operacional"),
           sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
           validityLabel: `${product.validityDays} dias`,
-          productionDaysLabel: `${product.productionDays.map((day) => day.slice(0, 3)).join(" · ")} · ${
-            (product.saleLeadDays ?? 0) === 0
-              ? "venda no receb."
-              : `venda +${product.saleLeadDays}d`
-          }`,
+          productionDaysLabel: product.productionDays.map((day) => day.slice(0, 3)).join(" · "),
         };
       }),
     [sectorNameById, snapshot.lines, snapshot.products],
@@ -653,7 +647,6 @@ export default function ProdutosPage() {
 
     const nextProduct: ProductFormState = {
       ...formState,
-      saleLeadDays: Math.max(0, Math.round(formState.saleLeadDays ?? 0)),
       salesUnit: formState.unitProfiles.sales.unit,
       productionUnit: formState.unitProfiles.production.unit,
       expeditionUnit: formState.unitProfiles.expedition.unit,
@@ -1579,7 +1572,7 @@ export default function ProdutosPage() {
                     <div>
                       <h3 className="text-sm font-semibold text-foreground">Cronograma definido pelo produto</h3>
                       <p className="text-xs text-muted-foreground">
-                        Defina quando a fábrica produz e quantos dias a loja leva para vender depois do recebimento.
+                        Defina os dias de fabricação do produto. A entrega segue apenas a regra global D+X.
                       </p>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
@@ -1599,23 +1592,12 @@ export default function ProdutosPage() {
                           A loja recebe em D+{snapshot.operationalSettings.expeditionLeadDays}, respeitando os dias operacionais da loja.
                         </p>
                       </div>
-                      <div className="grid gap-2 rounded-xl border border-border/70 bg-card p-4">
-                        <Label htmlFor="sale-lead-days">Dias entre recebimento e venda</Label>
-                        <Input
-                          id="sale-lead-days"
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={formState.saleLeadDays ?? 0}
-                          onChange={(event) =>
-                            setFormState((current) => ({
-                              ...current,
-                              saleLeadDays: Math.max(0, Number(event.target.value)),
-                            }))
-                          }
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Use 0 para vender no mesmo dia do recebimento, 1 para vender no dia seguinte e assim por diante.
+                      <div className="rounded-xl border border-border/70 bg-card p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          Regra operacional
+                        </p>
+                        <p className="mt-2 text-sm text-foreground">
+                          A disponibilidade para pedido usa a interseção entre sublinha ativa e os dias de fabricação definidos aqui.
                         </p>
                       </div>
                     </div>
@@ -1640,7 +1622,7 @@ export default function ProdutosPage() {
                       })}
                     </div>
                     <div className="rounded-xl border border-border/70 bg-panel/25 p-4 text-sm text-muted-foreground">
-                      Exemplo operacional: produzir hoje e vender hoje usa 0. Produzir hoje, entregar amanhã e vender depois usa o D+X global mais os dias informados acima para venda.
+                      Exemplo operacional: se a sublinha ativa e a ficha do produto coincidirem na quinta, o item pode ser pedido para uma entrega cujo D+X também caia em quinta.
                     </div>
                   </section>
                   </fieldset>

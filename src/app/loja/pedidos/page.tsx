@@ -31,9 +31,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import {
+  getBaseDateByCutoff,
   getDeliveryDateByStoreRule,
   getOperationalBaseDateByStoreRule,
 } from "@/lib/order-planning";
@@ -47,6 +49,7 @@ import type { StoreOrderCatalogProduct, StoreOrderSummary } from "@/lib/store-or
 import { useCurrentProfile } from "@/lib/use-current-profile";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
+import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderSummaries } from "@/lib/use-store-orders";
 
@@ -79,8 +82,32 @@ function formatDateWithWeekday(date: Date): string {
   return `${dateLabel} - ${weekdayLabel.charAt(0).toUpperCase()}${weekdayLabel.slice(1)}`;
 }
 
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateKeyWithWeekday(dateKey: string) {
+  return formatDateWithWeekday(new Date(`${dateKey}T00:00:00`));
+}
+
 function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
+}
+
+function getMinimumProductionAlert(product: StoreOrderCatalogProduct, quantity: number) {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return null;
+  }
+
+  const totalKg = Number((quantity * product.salesToKgFactor).toFixed(3));
+  if (totalKg >= product.minimumProductionKg) {
+    return null;
+  }
+
+  return `Pedido abaixo do mínimo produtivo: ${totalKg} Kg informados para mínimo de ${product.minimumProductionKg} Kg.`;
 }
 
 function buildOrderPrintPath(orderId: string, referenceDate: string) {
@@ -101,6 +128,7 @@ export default function PedidosLojaPage() {
   const [orderProducts, setOrderProducts] = useState<StoreOrderCatalogProduct[]>([]);
   const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [orderNote, setOrderNote] = useState("");
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
@@ -117,9 +145,11 @@ export default function PedidosLojaPage() {
     shouldShowStoreSelector,
   } = useStoreScope(activeStores, profile?.allowedStoreIds);
   const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso);
+  const { occurrences } = useStoreOccurrences(selectedStoreId);
   const { createOrder, isSubmitting } = useCreateStoreOrder(() => {
     void refreshStoreOrders();
     setIsNewOrderOpen(false);
+    setOrderNote("");
   });
 
   useEffect(() => {
@@ -130,6 +160,11 @@ export default function PedidosLojaPage() {
       ? getOperationalBaseDateByStoreRule(orderedAtIso, selectedStore, snapshot.operationalSettings)
       : orderedAtIso.slice(0, 10);
   }, [orderedAtIso, selectedStore, snapshot.operationalSettings]);
+  const orderCalendarDateKey = useMemo(() => toDateKey(referenceDate), [referenceDate]);
+  const cutoffBaseDateKey = useMemo(
+    () => getBaseDateByCutoff(orderedAtIso, snapshot.operationalSettings.orderCutoffTime),
+    [orderedAtIso, snapshot.operationalSettings.orderCutoffTime],
+  );
   const deliveryDateKey = useMemo(
     () =>
       selectedStore
@@ -149,6 +184,25 @@ export default function PedidosLojaPage() {
     () => (selectedStore ? formatOperationalDays(selectedStore.receivingDays) : "-"),
     [selectedStore],
   );
+  const cutoffAppliedMessage = useMemo(() => {
+    if (!selectedStore || cutoffBaseDateKey === orderCalendarDateKey) {
+      return null;
+    }
+
+    return `Pedido lançado após o cutoff de ${snapshot.operationalSettings.orderCutoffTime}. A base operacional saiu de ${formatDateKeyWithWeekday(orderCalendarDateKey)} para ${formatDateKeyWithWeekday(cutoffBaseDateKey)}.`;
+  }, [
+    cutoffBaseDateKey,
+    orderCalendarDateKey,
+    selectedStore,
+    snapshot.operationalSettings.orderCutoffTime,
+  ]);
+  const orderingWindowAdjustmentMessage = useMemo(() => {
+    if (!selectedStore || effectiveBaseDateKey === cutoffBaseDateKey) {
+      return null;
+    }
+
+    return `Como a loja não opera pedidos em ${formatDateKeyWithWeekday(cutoffBaseDateKey)}, a base avançou para ${formatDateKeyWithWeekday(effectiveBaseDateKey)}.`;
+  }, [cutoffBaseDateKey, effectiveBaseDateKey, selectedStore]);
 
   const scopedStoreOrderSummaries = useMemo(
     () =>
@@ -176,9 +230,21 @@ export default function PedidosLojaPage() {
       total: scopedStoreOrderSummaries.length,
       agendado: scopedStoreOrderSummaries.filter((item) => item.status === "agendado").length,
       emProducao: scopedStoreOrderSummaries.filter((item) => item.status === "em_producao").length,
-      rotaEntrega: scopedStoreOrderSummaries.filter((item) => item.status === "aguardando_expedicao").length,
+      entregas: scopedStoreOrderSummaries.filter((item) =>
+        [
+          "aguardando_expedicao",
+          "pronto_coleta",
+          "em_rota",
+          "no_destino",
+          "entregue",
+          "tentativa_falha",
+        ].includes(item.status),
+      ).length,
+      ocorrenciasAbertas: occurrences.filter(
+        (item) => item.status === "aberta" || item.status === "em_analise",
+      ).length,
     }),
-    [scopedStoreOrderSummaries],
+    [occurrences, scopedStoreOrderSummaries],
   );
 
   const categoryOptions = useMemo(
@@ -203,6 +269,14 @@ export default function PedidosLojaPage() {
       return matchesSearch && matchesCategory;
     });
   }, [catalogSearchTerm, categoryFilter, orderProducts]);
+  const availableCatalogCount = useMemo(
+    () => orderProducts.filter((item) => item.available).length,
+    [orderProducts],
+  );
+  const blockedCatalogCount = useMemo(
+    () => orderProducts.filter((item) => !item.available).length,
+    [orderProducts],
+  );
 
   const columns = [
     { key: "code", header: "Código" },
@@ -239,7 +313,16 @@ export default function PedidosLojaPage() {
       return;
     }
 
-    const sanitizedValue = Number.isFinite(value) && value > 0 ? value : 0;
+    const product = orderProducts.find((entry) => entry.id === productId);
+    if (!product || !product.available) {
+      return;
+    }
+
+    const numericValue = Number.isFinite(value) && value > 0 ? value : 0;
+    const sanitizedValue =
+      product.unitKind === "discrete"
+        ? Math.max(0, Math.round(numericValue))
+        : Number(numericValue.toFixed(3));
 
     setOrderProducts((current) =>
       current.map((product) => {
@@ -260,13 +343,23 @@ export default function PedidosLojaPage() {
     setCategoryFilter("all");
   }
 
+  function handleNewOrderDialogChange(open: boolean) {
+    setIsNewOrderOpen(open);
+
+    if (!open) {
+      setOrderNote("");
+      setOrderProducts(catalog);
+      clearCatalogFilters();
+    }
+  }
+
   async function handleSubmitOrder() {
     if (!selectedStore) {
       return;
     }
 
     const items = orderProducts
-      .filter((product) => product[highlightedDay] > 0)
+      .filter((product) => product.available && product[highlightedDay] > 0)
       .map((product) => ({
         productId: product.productId,
         quantity: product[highlightedDay],
@@ -274,15 +367,18 @@ export default function PedidosLojaPage() {
       }));
 
     if (items.length === 0) {
+      window.alert("Selecione ao menos um item disponível com quantidade positiva.");
       return;
     }
 
     await createOrder({
       storeId: selectedStore.id,
+      note: orderNote.trim(),
       orderedAt: referenceDate.toISOString(),
       items,
     });
     setOrderProducts(catalog);
+    setOrderNote("");
   }
 
   return (
@@ -333,14 +429,14 @@ export default function PedidosLojaPage() {
         <KPICard title="Total de Pedidos" value={orderKpis.total} icon={ShoppingCart} tone="info" />
         <KPICard title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
         <KPICard title="Em Produção" value={orderKpis.emProducao} icon={Package} tone="neutral" />
-        <KPICard title="Entregas" value={orderKpis.rotaEntrega} icon={Truck} tone="success" />
-        <KPICard title="Ocorrências" value="12" icon={AlertCircle} tone="danger" />
+        <KPICard title="Entregas" value={orderKpis.entregas} icon={Truck} tone="success" />
+        <KPICard title="Ocorrências" value={orderKpis.ocorrenciasAbertas} icon={AlertCircle} tone="danger" />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Lista de Pedidos</CardTitle>
-          <Dialog open={isNewOrderOpen} onOpenChange={setIsNewOrderOpen}>
+          <Dialog open={isNewOrderOpen} onOpenChange={handleNewOrderDialogChange}>
             <DialogTrigger asChild>
               <Button type="button">
                 <Plus className="size-4" />
@@ -404,6 +500,16 @@ export default function PedidosLojaPage() {
                       <strong>{selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "-"}</strong>.
                     </p>
                   </div>
+                  {cutoffAppliedMessage ? (
+                    <div className="mt-3 rounded-lg border border-warning/40 bg-warning/15 px-3 py-2 text-sm text-warning-foreground">
+                      {cutoffAppliedMessage}
+                    </div>
+                  ) : null}
+                  {orderingWindowAdjustmentMessage ? (
+                    <div className="mt-3 rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                      {orderingWindowAdjustmentMessage}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
@@ -439,14 +545,18 @@ export default function PedidosLojaPage() {
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {filteredOrderProducts.length} de {orderProducts.length} produtos disponíveis para a janela operacional.
+                    {filteredOrderProducts.length} de {orderProducts.length} itens no catálogo. Elegíveis:{" "}
+                    <strong>{availableCatalogCount}</strong>. Bloqueados nesta janela: <strong>{blockedCatalogCount}</strong>.
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Coluna ativa do pedido: <strong>{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Disponibilidade considera apenas produtos da sublinha ativa compatíveis com os dias de fabricação da ficha do produto. Avisos de mínimo produtivo não bloqueiam o pedido.
+                  </p>
                 </div>
 
-                <PaginatedSection items={filteredOrderProducts} label="produtos disponíveis" initialPageSize={8}>
+                <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
                   {(paginatedProducts) => (
                     <div className="max-h-[420px] overflow-auto rounded-lg border border-border/80">
                       <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
@@ -479,13 +589,35 @@ export default function PedidosLojaPage() {
                             </tr>
                           ) : (
                             paginatedProducts.map((product) => (
-                              <tr key={product.id} className="border-t border-border/70">
+                              <tr
+                                key={product.id}
+                                className={cn(
+                                  "border-t border-border/70",
+                                  !product.available && "bg-muted/30 text-muted-foreground",
+                                )}
+                              >
                                 <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
                                 <td className="px-2 py-2 text-sm">
-                                  {product.name}
+                                  <div className="font-medium text-foreground">{product.name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {product.scheduleName}
+                                    {product.productionDays.length > 0
+                                      ? ` · Fabrica em ${formatOperationalDays(product.productionDays)}`
+                                      : ""}
+                                  </div>
+                                  {!product.available && product.blockedReason ? (
+                                    <div className="mt-1 text-xs font-medium text-danger-foreground">
+                                      Indisponível: {product.blockedReason}
+                                    </div>
+                                  ) : null}
                                 </td>
                                 <td className="px-2 py-2 text-sm">{product.category}</td>
-                                <td className="px-2 py-2 text-sm">{product.unit}</td>
+                                <td className="px-2 py-2 text-sm">
+                                  <div>{product.unit}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Min. {product.minimumProductionKg} Kg
+                                  </div>
+                                </td>
                                 {dayColumns.map((dayField, index) => {
                                   const isActiveColumn = index === 0;
                                   const canEdit = isActiveColumn;
@@ -498,15 +630,30 @@ export default function PedidosLojaPage() {
                                       <Input
                                         type="number"
                                         className="h-8 w-16 text-center"
+                                        min="0"
+                                        step={product.unitKind === "discrete" ? "1" : "0.1"}
                                         value={product[dayField]}
                                         onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
-                                        disabled={!canEdit}
+                                        disabled={!canEdit || !product.available}
                                       />
                                     </td>
                                   );
                                 })}
                                 <td className="px-2 py-2 text-sm font-semibold">
-                                  {product[highlightedDay]} {product.unit}
+                                  {product.available ? (
+                                    <div>
+                                      {product[highlightedDay]} {product.unit}
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs font-semibold text-danger-foreground">
+                                      Bloqueado nesta janela
+                                    </div>
+                                  )}
+                                  {product.available && getMinimumProductionAlert(product, product[highlightedDay]) ? (
+                                    <div className="mt-1 text-xs font-normal text-warning-foreground">
+                                      {getMinimumProductionAlert(product, product[highlightedDay])}
+                                    </div>
+                                  ) : null}
                                 </td>
                               </tr>
                             ))
@@ -516,10 +663,21 @@ export default function PedidosLojaPage() {
                     </div>
                   )}
                 </PaginatedSection>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="order-note" className="text-xs text-muted-foreground">Observações do Pedido</Label>
+                  <Textarea
+                    id="order-note"
+                    value={orderNote}
+                    onChange={(event) => setOrderNote(event.target.value)}
+                    placeholder="Inclua observações operacionais para produção, expedição ou recebimento da loja."
+                    className="min-h-[110px]"
+                  />
+                </div>
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsNewOrderOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => handleNewOrderDialogChange(false)}>
                   Cancelar
                 </Button>
                 <Button type="button" onClick={() => void handleSubmitOrder()} disabled={isSubmitting || !selectedStore}>

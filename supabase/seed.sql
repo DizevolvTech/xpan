@@ -108,6 +108,7 @@ insert into public.permission_modules (module_key, label, route, group_key) valu
   ('gestor-fabrica.pedidos', 'Pedidos', '/gestor-fabrica/pedidos', 'gestor-fabrica'::public.permission_group),
   ('gestor-fabrica.ops', 'Ordens de producao', '/gestor-fabrica/ordens-producao', 'gestor-fabrica'::public.permission_group),
   ('gestor-fabrica.expedicao', 'Expedicao', '/gestor-fabrica/expedicao', 'gestor-fabrica'::public.permission_group),
+  ('gestor-fabrica.ocorrencias', 'Ocorrencias da fabrica', '/gestor-fabrica/ocorrencias', 'gestor-fabrica'::public.permission_group),
   ('chao-fabrica.dashboard', 'Visao geral de execucao', '/chao-fabrica', 'chao-fabrica'::public.permission_group),
   ('chao-fabrica.ops', 'Execucao de OP', '/chao-fabrica/ordens-producao', 'chao-fabrica'::public.permission_group),
   ('chao-fabrica.expedicao', 'Execucao da expedicao', '/chao-fabrica/expedicao', 'chao-fabrica'::public.permission_group),
@@ -147,6 +148,7 @@ insert into public.user_permissions (profile_id, module_key, access_level) value
   ((select id from public.profiles where legacy_id = 'user-admin'), 'gestor-fabrica.pedidos', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-admin'), 'gestor-fabrica.ops', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-admin'), 'gestor-fabrica.expedicao', 'gerenciar'::public.permission_level),
+  ((select id from public.profiles where legacy_id = 'user-admin'), 'gestor-fabrica.ocorrencias', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-admin'), 'chao-fabrica.dashboard', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-admin'), 'chao-fabrica.ops', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-admin'), 'chao-fabrica.expedicao', 'gerenciar'::public.permission_level),
@@ -166,6 +168,7 @@ insert into public.user_permissions (profile_id, module_key, access_level) value
   ((select id from public.profiles where legacy_id = 'user-dados'), 'gestor-fabrica.pedidos', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-dados'), 'gestor-fabrica.ops', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-dados'), 'gestor-fabrica.expedicao', 'sem_acesso'::public.permission_level),
+  ((select id from public.profiles where legacy_id = 'user-dados'), 'gestor-fabrica.ocorrencias', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-dados'), 'chao-fabrica.dashboard', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-dados'), 'chao-fabrica.ops', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-dados'), 'chao-fabrica.expedicao', 'sem_acesso'::public.permission_level),
@@ -185,6 +188,7 @@ insert into public.user_permissions (profile_id, module_key, access_level) value
   ((select id from public.profiles where legacy_id = 'user-fabrica'), 'gestor-fabrica.pedidos', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-fabrica'), 'gestor-fabrica.ops', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-fabrica'), 'gestor-fabrica.expedicao', 'gerenciar'::public.permission_level),
+  ((select id from public.profiles where legacy_id = 'user-fabrica'), 'gestor-fabrica.ocorrencias', 'gerenciar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-fabrica'), 'chao-fabrica.dashboard', 'visualizar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-fabrica'), 'chao-fabrica.ops', 'visualizar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-fabrica'), 'chao-fabrica.expedicao', 'visualizar'::public.permission_level),
@@ -204,6 +208,7 @@ insert into public.user_permissions (profile_id, module_key, access_level) value
   ((select id from public.profiles where legacy_id = 'user-chao'), 'gestor-fabrica.pedidos', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-chao'), 'gestor-fabrica.ops', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-chao'), 'gestor-fabrica.expedicao', 'sem_acesso'::public.permission_level),
+  ((select id from public.profiles where legacy_id = 'user-chao'), 'gestor-fabrica.ocorrencias', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-chao'), 'chao-fabrica.dashboard', 'operar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-chao'), 'chao-fabrica.ops', 'operar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-chao'), 'chao-fabrica.expedicao', 'operar'::public.permission_level),
@@ -223,6 +228,7 @@ insert into public.user_permissions (profile_id, module_key, access_level) value
   ((select id from public.profiles where legacy_id = 'user-loja'), 'gestor-fabrica.pedidos', 'visualizar'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-loja'), 'gestor-fabrica.ops', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-loja'), 'gestor-fabrica.expedicao', 'sem_acesso'::public.permission_level),
+  ((select id from public.profiles where legacy_id = 'user-loja'), 'gestor-fabrica.ocorrencias', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-loja'), 'chao-fabrica.dashboard', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-loja'), 'chao-fabrica.ops', 'sem_acesso'::public.permission_level),
   ((select id from public.profiles where legacy_id = 'user-loja'), 'chao-fabrica.expedicao', 'sem_acesso'::public.permission_level),
@@ -323,6 +329,21 @@ insert into public.store_occurrences (legacy_id, code, order_id, order_item_id, 
   ('seed-occ-004', 'OC-0004', (select id from public.store_orders where legacy_id = 'seed-order-006'), (select id from public.store_order_items where legacy_id = 'seed-order-006-item-1'), (select id from public.products where legacy_id = 'product-lasanha'), 'Lasanha Bolonhesa', 'Quebra de rendimento', 'percentual'::public.occurrence_quantity_type, 50, '%', 'Metade das travessas apresentou perda visual após a exposição na ilha quente.', 'resolvida'::public.occurrence_status, (select id from public.profiles where legacy_id = 'user-loja'), (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-08T19:00:00Z', '2026-03-08T18:10:00Z', '2026-03-08T19:00:00Z'),
   ('seed-occ-005', 'OC-0005', (select id from public.store_orders where legacy_id = 'seed-order-007'), (select id from public.store_order_items where legacy_id = 'seed-order-007-item-3'), (select id from public.products where legacy_id = 'product-coxinha'), 'Coxinha', 'Tentativa de entrega sem recebimento', 'operacional'::public.occurrence_quantity_type, 24, 'Un', 'A equipe da loja não estava na doca e parte do pedido retornou para a central.', 'aberta'::public.occurrence_status, (select id from public.profiles where legacy_id = 'user-loja'), null, null, '2026-03-08T18:50:00Z', '2026-03-08T18:50:00Z'),
   ('seed-occ-006', 'OC-0006', (select id from public.store_orders where legacy_id = 'seed-order-001'), (select id from public.store_order_items where legacy_id = 'seed-order-001-item-2'), (select id from public.products where legacy_id = 'product-pudim-mini'), 'Pudim Leite Condensado Mini', 'Falta de identificação', 'operacional'::public.occurrence_quantity_type, 5, 'Un', 'Cinco unidades saíram sem etiqueta de validade e foram segregadas na loja.', 'em_analise'::public.occurrence_status, (select id from public.profiles where legacy_id = 'user-loja'), null, null, '2026-03-09T12:50:00Z', '2026-03-09T12:50:00Z');
+
+insert into public.store_order_events (order_id, event_type, title, description, metadata, created_by_profile_id, created_at) values
+  ((select id from public.store_orders where legacy_id = 'seed-order-001'), 'criacao', 'Pedido criado', 'Pedido PD-260309-0001 criado pela loja com 3 itens.', '{"itemsCount": 3}'::jsonb, (select id from public.profiles where legacy_id = 'user-loja'), '2026-03-07T16:42:00Z'),
+  ((select id from public.store_orders where legacy_id = 'seed-order-001'), 'liberacao', 'Pedido liberado', 'Pedido liberado para produção pelo gestor de fábrica.', '{}'::jsonb, (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-09T08:20:00Z'),
+  ((select id from public.store_orders where legacy_id = 'seed-order-004'), 'entrega', 'Pedido em rota', 'Expedição atualizou o pedido para em rota.', '{"status": "em_rota"}'::jsonb, (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-10T14:05:00Z'),
+  ((select id from public.store_orders where legacy_id = 'seed-order-006'), 'entrega', 'Pedido entregue', 'Entrega confirmada para a loja.', '{"status": "entregue"}'::jsonb, (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-08T17:25:00Z');
+
+insert into public.store_occurrence_events (occurrence_id, event_type, content, metadata, created_by_profile_id, created_at) values
+  ((select id from public.store_occurrences where legacy_id = 'seed-occ-001'), 'criacao', 'Ocorrência aberta pela loja para divergência de quantidade.', '{}'::jsonb, (select id from public.profiles where legacy_id = 'user-loja'), '2026-03-09T12:30:00Z'),
+  ((select id from public.store_occurrences where legacy_id = 'seed-occ-002'), 'mudanca_status', 'Status alterado de "aberta" para "em_analise".', '{"from": "aberta", "to": "em_analise"}'::jsonb, (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-10T16:00:00Z'),
+  ((select id from public.store_occurrences where legacy_id = 'seed-occ-003'), 'comentario', 'Fábrica confirmou troca de embalagem na próxima remessa.', '{}'::jsonb, (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-10T17:15:00Z'),
+  ((select id from public.store_occurrences where legacy_id = 'seed-occ-004'), 'mudanca_status', 'Status alterado de "em_analise" para "resolvida".', '{"from": "em_analise", "to": "resolvida"}'::jsonb, (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-08T19:00:00Z'),
+  ((select id from public.store_occurrences where legacy_id = 'seed-occ-006'), 'comentario', 'Equipe da qualidade está revisando a etiquetagem do lote.', '{}'::jsonb, (select id from public.profiles where legacy_id = 'user-fabrica'), '2026-03-09T13:20:00Z');
+
+select public.rebuild_business_code_sequences();
 
 insert into storage.buckets (id, name, public) values ('profile-avatars', 'profile-avatars', false) on conflict (id) do nothing;
 

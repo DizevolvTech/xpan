@@ -1,12 +1,15 @@
 import "server-only";
 
-import type { UnitCode } from "@/lib/factory-planning/units";
+import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import type { FactoryPlanningInput, StoreOrder, StoreProfile } from "@/lib/order-planning";
 import { getOperationalOrderWindow } from "@/lib/order-planning";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
+import { allocateBusinessCode } from "@/lib/supabase-data/business-codes";
+import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
 import {
   assertSupabaseResult,
+  isUuid,
   resolveProfileDatabaseId,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
@@ -24,15 +27,243 @@ export interface CreateStoreOrderInput {
   }>;
 }
 
-function formatDatePart(dateIso: string) {
-  return dateIso.slice(2, 10).replaceAll("-", "");
+export interface UpdateStoreOrderInput {
+  note?: string;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    unit: UnitCode;
+  }>;
+  updatedByProfileId?: string | null;
+}
+
+type OrderProductRow = {
+  id: string;
+  legacy_id: string | null;
+  code: string;
+  name: string;
+  sales_unit: UnitCode;
+  sales_to_kg_factor: number;
+  expedition_unit: UnitCode;
+  expedition_to_kg_factor: number;
+  production_unit: UnitCode;
+};
+
+type ResolvedStoreOrderRow = {
+  id: string;
+  legacy_id: string | null;
+  code: string;
+  store_id: string;
+  ordered_at: string;
+  management_status: "ativo" | "cancelado";
+  note: string;
+};
+
+type ValidatedStoreOrderItem = {
+  item: CreateStoreOrderInput["items"][number];
+  product: OrderProductRow;
+};
+
+function dedupeItems(items: CreateStoreOrderInput["items"]) {
+  const seen = new Set<string>();
+
+  items.forEach((item) => {
+    if (seen.has(item.productId)) {
+      throw new Error(`Produto repetido no pedido: ${item.productId}`);
+    }
+    seen.add(item.productId);
+  });
+
+  return items;
+}
+
+async function resolveStoreOrderRow(
+  orderId: string,
+  supabase: SupabaseDataClient,
+): Promise<ResolvedStoreOrderRow> {
+  const query = supabase
+    .from("store_orders")
+    .select("id, legacy_id, code, store_id, ordered_at, management_status, note");
+  const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
+
+  return assertSupabaseResult(
+    { data: result.data, error: result.error },
+    "Failed to resolve store order",
+  ) as ResolvedStoreOrderRow;
+}
+
+async function ensureOrderIsMutable(orderId: string, supabase: SupabaseDataClient) {
+  const orderRow = await resolveStoreOrderRow(orderId, supabase);
+
+  if (orderRow.management_status === "cancelado") {
+    throw new Error("Cancelled orders cannot be edited");
+  }
+
+  const releaseResult = await supabase
+    .from("workflow_order_releases")
+    .select("id")
+    .eq("order_id", orderRow.id)
+    .maybeSingle();
+
+  if (releaseResult.error) {
+    throw new Error(`Failed to verify order release state: ${releaseResult.error.message}`);
+  }
+
+  if (releaseResult.data) {
+    throw new Error("Orders already released to production cannot be edited");
+  }
+
+  return orderRow;
+}
+
+async function resolveStoreDatabaseId(
+  legacyStoreId: string,
+  supabase: SupabaseDataClient,
+) {
+  const result = await supabase.from("stores").select("id").eq("legacy_id", legacyStoreId).maybeSingle();
+  const row = assertSupabaseResult(
+    { data: result.data, error: result.error },
+    "Failed to resolve store id",
+  );
+  return row.id;
+}
+
+async function loadOrderProductRows(supabase: SupabaseDataClient) {
+  const productsResult = await supabase
+    .from("products")
+    .select("id, legacy_id, code, name, sales_unit, sales_to_kg_factor, expedition_unit, expedition_to_kg_factor, production_unit");
+
+  return assertSupabaseResult(productsResult, "Failed to resolve product ids") as OrderProductRow[];
+}
+
+async function validateStoreOrderItems(
+  items: CreateStoreOrderInput["items"],
+  options: {
+    storeId: string;
+    orderedAt: string;
+    supabase: SupabaseDataClient;
+  },
+) {
+  const normalizedItems = dedupeItems(items);
+  if (normalizedItems.length === 0) {
+    throw new Error("Store order must contain at least one item");
+  }
+
+  const snapshot = await getMasterDataSnapshot({
+    supabase: options.supabase,
+    includeProfileNames: false,
+  });
+  const store = snapshot.stores.find((row) => row.id === options.storeId);
+
+  if (!store) {
+    throw new Error("Store not found");
+  }
+
+  const orderWindow = getOperationalOrderWindow(
+    options.orderedAt,
+    {
+      id: store.id,
+      code: store.code,
+      name: store.name,
+      orderingDays: store.orderingDays,
+      receivingDays: store.receivingDays,
+      orderingBlockedDays: store.orderingBlockedDays,
+      receivingBlockedDays: store.receivingBlockedDays,
+      receiveWindow: store.receiveWindow,
+    },
+    snapshot.operationalSettings,
+  );
+  const availableCatalog = buildStoreOrderCatalog(snapshot, {
+    storeId: store.id,
+    orderedAt: options.orderedAt,
+  });
+  const catalogByProductId = new Map(availableCatalog.map((product) => [product.productId, product]));
+  const productRows = await loadOrderProductRows(options.supabase);
+  const productByLegacyId = new Map(productRows.map((row) => [row.legacy_id ?? row.id, row]));
+
+  const validatedItems = normalizedItems.map<ValidatedStoreOrderItem>((item) => {
+    const product = productByLegacyId.get(item.productId);
+    const catalogEntry = catalogByProductId.get(item.productId);
+
+    if (!product) {
+      throw new Error(`Product not found for store order item: ${item.productId}`);
+    }
+
+    if (!catalogEntry) {
+      throw new Error(`Product unavailable for the operational order window: ${product.code}`);
+    }
+
+    if (!catalogEntry.available) {
+      throw new Error(
+        catalogEntry.blockedReason
+          ? `${catalogEntry.blockedReason} (${product.code})`
+          : `Product unavailable for the operational order window: ${product.code}`,
+      );
+    }
+
+    if (item.unit !== catalogEntry.unit || item.unit !== product.sales_unit) {
+      throw new Error(`Invalid unit for store order item: ${product.code}`);
+    }
+
+    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+      throw new Error(`Invalid quantity for store order item: ${product.code}`);
+    }
+
+    if (isDiscreteUnit(catalogEntry.unit) && !Number.isInteger(item.quantity)) {
+      throw new Error(`Discrete units only accept whole numbers: ${product.code}`);
+    }
+
+    return { item, product };
+  });
+
+  return {
+    snapshot,
+    store,
+    orderWindow,
+    validatedItems,
+  };
+}
+
+async function replaceStoreOrderItems(
+  orderDatabaseId: string,
+  orderLegacyId: string,
+  validatedItems: ValidatedStoreOrderItem[],
+  supabase: SupabaseDataClient,
+) {
+  const deleteResult = await supabase.from("store_order_items").delete().eq("order_id", orderDatabaseId);
+  if (deleteResult.error) {
+    throw new Error(`Failed to replace store order items: ${deleteResult.error.message}`);
+  }
+
+  const orderItems = validatedItems.map(({ item, product }, index) => ({
+    legacy_id: `${orderLegacyId}-item-${index + 1}`,
+    order_id: orderDatabaseId,
+    product_id: product.id,
+    product_code_snapshot: product.code,
+    product_name_snapshot: product.name,
+    requested_quantity: item.quantity,
+    requested_unit: item.unit,
+    sales_to_kg_factor_snapshot: product.sales_to_kg_factor,
+    internal_kg_snapshot: Number((item.quantity * Number(product.sales_to_kg_factor)).toFixed(3)),
+    expedition_unit_snapshot: product.expedition_unit,
+    expedition_to_kg_factor_snapshot: product.expedition_to_kg_factor,
+    operational_unit_snapshot: product.production_unit,
+  }));
+
+  const insertItemsResult = await supabase.from("store_order_items").insert(orderItems);
+  if (insertItemsResult.error) {
+    throw new Error(`Failed to create store order items: ${insertItemsResult.error.message}`);
+  }
 }
 
 export async function listFactoryStoreOrders(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<StoreOrder[]> {
   const [ordersResult, itemsResult, storesResult, productsResult] = await Promise.all([
-    supabase.from("store_orders").select("id, legacy_id, code, store_id, ordered_at").order("ordered_at", { ascending: false }),
+    supabase
+      .from("store_orders")
+      .select("id, legacy_id, code, store_id, ordered_at")
+      .order("ordered_at", { ascending: false }),
     supabase
       .from("store_order_items")
       .select("id, legacy_id, order_id, product_id, requested_quantity, requested_unit")
@@ -108,79 +339,23 @@ export async function createStoreOrder(
   input: CreateStoreOrderInput,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<{ orderId: string; code: string }> {
-  const snapshot = await getMasterDataSnapshot({
-    supabase,
-    includeProfileNames: false,
-  });
-  const store = snapshot.stores.find((row) => row.id === input.storeId);
-
-  if (!store) {
-    throw new Error("Store not found");
-  }
-
-  if (input.items.length === 0) {
-    throw new Error("Store order must contain at least one item");
-  }
-
   const orderedAt = input.orderedAt ?? new Date().toISOString();
   const createdByProfileDatabaseId = await resolveProfileDatabaseId(supabase, input.createdByProfileId ?? null);
-  const orderWindow = getOperationalOrderWindow(orderedAt, {
-    id: store.id,
-    code: store.code,
-    name: store.name,
-    orderingDays: store.orderingDays,
-    receivingDays: store.receivingDays,
-    orderingBlockedDays: store.orderingBlockedDays,
-    receivingBlockedDays: store.receivingBlockedDays,
-    receiveWindow: store.receiveWindow,
-  }, snapshot.operationalSettings);
-  const availableCatalog = buildStoreOrderCatalog(snapshot, {
-    storeId: store.id,
+  const { snapshot, store, orderWindow, validatedItems } = await validateStoreOrderItems(input.items, {
+    storeId: input.storeId,
     orderedAt,
+    supabase,
   });
-  const availableProductIds = new Set(availableCatalog.map((product) => product.productId));
-
-  const existingOrdersResult = await supabase.from("store_orders").select("code");
-  const existingOrders = assertSupabaseResult(existingOrdersResult, "Failed to load existing store orders");
-  const nextSequence = existingOrders.length + 1;
-  const code = `PD-${formatDatePart(orderedAt)}-${String(nextSequence).padStart(4, "0")}`;
-
-  const storeIdResult = await supabase
-    .from("stores")
-    .select("id")
-    .eq("legacy_id", input.storeId)
-    .maybeSingle();
-  const storeIdRow = assertSupabaseResult({ data: storeIdResult.data, error: storeIdResult.error }, "Failed to resolve store id");
-
-  const productIdsResult = await supabase
-    .from("products")
-    .select("id, legacy_id, code, name, sales_to_kg_factor, expedition_unit, expedition_to_kg_factor, production_unit");
-  const productRows = assertSupabaseResult(productIdsResult, "Failed to resolve product ids");
-  const productByLegacyId = new Map(productRows.map((row) => [row.legacy_id ?? row.id, row]));
-  const validatedItems = input.items.map((item) => {
-    const product = productByLegacyId.get(item.productId);
-    if (!product) {
-      throw new Error(`Product not found for store order item: ${item.productId}`);
-    }
-    if (!availableProductIds.has(item.productId)) {
-      throw new Error(`Product unavailable for the operational order window: ${product.code}`);
-    }
-    if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
-      throw new Error(`Invalid quantity for store order item: ${product.code}`);
-    }
-
-    return {
-      item,
-      product,
-    };
-  });
+  const storeDatabaseId = await resolveStoreDatabaseId(input.storeId, supabase);
+  const legacyId = `order-${crypto.randomUUID()}`;
+  const code = await allocateBusinessCode("PD", orderedAt, supabase);
 
   const insertOrderResult = await supabase
     .from("store_orders")
     .insert({
-      legacy_id: `order-${crypto.randomUUID()}`,
+      legacy_id: legacyId,
       code,
-      store_id: storeIdRow.id,
+      store_id: storeDatabaseId,
       created_by_profile_id: createdByProfileDatabaseId,
       ordered_at: orderedAt,
       base_date: orderWindow.baseDate,
@@ -193,30 +368,81 @@ export async function createStoreOrder(
     .single();
   const insertedOrder = assertSupabaseResult(insertOrderResult, "Failed to create store order");
 
-  const orderItems = validatedItems.map(({ item, product }, index) => {
-    return {
-      legacy_id: `${insertedOrder.legacy_id ?? insertedOrder.id}-item-${index + 1}`,
-      order_id: insertedOrder.id,
-      product_id: product.id,
-      product_code_snapshot: product.code,
-      product_name_snapshot: product.name,
-      requested_quantity: item.quantity,
-      requested_unit: item.unit,
-      sales_to_kg_factor_snapshot: product.sales_to_kg_factor,
-      internal_kg_snapshot: Number((item.quantity * Number(product.sales_to_kg_factor)).toFixed(3)),
-      expedition_unit_snapshot: product.expedition_unit,
-      expedition_to_kg_factor_snapshot: product.expedition_to_kg_factor,
-      operational_unit_snapshot: product.production_unit,
-    };
-  });
-
-  const insertItemsResult = await supabase.from("store_order_items").insert(orderItems);
-  if (insertItemsResult.error) {
-    throw new Error(`Failed to create store order items: ${insertItemsResult.error.message}`);
-  }
+  await replaceStoreOrderItems(
+    insertedOrder.id,
+    insertedOrder.legacy_id ?? insertedOrder.id,
+    validatedItems,
+    supabase,
+  );
+  await appendStoreOrderEvent(
+    {
+      orderId: insertedOrder.id,
+      type: "criacao",
+      title: "Pedido criado",
+      description: `Pedido ${insertedOrder.code} criado com ${validatedItems.length} item(ns).`,
+      createdByProfileId: input.createdByProfileId ?? null,
+      metadata: {
+        itemsCount: validatedItems.length,
+        totalKg: Number(
+          validatedItems.reduce((sum, entry) => sum + entry.item.quantity * Number(entry.product.sales_to_kg_factor), 0).toFixed(3),
+        ),
+      },
+    },
+    supabase,
+  );
 
   return {
     orderId: insertedOrder.legacy_id ?? insertedOrder.id,
     code: insertedOrder.code,
+  };
+}
+
+export async function updateStoreOrder(
+  orderId: string,
+  input: UpdateStoreOrderInput,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const orderRow = await ensureOrderIsMutable(orderId, supabase);
+  const storeRowsResult = await supabase.from("stores").select("id, legacy_id");
+  const storeRows = assertSupabaseResult(storeRowsResult, "Failed to resolve store for order update");
+  const storeLegacyId = storeRows.find((row) => row.id === orderRow.store_id)?.legacy_id ?? orderRow.store_id;
+  const updatedByProfileDatabaseId = await resolveProfileDatabaseId(supabase, input.updatedByProfileId ?? null);
+  const { validatedItems } = await validateStoreOrderItems(input.items, {
+    storeId: storeLegacyId,
+    orderedAt: orderRow.ordered_at,
+    supabase,
+  });
+
+  const updateOrderResult = await supabase
+    .from("store_orders")
+    .update({
+      note: input.note ?? "",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderRow.id);
+
+  if (updateOrderResult.error) {
+    throw new Error(`Failed to update store order: ${updateOrderResult.error.message}`);
+  }
+
+  await replaceStoreOrderItems(orderRow.id, orderRow.legacy_id ?? orderRow.id, validatedItems, supabase);
+  await appendStoreOrderEvent(
+    {
+      orderId: orderRow.id,
+      type: "edicao",
+      title: "Pedido atualizado",
+      description: `Itens do pedido ${orderRow.code} foram atualizados antes da liberação para produção.`,
+      createdByProfileId: input.updatedByProfileId ?? null,
+      metadata: {
+        itemsCount: validatedItems.length,
+        updatedByProfileDatabaseId,
+      },
+    },
+    supabase,
+  );
+
+  return {
+    orderId: orderRow.legacy_id ?? orderRow.id,
+    code: orderRow.code,
   };
 }

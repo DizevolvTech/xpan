@@ -56,7 +56,16 @@ export default function LojaPage() {
     const totalOrders = scopedOrders.length;
     const scheduled = scopedOrders.filter((item) => item.status === "agendado").length;
     const inProduction = scopedOrders.filter((item) => item.status === "em_producao").length;
-    const readyToReceive = scopedOrders.filter((item) => item.status === "aguardando_expedicao").length;
+    const readyToReceive = scopedOrders.filter((item) =>
+      [
+        "aguardando_expedicao",
+        "pronto_coleta",
+        "em_rota",
+        "no_destino",
+        "entregue",
+        "tentativa_falha",
+      ].includes(item.status),
+    ).length;
     const openOccurrences = scopedOccurrences.filter(
       (item) => item.status === "aberta" || item.status === "em_analise",
     ).length;

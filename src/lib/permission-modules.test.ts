@@ -31,6 +31,10 @@ test("buildNavigationSections groups only the modules visible to the user", () =
   );
   assert.equal(sections[0]?.items[0]?.id, "gestor-fabrica.dashboard");
   assert.equal(
+    sections[0]?.items.some((item) => item.id === "gestor-fabrica.ocorrencias"),
+    true,
+  );
+  assert.equal(
     sections[1]?.items.some((item) => item.id === "chao-fabrica.entregas"),
     true,
   );

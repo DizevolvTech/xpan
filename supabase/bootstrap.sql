@@ -70,6 +70,7 @@ end $$;
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at = timezone('utc', now());
@@ -383,6 +384,134 @@ create table if not exists public.store_occurrences (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.store_order_events (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.store_orders(id) on delete cascade,
+  event_type text not null,
+  title text not null,
+  description text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_by_profile_id uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists public.store_occurrence_events (
+  id uuid primary key default gen_random_uuid(),
+  occurrence_id uuid not null references public.store_occurrences(id) on delete cascade,
+  event_type text not null,
+  content text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_by_profile_id uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create table if not exists public.business_code_sequences (
+  prefix text not null,
+  scope_key text not null default '',
+  current_value bigint not null default 0 check (current_value >= 0),
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  primary key (prefix, scope_key)
+);
+
+alter table public.business_code_sequences enable row level security;
+
+drop policy if exists business_code_sequences_no_direct_access on public.business_code_sequences;
+create policy business_code_sequences_no_direct_access
+on public.business_code_sequences
+for all
+to public
+using (false)
+with check (false);
+
+create or replace function public.rebuild_business_code_sequences()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.business_code_sequences (prefix, scope_key, current_value)
+  select
+    source.prefix,
+    source.scope_key,
+    max(source.sequence_value) as current_value
+  from (
+    select
+      split_part(code, '-', 1) as prefix,
+      split_part(code, '-', 2) as scope_key,
+      split_part(code, '-', 3)::bigint as sequence_value
+    from public.store_orders
+    where code ~ '^[A-Z]{2}-[0-9]{6}-[0-9]{4,}$'
+
+    union all
+
+    select
+      split_part(code, '-', 1) as prefix,
+      split_part(code, '-', 2) as scope_key,
+      split_part(code, '-', 3)::bigint as sequence_value
+    from public.store_occurrences
+    where code ~ '^[A-Z]{2}-[0-9]{6}-[0-9]{4,}$'
+
+    union all
+
+    select
+      split_part(code, '-', 1) as prefix,
+      '' as scope_key,
+      split_part(code, '-', 2)::bigint as sequence_value
+    from public.store_orders
+    where code ~ '^[A-Z]{2}-[0-9]{4,}$'
+
+    union all
+
+    select
+      split_part(code, '-', 1) as prefix,
+      '' as scope_key,
+      split_part(code, '-', 2)::bigint as sequence_value
+    from public.store_occurrences
+    where code ~ '^[A-Z]{2}-[0-9]{4,}$'
+  ) as source
+  group by source.prefix, source.scope_key
+  on conflict (prefix, scope_key) do update
+  set
+    current_value = greatest(public.business_code_sequences.current_value, excluded.current_value),
+    updated_at = timezone('utc', now());
+end;
+$$;
+
+create or replace function public.next_business_code_number(
+  p_prefix text,
+  p_scope_key text default ''
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  normalized_prefix text;
+  normalized_scope_key text;
+  next_value bigint;
+begin
+  normalized_prefix := upper(btrim(coalesce(p_prefix, '')));
+  normalized_scope_key := btrim(coalesce(p_scope_key, ''));
+
+  if normalized_prefix = '' then
+    raise exception 'Business code prefix is required';
+  end if;
+
+  insert into public.business_code_sequences as sequences (prefix, scope_key, current_value)
+  values (normalized_prefix, normalized_scope_key, 1)
+  on conflict (prefix, scope_key) do update
+  set
+    current_value = sequences.current_value + 1,
+    updated_at = timezone('utc', now())
+  returning current_value into next_value;
+
+  return next_value;
+end;
+$$;
+
 create index if not exists idx_profiles_role on public.profiles(role);
 create index if not exists idx_user_permissions_profile on public.user_permissions(profile_id);
 create index if not exists idx_profile_store_access_profile on public.profile_store_access(profile_id);
@@ -394,6 +523,8 @@ create index if not exists idx_store_orders_store_date on public.store_orders(st
 create index if not exists idx_store_order_items_order on public.store_order_items(order_id);
 create index if not exists idx_workflow_production_items_status on public.workflow_production_items(status);
 create index if not exists idx_store_occurrences_order on public.store_occurrences(order_id);
+create index if not exists idx_store_order_events_order on public.store_order_events(order_id);
+create index if not exists idx_store_occurrence_events_occurrence on public.store_occurrence_events(occurrence_id);
 create unique index if not exists idx_ingredients_external_code_unique
 on public.ingredients (lower(external_code))
 where external_code is not null and btrim(external_code) <> '';
@@ -539,6 +670,8 @@ alter table public.workflow_order_releases enable row level security;
 alter table public.workflow_production_items enable row level security;
 alter table public.delivery_executions enable row level security;
 alter table public.store_occurrences enable row level security;
+alter table public.store_order_events enable row level security;
+alter table public.store_occurrence_events enable row level security;
 
 drop policy if exists profiles_select_self_or_admin on public.profiles;
 create policy profiles_select_self_or_admin
@@ -910,21 +1043,106 @@ with check (
   )
 );
 
+drop policy if exists store_occurrences_update_by_scope on public.store_occurrences;
 drop policy if exists store_occurrences_update_factory_or_admin on public.store_occurrences;
-create policy store_occurrences_update_factory_or_admin
+create policy store_occurrences_update_by_scope
 on public.store_occurrences
 for update
 to authenticated
 using (
-  public.current_user_role() in (
+  exists (
+    select 1
+    from public.store_orders
+    where store_orders.id = store_occurrences.order_id
+      and public.can_access_store(store_orders.store_id)
+  )
+  and public.current_user_role() in (
     'administrador'::public.user_role,
-    'gestor-fabrica'::public.user_role
+    'gestor-fabrica'::public.user_role,
+    'loja'::public.user_role
   )
 )
 with check (
-  public.current_user_role() in (
+  exists (
+    select 1
+    from public.store_orders
+    where store_orders.id = store_occurrences.order_id
+      and public.can_access_store(store_orders.store_id)
+  )
+  and public.current_user_role() in (
     'administrador'::public.user_role,
-    'gestor-fabrica'::public.user_role
+    'gestor-fabrica'::public.user_role,
+    'loja'::public.user_role
+  )
+);
+
+drop policy if exists store_order_events_select_by_scope on public.store_order_events;
+create policy store_order_events_select_by_scope
+on public.store_order_events
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.store_orders
+    where store_orders.id = store_order_events.order_id
+      and public.can_access_store(store_orders.store_id)
+  )
+);
+
+drop policy if exists store_order_events_insert_by_scope on public.store_order_events;
+create policy store_order_events_insert_by_scope
+on public.store_order_events
+for insert
+to authenticated
+with check (
+  exists (
+    select 1
+    from public.store_orders
+    where store_orders.id = store_order_events.order_id
+      and public.can_access_store(store_orders.store_id)
+  )
+  and public.current_user_role() in (
+    'administrador'::public.user_role,
+    'gestor-fabrica'::public.user_role,
+    'chao-fabrica'::public.user_role,
+    'gestor-dados'::public.user_role,
+    'loja'::public.user_role
+  )
+);
+
+drop policy if exists store_occurrence_events_select_by_scope on public.store_occurrence_events;
+create policy store_occurrence_events_select_by_scope
+on public.store_occurrence_events
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.store_occurrences
+    join public.store_orders on store_orders.id = store_occurrences.order_id
+    where store_occurrences.id = store_occurrence_events.occurrence_id
+      and public.can_access_store(store_orders.store_id)
+  )
+);
+
+drop policy if exists store_occurrence_events_insert_by_scope on public.store_occurrence_events;
+create policy store_occurrence_events_insert_by_scope
+on public.store_occurrence_events
+for insert
+to authenticated
+with check (
+  exists (
+    select 1
+    from public.store_occurrences
+    join public.store_orders on store_orders.id = store_occurrences.order_id
+    where store_occurrences.id = store_occurrence_events.occurrence_id
+      and public.can_access_store(store_orders.store_id)
+  )
+  and public.current_user_role() in (
+    'administrador'::public.user_role,
+    'gestor-fabrica'::public.user_role,
+    'loja'::public.user_role
   )
 );
 

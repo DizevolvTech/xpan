@@ -1,19 +1,28 @@
 import type { LineType } from "@/lib/production-planning";
-import { getOperationalTimeline } from "@/lib/order-planning";
+import { getUnitDefinition } from "@/lib/factory-planning/units";
+import { getOperationalOrderWindow, resolveScheduledProductAvailability } from "@/lib/order-planning";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import type { StoreOrderCatalogProduct } from "@/lib/store-order-types";
 
 type ApprovedCatalogEntry = {
+  scheduleId: string | null;
   productId: string;
   code: string;
   name: string;
   unit: StoreOrderCatalogProduct["unit"];
+  unitKind: StoreOrderCatalogProduct["unitKind"];
+  salesToKgFactor: number;
   category: string;
   sectorName: string;
   lineName: string;
   lineType: LineType;
   scheduleName: string;
   productionDays: StoreOrderCatalogProduct["productionDays"];
+  minimumProductionKg: number;
+  baseDate: string;
+  deliveryDate: string;
+  available: boolean;
+  blockedReason: string | null;
 };
 
 function calculateTotal(
@@ -59,37 +68,44 @@ export function buildStoreOrderCatalog(
     }
 
     const schedule = activeScheduleByLineId.get(line.id);
-    if (!schedule) {
-      return;
-    }
+    const scheduleItem = schedule?.items.find((item) => item.productId === product.id) ?? null;
+    const orderWindow = getOperationalOrderWindow(options.orderedAt, store, snapshot.operationalSettings);
+    const availability = schedule
+      ? resolveScheduledProductAvailability(
+          options.orderedAt,
+          store,
+          snapshot.operationalSettings,
+          {
+            productProductionDays: product.productionDays,
+            scheduleItem,
+          },
+        )
+      : null;
 
-    const timeline = getOperationalTimeline(
-      options.orderedAt,
-      store,
-      snapshot.operationalSettings,
-      product.productionDays,
-      product.saleLeadDays ?? 0,
-    );
-    if (!timeline.productionDate || timeline.delayed) {
-      return;
-    }
-
-    const key = `${schedule.id}|${product.id}`;
+    const key = `${schedule?.id ?? line.id}|${product.id}`;
     if (entries.has(key)) {
       return;
     }
 
     entries.set(key, {
+      scheduleId: schedule?.id ?? null,
       productId: product.id,
       code: product.code,
       name: product.name,
       unit: product.salesUnit,
+      unitKind: getUnitDefinition(product.salesUnit).kind,
+      salesToKgFactor: product.salesToKgFactor,
       category: sector.name,
       sectorName: sector.name,
       lineName: line.name,
       lineType: line.type,
-      scheduleName: schedule.name,
-      productionDays: product.productionDays,
+      scheduleName: schedule?.name ?? "Sem cronograma ativo",
+      productionDays: availability?.matchingDays ?? [],
+      minimumProductionKg: product.minimumProductionKg,
+      baseDate: availability?.baseDate ?? orderWindow.baseDate,
+      deliveryDate: availability?.deliveryDate ?? orderWindow.deliveryDate,
+      available: availability?.available ?? false,
+      blockedReason: availability ? availability.blockedReason : "Sublinha sem cronograma ativo.",
     });
   });
 
@@ -97,17 +113,24 @@ export function buildStoreOrderCatalog(
     .map<StoreOrderCatalogProduct>((entry) => {
       const row: StoreOrderCatalogProduct = {
         id: `${entry.productId}-${entry.scheduleName}`,
+        scheduleId: entry.scheduleId,
         productId: entry.productId,
         code: entry.code,
         name: entry.name,
         unit: entry.unit,
+        unitKind: entry.unitKind,
+        salesToKgFactor: entry.salesToKgFactor,
         category: entry.category,
         sectorName: entry.sectorName,
         lineName: entry.lineName,
         lineType: entry.lineType,
         scheduleName: entry.scheduleName,
         productionDays: entry.productionDays,
-        available: true,
+        minimumProductionKg: entry.minimumProductionKg,
+        available: entry.available,
+        blockedReason: entry.blockedReason,
+        baseDate: entry.baseDate,
+        deliveryDate: entry.deliveryDate,
         sex: 0,
         sab: 0,
         dom: 0,
@@ -122,6 +145,10 @@ export function buildStoreOrderCatalog(
       return row;
     })
     .sort((a, b) => {
+      if (a.available !== b.available) {
+        return a.available ? -1 : 1;
+      }
+
       const byCategory = a.category.localeCompare(b.category);
       if (byCategory !== 0) {
         return byCategory;
