@@ -130,6 +130,7 @@ create table if not exists public.stores (
   code text not null unique,
   name text not null,
   responsible text not null,
+  responsible_profile_id uuid references public.profiles(id) on delete set null,
   email text not null,
   phone text not null,
   status public.record_status not null default 'ativo',
@@ -370,6 +371,7 @@ create table if not exists public.store_occurrences (
 create index if not exists idx_profiles_role on public.profiles(role);
 create index if not exists idx_user_permissions_profile on public.user_permissions(profile_id);
 create index if not exists idx_profile_store_access_profile on public.profile_store_access(profile_id);
+create index if not exists idx_stores_responsible_profile_id on public.stores(responsible_profile_id);
 create index if not exists idx_subcategories_category on public.subcategories(category_id);
 create index if not exists idx_schedule_lines_subcategory on public.schedule_lines(subcategory_id);
 create index if not exists idx_products_subcategory on public.products(subcategory_id);

@@ -85,6 +85,7 @@ export interface StoreMasterData {
   updatedAt?: string;
   name: string;
   responsible: string;
+  responsibleProfileId?: string | null;
   email: string;
   phone: string;
   status: RecordStatus;

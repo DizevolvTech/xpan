@@ -103,7 +103,10 @@ async function loadMasterDataSnapshot(
     supabase.from("products").select("*").order("code", { ascending: true }),
     supabase.from("product_recipe_items").select("*").order("sort_order", { ascending: true }),
     includeProfileNames
-      ? supabase.rpc("list_profile_labels")
+      ? supabase
+          .from("profiles")
+          .select("id, legacy_id, name, role, status")
+          .order("name", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
     supabase.from("schedule_lines").select("*").order("code", { ascending: true }),
     supabase.from("schedule_line_item_snapshots").select("*").order("created_at", { ascending: true }),
@@ -124,7 +127,16 @@ async function loadMasterDataSnapshot(
   const productRows = assertSupabaseResult(productsResult, "Failed to load products");
   const recipeRows = assertSupabaseResult(recipeItemsResult, "Failed to load product recipe items");
   const profileRows = assertSupabaseResult(
-    profilesResult as { data: Array<{ id: string; name: string }>; error: { message: string } | null },
+    profilesResult as {
+      data: Array<{
+        id: string;
+        legacy_id: string | null;
+        name: string;
+        role: string;
+        status: string;
+      }>;
+      error: { message: string } | null;
+    },
     "Failed to load profile labels",
   );
   const scheduleRows = assertSupabaseResult(schedulesResult, "Failed to load schedule lines");
@@ -184,6 +196,7 @@ async function loadMasterDataSnapshot(
     },
     new Map(),
   );
+  const profileById = new Map(profileRows.map((row) => [row.id, row]));
 
   const ingredients: ProductionIngredient[] = ingredientRows.map((row) => ({
     id: row.legacy_id ?? row.id,
@@ -206,7 +219,13 @@ async function loadMasterDataSnapshot(
     createdAt: row.created_at ?? undefined,
     updatedAt: row.updated_at ?? undefined,
     name: row.name,
-    responsible: row.responsible,
+    responsible:
+      row.responsible_profile_id
+        ? profileById.get(row.responsible_profile_id)?.name ?? row.responsible
+        : row.responsible,
+    responsibleProfileId: row.responsible_profile_id
+      ? profileById.get(row.responsible_profile_id)?.legacy_id ?? row.responsible_profile_id
+      : null,
     email: row.email,
     phone: row.phone,
     status: row.status,

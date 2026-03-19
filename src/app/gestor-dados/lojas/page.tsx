@@ -30,6 +30,7 @@ import {
 } from "@/lib/production-planning";
 import { formatBrazilPhone } from "@/lib/phone-mask";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useStoreUserCandidates } from "@/lib/use-store-user-candidates";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import {
   Select,
@@ -50,6 +51,7 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
     code: store?.code ?? `LJ-${String(Date.now()).slice(-3)}`,
     name: store?.name ?? "",
     responsible: store?.responsible ?? "",
+    responsibleProfileId: store?.responsibleProfileId ?? null,
     email: store?.email ?? "",
     phone: formatBrazilPhone(store?.phone ?? ""),
     status: store?.status ?? "ativo",
@@ -63,6 +65,11 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
 
 export default function LojasPage() {
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
+  const {
+    users: storeUsers,
+    isLoading: isStoreUsersLoading,
+    error: storeUsersError,
+  } = useStoreUserCandidates();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<Loja | null>(null);
@@ -98,6 +105,14 @@ export default function LojasPage() {
           item.code.toLowerCase().includes(searchTerm.toLowerCase()),
       ),
     [lojas, searchTerm],
+  );
+  const storeUserOptions = useMemo(
+    () => storeUsers.filter((user) => user.status === "ativo" || user.id === formState.responsibleProfileId),
+    [formState.responsibleProfileId, storeUsers],
+  );
+  const selectedResponsibleUser = useMemo(
+    () => storeUsers.find((user) => user.id === formState.responsibleProfileId) ?? null,
+    [formState.responsibleProfileId, storeUsers],
   );
 
   const columns = [
@@ -214,8 +229,8 @@ export default function LojasPage() {
   }
 
   async function handleSave() {
-    if (!formState.name.trim() || !formState.responsible.trim()) {
-      setFormError("Informe nome e responsável da loja.");
+    if (!formState.name.trim() || !formState.responsibleProfileId?.trim()) {
+      setFormError("Informe nome e selecione um usuário do tipo loja para vincular o acesso.");
       return;
     }
 
@@ -308,6 +323,11 @@ export default function LojasPage() {
               {error}
             </div>
           ) : null}
+          {storeUsersError ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              {storeUsersError}
+            </div>
+          ) : null}
           <DataTable
             data={filteredLojas}
             columns={columns}
@@ -382,14 +402,50 @@ export default function LojasPage() {
                   <Input value={formState.code} disabled className="bg-muted" />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Responsável *</Label>
-                  <Input
-                    value={formState.responsible}
-                    onChange={(event) =>
-                      setFormState((current) => ({ ...current, responsible: event.target.value }))
-                    }
-                    placeholder="Responsável da loja"
-                  />
+                  <Label>Usuário Responsável *</Label>
+                  <Select
+                    value={formState.responsibleProfileId ?? undefined}
+                    onValueChange={(value) => {
+                      const responsibleUser = storeUsers.find((user) => user.id === value) ?? null;
+                      setFormState((current) => ({
+                        ...current,
+                        responsibleProfileId: value,
+                        responsible: responsibleUser?.name ?? current.responsible,
+                      }));
+                    }}
+                    disabled={isStoreUsersLoading || storeUserOptions.length === 0}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          isStoreUsersLoading
+                            ? "Carregando usuários de loja..."
+                            : "Selecione um usuário do tipo loja"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {storeUserOptions.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name}
+                          {user.status === "inativo" ? " (inativo)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Apenas usuários do perfil <strong>Loja</strong> aparecem nesta lista e o acesso à loja será vinculado automaticamente.
+                  </p>
+                  {!isStoreUsersLoading && storeUserOptions.length === 0 ? (
+                    <p className="text-xs text-warning-foreground">
+                      Nenhum usuário do tipo loja está disponível. Cadastre ou ative um usuário de loja em Usuários e Permissões para continuar.
+                    </p>
+                  ) : null}
+                  {selectedResponsibleUser ? (
+                    <p className="text-xs text-muted-foreground">
+                      Vinculado a: <strong>{selectedResponsibleUser.email}</strong>
+                    </p>
+                  ) : null}
                 </div>
                 <div className="grid gap-2">
                   <Label>Email</Label>

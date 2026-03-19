@@ -133,6 +133,7 @@ export type Database = {
           code: string;
           name: string;
           responsible: string;
+          responsible_profile_id: string | null;
           email: string;
           phone: string;
           status: "ativo" | "inativo";
@@ -150,6 +151,7 @@ export type Database = {
           code: string;
           name: string;
           responsible: string;
+          responsible_profile_id?: string | null;
           email: string;
           phone: string;
           status?: "ativo" | "inativo";
