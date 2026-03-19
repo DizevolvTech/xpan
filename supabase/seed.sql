@@ -112,6 +112,7 @@ insert into public.permission_modules (module_key, label, route, group_key) valu
   ('chao-fabrica.dashboard', 'Visao geral de execucao', '/chao-fabrica', 'chao-fabrica'::public.permission_group),
   ('chao-fabrica.ops', 'Execucao de OP', '/chao-fabrica/ordens-producao', 'chao-fabrica'::public.permission_group),
   ('chao-fabrica.expedicao', 'Execucao da expedicao', '/chao-fabrica/expedicao', 'chao-fabrica'::public.permission_group),
+  ('chao-fabrica.entregas', 'Entregas', '/chao-fabrica/entregas', 'chao-fabrica'::public.permission_group),
   ('loja.dashboard', 'Visao geral da loja', '/loja', 'loja'::public.permission_group),
   ('loja.pedidos', 'Pedidos da loja', '/loja/pedidos', 'loja'::public.permission_group),
   ('loja.ocorrencias', 'Ocorrencias da loja', '/loja/ocorrencias', 'loja'::public.permission_group);

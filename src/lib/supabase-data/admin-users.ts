@@ -302,6 +302,22 @@ async function upsertPermissions(
   permissions: PermissionMap,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
+  const modulesSyncResult = await supabase.from("permission_modules").upsert(
+    permissionModules.map((module) => ({
+      module_key: module.id,
+      label: module.label,
+      route: module.route,
+      group_key: module.group,
+    })),
+    {
+      onConflict: "module_key",
+    },
+  );
+
+  if (modulesSyncResult.error) {
+    throw new Error(`Failed to sync permission modules: ${modulesSyncResult.error.message}`);
+  }
+
   const payload = permissionModules.map((module) => ({
     profile_id: profileId,
     module_key: module.id,
