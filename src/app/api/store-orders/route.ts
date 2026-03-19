@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     contextLabel: "GET /api/store-orders",
     permission: "loja.pedidos",
     minimumLevel: "operar",
+    includeStoreScope: true,
   });
 
   if ("response" in authorization) {
@@ -66,6 +67,7 @@ export async function POST(request: Request) {
     contextLabel: "POST /api/store-orders",
     permission: "loja.pedidos",
     minimumLevel: "operar",
+    includeStoreScope: true,
   });
 
   if ("response" in authorization) {

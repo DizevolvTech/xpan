@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     contextLabel: "GET /api/store-order-catalog",
     permission: "loja.pedidos",
     minimumLevel: "operar",
+    includeStoreScope: true,
   });
 
   if ("response" in authorization) {

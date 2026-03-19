@@ -222,16 +222,16 @@ export default function AdministradorUsuariosPage() {
       key: "name",
       header: "Usuário",
       render: (user: ManagedUser) => (
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-[17rem] items-center gap-3">
           <Avatar size="sm" className="border border-border/70">
             {user.profile.avatarUrl ? (
               <AvatarImage src={user.profile.avatarUrl} alt={`Foto de ${user.name}`} />
             ) : null}
             <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
           </Avatar>
-          <div className="space-y-1">
-            <p className="font-medium text-foreground">{user.name}</p>
-            <p className="text-xs text-muted-foreground">{user.email}</p>
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium leading-5 text-foreground">{user.name}</p>
+            <p className="text-xs leading-4 text-muted-foreground">{user.email}</p>
           </div>
         </div>
       ),
@@ -240,7 +240,9 @@ export default function AdministradorUsuariosPage() {
       key: "role",
       header: "Perfil Base",
       render: (user: ManagedUser) => (
-        <Badge variant="secondary">{roleLabels[user.role]}</Badge>
+        <div className="min-w-[8.5rem]">
+          <Badge variant="secondary">{roleLabels[user.role]}</Badge>
+        </div>
       ),
     },
     {
@@ -248,26 +250,30 @@ export default function AdministradorUsuariosPage() {
       header: "Situação",
       render: (user: ManagedUser) =>
         user.status === "ativo" ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-success/35 px-2.5 py-1 text-xs font-semibold text-success-foreground">
-            <CheckCircle2 className="size-3.5" />
-            Ativo
-          </span>
+          <div className="min-w-[8rem]">
+            <span className="inline-flex items-center gap-1 rounded-full bg-success/35 px-2.5 py-1 text-xs font-semibold text-success-foreground">
+              <CheckCircle2 className="size-3.5" />
+              Ativo
+            </span>
+          </div>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-danger/35 px-2.5 py-1 text-xs font-semibold text-danger-foreground">
-            <XCircle className="size-3.5" />
-            Inativo
-          </span>
+          <div className="min-w-[8rem]">
+            <span className="inline-flex items-center gap-1 rounded-full bg-danger/35 px-2.5 py-1 text-xs font-semibold text-danger-foreground">
+              <XCircle className="size-3.5" />
+              Inativo
+            </span>
+          </div>
         ),
     },
     {
       key: "profile",
       header: "Perfil",
       render: (user: ManagedUser) => (
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">
-            {user.profile.phone || "Telefone não informado"}
+        <div className="min-w-[11rem] space-y-0.5">
+          <p className="text-sm font-medium leading-5 text-foreground">
+            {user.profile.phone || "Telefone pendente"}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs leading-4 text-muted-foreground">
             {buildAddressSummary(user.profile.address)}
           </p>
         </div>
@@ -277,12 +283,12 @@ export default function AdministradorUsuariosPage() {
       key: "permissions",
       header: "Delegação",
       render: (user: ManagedUser) => (
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">
-            {countAllowedModules(user.permissions)} módulos liberados
+        <div className="min-w-[9rem] space-y-0.5">
+          <p className="text-sm font-medium leading-5 text-foreground">
+            {countAllowedModules(user.permissions)} módulos
           </p>
-          <p className="text-xs text-muted-foreground">
-            {countManagementPermissions(user.permissions)} com nível gerenciar
+          <p className="text-xs leading-4 text-muted-foreground">
+            {countManagementPermissions(user.permissions)} gerenciar
           </p>
         </div>
       ),
@@ -294,9 +300,9 @@ export default function AdministradorUsuariosPage() {
         const preview = buildNavigationPreview(user.permissions, user.role);
 
         return (
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">{preview.landingPath}</p>
-            <p className="text-xs text-muted-foreground">{preview.groupSummary}</p>
+          <div className="min-w-[11rem] space-y-0.5">
+            <p className="text-sm font-medium leading-5 text-foreground">{preview.landingPath}</p>
+            <p className="text-xs leading-4 text-muted-foreground">{preview.groupSummary}</p>
           </div>
         );
       },
@@ -305,19 +311,19 @@ export default function AdministradorUsuariosPage() {
       key: "storeScope",
       header: "Escopo Loja",
       render: (user: ManagedUser) => (
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-foreground">
+        <div className="min-w-[11rem] space-y-0.5">
+          <p className="text-sm font-medium leading-5 text-foreground">
             {user.storeIds?.length
               ? `${user.storeIds.length} loja${user.storeIds.length > 1 ? "s" : ""} autorizada${user.storeIds.length > 1 ? "s" : ""}`
-              : "Sem restrição cadastrada"}
+              : "Todas as lojas"}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs leading-4 text-muted-foreground">
             {user.storeIds?.length
               ? user.storeIds
                   .slice(0, 2)
                   .map((storeId) => storeNameById.get(storeId) ?? storeId)
                   .join(" · ")
-              : "Quando houver módulos da loja liberados, o usuário poderá operar todas as lojas disponíveis."}
+              : "Sem restrição por unidade"}
           </p>
         </div>
       ),
@@ -326,7 +332,7 @@ export default function AdministradorUsuariosPage() {
       key: "updatedAt",
       header: "Última Atualização",
       render: (user: ManagedUser) => (
-        <span className="text-xs text-muted-foreground">{user.updatedAt}</span>
+        <span className="whitespace-nowrap text-xs text-muted-foreground">{user.updatedAt}</span>
       ),
     },
   ];
@@ -817,7 +823,9 @@ export default function AdministradorUsuariosPage() {
             actions={actions}
             keyField="id"
             emptyMessage={isLoading ? "Carregando usuários..." : "Nenhum usuário encontrado para os filtros informados."}
+            compact
             stickyHeader
+            tableClassName="min-w-[1500px]"
           />
         </CardContent>
       </Card>

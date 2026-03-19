@@ -33,7 +33,7 @@ function buildProfileResponse(user: NonNullable<Awaited<ReturnType<typeof resolv
 
 export async function GET() {
   try {
-    const user = await resolveCurrentManagedUser();
+    const user = await resolveCurrentManagedUser({ includeStoreAccess: true });
 
     if (!user) {
       return NextResponse.json({ message: "Sessão inválida." }, { status: 401 });
@@ -74,7 +74,7 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const user = await resolveCurrentManagedUser();
+    const user = await resolveCurrentManagedUser({ includeStoreAccess: true });
 
     if (!user) {
       return NextResponse.json({ message: "Sessão inválida." }, { status: 401 });

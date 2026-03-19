@@ -10,6 +10,10 @@ export type ResolvedServerSession = SessionUser & {
   authUserId?: string | null;
 };
 
+type ResolveManagedUserOptions = {
+  includeStoreAccess?: boolean;
+};
+
 function buildSessionUser(name: string, email: string, role: SessionUser["role"]): SessionUser {
   return {
     name,
@@ -18,9 +22,15 @@ function buildSessionUser(name: string, email: string, role: SessionUser["role"]
   };
 }
 
-async function resolveManagedUserFromSession(authUserId: string): Promise<ManagedUser | null> {
+async function resolveManagedUserFromSession(
+  authUserId: string,
+  options: ResolveManagedUserOptions = {},
+): Promise<ManagedUser | null> {
   const supabase = await createSupabaseServerClient();
-  return findManagedUserByAuthUserId(authUserId, { supabase });
+  return findManagedUserByAuthUserId(authUserId, {
+    supabase,
+    includeStoreAccess: options.includeStoreAccess ?? false,
+  });
 }
 
 export async function resolveServerSession(): Promise<ResolvedServerSession | null> {
@@ -45,7 +55,7 @@ export async function resolveServerSession(): Promise<ResolvedServerSession | nu
   };
 }
 
-export async function resolveCurrentManagedUser() {
+export async function resolveCurrentManagedUser(options: ResolveManagedUserOptions = {}) {
   const supabase = await createSupabaseServerClient();
   const authResult = await supabase.auth.getUser();
   const authUser = authResult.data.user;
@@ -54,5 +64,5 @@ export async function resolveCurrentManagedUser() {
     return null;
   }
 
-  return resolveManagedUserFromSession(authUser.id);
+  return resolveManagedUserFromSession(authUser.id, options);
 }

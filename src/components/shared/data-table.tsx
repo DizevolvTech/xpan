@@ -46,6 +46,7 @@ interface DataTableProps<T> {
   compact?: boolean;
   temporalSortKeys?: string[];
   showFooterControls?: boolean;
+  tableClassName?: string;
   emptyStateAction?: {
     label: string;
     onClick: () => void;
@@ -73,6 +74,7 @@ export function DataTable<T extends object>({
   compact = false,
   temporalSortKeys,
   showFooterControls = true,
+  tableClassName,
   emptyStateAction,
 }: DataTableProps<T>) {
   const actionIcons: Record<string, LucideIcon> = {
@@ -137,7 +139,12 @@ export function DataTable<T extends object>({
     <div className="space-y-3">
       <div className="rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
         <div className="overflow-x-auto overscroll-x-contain">
-        <table className="w-full min-w-[640px] border-collapse bg-card xl:min-w-full">
+        <table
+          className={cn(
+            "w-full min-w-[640px] border-collapse bg-card xl:min-w-full",
+            tableClassName,
+          )}
+        >
           <thead
             className={cn(
               "border-b border-border/70 bg-panel",

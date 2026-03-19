@@ -24,6 +24,7 @@ export async function GET(request: Request) {
     contextLabel: "GET /api/store-occurrences",
     permission: "loja.ocorrencias",
     minimumLevel: "operar",
+    includeStoreScope: true,
   });
 
   if ("response" in authorization) {
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
     contextLabel: "POST /api/store-occurrences",
     permission: "loja.ocorrencias",
     minimumLevel: "operar",
+    includeStoreScope: true,
   });
 
   if ("response" in authorization) {

@@ -8,6 +8,7 @@ import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 export async function GET() {
   const authorization = await authorizeApiRequest({
     contextLabel: "GET /api/master-data",
+    includeStoreScope: true,
   });
 
   if ("response" in authorization) {

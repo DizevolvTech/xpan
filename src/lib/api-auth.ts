@@ -12,6 +12,7 @@ type AuthorizeApiOptions = {
   anyOfPermissions?: PermissionModuleId[];
   minimumLevel?: PermissionLevel;
   contextLabel?: string;
+  includeStoreScope?: boolean;
 };
 
 function buildUnauthorizedResponse() {
@@ -25,7 +26,9 @@ function buildForbiddenResponse(message = "Você não tem permissão para esta o
 export async function authorizeApiRequest(
   options: AuthorizeApiOptions = {},
 ): Promise<{ user: ManagedUser } | { response: NextResponse }> {
-  const user = await resolveCurrentManagedUser();
+  const user = await resolveCurrentManagedUser({
+    includeStoreAccess: options.includeStoreScope ?? false,
+  });
   const decision = resolveAuthorizationDecision(user, options);
 
   if (decision.kind === "unauthorized") {

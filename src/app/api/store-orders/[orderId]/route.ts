@@ -23,6 +23,7 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
     contextLabel: "GET /api/store-orders/[orderId]",
     permission: "loja.pedidos",
     minimumLevel: "operar",
+    includeStoreScope: true,
   });
 
   if ("response" in authorization) {

@@ -37,6 +37,10 @@ type QueryOptions = {
   supabase?: SupabaseDataClient;
 };
 
+type ManagedUserLookupOptions = QueryOptions & {
+  includeStoreAccess?: boolean;
+};
+
 export type CreateManagedUserResult = {
   user: ManagedUser;
   temporaryPassword?: string;
@@ -315,18 +319,28 @@ async function upsertPermissions(
 
 async function loadManagedUserByProfile(
   profile: ProfileRow,
-  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  options: ManagedUserLookupOptions = {},
 ): Promise<ManagedUser> {
-  const [permissionsResult, storeAccessResult, storesResult] = await Promise.all([
-    supabase.from("user_permissions").select("*").eq("profile_id", profile.id),
-    supabase.from("profile_store_access").select("*").eq("profile_id", profile.id),
-    supabase.from("stores").select("id, legacy_id"),
-  ]);
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const includeStoreAccess = options.includeStoreAccess ?? true;
+  const permissionsResult = await supabase
+    .from("user_permissions")
+    .select("*")
+    .eq("profile_id", profile.id);
 
   const permissions = assertSupabaseResult(
     permissionsResult,
     "Failed to load user permissions",
   ) as UserPermissionRow[];
+
+  if (!includeStoreAccess) {
+    return mapManagedUser(profile, permissions, []);
+  }
+
+  const [storeAccessResult, storesResult] = await Promise.all([
+    supabase.from("profile_store_access").select("*").eq("profile_id", profile.id),
+    supabase.from("stores").select("id, legacy_id"),
+  ]);
   const storeAccessRows = assertSupabaseResult(
     storeAccessResult,
     "Failed to load profile store access",
@@ -404,13 +418,16 @@ export async function listManagedUsers(options: QueryOptions = {}): Promise<Mana
 
 export async function getManagedUserByIdentifier(
   identifier: string,
-  options: QueryOptions = {},
+  options: ManagedUserLookupOptions = {},
 ): Promise<ManagedUser | null> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
 
   try {
     const profile = await resolveProfileByIdentifier(identifier, supabase);
-    return await loadManagedUserByProfile(profile, supabase);
+    return await loadManagedUserByProfile(profile, {
+      ...options,
+      supabase,
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "User not found") {
       return null;
@@ -421,7 +438,7 @@ export async function getManagedUserByIdentifier(
 
 export async function findManagedUserByAuthUserId(
   authUserId: string,
-  options: QueryOptions = {},
+  options: ManagedUserLookupOptions = {},
 ): Promise<ManagedUser | null> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const profile = await resolveProfileByAuthUserId(authUserId, supabase);
@@ -430,7 +447,10 @@ export async function findManagedUserByAuthUserId(
     return null;
   }
 
-  return loadManagedUserByProfile(profile, supabase);
+  return loadManagedUserByProfile(profile, {
+    ...options,
+    supabase,
+  });
 }
 
 export async function createManagedUser(

@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
 
   const managedUser = await findManagedUserByAuthUserId(signInResult.data.user.id, {
     supabase,
+    includeStoreAccess: false,
   });
 
   if (!managedUser) {

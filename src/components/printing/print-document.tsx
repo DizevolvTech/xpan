@@ -97,14 +97,29 @@ export function PrintDocument({
   const industrial = variant === "industrial";
 
   return (
-    <main
-      ref={rootRef}
-      className={
-        industrial
-          ? "min-h-screen bg-stone-200 px-3 py-4 print:bg-white print:px-0 print:py-0"
-          : "min-h-screen bg-stone-100 px-4 py-5 print:bg-white print:px-0 print:py-0"
-      }
-    >
+    <>
+      <style jsx global>{`
+        @page {
+          size: auto;
+          margin: 12mm 10mm;
+        }
+
+        @media print {
+          html,
+          body {
+            background: white !important;
+          }
+        }
+      `}</style>
+
+      <main
+        ref={rootRef}
+        className={
+          industrial
+            ? "min-h-screen bg-stone-200 px-3 py-4 print:bg-white print:px-[6mm] print:py-[5mm]"
+            : "min-h-screen bg-stone-100 px-4 py-5 print:bg-white print:px-[6mm] print:py-[5mm]"
+        }
+      >
       <div
         className={
           industrial
@@ -158,6 +173,7 @@ export function PrintDocument({
           {children}
         </div>
       </div>
-    </main>
+      </main>
+    </>
   );
 }
