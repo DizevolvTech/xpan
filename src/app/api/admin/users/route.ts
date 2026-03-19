@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { UserFormState } from "@/lib/admin-users";
 import { authorizeApiRequest } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createManagedUser, listManagedUsers } from "@/lib/supabase-data/admin-users";
 
 type CreateUserBody = UserFormState | null;
@@ -19,7 +19,7 @@ export async function GET() {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const users = await listManagedUsers({ supabase });
     return NextResponse.json(users);
   } catch (error) {
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
     const user = await createManagedUser(payload, { supabase });
     return NextResponse.json(user, { status: 201 });
   } catch (error) {

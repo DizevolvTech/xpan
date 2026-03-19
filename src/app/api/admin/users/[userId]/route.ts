@@ -6,7 +6,7 @@ import type {
 } from "@/lib/admin-users";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import type { PermissionMap } from "@/lib/permission-modules";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   saveManagedUserPermissions,
   saveManagedUserProfile,
@@ -56,7 +56,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseAdminClient();
 
     if (payload.kind === "user") {
       if (!payload.user.name.trim() || !payload.user.email.trim()) {
