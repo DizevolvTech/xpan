@@ -15,11 +15,16 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type DeliveryExecutionStatus, useDeliveryExecution } from "@/lib/delivery-execution";
-import { getExpeditionVisibleStatus, type ExpeditionVisibleStatus } from "@/lib/delivery-workflow";
+import {
+  getExpeditionVisibleStatus,
+  isOrderReadyForDeliveryExecution,
+  type ExpeditionVisibleStatus,
+} from "@/lib/delivery-workflow";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
   type ExpeditionRow,
+  type ProductionOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
@@ -35,11 +40,19 @@ type ExpeditionOrderRow = ExpeditionRow & {
   checklistReady: boolean;
   checklistStatus: DeliveryExecutionStatus;
   visibleStatus: ExpeditionVisibleStatus;
+  readyOpsCount: number;
+  totalOpsCount: number;
 };
 
 function describeChecklistStatus(item: ExpeditionOrderRow) {
   if (!item.checklistReady) {
-    return "Aguardando conclusão da produção";
+    if (item.totalOpsCount > 0 && item.readyOpsCount === item.totalOpsCount) {
+      return "Todas as OPs estao prontas, mas o pedido ainda nao fechou 100% para a expedicao.";
+    }
+    if (item.totalOpsCount > 0) {
+      return `Aguardando produção completa: ${item.readyOpsCount}/${item.totalOpsCount} OPs prontas`;
+    }
+    return "Aguardando liberação e conclusão da produção";
   }
   if (item.checklistStatus === "aguardando_expedicao") {
     return "Checklist pendente";
@@ -72,6 +85,23 @@ export default function ExpedicaoPage() {
     [planningSnapshot, scope],
   );
   const deliveryExecutionState = useDeliveryExecution();
+  const opsSummaryByOrderId = useMemo(() => {
+    const summary = new Map<string, { readyOpsCount: number; totalOpsCount: number }>();
+
+    planningData.productionOrders.forEach((op: ProductionOrderRow) => {
+      const relatedOrderIds = new Set(op.sourceItems.map((sourceItem) => sourceItem.orderId));
+      relatedOrderIds.forEach((orderId) => {
+        const current = summary.get(orderId) ?? { readyOpsCount: 0, totalOpsCount: 0 };
+        current.totalOpsCount += 1;
+        if (op.status === "aguardando_expedicao") {
+          current.readyOpsCount += 1;
+        }
+        summary.set(orderId, current);
+      });
+    });
+
+    return summary;
+  }, [planningData.productionOrders]);
 
   const orderRows = useMemo<ExpeditionOrderRow[]>(
     () =>
@@ -88,7 +118,8 @@ export default function ExpedicaoPage() {
           return a.orderCode.localeCompare(b.orderCode);
         })
         .map((item) => {
-          const productionReady = item.status === "aguardando_expedicao";
+          const opsSummary = opsSummaryByOrderId.get(item.orderId) ?? { readyOpsCount: 0, totalOpsCount: 0 };
+          const productionReady = isOrderReadyForDeliveryExecution(item.status);
           const execution = deliveryExecutionState.resolveExecution(item.orderId, productionReady);
           const checklistReady = productionReady;
           const checklistStatus = execution.status;
@@ -98,9 +129,11 @@ export default function ExpedicaoPage() {
             checklistReady,
             checklistStatus,
             visibleStatus: getExpeditionVisibleStatus(item.status, checklistStatus),
+            readyOpsCount: opsSummary.readyOpsCount,
+            totalOpsCount: opsSummary.totalOpsCount,
           };
         }),
-    [deliveryExecutionState, planningData.expedition],
+    [deliveryExecutionState, opsSummaryByOrderId, planningData.expedition],
   );
 
   const filteredOrders = useMemo(() => {
@@ -190,6 +223,12 @@ export default function ExpedicaoPage() {
     { key: "itemsCount", header: "Itens" },
     { key: "totalKg", header: "Carga (Kg)" },
     {
+      key: "opsProgress",
+      header: "OPs prontas",
+      render: (item: ExpeditionOrderRow) =>
+        item.totalOpsCount > 0 ? `${item.readyOpsCount}/${item.totalOpsCount}` : "-",
+    },
+    {
       key: "workflowProgress",
       header: "Conclusão",
       render: (item: ExpeditionOrderRow) => (
@@ -211,7 +250,7 @@ export default function ExpedicaoPage() {
     },
     {
       key: "actions",
-      header: "Checklist",
+      header: "Ações",
       render: (item: ExpeditionOrderRow) => (
         <div className="flex min-w-[240px] flex-col gap-2">
           <div className="flex flex-wrap gap-2">
@@ -254,7 +293,7 @@ export default function ExpedicaoPage() {
   return (
     <PageLayout
       title="Expedição"
-      description="Checklist final por loja e pedido. A expedição só abre quando a OP estiver concluída."
+      description="Checklist final por loja e pedido. A expedição só abre quando todas as OPs vinculadas ao pedido estiverem concluídas."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
@@ -302,7 +341,7 @@ export default function ExpedicaoPage() {
             Imprima o checklist por pedido diretamente na lista.
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm text-foreground">
-            O pedido só entra aqui como pronto quando todos os produtos da OP chegam a 100%.
+            O status aqui é por pedido: ele só vira pronto quando todas as OPs vinculadas chegarem a 100%.
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm text-foreground">
             Não há roteirização nem nota de transferência nesta rodada.
@@ -322,7 +361,7 @@ export default function ExpedicaoPage() {
         }}
         activeFiltersCount={activeFiltersCount}
         onClear={clearFilters}
-        helperText="O status mostrado nesta etapa combina a liberação da produção com o avanço real do checklist e da entrega."
+        helperText="O status aqui é por pedido, não por OP. 'Aguardando expedição' só aparece quando todas as OPs vinculadas ao pedido estiverem concluídas."
         fields={[
           {
             key: "deliveryDate",

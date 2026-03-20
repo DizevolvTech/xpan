@@ -241,15 +241,31 @@ export function resolveScheduledProductAvailability(
     };
   }
 
-  if (!matchingDays.includes(deliveryWeekDay)) {
+  const productionWindow = resolveProductionDateInWindow(baseDate, deliveryDate, matchingDays);
+
+  if (!productionWindow.date) {
     return {
       baseDate,
       deliveryDate,
       deliveryWeekDay,
       productionDate: null,
       available: false,
-      delayed: false,
-      blockedReason: "Dia de entrega fora do cronograma de fabricação do produto.",
+      delayed: productionWindow.delayed,
+      blockedReason: "Janela operacional sem dia compatível para fabricar o produto.",
+      matchingDays,
+      scheduleItemId: options.scheduleItem.id,
+    };
+  }
+
+  if (productionWindow.delayed) {
+    return {
+      baseDate,
+      deliveryDate,
+      deliveryWeekDay,
+      productionDate: productionWindow.date,
+      available: false,
+      delayed: true,
+      blockedReason: "Próximo dia produtivo cai após a entrega desta janela operacional.",
       matchingDays,
       scheduleItemId: options.scheduleItem.id,
     };
@@ -259,9 +275,9 @@ export function resolveScheduledProductAvailability(
     baseDate,
     deliveryDate,
     deliveryWeekDay,
-    productionDate: deliveryDate,
+    productionDate: productionWindow.date,
     available: true,
-    delayed: false,
+    delayed: productionWindow.delayed,
     blockedReason: null,
     matchingDays,
     scheduleItemId: options.scheduleItem.id,

@@ -41,6 +41,21 @@ export default function ExpedicaoDetailsPage() {
     () => planningData.expedition.find((item) => item.id === expeditionId) ?? null,
     [expeditionId, planningData.expedition],
   );
+  const relatedProductionOrders = useMemo(
+    () =>
+      expedition
+        ? planningData.productionOrders
+            .filter((op) => op.sourceItems.some((sourceItem) => sourceItem.orderId === expedition.orderId))
+            .sort((a, b) => {
+              const byDate = a.productionDate.localeCompare(b.productionDate);
+              if (byDate !== 0) {
+                return byDate;
+              }
+              return a.code.localeCompare(b.code);
+            })
+        : [],
+    [expedition, planningData.productionOrders],
+  );
   const aggregatedItems = useMemo(() => aggregateExpeditionItems(expedition?.items ?? []), [expedition?.items]);
   const execution = useMemo(
     () =>
@@ -218,12 +233,6 @@ export default function ExpedicaoDetailsPage() {
               Voltar para expedição
             </Link>
           </Button>
-          <Button asChild type="button" variant="outline">
-            <Link href="/gestor-fabrica/ordens-producao">
-              <Factory className="size-4" />
-              Ver OPs
-            </Link>
-          </Button>
         </div>
       }
     >
@@ -311,6 +320,63 @@ export default function ExpedicaoDetailsPage() {
         steps={flowSteps}
         subtitle="A expedição é consequência da conclusão operacional. Não há edição manual de status nesta etapa."
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>OPs relacionadas a este checklist</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {relatedProductionOrders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma OP vinculada foi encontrada para este pedido na referência atual.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-border/80">
+              <table className="w-full min-w-[760px] border-collapse">
+                <thead className="bg-panel">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Carga (Kg)</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relatedProductionOrders.map((op) => (
+                    <tr key={op.id}>
+                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm font-medium text-foreground">
+                        {op.code}
+                      </td>
+                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        {op.productionDateLabel}
+                      </td>
+                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        {op.lineName}
+                      </td>
+                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        {formatKgValue(op.totalKg)}
+                      </td>
+                      <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        <StatusBadge status={op.status} />
+                      </td>
+                      <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
+                        <Button asChild type="button" size="sm" variant="outline">
+                          <Link href={`/gestor-fabrica/ordens-producao/${op.id}?ref=${anchorDate}`}>
+                            <Factory className="size-4" />
+                            Abrir OP
+                          </Link>
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
