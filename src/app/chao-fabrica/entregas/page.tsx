@@ -26,6 +26,7 @@ import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-d
 import { formatDateKeyBr, type ExpeditionRow } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
+import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -445,7 +446,7 @@ export default function EntregasPage() {
                     </div>
                     <div className="rounded-md border border-border/70 bg-panel/45 p-2">
                       <p className="text-muted-foreground">Carga</p>
-                      <p className="font-semibold text-foreground">{item.totalKg} Kg</p>
+                      <p className="font-semibold text-foreground">{formatKgLabel(item.totalKg)}</p>
                     </div>
                   </div>
 

@@ -20,6 +20,7 @@ import {
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
+import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
@@ -205,7 +206,7 @@ export default function OrdemProducaoDetailsPage() {
         <CardContent className="grid gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-border/80 bg-panel p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Carga da OP</p>
-            <p className="mt-1 text-lg font-semibold">{op.totalKg} Kg</p>
+            <p className="mt-1 text-lg font-semibold">{formatKgLabel(op.totalKg)}</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">% conclusão</p>
@@ -213,7 +214,7 @@ export default function OrdemProducaoDetailsPage() {
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Capacidade da subcategoria</p>
-            <p className="mt-1 text-lg font-semibold">{lineCapacity} Kg/dia</p>
+            <p className="mt-1 text-lg font-semibold">{formatKgValue(lineCapacity)} Kg/dia</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Produtos na OP</p>
@@ -251,7 +252,7 @@ export default function OrdemProducaoDetailsPage() {
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.productCode} · {item.productName}
                     </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.totalKg}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.totalKg)}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.progress.toFixed(1)}%</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       <div className="space-y-2">
@@ -339,7 +340,7 @@ export default function OrdemProducaoDetailsPage() {
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.requestedQuantity} {item.requestedUnit}
                     </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.deliveryDateLabel}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.saleDateLabel}</td>
                       </tr>

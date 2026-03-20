@@ -51,6 +51,7 @@ import {
   preferredOperationalUnits,
 } from "@/lib/operational-units";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import { formatKgLabel } from "@/lib/utils";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 
@@ -149,7 +150,7 @@ function buildProductFormState(lines: ProductionLine[], product?: ProductRow | n
       metadata: "",
       observation: "",
     },
-    weight: "1.000 Kg",
+    weight: formatKgLabel(1, { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
     productionUnit: "Kg",
     salesUnit: "Kg",
     salesToKgFactor: 1,
@@ -652,7 +653,7 @@ export default function ProdutosPage() {
       expeditionUnit: formState.unitProfiles.expedition.unit,
       salesToKgFactor: salesWeight,
       expeditionToKgFactor: expeditionWeight,
-      weight: `${salesWeight.toFixed(3)} Kg`,
+      weight: formatKgLabel(salesWeight, { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
       isMpiIngredient: formState.canBeIngredient,
       packagingProfile: normalizedPackagingProfile
         ? {
@@ -1030,7 +1031,7 @@ export default function ProdutosPage() {
                           Peso final de venda
                         </p>
                         <div className="rounded-lg border border-border/70 bg-panel/25 px-3 py-3 text-sm text-foreground">
-                          {formState.unitProfiles.sales.unit} · {formState.salesToKgFactor.toFixed(3)} Kg
+                          {formState.unitProfiles.sales.unit} · {formatKgLabel(formState.salesToKgFactor, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                         </div>
                       </div>
                       <div className="grid gap-2">
@@ -1038,7 +1039,7 @@ export default function ProdutosPage() {
                           Produção
                         </p>
                         <div className="rounded-lg border border-border/70 bg-panel/25 px-3 py-3 text-sm text-foreground">
-                          {formState.unitProfiles.production.unit} · {formState.unitProfiles.production.weightKg.toFixed(3)} Kg
+                          {formState.unitProfiles.production.unit} · {formatKgLabel(formState.unitProfiles.production.weightKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                         </div>
                       </div>
                       <div className="grid gap-2">
@@ -1046,7 +1047,7 @@ export default function ProdutosPage() {
                           Expedição
                         </p>
                         <div className="rounded-lg border border-border/70 bg-panel/25 px-3 py-3 text-sm text-foreground">
-                          {formState.unitProfiles.expedition.unit} · {formState.expeditionToKgFactor.toFixed(3)} Kg
+                          {formState.unitProfiles.expedition.unit} · {formatKgLabel(formState.expeditionToKgFactor, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                         </div>
                       </div>
                     </div>
@@ -1509,10 +1510,10 @@ export default function ProdutosPage() {
                         Totais da Receita
                       </p>
                       <p className="mt-2 text-lg font-semibold text-foreground">
-                        Total de ingredientes: {recipeTotals.totalIngredientsKg.toFixed(3)} Kg
+                        Total de ingredientes: {formatKgLabel(recipeTotals.totalIngredientsKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Peso final após a perda principal: {recipeTotals.outputAfterBreakKg.toFixed(3)} Kg
+                        Peso final após a perda principal: {formatKgLabel(recipeTotals.outputAfterBreakKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                       </p>
                     </div>
                     <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">

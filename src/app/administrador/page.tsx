@@ -22,6 +22,7 @@ import { ModuleCard, type ModuleTone } from "@/components/shared/module-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
@@ -530,14 +531,14 @@ export default function AdministradorPage() {
         <KPICard
           title="Carga Produção"
           value={formatCompactValue(productionKg, "Kg")}
-          subtitle={`${productionKg.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} Kg`}
+          subtitle={formatKgLabel(productionKg, { maximumFractionDigits: 2 })}
           icon={Factory}
           tone="neutral"
         />
         <KPICard
           title="Prontos p/ Expedição"
           value={readyForExpedition}
-          subtitle={`${expeditionKg.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} Kg separados`}
+          subtitle={`${formatKgLabel(expeditionKg, { maximumFractionDigits: 2 })} separados`}
           icon={Truck}
           tone="success"
         />
@@ -589,12 +590,12 @@ export default function AdministradorPage() {
                         <div
                           className="w-3 rounded-t-md bg-info"
                           style={{ height: `${Math.min(productionHeight, 100)}%` }}
-                          title={`Produção: ${point.productionKg} Kg`}
+                          title={`Produção: ${formatKgLabel(point.productionKg, { maximumFractionDigits: 2 })}`}
                         />
                         <div
                           className="w-3 rounded-t-md bg-success"
                           style={{ height: `${Math.min(expeditionHeight, 100)}%` }}
-                          title={`Expedição: ${point.expeditionKg} Kg`}
+                          title={`Expedição: ${formatKgLabel(point.expeditionKg, { maximumFractionDigits: 2 })}`}
                         />
                       </div>
                       <div className="space-y-0.5 text-center">
@@ -746,7 +747,7 @@ export default function AdministradorPage() {
                           {sector.ops}
                         </td>
                         <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
-                          {sector.totalKg}
+                          {formatKgValue(sector.totalKg)}
                         </td>
                         <td className="border-t border-border/70 bg-card px-3 py-2 text-sm text-foreground">
                           {sector.averageUtilization}%

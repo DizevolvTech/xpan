@@ -7,7 +7,7 @@ import {
   sortItemsByTemporalValue,
   type TemporalSortOrder,
 } from "@/lib/temporal-table-sort";
-import { cn } from "@/lib/utils";
+import { cn, formatKgValue } from "@/lib/utils";
 import { LucideIcon, Eye, Pencil, Trash2, Printer, Plus, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/shared/pagination-controls";
@@ -52,6 +52,18 @@ interface DataTableProps<T> {
     onClick: () => void;
     icon?: LucideIcon;
   };
+}
+
+function formatDefaultCellValue(key: string, value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  if (typeof value === "number" && Number.isFinite(value) && key.toLowerCase().includes("kg")) {
+    return formatKgValue(value);
+  }
+
+  return String(value);
 }
 
 export function DataTable<T extends object>({
@@ -222,7 +234,7 @@ export function DataTable<T extends object>({
                   >
                     {column.render
                       ? column.render(item)
-                      : String((item as Record<string, unknown>)[column.key] ?? "-")}
+                      : formatDefaultCellValue(column.key, (item as Record<string, unknown>)[column.key])}
                   </td>
                 ))}
 

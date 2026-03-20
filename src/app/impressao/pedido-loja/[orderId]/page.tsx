@@ -7,6 +7,7 @@ import { PrintDocument } from "@/components/printing/print-document";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
 import { getTodayDateKey } from "@/lib/order-planning";
 import type { StoreOrderDetail } from "@/lib/store-order-types";
+import { formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useStoreOrderDetail } from "@/lib/use-store-orders";
 
@@ -95,7 +96,7 @@ export default function PedidoLojaPrintPage() {
         productName: item.productName,
         requestedQuantity: item.requestedQuantity,
         requestedUnit: item.requestedUnit,
-        internalKgLabel: String(item.internalKg),
+        internalKgLabel: formatKgValue(item.internalKg),
         productionLabel: item.productionDate ?? "Sem agenda",
         lineLabel: item.scheduleName,
       }))

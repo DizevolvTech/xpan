@@ -8,6 +8,7 @@ import { OperationalDateScopeCard } from "@/components/shared/operational-date-s
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -78,7 +79,13 @@ export default function ChaoFabricaPage() {
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
       >
         <KPICard title="OPs para produzir" value={opsCount} tone="info" icon={Factory} compactValue />
-        <KPICard title="Carga de produção" value={`${productionKg} Kg`} tone="success" icon={Factory} compactValue />
+        <KPICard
+          title="Carga de produção"
+          value={formatKgLabel(productionKg, { maximumFractionDigits: 2 })}
+          tone="success"
+          icon={Factory}
+          compactValue
+        />
         <KPICard title="Pedidos liberados" value={releasedOrders} tone="info" icon={ListChecks} compactValue />
         <KPICard title="Pedidos prontos p/ expedir" value={expeditionReady} tone="success" icon={Truck} compactValue />
         <KPICard
@@ -88,7 +95,13 @@ export default function ChaoFabricaPage() {
           icon={Truck}
           compactValue
         />
-        <KPICard title="Carga total de expedição" value={`${expeditionKg} Kg`} tone="neutral" icon={ListChecks} compactValue />
+        <KPICard
+          title="Carga total de expedição"
+          value={formatKgLabel(expeditionKg, { maximumFractionDigits: 2 })}
+          tone="neutral"
+          icon={ListChecks}
+          compactValue
+        />
       </motion.div>
 
       <motion.div

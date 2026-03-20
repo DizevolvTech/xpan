@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { getLinesBySectorFromData } from "@/lib/production-data-utils";
+import { formatKgLabel } from "@/lib/utils";
 
 export default function SetorDetailsPage() {
   const params = useParams<{ sectorId: string }>();
@@ -169,7 +170,7 @@ export default function SetorDetailsPage() {
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.name}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.type}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.operatingHours}</td>
-                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{line.capacityPerDayKg} Kg</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgLabel(line.capacityPerDayKg)}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3">
                             <StatusBadge status={line.status} />
                           </td>

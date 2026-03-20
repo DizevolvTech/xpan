@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, formatKgLabel } from "@/lib/utils";
 import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import {
   getBaseDateByCutoff,
@@ -118,7 +118,7 @@ function getMinimumProductionAlert(product: StoreOrderCatalogProduct, quantity: 
     return null;
   }
 
-  return `Pedido abaixo do mínimo produtivo: ${totalKg} Kg informados para mínimo de ${product.minimumProductionKg} Kg.`;
+  return `Pedido abaixo do mínimo produtivo: ${formatKgLabel(totalKg)} informados para mínimo de ${formatKgLabel(product.minimumProductionKg)}.`;
 }
 
 function buildOrderPrintPath(orderId: string, referenceDate: string) {
@@ -667,7 +667,7 @@ export default function PedidosLojaPage() {
                                 <td className="px-2 py-2 text-sm">
                                   <div>{product.unit}</div>
                                   <div className="text-xs text-muted-foreground">
-                                    Min. {product.minimumProductionKg} Kg
+                                    Min. {formatKgLabel(product.minimumProductionKg)}
                                   </div>
                                 </td>
                                 {dayColumns.map((dayField, index) => {

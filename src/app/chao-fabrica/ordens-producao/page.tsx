@@ -20,12 +20,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
+  type OrderStatus,
   type ProductionItemStatus,
   type ProductionOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { hierarchyLabels } from "@/lib/production-planning";
+import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
@@ -46,6 +48,15 @@ type DailyLineRow = {
   itemsCount: number;
 };
 
+const ORDER_STATUS_FILTER_OPTIONS: Array<{ value: OrderStatus; label: string }> = [
+  { value: "em_espera", label: "Em Espera" },
+  { value: "agendado", label: "Agendado" },
+  { value: "em_producao", label: "Em Produção" },
+  { value: "aguardando_expedicao", label: "Aguardando Expedição" },
+  { value: "rota_entrega", label: "Rota de Entrega" },
+  { value: "cancelado", label: "Cancelado" },
+];
+
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
 }
@@ -53,6 +64,7 @@ function openPrintPage(pathname: string) {
 export default function OrdensProducaoPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [productionDateFilter, setProductionDateFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [sectorFilter, setSectorFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -90,6 +102,7 @@ export default function OrdensProducaoPage() {
 
     return opRows.filter((item) => {
       const matchesDate = productionDateFilter === "all" || item.productionDate === productionDateFilter;
+      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
       const matchesCategory = sectorFilter === "all" || item.sectorName === sectorFilter;
       const matchesSubcategory = lineFilter === "all" || item.lineName === lineFilter;
       const matchesSearch =
@@ -103,9 +116,9 @@ export default function OrdensProducaoPage() {
             product.productCode.toLowerCase().includes(term) || product.productName.toLowerCase().includes(term),
         );
 
-      return matchesDate && matchesCategory && matchesSubcategory && matchesSearch;
+      return matchesDate && matchesStatus && matchesCategory && matchesSubcategory && matchesSearch;
     });
-  }, [lineFilter, opRows, productionDateFilter, searchTerm, sectorFilter]);
+  }, [lineFilter, opRows, productionDateFilter, searchTerm, sectorFilter, statusFilter]);
   const sortedOps = useMemo(
     () => sortItemsByTemporalValue(filteredOps, sortOrder, ["productionDate"]),
     [filteredOps, sortOrder],
@@ -126,6 +139,13 @@ export default function OrdensProducaoPage() {
       Array.from(new Set(opRows.map((item) => item.lineName)))
         .sort((a, b) => a.localeCompare(b))
         .map((value) => ({ value, label: value })),
+    [opRows],
+  );
+  const statusOptions = useMemo(
+    () =>
+      ORDER_STATUS_FILTER_OPTIONS.filter((option) =>
+        opRows.some((item) => item.status === option.value),
+      ),
     [opRows],
   );
 
@@ -231,7 +251,7 @@ export default function OrdensProducaoPage() {
         <div className="min-w-[220px]">
           <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
             <span>{item.completion.toFixed(1)}%</span>
-            <span>{item.capacityKg} Kg/dia de capacidade</span>
+            <span>{formatKgValue(item.capacityKg)} Kg/dia de capacidade</span>
           </div>
           <div className="h-2 rounded-full bg-panel">
             <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.completion, 100)}%` }} />
@@ -270,6 +290,7 @@ export default function OrdensProducaoPage() {
   const activeFiltersCount = [
     searchTerm.trim().length > 0 ? 1 : 0,
     productionDateFilter !== "all" ? 1 : 0,
+    statusFilter !== "all" ? 1 : 0,
     sectorFilter !== "all" ? 1 : 0,
     lineFilter !== "all" ? 1 : 0,
   ].reduce((sum, value) => sum + value, 0);
@@ -277,6 +298,7 @@ export default function OrdensProducaoPage() {
   function clearFilters() {
     setSearchTerm("");
     setProductionDateFilter("all");
+    setStatusFilter("all");
     setSectorFilter("all");
     setLineFilter("all");
     setOpPage(1);
@@ -322,7 +344,7 @@ export default function OrdensProducaoPage() {
     >
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KPICard title="OPs liberadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" compactValue />
-        <KPICard title="Carga total" value={`${kpis.totalKg} Kg`} icon={Factory} tone="success" compactValue />
+        <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={Factory} tone="success" compactValue />
         <KPICard title="% conclusão média" value={`${kpis.avgCompletion}%`} icon={PackageCheck} tone="info" compactValue />
         <KPICard title="Subcategorias ativas" value={kpis.activeSubcategories} icon={Layers} tone="warning" compactValue />
       </div>
@@ -367,6 +389,16 @@ export default function OrdensProducaoPage() {
               setOpPage(1);
             },
             options: planningData.productionDates.map((date) => ({ value: date, label: formatDateKeyBr(date) })),
+          },
+          {
+            key: "status",
+            label: "Status",
+            value: statusFilter,
+            onChange: (value) => {
+              setStatusFilter(value);
+              setOpPage(1);
+            },
+            options: statusOptions,
           },
           {
             key: "sector",
@@ -480,7 +512,7 @@ export default function OrdensProducaoPage() {
                                   <span className="text-muted-foreground">-</span>
                                 ) : (
                                   <div className="space-y-1">
-                                    <div className="font-semibold text-foreground">{totalKg.toFixed(2)} Kg</div>
+                                    <div className="font-semibold text-foreground">{formatKgLabel(totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                     <div className="text-muted-foreground">
                                       {rows.length} OP(s) · {totalItems} item(ns)
                                     </div>

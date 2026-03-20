@@ -23,6 +23,7 @@ import {
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
+import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -263,7 +264,7 @@ export default function ExpedicaoPage() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KPICard title="Pedidos" value={kpis.pedidos} icon={Truck} tone="info" compactValue />
         <KPICard title="Itens" value={kpis.itens} icon={Package} tone="neutral" compactValue />
-        <KPICard title="Carga total" value={`${kpis.totalKg} Kg`} icon={ListChecks} tone="success" compactValue />
+        <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={ListChecks} tone="success" compactValue />
         <KPICard title="Prontos para checklist" value={kpis.prontos} icon={Factory} tone="warning" compactValue />
       </div>
 

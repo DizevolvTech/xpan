@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import { getTodayDateKey } from "@/lib/order-planning";
 import type { StoreOrderCatalogProduct } from "@/lib/store-order-types";
+import { formatKgLabel } from "@/lib/utils";
 import {
   useCancelStoreOrder,
   useStoreOrderCatalog,
@@ -85,7 +86,7 @@ function getMinimumProductionHint(product: Pick<StoreOrderCatalogProduct, "minim
     return null;
   }
 
-  return `Abaixo do mínimo produtivo: ${requestedKg} Kg para mínimo de ${product.minimumProductionKg} Kg.`;
+  return `Abaixo do mínimo produtivo: ${formatKgLabel(requestedKg)} para mínimo de ${formatKgLabel(product.minimumProductionKg)}.`;
 }
 
 export default function PedidoLojaDetailsPage() {
@@ -460,7 +461,7 @@ export default function PedidoLojaDetailsPage() {
                   </p>
                   {selectedCatalogProduct ? (
                     <p className="text-xs text-muted-foreground">
-                      Mínimo produtivo: {selectedCatalogProduct.minimumProductionKg} Kg. Dias válidos: {selectedCatalogProduct.productionDays.join(" · ")}.
+                      Mínimo produtivo: {formatKgLabel(selectedCatalogProduct.minimumProductionKg)}. Dias válidos: {selectedCatalogProduct.productionDays.join(" · ")}.
                     </p>
                   ) : null}
                 </div>

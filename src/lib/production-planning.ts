@@ -1,4 +1,5 @@
 import type { UnitCode } from "@/lib/factory-planning/units";
+import { formatKgLabel } from "@/lib/utils";
 
 export type RecordStatus = "ativo" | "inativo";
 export type LineType = "Seco" | "Úmido";
@@ -443,7 +444,7 @@ function createUnitProfile(unit: UnitCode, description: string, weightKg: number
 }
 
 function createLegacyWeight(value: number): string {
-  return `${value.toFixed(3)} Kg`;
+  return formatKgLabel(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
 
 export const productionProducts: ProductionProduct[] = [

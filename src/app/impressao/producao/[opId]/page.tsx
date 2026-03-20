@@ -7,6 +7,7 @@ import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
 import { buildProductionSheetDocument } from "@/lib/printing-documents";
 import { getTodayDateKey } from "@/lib/order-planning";
+import { formatKgValue, formatLocaleNumber } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
@@ -57,7 +58,7 @@ function RecipeTable({
           {rows.map((row) => (
             <tr key={row.key}>
               <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                {row.estimatedQuantity.toFixed(3)} {row.unit}
+                {formatLocaleNumber(row.estimatedQuantity, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} {row.unit}
               </td>
               <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
                 <div>{row.label}</div>
@@ -144,8 +145,8 @@ export default function ProducaoPrintPage() {
                 </div>
               </div>
               <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-                <div>Carga planejada: {section.plannedKg.toFixed(3)} kg</div>
-                <div className="mt-1">Peso unitário: {section.unitWeightKg.toFixed(3)} kg</div>
+                <div>Carga planejada: {formatKgValue(section.plannedKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</div>
+                <div className="mt-1">Peso unitário: {formatKgValue(section.unitWeightKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</div>
               </div>
             </header>
 

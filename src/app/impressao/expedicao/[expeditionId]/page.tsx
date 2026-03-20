@@ -8,6 +8,7 @@ import { PrintDocument } from "@/components/printing/print-document";
 import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getTodayDateKey } from "@/lib/order-planning";
+import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 function sanitizeDateKey(raw: string | null) {
@@ -84,7 +85,7 @@ export default function ExpedicaoPrintPage() {
         <>
           <MetaCard label="Loja" value={expedition.storeName} />
           <MetaCard label="Recebimento" value={expedition.deliveryDateLabel} />
-          <MetaCard label="Carga" value={`${expedition.totalKg} Kg`} />
+          <MetaCard label="Carga" value={formatKgLabel(expedition.totalKg)} />
           <MetaCard label="Conferidos" value={`${checkedCount}/${aggregatedItems.length} itens`} />
         </>
       }
@@ -109,7 +110,7 @@ export default function ExpedicaoPrintPage() {
                 <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
                   {item.requestedQuantity} {item.requestedUnit}
                 </td>
-                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{item.internalKg}</td>
+                <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">{formatKgValue(item.internalKg)}</td>
                 <td className="border-t border-stone-200 px-4 py-3 text-sm text-stone-700">
                   {item.expeditionQuantity} {item.expeditionUnit}
                 </td>

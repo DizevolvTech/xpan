@@ -30,6 +30,7 @@ import {
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
+import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -386,7 +387,7 @@ export default function PedidosFabricaPage() {
                         <td className="min-w-[120px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {order.productsCount} produtos
                         </td>
-                        <td className="min-w-[120px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{order.totalKg} Kg</td>
+                        <td className="min-w-[120px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgLabel(order.totalKg)}</td>
                         <td className="min-w-[240px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <div className="min-w-[220px]">
                             <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
@@ -461,7 +462,7 @@ export default function PedidosFabricaPage() {
                                     {aggregatedItems.length} itens consolidados
                                   </span>
                                   <span className="rounded-full border border-border/70 bg-panel px-2.5 py-1 text-[11px] font-semibold text-foreground">
-                                    {order.totalKg} Kg totais
+                                    {formatKgLabel(order.totalKg)} totais
                                   </span>
                                 </div>
                               </div>
@@ -600,7 +601,7 @@ export default function PedidosFabricaPage() {
                           <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
                             {item.requestedQuantity} {item.requestedUnit}
                           </td>
-                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">{item.internalKg}</td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                           <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
                             {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
                           </td>
@@ -650,7 +651,7 @@ export default function PedidosFabricaPage() {
                           <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
                             {item.requestedQuantity} {item.requestedUnit}
                           </td>
-                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">{item.internalKg}</td>
+                          <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                           <td className="whitespace-nowrap border-t border-border/70 bg-card px-3 py-3 text-sm">
                             {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
                           </td>

@@ -288,7 +288,7 @@ export default function LinhaProducaoDetailsPage() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Capacidade / dia</p>
-            <p className="mt-1 text-sm font-medium">{line?.capacityPerDayKg ?? 0} Kg</p>
+            <p className="mt-1 text-sm font-medium">{formatKg(line?.capacityPerDayKg ?? 0)} Kg</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Cadastro base</p>

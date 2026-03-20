@@ -643,7 +643,7 @@ export default function SublinhasProducaoPage() {
                       <div className="border-b border-border/80 bg-amber-600 px-3 py-2 text-white">
                         <p className="text-xs font-semibold uppercase tracking-[0.08em]">{day.label}</p>
                         <p className="mt-1 text-[11px] text-amber-50">
-                          {day.products.length} itens · {day.plannedKg} Kg
+                          {day.products.length} itens · {formatKgLabel(day.plannedKg)} Kg
                         </p>
                       </div>
                       <div className="min-h-44 space-y-2 px-3 py-3">
@@ -659,7 +659,7 @@ export default function SublinhasProducaoPage() {
                                 {product.code}
                               </p>
                               <p className="text-sm font-medium text-foreground">{product.name}</p>
-                              <p className="text-xs text-muted-foreground">{product.minimumProduction} Kg mínimos</p>
+                              <p className="text-xs text-muted-foreground">{formatKgLabel(product.minimumProduction)} Kg mínimos</p>
                             </div>
                           ))
                         )}
@@ -676,7 +676,7 @@ export default function SublinhasProducaoPage() {
                   <strong>{selectedSchedule.createdBy || "automação da plataforma"}</strong> em{" "}
                   <strong>{formatDateBr(selectedSchedule.createdAt)}</strong> com{" "}
                   <strong>{selectedSchedule.itemsCount} produtos</strong> e mínimo total de{" "}
-                  <strong>{selectedSchedule.minimumTotal} Kg</strong>.
+                  <strong>{formatKgLabel(selectedSchedule.minimumTotal)} Kg</strong>.
                 </p>
                 {selectedSchedule.revisionOfId && (
                   <p className="text-sm text-muted-foreground">

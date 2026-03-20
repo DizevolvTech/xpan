@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getExpeditionVisibleStatus } from "@/lib/delivery-workflow";
+import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -260,7 +261,7 @@ export default function ExpedicaoDetailsPage() {
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Carga</p>
-            <p className="mt-1 text-sm font-semibold">{expedition.totalKg} Kg</p>
+            <p className="mt-1 text-sm font-semibold">{formatKgLabel(expedition.totalKg)}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
@@ -338,7 +339,7 @@ export default function ExpedicaoDetailsPage() {
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {item.requestedQuantity} {item.requestedUnit}
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {item.expeditionQuantity} {item.expeditionUnit}
                         </td>

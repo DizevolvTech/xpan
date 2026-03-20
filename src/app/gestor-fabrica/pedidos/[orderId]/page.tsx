@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
 import { formatDateKeyBr } from "@/lib/order-planning";
+import { formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
@@ -276,7 +277,7 @@ export default function PedidoDetailsPage() {
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {item.requestedQuantity} {item.requestedUnit}
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
                         </td>
@@ -328,7 +329,7 @@ export default function PedidoDetailsPage() {
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {item.requestedQuantity} {item.requestedUnit}
                         </td>
-                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.internalKg}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <StatusBadge status={item.status} />
@@ -371,7 +372,7 @@ export default function PedidoDetailsPage() {
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.code}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.productionDateLabel}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.scheduleName}</td>
-                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.totalKg}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(op.totalKg)}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.progress.toFixed(1)}%</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3">
                             <Button asChild type="button" size="sm" variant="ghost">

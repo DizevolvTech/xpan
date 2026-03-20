@@ -21,6 +21,7 @@ import {
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
+import { formatKgLabel, formatKgValue } from "@/lib/utils";
 
 type ProductionOrderStatusDialogProps = {
   open: boolean;
@@ -68,7 +69,7 @@ export function ProductionOrderStatusDialog({
               </div>
               <div className="rounded-lg border border-border/80 bg-panel/30 p-3">
                 <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Carga total</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{op.totalKg} Kg</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{formatKgLabel(op.totalKg)}</p>
               </div>
               <div className="rounded-lg border border-border/80 bg-panel/30 p-3">
                 <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">% conclusão</p>
@@ -124,7 +125,7 @@ export function ProductionOrderStatusDialog({
                           <div className="text-xs text-muted-foreground">{item.sourceItemsCount} itens de origem</div>
                         </td>
                         <td className="whitespace-nowrap border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          {item.totalKg}
+                          {formatKgValue(item.totalKg)}
                         </td>
                         <td className="whitespace-nowrap border-t border-border/70 bg-card px-4 py-3 text-sm">
                           {item.sourceItemsCount}
