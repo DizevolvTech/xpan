@@ -221,7 +221,7 @@ export default function ExpedicaoDetailsPage() {
             Imprimir checklist
           </Button>
           <Button type="button" variant="outline" disabled={!checklistEditable || allItemsChecked || isChecklistSaving} onClick={() => void handleMarkAll()}>
-            Marcar todos
+            Marcar tudo
           </Button>
           <Button type="button" disabled={!checklistEditable || !allItemsChecked || isChecklistSaving} onClick={() => void handleCompleteChecklist()}>
             <CheckCircle2 className="size-4" />
@@ -379,8 +379,17 @@ export default function ExpedicaoDetailsPage() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <CardTitle>Itens consolidados para conferência</CardTitle>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!checklistEditable || allItemsChecked || isChecklistSaving}
+            onClick={() => void handleMarkAll()}
+          >
+            Marcar tudo
+          </Button>
         </CardHeader>
         <CardContent>
           <PaginatedSection items={aggregatedItems} label="itens da expedição" initialPageSize={8}>
