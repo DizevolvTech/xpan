@@ -8,6 +8,7 @@ import type {
 import {
   buildProfile,
   formatDateTimeLabel,
+  normalizeStoreIdsForRole,
 } from "@/lib/admin-users";
 import { buildTemporaryPassword } from "@/lib/auth-credentials";
 import type { Database } from "@/lib/database.types";
@@ -64,6 +65,8 @@ function mapManagedUser(
   permissions: UserPermissionRow[],
   storeLegacyIds: string[],
 ): ManagedUser {
+  const normalizedStoreIds = normalizeStoreIdsForRole(profile.role, storeLegacyIds);
+
   return {
     id: profile.legacy_id ?? profile.id,
     name: profile.name,
@@ -87,7 +90,7 @@ function mapManagedUser(
       },
       passwordUpdatedAt: formatDateTimeLabel(profile.password_updated_at),
     }),
-    storeIds: storeLegacyIds,
+    storeIds: normalizedStoreIds,
   };
 }
 
@@ -474,6 +477,7 @@ export async function createManagedUser(
   options: QueryOptions = {},
 ): Promise<CreateManagedUserResult> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  const normalizedStoreIds = normalizeStoreIdsForRole(input.role, input.storeIds);
   const insertResult = await supabase
     .from("profiles")
     .insert({
@@ -489,7 +493,7 @@ export async function createManagedUser(
 
   const profile = assertSupabaseResult(insertResult, "Failed to create user") as ProfileRow;
   await upsertPermissions(profile.id, buildDefaultPermissions(input.role), supabase);
-  await syncStoreAccess(profile.id, input.storeIds, supabase);
+  await syncStoreAccess(profile.id, normalizedStoreIds, supabase);
   const authProvisioning = await syncProfileAuthUser(profile, {
     email: profile.email,
     name: profile.name,
@@ -516,6 +520,7 @@ export async function updateManagedUser(
   options: QueryOptions = {},
 ): Promise<ManagedUser> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  const normalizedStoreIds = normalizeStoreIdsForRole(input.role, input.storeIds);
   const profile = await resolveProfileByIdentifier(identifier, supabase);
 
   const updateResult = await supabase
@@ -538,7 +543,7 @@ export async function updateManagedUser(
   }
 
   if (input.storeIds !== undefined) {
-    await syncStoreAccess(updatedProfile.id, input.storeIds, supabase);
+    await syncStoreAccess(updatedProfile.id, normalizedStoreIds, supabase);
   }
   await syncProfileAuthUser(updatedProfile, {
     email: updatedProfile.email,

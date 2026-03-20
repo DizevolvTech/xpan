@@ -43,7 +43,9 @@ import {
   getInitials,
   isCustomizedPermissions,
   isProfileComplete,
+  normalizeStoreIdsForRole,
   roleLabels,
+  supportsStoreScope,
   type ManagedUser,
   type ManagedUserStatus,
   type ProfileFormState,
@@ -182,6 +184,7 @@ export default function AdministradorUsuariosPage() {
     () => buildNavigationPreview(buildDefaultPermissions(userForm.role), userForm.role),
     [userForm.role],
   );
+  const canSelectStores = supportsStoreScope(userForm.role);
   const permissionNavigationPreview = useMemo(() => {
     if (!permissionUser || !permissionDraft) {
       return null;
@@ -310,23 +313,31 @@ export default function AdministradorUsuariosPage() {
     {
       key: "storeScope",
       header: "Escopo Loja",
-      render: (user: ManagedUser) => (
-        <div className="min-w-[11rem] space-y-0.5">
-          <p className="text-sm font-medium leading-5 text-foreground">
-            {user.storeIds?.length
-              ? `${user.storeIds.length} loja${user.storeIds.length > 1 ? "s" : ""} autorizada${user.storeIds.length > 1 ? "s" : ""}`
-              : "Todas as lojas"}
-          </p>
-          <p className="text-xs leading-4 text-muted-foreground">
-            {user.storeIds?.length
-              ? user.storeIds
-                  .slice(0, 2)
-                  .map((storeId) => storeNameById.get(storeId) ?? storeId)
-                  .join(" · ")
-              : "Sem restrição por unidade"}
-          </p>
-        </div>
-      ),
+      render: (user: ManagedUser) =>
+        supportsStoreScope(user.role) ? (
+          <div className="min-w-[11rem] space-y-0.5">
+            <p className="text-sm font-medium leading-5 text-foreground">
+              {user.storeIds?.length
+                ? `${user.storeIds.length} loja${user.storeIds.length > 1 ? "s" : ""} autorizada${user.storeIds.length > 1 ? "s" : ""}`
+                : "Todas as lojas"}
+            </p>
+            <p className="text-xs leading-4 text-muted-foreground">
+              {user.storeIds?.length
+                ? user.storeIds
+                    .slice(0, 2)
+                    .map((storeId) => storeNameById.get(storeId) ?? storeId)
+                    .join(" · ")
+                : "Sem restrição por unidade"}
+            </p>
+          </div>
+        ) : (
+          <div className="min-w-[11rem] space-y-0.5">
+            <p className="text-sm font-medium leading-5 text-foreground">Nao se aplica</p>
+            <p className="text-xs leading-4 text-muted-foreground">
+              Vinculo de lojas disponivel apenas para perfil loja
+            </p>
+          </div>
+        ),
     },
     {
       key: "updatedAt",
@@ -367,7 +378,7 @@ export default function AdministradorUsuariosPage() {
           email: user.email,
           role: user.role,
           status: user.status,
-          storeIds: user.storeIds ?? [],
+          storeIds: normalizeStoreIdsForRole(user.role, user.storeIds),
         });
         setUserFormBaseline(
           JSON.stringify({
@@ -375,7 +386,7 @@ export default function AdministradorUsuariosPage() {
             email: user.email,
             role: user.role,
             status: user.status,
-            storeIds: user.storeIds ?? [],
+            storeIds: normalizeStoreIdsForRole(user.role, user.storeIds),
           }),
         );
         setUserFormError(null);
@@ -439,7 +450,7 @@ export default function AdministradorUsuariosPage() {
   async function handleSaveUser() {
     const name = userForm.name.trim();
     const email = userForm.email.trim().toLowerCase();
-    const normalizedStoreIds = Array.from(new Set(userForm.storeIds ?? []));
+    const normalizedStoreIds = normalizeStoreIdsForRole(userForm.role, userForm.storeIds);
 
     if (!name || !email) {
       setUserFormError("Preencha nome e e-mail para continuar.");
@@ -879,15 +890,15 @@ export default function AdministradorUsuariosPage() {
           setIsUserDialogOpen(open);
         }}
       >
-        <DialogContent size="lg">
-          <DialogHeader>
+        <DialogContent size="full" className="gap-0 p-0">
+          <DialogHeader className="border-b border-border/70 px-6 py-5 pr-14">
             <DialogTitle>{editingUserId ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
             <DialogDescription>
               O perfil-base define as permissões padrão. O escopo de lojas abaixo é opcional e funciona como uma segunda camada: quando preenchido, limita em quais unidades o usuário pode operar sempre que tiver módulos da loja liberados.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-2">
+          <div className="scroll-modern grid gap-5 overflow-y-auto px-6 py-5">
             <div className="grid gap-2">
               <Label htmlFor="user-name">Nome</Label>
               <Input
@@ -917,10 +928,14 @@ export default function AdministradorUsuariosPage() {
                 <Select
                   value={userForm.role}
                   onValueChange={(value) =>
-                    setUserForm((current) => ({
-                      ...current,
-                      role: value as UserRole,
-                    }))
+                    setUserForm((current) => {
+                      const role = value as UserRole;
+                      return {
+                        ...current,
+                        role,
+                        storeIds: normalizeStoreIdsForRole(role, current.storeIds),
+                      };
+                    })
                   }
                 >
                   <SelectTrigger>
@@ -996,49 +1011,51 @@ export default function AdministradorUsuariosPage() {
               </div>
             </div>
 
-            <section className="space-y-3 rounded-xl border border-border/80 bg-panel/25 p-4">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">Escopo operacional da loja</p>
-                <p className="text-xs text-muted-foreground">
-                  Selecione lojas apenas quando quiser restringir o acesso. Sem seleção, o usuário permanece sem limitação por unidade e o escopo só entra em ação quando houver módulos da loja delegados.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {userForm.storeIds?.length
-                    ? `${userForm.storeIds.length} loja${userForm.storeIds.length > 1 ? "s" : ""} selecionada${userForm.storeIds.length > 1 ? "s" : ""}.`
-                    : "Nenhuma loja selecionada. O acesso ficará sem restrição por unidade."}
-                </p>
-              </div>
-
-              {activeStores.length === 0 ? (
-                <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
-                  Não há lojas ativas disponíveis para vínculo neste momento.
+            {canSelectStores ? (
+              <section className="space-y-3 rounded-xl border border-border/80 bg-panel/25 p-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-foreground">Escopo operacional da loja</p>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione lojas apenas quando quiser restringir o acesso. Sem seleção, o usuário permanece sem limitação por unidade e o escopo só entra em ação quando houver módulos da loja delegados.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {userForm.storeIds?.length
+                      ? `${userForm.storeIds.length} loja${userForm.storeIds.length > 1 ? "s" : ""} selecionada${userForm.storeIds.length > 1 ? "s" : ""}.`
+                      : "Nenhuma loja selecionada. O acesso ficará sem restrição por unidade."}
+                  </p>
                 </div>
-              ) : (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {activeStores.map((store) => {
-                    const isChecked = (userForm.storeIds ?? []).includes(store.id);
 
-                    return (
-                      <label
-                        key={store.id}
-                        className="flex items-start gap-3 rounded-lg border border-border/70 bg-card px-3 py-3 text-sm"
-                      >
-                        <Checkbox
-                          checked={isChecked}
-                          onCheckedChange={(checked) => toggleAuthorizedStore(store.id, checked === true)}
-                        />
-                        <div className="space-y-1">
-                          <p className="font-medium text-foreground">{store.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {store.code} · Janela {store.receiveWindow}
-                          </p>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+                {activeStores.length === 0 ? (
+                  <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                    Não há lojas ativas disponíveis para vínculo neste momento.
+                  </div>
+                ) : (
+                  <div className="grid max-h-[42vh] gap-2 overflow-y-auto pr-1 sm:grid-cols-2 xl:grid-cols-3">
+                    {activeStores.map((store) => {
+                      const isChecked = (userForm.storeIds ?? []).includes(store.id);
+
+                      return (
+                        <label
+                          key={store.id}
+                          className="flex items-start gap-3 rounded-lg border border-border/70 bg-card px-3 py-3 text-sm"
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => toggleAuthorizedStore(store.id, checked === true)}
+                          />
+                          <div className="space-y-1">
+                            <p className="font-medium text-foreground">{store.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {store.code} · Janela {store.receiveWindow}
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ) : null}
 
             {userFormDirty ? (
               <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
@@ -1053,7 +1070,7 @@ export default function AdministradorUsuariosPage() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t border-border/70 px-6 py-4">
             <Button
               type="button"
               variant="outline"
@@ -1323,7 +1340,7 @@ export default function AdministradorUsuariosPage() {
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="border-t border-border/70 px-6 py-4">
             <Button
               type="button"
               variant="outline"

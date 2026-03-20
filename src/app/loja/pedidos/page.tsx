@@ -54,6 +54,17 @@ import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderSummaries } from "@/lib/use-store-orders";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
+type SelectedOrderItemSummary = {
+  productId: string;
+  code: string;
+  name: string;
+  category: string;
+  quantity: number;
+  unit: StoreOrderCatalogProduct["unit"];
+  unitKind: StoreOrderCatalogProduct["unitKind"];
+  minimumProductionAlert: string | null;
+};
+
 const WEEK_SEQUENCE: EditableDayField[] = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
 const FIELD_BY_JS_DAY_INDEX: EditableDayField[] = ["dom", "seg", "ter", "qua", "qui", "sex", "sab"];
 const WEEK_LABEL: Record<EditableDayField, string> = {
@@ -118,6 +129,17 @@ function buildOrderDetailPath(orderId: string, referenceDate: string) {
   return `/loja/pedidos/${orderId}?ref=${referenceDate}`;
 }
 
+function formatRequestedQuantity(quantity: number, unitKind: StoreOrderCatalogProduct["unitKind"]) {
+  if (unitKind === "discrete") {
+    return String(Math.round(quantity));
+  }
+
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  }).format(quantity);
+}
+
 export default function PedidosLojaPage() {
   const router = useRouter();
   const { profile } = useCurrentProfile();
@@ -125,6 +147,7 @@ export default function PedidosLojaPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [searchTerm, setSearchTerm] = useState("");
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
+  const [isOrderConfirmationOpen, setIsOrderConfirmationOpen] = useState(false);
   const [orderProducts, setOrderProducts] = useState<StoreOrderCatalogProduct[]>([]);
   const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -269,6 +292,23 @@ export default function PedidosLojaPage() {
       return matchesSearch && matchesCategory;
     });
   }, [catalogSearchTerm, categoryFilter, orderProducts]);
+  const selectedOrderItems = useMemo<SelectedOrderItemSummary[]>(
+    () =>
+      orderProducts
+        .filter((product) => product.available && product[highlightedDay] > 0)
+        .map((product) => ({
+          productId: product.productId,
+          code: product.code,
+          name: product.name,
+          category: product.category,
+          quantity: product[highlightedDay],
+          unit: product.unit,
+          unitKind: product.unitKind,
+          minimumProductionAlert: getMinimumProductionAlert(product, product[highlightedDay]),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    [highlightedDay, orderProducts],
+  );
   const availableCatalogCount = useMemo(
     () => orderProducts.filter((item) => item.available).length,
     [orderProducts],
@@ -347,26 +387,33 @@ export default function PedidosLojaPage() {
     setIsNewOrderOpen(open);
 
     if (!open) {
+      setIsOrderConfirmationOpen(false);
       setOrderNote("");
       setOrderProducts(catalog);
       clearCatalogFilters();
     }
   }
 
-  async function handleSubmitOrder() {
+  function handleOpenOrderConfirmation() {
     if (!selectedStore) {
       return;
     }
 
-    const items = orderProducts
-      .filter((product) => product.available && product[highlightedDay] > 0)
-      .map((product) => ({
-        productId: product.productId,
-        quantity: product[highlightedDay],
-        unit: product.unit,
-      }));
+    if (selectedOrderItems.length === 0) {
+      window.alert("Selecione ao menos um item disponível com quantidade positiva.");
+      return;
+    }
 
-    if (items.length === 0) {
+    setIsOrderConfirmationOpen(true);
+  }
+
+  async function handleConfirmOrderSubmission() {
+    if (!selectedStore) {
+      return;
+    }
+
+    if (selectedOrderItems.length === 0) {
+      setIsOrderConfirmationOpen(false);
       window.alert("Selecione ao menos um item disponível com quantidade positiva.");
       return;
     }
@@ -375,8 +422,13 @@ export default function PedidosLojaPage() {
       storeId: selectedStore.id,
       note: orderNote.trim(),
       orderedAt: referenceDate.toISOString(),
-      items,
+      items: selectedOrderItems.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unit: item.unit,
+      })),
     });
+    setIsOrderConfirmationOpen(false);
     setOrderProducts(catalog);
     setOrderNote("");
   }
@@ -680,8 +732,122 @@ export default function PedidosLojaPage() {
                 <Button type="button" variant="outline" onClick={() => handleNewOrderDialogChange(false)}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={() => void handleSubmitOrder()} disabled={isSubmitting || !selectedStore}>
-                  Fazer Pedido
+                <Button
+                  type="button"
+                  onClick={handleOpenOrderConfirmation}
+                  disabled={isSubmitting || !selectedStore}
+                >
+                  Revisar Pedido
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={isOrderConfirmationOpen} onOpenChange={setIsOrderConfirmationOpen}>
+            <DialogContent size="3xl">
+              <DialogHeader>
+                <DialogTitle>Confirmar pedido</DialogTitle>
+                <DialogDescription>
+                  Revise todos os itens e quantidades antes de enviar o pedido para a operação.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-5 py-2">
+                <div className="grid gap-3 rounded-lg border border-border/80 bg-panel/35 p-4 md:grid-cols-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Loja</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {selectedStore?.name ?? "Loja não selecionada"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      Entrega prevista
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">{deliveryDateLabel}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      Itens selecionados
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {selectedOrderItems.length} item{selectedOrderItems.length === 1 ? "" : "ns"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border/80 bg-card">
+                  <div className="border-b border-border/70 px-4 py-3">
+                    <p className="text-sm font-semibold text-foreground">Resumo do pedido</p>
+                    <p className="text-xs text-muted-foreground">
+                      Confira a lista completa abaixo para evitar divergencias antes da confirmacao.
+                    </p>
+                  </div>
+                  <div className="max-h-[420px] overflow-auto">
+                    <table className="w-full min-w-[760px] border-collapse">
+                      <thead className="sticky top-0 z-10 bg-secondary/85">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">
+                            Código
+                          </th>
+                          <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">
+                            Produto
+                          </th>
+                          <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">
+                            Categoria
+                          </th>
+                          <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.08em]">
+                            Quantidade
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedOrderItems.map((item) => (
+                          <tr key={item.productId} className="border-t border-border/70 align-top">
+                            <td className="px-4 py-3 font-mono text-sm text-foreground">{item.code}</td>
+                            <td className="px-4 py-3 text-sm">
+                              <div className="font-medium text-foreground">{item.name}</div>
+                              {item.minimumProductionAlert ? (
+                                <div className="mt-1 text-xs text-warning-foreground">
+                                  {item.minimumProductionAlert}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-muted-foreground">{item.category}</td>
+                            <td className="px-4 py-3 text-right text-sm font-semibold text-foreground">
+                              {formatRequestedQuantity(item.quantity, item.unitKind)} {item.unit}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border/70 bg-background/70 px-4 py-3">
+                  <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    Observacoes
+                  </p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {orderNote.trim() || "Nenhuma observacao informada."}
+                  </p>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsOrderConfirmationOpen(false)}
+                  disabled={isSubmitting}
+                >
+                  Voltar e ajustar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void handleConfirmOrderSubmission()}
+                  disabled={isSubmitting || !selectedStore || selectedOrderItems.length === 0}
+                >
+                  {isSubmitting ? "Confirmando..." : "Confirmar pedido"}
                 </Button>
               </DialogFooter>
             </DialogContent>

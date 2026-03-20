@@ -72,6 +72,18 @@ export const roleLabels: Record<UserRole, string> = {
   loja: "Loja",
 };
 
+export function supportsStoreScope(role: UserRole) {
+  return role === "loja";
+}
+
+export function normalizeStoreIdsForRole(role: UserRole, storeIds?: string[]) {
+  if (!supportsStoreScope(role)) {
+    return [];
+  }
+
+  return Array.from(new Set((storeIds ?? []).filter(Boolean)));
+}
+
 export function buildEmptyAddress(): UserAddress {
   return {
     zipCode: "",

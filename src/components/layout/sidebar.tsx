@@ -137,15 +137,12 @@ function SidebarNav({
                   priority
                 />
               </div>
-              <div className="min-w-0 space-y-1">
+              <div className="min-w-0 space-y-0.5">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/90">
                   Software
                 </p>
                 <p className="font-heading text-base font-semibold leading-none text-foreground">
                   {brand.name}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Navegação por permissões e escopos
                 </p>
               </div>
             </div>
