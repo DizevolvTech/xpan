@@ -75,3 +75,16 @@ test("unknown routes inside a denied area stay blocked", () => {
   assert.equal(access.canAccessCurrentPath, false);
   assert.equal(access.accessDeniedReason, "missing-area-access");
 });
+
+test("tenant administrators are blocked from the master area even with normal admin access", () => {
+  const access = resolveAreaAccess({
+    permissions: buildDefaultPermissions("administrador"),
+    baseRole: "administrador",
+    areaGroup: "administrador-master",
+    currentPath: "/administrador-master",
+  });
+
+  assert.equal(access.canAccessCurrentPath, false);
+  assert.equal(access.landingPath, "/administrador");
+  assert.equal(access.accessDeniedReason, "missing-module-access");
+});

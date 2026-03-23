@@ -67,6 +67,7 @@ import {
   type PermissionMap,
   type PermissionModuleId,
 } from "@/lib/permission-modules";
+import { readClientAccessContext } from "@/lib/client-access-context";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useManagedUsers } from "@/lib/use-managed-users";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -112,6 +113,7 @@ function buildNavigationPreview(permissions: PermissionMap, baseRole: UserRole) 
 }
 
 export default function AdministradorUsuariosPage() {
+  const isReadOnlyTenantView = readClientAccessContext().accessMode === "read-only-tenant";
   const { snapshot } = useMasterDataSnapshot();
   const {
     users,
@@ -183,6 +185,10 @@ export default function AdministradorUsuariosPage() {
   const baseRoleTemplatePreview = useMemo(
     () => buildNavigationPreview(buildDefaultPermissions(userForm.role), userForm.role),
     [userForm.role],
+  );
+  const tenantRoleOptions = useMemo(
+    () => (Object.keys(roleLabels) as UserRole[]).filter((role) => role !== "administrador-master"),
+    [],
   );
   const canSelectStores = supportsStoreScope(userForm.role);
   const permissionNavigationPreview = useMemo(() => {
@@ -348,7 +354,9 @@ export default function AdministradorUsuariosPage() {
     },
   ];
 
-  const actions = [
+  const actions = isReadOnlyTenantView
+    ? undefined
+    : [
     {
       icon: "user" as const,
       label: "Perfil e senha",
@@ -404,6 +412,11 @@ export default function AdministradorUsuariosPage() {
   ];
 
   function openNewUserDialog() {
+    if (isReadOnlyTenantView) {
+      setPageError("O cliente selecionado está aberto em modo leitura.");
+      return;
+    }
+
     setPageError(null);
     setEditingUserId(null);
     setUserForm({
@@ -448,6 +461,11 @@ export default function AdministradorUsuariosPage() {
   }
 
   async function handleSaveUser() {
+    if (isReadOnlyTenantView) {
+      setUserFormError("O cliente selecionado está aberto em modo leitura.");
+      return;
+    }
+
     const name = userForm.name.trim();
     const email = userForm.email.trim().toLowerCase();
     const normalizedStoreIds = normalizeStoreIdsForRole(userForm.role, userForm.storeIds);
@@ -545,6 +563,11 @@ export default function AdministradorUsuariosPage() {
   }
 
   async function savePermissionDialog() {
+    if (isReadOnlyTenantView) {
+      setPermissionFormError("O cliente selecionado está aberto em modo leitura.");
+      return;
+    }
+
     if (!permissionUserId || !permissionDraft) {
       return;
     }
@@ -645,6 +668,11 @@ export default function AdministradorUsuariosPage() {
   }
 
   async function saveProfileDialog() {
+    if (isReadOnlyTenantView) {
+      setProfileFormError("O cliente selecionado está aberto em modo leitura.");
+      return;
+    }
+
     if (!profileUserId || !profileForm) {
       return;
     }
@@ -712,6 +740,11 @@ export default function AdministradorUsuariosPage() {
   }
 
   async function handleToggleUserStatus(user: ManagedUser) {
+    if (isReadOnlyTenantView) {
+      setPageError("O cliente selecionado está aberto em modo leitura.");
+      return;
+    }
+
     try {
       await updateUser(
         user.id,
@@ -743,12 +776,18 @@ export default function AdministradorUsuariosPage() {
         { label: "Usuários e Permissões" },
       ]}
       actions={
-        <Button type="button" onClick={openNewUserDialog} disabled={isSubmitting}>
+        <Button type="button" onClick={openNewUserDialog} disabled={isSubmitting || isReadOnlyTenantView}>
           <Plus className="size-4" />
           Novo Usuário
         </Button>
       }
     >
+      {isReadOnlyTenantView ? (
+        <div className="rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          A gestão de usuários fica bloqueada enquanto o cliente estiver aberto em modo leitura pelo administrador master.
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KPICard title="Usuários cadastrados" value={kpis.total} icon={Users} tone="info" />
         <KPICard title="Usuários ativos" value={kpis.ativos} icon={CheckCircle2} tone="success" />
@@ -813,7 +852,7 @@ export default function AdministradorUsuariosPage() {
                 options: (Object.keys(roleLabels) as UserRole[]).map((role) => ({
                   value: role,
                   label: roleLabels[role],
-                })),
+                })).filter((option) => option.value !== "administrador-master"),
               },
               {
                 key: "status",
@@ -942,7 +981,7 @@ export default function AdministradorUsuariosPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(Object.keys(roleLabels) as UserRole[]).map((role) => (
+                    {tenantRoleOptions.map((role) => (
                       <SelectItem key={role} value={role}>
                         {roleLabels[role]}
                       </SelectItem>

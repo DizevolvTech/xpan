@@ -7,6 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions } from "@/lib/supabase-data/delivery";
 import { createStoreOrder, listFactoryStoreOrders } from "@/lib/supabase-data/store-orders";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
     permission: "loja.pedidos",
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -42,17 +44,24 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const referenceDate = getReferenceDate(request);
     const [planning, storeOrders, deliveryExecutions] = await Promise.all([
       getFactoryPlanningSnapshot(referenceDate, {
         supabase,
         includeProfileNames: false,
+        tenantId: authorization.effectiveTenantId,
       }),
       listFactoryStoreOrders(supabase),
-      getPersistedDeliveryExecutions(supabase),
+      getPersistedDeliveryExecutions({
+        tenantId: authorization.effectiveTenantId,
+        supabase,
+      }),
     ]);
-    const allowedStoreIds = getAllowedStoreIds(authorization.user);
+    const allowedStoreIds = getAllowedStoreIds(authorization);
     const orderedAtByOrderId = new Map(
       storeOrders.map((order) => [order.id, order.orderedAt.slice(0, 10)]),
     );
@@ -91,6 +100,8 @@ export async function POST(request: Request) {
     permission: "loja.pedidos",
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -99,9 +110,12 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as Parameters<typeof createStoreOrder>[0];
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
 
-    if (!canAccessStore(authorization.user, body.storeId)) {
+    if (!canAccessStore(authorization, body.storeId)) {
       return NextResponse.json(
         { message: "O usuário autenticado não tem acesso à loja selecionada." },
         { status: 403 },
@@ -110,9 +124,10 @@ export async function POST(request: Request) {
 
     const created = await createStoreOrder({
       ...body,
+      tenantId: authorization.effectiveTenantId,
       createdByProfileId: authorization.user.id,
     }, supabase);
-    invalidatePlanningCaches();
+    invalidatePlanningCaches(authorization.effectiveTenantId);
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create store order";

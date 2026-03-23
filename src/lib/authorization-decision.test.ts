@@ -8,6 +8,7 @@ import { buildDefaultPermissions, buildEmptyPermissions } from "@/lib/permission
 function buildManagedUser(overrides: Partial<ManagedUser> = {}): ManagedUser {
   return {
     id: "user-1",
+    tenantId: null,
     name: "Usuario Teste",
     email: "teste@empresa.com",
     role: "loja",

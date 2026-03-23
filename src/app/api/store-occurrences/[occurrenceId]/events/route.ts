@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { addStoreOccurrenceComment } from "@/lib/supabase-data/store-occurrences";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
   params: Promise<{
@@ -27,6 +28,8 @@ export async function POST(request: Request, context: RouteContext) {
     anyOfPermissions: ["loja.ocorrencias", "gestor-fabrica.ocorrencias"],
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -34,7 +37,10 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const { occurrenceId } = await context.params;
     const body = (await request.json()) as { content: string };
     const updated = await addStoreOccurrenceComment(
@@ -44,7 +50,7 @@ export async function POST(request: Request, context: RouteContext) {
         createdByProfileId: authorization.user.id,
       },
       {
-        allowedStoreIds: getAllowedStoreIds(authorization.user),
+        allowedStoreIds: getAllowedStoreIds(authorization),
       },
       supabase,
     );

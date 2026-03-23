@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 import type {
   StoreOrderCatalogProduct,
   StoreOrderDetail,
@@ -27,8 +28,12 @@ const STORE_ORDERS_CACHE_TTL_MS = 10_000;
 const storeOrdersCache = new Map<string, StoreOrdersCacheEntry>();
 const storeOrdersInflight = new Map<string, Promise<StoreOrderSummary[]>>();
 
-function getStoreOrdersCacheEntry(referenceDate: string) {
-  return storeOrdersCache.get(referenceDate) ?? null;
+function buildStoreOrdersCacheKey(referenceDate: string) {
+  return buildClientTenantCacheKey("store-orders", referenceDate);
+}
+
+function getStoreOrdersCacheEntry(cacheKey: string) {
+  return storeOrdersCache.get(cacheKey) ?? null;
 }
 
 function isStoreOrdersCacheFresh(entry: StoreOrdersCacheEntry) {
@@ -36,41 +41,43 @@ function isStoreOrdersCacheFresh(entry: StoreOrdersCacheEntry) {
 }
 
 async function fetchStoreOrderSummaries(referenceDate: string, forceRefresh: boolean) {
-  const cachedEntry = getStoreOrdersCacheEntry(referenceDate);
+  const cacheKey = buildStoreOrdersCacheKey(referenceDate);
+  const cachedEntry = getStoreOrdersCacheEntry(cacheKey);
 
   if (!forceRefresh && cachedEntry && isStoreOrdersCacheFresh(cachedEntry)) {
     return cachedEntry.data;
   }
 
-  const inflightRequest = storeOrdersInflight.get(referenceDate);
+  const inflightRequest = storeOrdersInflight.get(cacheKey);
   if (inflightRequest) {
     return inflightRequest;
   }
 
   const request = readJson<StoreOrderSummary[]>(`/api/store-orders?referenceDate=${referenceDate}`)
     .then((data) => {
-      storeOrdersCache.set(referenceDate, {
+      storeOrdersCache.set(cacheKey, {
         data,
         fetchedAt: Date.now(),
       });
       return data;
     })
     .finally(() => {
-      storeOrdersInflight.delete(referenceDate);
+      storeOrdersInflight.delete(cacheKey);
     });
 
-  storeOrdersInflight.set(referenceDate, request);
+  storeOrdersInflight.set(cacheKey, request);
   return request;
 }
 
 export function useStoreOrderSummaries(referenceDate: string) {
-  const cachedEntry = getStoreOrdersCacheEntry(referenceDate);
+  const cacheKey = buildStoreOrdersCacheKey(referenceDate);
+  const cachedEntry = getStoreOrdersCacheEntry(cacheKey);
   const [orders, setOrders] = useState<StoreOrderSummary[]>(cachedEntry?.data ?? []);
   const [isLoading, setIsLoading] = useState(!cachedEntry);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async (forceRefresh = true) => {
-    const previousCacheEntry = getStoreOrdersCacheEntry(referenceDate);
+    const previousCacheEntry = getStoreOrdersCacheEntry(cacheKey);
     setIsLoading(forceRefresh || !previousCacheEntry);
     setError(null);
 
@@ -83,7 +90,7 @@ export function useStoreOrderSummaries(referenceDate: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [referenceDate]);
+  }, [cacheKey, referenceDate]);
 
   useEffect(() => {
     void refresh(false);

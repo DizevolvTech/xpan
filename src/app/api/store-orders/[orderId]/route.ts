@@ -11,6 +11,7 @@ import { assertSupabaseResult, isUuid } from "@/lib/supabase-data/common";
 import { listStoreOrderEvents } from "@/lib/supabase-data/store-order-events";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import { updateStoreOrder } from "@/lib/supabase-data/store-orders";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 function formatDateTimeBr(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -37,8 +38,8 @@ function isClientValidationError(message: string) {
   );
 }
 
-async function loadOrderAccessContext(orderId: string) {
-  const supabase = createSupabaseAdminClient();
+async function loadOrderAccessContext(orderId: string, tenantId: string | null | undefined) {
+  const supabase = createTenantScopedSupabaseClient(tenantId, createSupabaseAdminClient());
   const orderQuery = supabase
     .from("store_orders")
     .select("id, legacy_id, code, store_id, ordered_at, delivery_date, note, receive_window_snapshot, expedition_lead_days_snapshot, management_status");
@@ -87,6 +88,7 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
     permission: "loja.pedidos",
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -96,9 +98,9 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
   try {
     const { orderId } = await context.params;
     const { supabase, orderRow, storeRow, resolvedStoreId, settingsRow, isReleased } =
-      await loadOrderAccessContext(orderId);
+      await loadOrderAccessContext(orderId, authorization.effectiveTenantId);
 
-    if (!canAccessStore(authorization.user, resolvedStoreId)) {
+    if (!canAccessStore(authorization, resolvedStoreId)) {
       return NextResponse.json(
         { message: "O usuário autenticado não tem acesso a este pedido." },
         { status: 403 },
@@ -110,6 +112,7 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       getFactoryPlanningSnapshot(referenceDate, {
         supabase,
         includeProfileNames: false,
+        tenantId: authorization.effectiveTenantId,
       }),
       supabase
         .from("store_order_items")
@@ -118,7 +121,10 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       supabase.from("products").select("id, legacy_id, subcategory_id, operational_subcategory_id"),
       supabase.from("subcategories").select("id, category_id"),
       supabase.from("categories").select("id, name"),
-      getPersistedDeliveryExecutions(supabase),
+      getPersistedDeliveryExecutions({
+        tenantId: authorization.effectiveTenantId,
+        supabase,
+      }),
       listStoreOrderEvents(orderRow.legacy_id ?? orderRow.id, supabase),
     ]);
 
@@ -207,6 +213,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ order
     permission: "loja.pedidos",
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -215,9 +223,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ order
 
   try {
     const { orderId } = await context.params;
-    const { supabase, resolvedStoreId } = await loadOrderAccessContext(orderId);
+    const { supabase, resolvedStoreId } = await loadOrderAccessContext(
+      orderId,
+      authorization.effectiveTenantId,
+    );
 
-    if (!canAccessStore(authorization.user, resolvedStoreId)) {
+    if (!canAccessStore(authorization, resolvedStoreId)) {
       return NextResponse.json(
         { message: "O usuário autenticado não tem acesso a este pedido." },
         { status: 403 },
@@ -229,11 +240,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ order
       orderId,
       {
         ...body,
+        tenantId: authorization.effectiveTenantId,
         updatedByProfileId: authorization.user.id,
       },
       supabase,
     );
-    invalidatePlanningCaches();
+    invalidatePlanningCaches(authorization.effectiveTenantId);
     return NextResponse.json(updated);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update store order";
@@ -252,6 +264,8 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ord
     permission: "loja.pedidos",
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -260,9 +274,12 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ord
 
   try {
     const { orderId } = await context.params;
-    const { supabase, resolvedStoreId } = await loadOrderAccessContext(orderId);
+    const { supabase, resolvedStoreId } = await loadOrderAccessContext(
+      orderId,
+      authorization.effectiveTenantId,
+    );
 
-    if (!canAccessStore(authorization.user, resolvedStoreId)) {
+    if (!canAccessStore(authorization, resolvedStoreId)) {
       return NextResponse.json(
         { message: "O usuário autenticado não tem acesso a este pedido." },
         { status: 403 },
@@ -270,7 +287,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ord
     }
 
     await cancelOrder(orderId, authorization.user.id, supabase);
-    invalidatePlanningCaches();
+    invalidatePlanningCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to cancel store order";

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 import type { FactoryPlanningData, ProductionItemStatus } from "@/lib/order-planning";
 
 const emptyPlanningData: FactoryPlanningData = {
@@ -34,8 +35,12 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
-function getFactoryPlanningCacheEntry(referenceDate: string) {
-  return factoryPlanningCache.get(referenceDate) ?? null;
+function buildFactoryPlanningCacheKey(referenceDate: string) {
+  return buildClientTenantCacheKey("factory-planning", referenceDate);
+}
+
+function getFactoryPlanningCacheEntry(cacheKey: string) {
+  return factoryPlanningCache.get(cacheKey) ?? null;
 }
 
 function isFactoryPlanningCacheFresh(entry: FactoryPlanningCacheEntry) {
@@ -43,35 +48,37 @@ function isFactoryPlanningCacheFresh(entry: FactoryPlanningCacheEntry) {
 }
 
 async function fetchFactoryPlanningSnapshot(referenceDate: string, forceRefresh: boolean) {
-  const cachedEntry = getFactoryPlanningCacheEntry(referenceDate);
+  const cacheKey = buildFactoryPlanningCacheKey(referenceDate);
+  const cachedEntry = getFactoryPlanningCacheEntry(cacheKey);
 
   if (!forceRefresh && cachedEntry && isFactoryPlanningCacheFresh(cachedEntry)) {
     return cachedEntry.data;
   }
 
-  const inflightRequest = factoryPlanningInflight.get(referenceDate);
+  const inflightRequest = factoryPlanningInflight.get(cacheKey);
   if (inflightRequest) {
     return inflightRequest;
   }
 
   const request = readJson<FactoryPlanningData>(`/api/factory-planning?referenceDate=${referenceDate}`)
     .then((data) => {
-      factoryPlanningCache.set(referenceDate, {
+      factoryPlanningCache.set(cacheKey, {
         data,
         fetchedAt: Date.now(),
       });
       return data;
     })
     .finally(() => {
-      factoryPlanningInflight.delete(referenceDate);
+      factoryPlanningInflight.delete(cacheKey);
     });
 
-  factoryPlanningInflight.set(referenceDate, request);
+  factoryPlanningInflight.set(cacheKey, request);
   return request;
 }
 
 export function useFactoryPlanningSnapshot(referenceDate: string) {
-  const cachedEntry = getFactoryPlanningCacheEntry(referenceDate);
+  const cacheKey = buildFactoryPlanningCacheKey(referenceDate);
+  const cachedEntry = getFactoryPlanningCacheEntry(cacheKey);
   const [planningData, setPlanningData] = useState<FactoryPlanningData>(
     cachedEntry?.data ?? {
       ...emptyPlanningData,
@@ -82,7 +89,7 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async (forceRefresh = true) => {
-    const previousCacheEntry = getFactoryPlanningCacheEntry(referenceDate);
+    const previousCacheEntry = getFactoryPlanningCacheEntry(cacheKey);
     setIsLoading(forceRefresh || !previousCacheEntry);
     setError(null);
 
@@ -102,7 +109,7 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [referenceDate]);
+  }, [cacheKey, referenceDate]);
 
   useEffect(() => {
     void refresh(false).catch(() => undefined);

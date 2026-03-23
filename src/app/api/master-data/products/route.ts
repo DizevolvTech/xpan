@@ -5,12 +5,15 @@ import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { ProductInput } from "@/lib/supabase-data/master-data-admin";
 import { createProduct } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
     contextLabel: "POST /api/master-data/products",
     permission: "gestor-dados.produtos",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -27,12 +30,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const created = await createProduct(payload, {
       supabase,
       actingProfileId: authorization.user.id,
     });
-    invalidateMasterDataCaches();
+    invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return NextResponse.json(

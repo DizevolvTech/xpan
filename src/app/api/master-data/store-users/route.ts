@@ -3,12 +3,14 @@ import { NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { listStoreUserCandidates } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 export async function GET() {
   const authorization = await authorizeApiRequest({
     contextLabel: "GET /api/master-data/store-users",
     permission: "gestor-dados.lojas",
     minimumLevel: "visualizar",
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -16,7 +18,10 @@ export async function GET() {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const users = await listStoreUserCandidates(supabase);
     return NextResponse.json(users);
   } catch (error) {

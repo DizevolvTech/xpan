@@ -1,4 +1,4 @@
-import "server-only";
+import { buildTenantScopedKey } from "@/lib/tenant";
 
 type ServerCacheEntry = {
   expiresAt: number;
@@ -65,14 +65,48 @@ export function invalidateServerDataCache(prefixes: string | string[]) {
   }
 }
 
-export function invalidateMasterDataCaches() {
-  invalidateServerDataCache(["master-data:", "planning:"]);
+function invalidateServerDataCacheWhere(predicate: (key: string) => boolean) {
+  for (const key of serverDataCache.keys()) {
+    if (predicate(key)) {
+      serverDataCache.delete(key);
+    }
+  }
+
+  for (const key of serverDataInflight.keys()) {
+    if (predicate(key)) {
+      serverDataInflight.delete(key);
+    }
+  }
 }
 
-export function invalidatePlanningCaches() {
-  invalidateServerDataCache("planning:");
+function keyMatchesTenantCacheSegment(key: string, segment: string) {
+  return key.startsWith("tenant:") && (key.endsWith(`:${segment}`) || key.includes(`:${segment}:`));
 }
 
-export function invalidateDeliveryExecutionCaches() {
-  invalidateServerDataCache("delivery-executions:");
+function invalidateTenantCacheSegments(
+  tenantId: string | null | undefined,
+  segments: string[],
+) {
+  if (tenantId) {
+    invalidateServerDataCache(
+      segments.map((segment) => buildTenantScopedKey(["tenant", tenantId, segment])),
+    );
+    return;
+  }
+
+  invalidateServerDataCacheWhere((key) =>
+    segments.some((segment) => keyMatchesTenantCacheSegment(key, segment)),
+  );
+}
+
+export function invalidateMasterDataCaches(tenantId?: string | null) {
+  invalidateTenantCacheSegments(tenantId, ["master-data", "planning"]);
+}
+
+export function invalidatePlanningCaches(tenantId?: string | null) {
+  invalidateTenantCacheSegments(tenantId, ["planning"]);
+}
+
+export function invalidateDeliveryExecutionCaches(tenantId?: string | null) {
+  invalidateTenantCacheSegments(tenantId, ["delivery-executions"]);
 }

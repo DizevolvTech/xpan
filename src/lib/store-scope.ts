@@ -13,8 +13,11 @@ export function resolveAvailableStores<TStore extends StoreLike>(
   return stores.filter((store) => allowedStoreIds.includes(store.id));
 }
 
-export function buildStoreScopeStorageKey<TStore extends StoreLike>(stores: TStore[]) {
-  return `xpan.store-scope.${[...stores.map((store) => store.id)].sort().join(".") || "default"}`;
+export function buildStoreScopeStorageKey<TStore extends StoreLike>(
+  stores: TStore[],
+  tenantId?: string | null,
+) {
+  return `xpan.store-scope.${tenantId ?? "global"}.${[...stores.map((store) => store.id)].sort().join(".") || "default"}`;
 }
 
 export function resolveActiveStoreId<TStore extends StoreLike>(

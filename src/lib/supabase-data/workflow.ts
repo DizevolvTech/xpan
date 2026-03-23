@@ -65,6 +65,7 @@ async function appendOrderEventsForProductionItem(
   productionItemKey: string,
   status: ProductionItemStatus,
   updatedByProfileId: string | null | undefined,
+  tenantId: string,
   supabase: SupabaseDataClient,
 ) {
   const [referenceDate] = productionItemKey.split("|");
@@ -75,6 +76,7 @@ async function appendOrderEventsForProductionItem(
   const input = await buildFactoryInputFromDb({
     supabase,
     includeProfileNames: false,
+    tenantId,
   });
   const planning = buildFactoryPlanningData(referenceDate, input);
   const matchingItems = planning.orderItems.filter((item) => item.productionItemKey === productionItemKey);
@@ -144,6 +146,7 @@ export async function updateProductionItemStatus(
   productionItemKey: string,
   status: ProductionItemStatus,
   updatedByProfileId?: string | null,
+  tenantId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
@@ -183,7 +186,15 @@ export async function updateProductionItemStatus(
     throw new Error(`Failed to update production item status: ${upsertResult.error.message}`);
   }
 
-  await appendOrderEventsForProductionItem(productionItemKey, status, updatedByProfileId, supabase);
+  if (tenantId) {
+    await appendOrderEventsForProductionItem(
+      productionItemKey,
+      status,
+      updatedByProfileId,
+      tenantId,
+      supabase,
+    );
+  }
 }
 
 async function resolveOrderRow(

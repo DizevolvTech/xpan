@@ -15,6 +15,8 @@ import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import {
   assertSupabaseResult,
+  assertTenantId,
+  buildTenantCacheKey,
   isSupabaseMissingSchemaError,
   isUuid,
   resolveOptionalSupabaseResult,
@@ -41,17 +43,28 @@ type LegacyDeliveryExecutionRow = {
 type DeliveryOrderRow = {
   id: string;
   legacy_id: string | null;
+  tenant_id: string;
   code: string;
   delivery_date: string;
 };
 
 export async function resolveOrderDeliveryExecutionContext(
   orderId: string,
-  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  options:
+    | {
+        tenantId?: string | null;
+        supabase?: SupabaseDataClient;
+      }
+    | SupabaseDataClient = {},
 ) {
+  const resolvedOptions =
+    options && typeof options === "object" && "from" in options
+      ? { supabase: options as SupabaseDataClient }
+      : options;
+  const supabase = resolvedOptions.supabase ?? createSupabaseAdminClient();
   const orderQuery = supabase
     .from("store_orders")
-    .select("id, legacy_id, code, delivery_date");
+    .select("id, legacy_id, tenant_id, code, delivery_date");
   const orderResult = await (isUuid(orderId)
     ? orderQuery.eq("id", orderId)
     : orderQuery.eq("legacy_id", orderId)).maybeSingle();
@@ -59,10 +72,12 @@ export async function resolveOrderDeliveryExecutionContext(
     { data: orderResult.data, error: orderResult.error },
     "Failed to resolve order for delivery execution",
   ) as DeliveryOrderRow;
+  const tenantId = assertTenantId(resolvedOptions.tenantId ?? orderRow.tenant_id);
   const orderKey = orderRow.legacy_id ?? orderRow.id;
   const planning = await getFactoryPlanningSnapshot(orderRow.delivery_date, {
     supabase,
     includeProfileNames: false,
+    tenantId,
   });
   const planningOrder = planning.orders.find((item) => item.id === orderKey);
   const expedition = planning.expedition.find((item) => item.orderId === orderKey) ?? null;
@@ -116,9 +131,18 @@ function isMissingDeliveryExecutionSchema(error: { message: string; code?: strin
 }
 
 export async function getPersistedDeliveryExecutions(
-  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  options: {
+    tenantId?: string | null;
+    supabase?: SupabaseDataClient;
+  } = {},
 ): Promise<PersistedDeliveryExecutionState> {
-  return getCachedServerData("delivery-executions:all", DELIVERY_EXECUTION_CACHE_TTL_MS, async () => {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const tenantId = assertTenantId(options.tenantId);
+
+  return getCachedServerData(
+    buildTenantCacheKey(tenantId, "delivery-executions", "all"),
+    DELIVERY_EXECUTION_CACHE_TTL_MS,
+    async () => {
     const [executionRowsResult, orderRowsResult] = await Promise.all([
       supabase.from("delivery_executions").select("order_id, status, checklist_state, checklist_completed_at, updated_at"),
       supabase.from("store_orders").select("id, legacy_id"),
@@ -142,7 +166,8 @@ export async function getPersistedDeliveryExecutions(
       };
       return acc;
     }, {});
-  });
+    },
+  );
 }
 
 export async function updateDeliveryExecution(
@@ -151,12 +176,17 @@ export async function updateDeliveryExecution(
   options: {
     checklistState?: DeliveryChecklistState;
     checklistCompletedAt?: string | null;
+    tenantId?: string | null;
   } = {},
   updatedByProfileId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
+  const tenantId = assertTenantId(options.tenantId);
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
-  const { orderRow, orderStatus, expedition } = await resolveOrderDeliveryExecutionContext(orderId, supabase);
+  const { orderRow, orderStatus, expedition } = await resolveOrderDeliveryExecutionContext(orderId, {
+    tenantId,
+    supabase,
+  });
 
   if (!isOrderReadyForDeliveryExecution(orderStatus)) {
     throw new Error("O pedido ainda não está pronto para expedição.");

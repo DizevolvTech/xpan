@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -14,6 +15,7 @@ export async function GET(request: Request) {
     contextLabel: "GET /api/factory-planning",
     anyOfPermissions: ["gestor-fabrica.dashboard", "chao-fabrica.dashboard"],
     minimumLevel: "visualizar",
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -21,10 +23,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), {
       supabase,
       includeProfileNames: false,
+      tenantId: authorization.effectiveTenantId,
     });
     return NextResponse.json(planning);
   } catch (error) {

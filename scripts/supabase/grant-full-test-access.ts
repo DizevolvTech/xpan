@@ -49,7 +49,10 @@ async function listAllAuthUsers() {
     }
 
     users.push(...result.data.users.map((user) => ({ id: user.id, email: user.email })));
-    totalPages = result.data.total_pages;
+    totalPages =
+      "total_pages" in result.data && typeof result.data.total_pages === "number"
+        ? result.data.total_pages
+        : page;
     page += 1;
   }
 
@@ -59,8 +62,8 @@ async function listAllAuthUsers() {
 async function grantFullTestAccess() {
   const supabase = createSupabaseAdminClient();
   const [profilesResult, storesResult] = await Promise.all([
-    supabase.from("profiles").select("id, email, auth_user_id, name, role, legacy_id"),
-    supabase.from("stores").select("id"),
+    supabase.from("profiles").select("id, email, auth_user_id, name, role, legacy_id, tenant_id"),
+    supabase.from("stores").select("id, tenant_id"),
   ]);
 
   if (profilesResult.error) {
@@ -93,6 +96,7 @@ async function grantFullTestAccess() {
   });
 
   const fullPermissionGroupsByRole: Record<typeof resolvedProfiles[number]["targetRole"], PermissionGroup[]> = {
+    "administrador-master": ["administrador-master"],
     administrador: ["administrador", "gestor-dados", "gestor-fabrica", "chao-fabrica", "loja"],
     "gestor-dados": ["gestor-dados"],
     "gestor-fabrica": ["gestor-fabrica", "chao-fabrica"],
@@ -141,6 +145,7 @@ async function grantFullTestAccess() {
     const permissions = buildRoleScopedPermissions(profile.targetRole);
 
     return permissionModules.map((module) => ({
+      tenant_id: profile.tenant_id,
       profile_id: profile.id,
       module_key: module.id,
       access_level: permissions[module.id],
@@ -169,7 +174,10 @@ async function grantFullTestAccess() {
   const storeAccessPayload = resolvedProfiles
     .filter((profile) => profile.targetRole === "loja")
     .flatMap((profile) =>
-      stores.map((store) => ({
+      stores
+        .filter((store) => store.tenant_id === profile.tenant_id)
+        .map((store) => ({
+        tenant_id: store.tenant_id,
         profile_id: profile.id,
         store_id: store.id,
       })),
@@ -198,6 +206,7 @@ async function grantFullTestAccess() {
         legacyId: profile.legacy_id ?? profile.id,
         role: profile.targetRole,
         name: profile.name,
+        tenantId: profile.tenant_id,
       },
       app_metadata: {
         role: profile.targetRole,

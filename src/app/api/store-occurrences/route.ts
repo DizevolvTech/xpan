@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createStoreOccurrence, listStoreOccurrences } from "@/lib/supabase-data/store-occurrences";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 function resolveScopedStoreIds(
   allowedStoreIds: string[] | null | undefined,
@@ -40,6 +41,7 @@ export async function GET(request: Request) {
     anyOfPermissions: ["loja.ocorrencias", "gestor-fabrica.ocorrencias"],
     minimumLevel: "visualizar",
     includeStoreScope: true,
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -47,10 +49,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("storeId") ?? undefined;
-    const allowedStoreIds = getAllowedStoreIds(authorization.user);
+    const allowedStoreIds = getAllowedStoreIds(authorization);
     const occurrences = await listStoreOccurrences({
       allowedStoreIds: resolveScopedStoreIds(allowedStoreIds, storeId),
     }, supabase);
@@ -71,6 +76,8 @@ export async function POST(request: Request) {
     permission: "loja.ocorrencias",
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -85,8 +92,12 @@ export async function POST(request: Request) {
         openedByProfileId: authorization.user.id,
       },
       {
-        allowedStoreIds: getAllowedStoreIds(authorization.user),
+        allowedStoreIds: getAllowedStoreIds(authorization),
       },
+      createTenantScopedSupabaseClient(
+        authorization.effectiveTenantId,
+        createSupabaseAdminClient(),
+      ),
     );
     return NextResponse.json(occurrence, { status: 201 });
   } catch (error) {

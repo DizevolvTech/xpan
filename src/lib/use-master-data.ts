@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
 const emptySnapshot: MasterDataSnapshot = {
@@ -18,8 +19,6 @@ const emptySnapshot: MasterDataSnapshot = {
 };
 
 const MASTER_DATA_CLIENT_CACHE_TTL_MS = 15_000;
-const MASTER_DATA_CACHE_KEY = "default";
-
 type MasterDataCacheEntry = {
   data: MasterDataSnapshot;
   fetchedAt: number;
@@ -28,8 +27,12 @@ type MasterDataCacheEntry = {
 const masterDataCache = new Map<string, MasterDataCacheEntry>();
 const masterDataInflight = new Map<string, Promise<MasterDataSnapshot>>();
 
-function getMasterDataCacheEntry() {
-  return masterDataCache.get(MASTER_DATA_CACHE_KEY) ?? null;
+function getMasterDataCacheKey() {
+  return buildClientTenantCacheKey("master-data");
+}
+
+function getMasterDataCacheEntry(cacheKey = getMasterDataCacheKey()) {
+  return masterDataCache.get(cacheKey) ?? null;
 }
 
 function isMasterDataCacheFresh(entry: MasterDataCacheEntry) {
@@ -37,13 +40,14 @@ function isMasterDataCacheFresh(entry: MasterDataCacheEntry) {
 }
 
 async function fetchMasterDataSnapshot(forceRefresh: boolean) {
-  const cachedEntry = getMasterDataCacheEntry();
+  const cacheKey = getMasterDataCacheKey();
+  const cachedEntry = getMasterDataCacheEntry(cacheKey);
 
   if (!forceRefresh && cachedEntry && isMasterDataCacheFresh(cachedEntry)) {
     return cachedEntry.data;
   }
 
-  const inflightRequest = masterDataInflight.get(MASTER_DATA_CACHE_KEY);
+  const inflightRequest = masterDataInflight.get(cacheKey);
   if (inflightRequest) {
     return inflightRequest;
   }
@@ -55,17 +59,17 @@ async function fetchMasterDataSnapshot(forceRefresh: boolean) {
       }
 
       const data = (await response.json()) as MasterDataSnapshot;
-      masterDataCache.set(MASTER_DATA_CACHE_KEY, {
+      masterDataCache.set(cacheKey, {
         data,
         fetchedAt: Date.now(),
       });
       return data;
     })
     .finally(() => {
-      masterDataInflight.delete(MASTER_DATA_CACHE_KEY);
+      masterDataInflight.delete(cacheKey);
     });
 
-  masterDataInflight.set(MASTER_DATA_CACHE_KEY, request);
+  masterDataInflight.set(cacheKey, request);
   return request;
 }
 

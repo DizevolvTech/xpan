@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { buildTenantScopedKey } from "@/lib/tenant";
 export {
   assertSupabaseResult,
   resolveOptionalSupabaseResult,
@@ -16,15 +17,43 @@ export function isUuid(value: string) {
   return uuidPattern.test(value);
 }
 
+export function assertTenantId(tenantId?: string | null) {
+  if (!tenantId) {
+    throw new Error("Tenant context is required for this operation.");
+  }
+
+  return tenantId;
+}
+
+export function scopeTenantQuery<T extends { eq(column: string, value: string): T }>(
+  query: T,
+  tenantId: string,
+) {
+  return query.eq("tenant_id", tenantId);
+}
+
+export function buildTenantCacheKey(tenantId: string | null | undefined, ...parts: string[]) {
+  return buildTenantScopedKey(["tenant", tenantId ?? "global", ...parts]);
+}
+
 export async function resolveProfileDatabaseId(
   supabase: SupabaseDataClient,
   identifier?: string | null,
+  options: {
+    tenantId?: string | null;
+    allowMasterProfile?: boolean;
+  } = {},
 ) {
   if (!identifier) {
     return null;
   }
 
-  const query = supabase.from("profiles").select("id");
+  let query = supabase.from("profiles").select("id");
+  if (options.tenantId) {
+    query = query.eq("tenant_id", options.tenantId);
+  } else if (!options.allowMasterProfile) {
+    query = query.not("tenant_id", "is", null);
+  }
   const result = await (isUuid(identifier) ? query.eq("id", identifier) : query.eq("legacy_id", identifier)).maybeSingle();
 
   if (result.error) {

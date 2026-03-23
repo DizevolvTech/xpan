@@ -4,6 +4,7 @@ import { authorizeApiRequest, buildStoreScopeResponse, canAccessStore } from "@/
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
@@ -11,6 +12,7 @@ export async function GET(request: Request) {
     permission: "loja.pedidos",
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -26,14 +28,18 @@ export async function GET(request: Request) {
       return NextResponse.json([]);
     }
 
-    if (!canAccessStore(authorization.user, storeId)) {
+    if (!canAccessStore(authorization, storeId)) {
       return buildStoreScopeResponse();
     }
 
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const snapshot = await getMasterDataSnapshot({
       supabase,
       includeProfileNames: false,
+      tenantId: authorization.effectiveTenantId,
     });
     const catalog = buildStoreOrderCatalog(snapshot, {
       storeId,

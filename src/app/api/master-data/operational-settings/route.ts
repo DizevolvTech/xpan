@@ -5,12 +5,15 @@ import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { OperationalSettingsInput } from "@/lib/supabase-data/master-data-admin";
 import { updateOperationalSettings } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 export async function PATCH(request: Request) {
   const authorization = await authorizeApiRequest({
     contextLabel: "PATCH /api/master-data/operational-settings",
     permission: "gestor-fabrica.dashboard",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -27,12 +30,15 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const updatedSettings = await updateOperationalSettings(payload, {
       supabase,
       actingProfileId: authorization.user.id,
     });
-    invalidateMasterDataCaches();
+    invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json(updatedSettings);
   } catch (error) {
     return NextResponse.json(

@@ -4,6 +4,7 @@ import type { UserFormState } from "@/lib/admin-users";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createManagedUser, listManagedUsers } from "@/lib/supabase-data/admin-users";
+import { isMasterRole } from "@/lib/tenant";
 
 type CreateUserBody = UserFormState | null;
 
@@ -12,6 +13,7 @@ export async function GET() {
     contextLabel: "GET /api/admin/users",
     permission: "administrador.usuarios",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -20,7 +22,10 @@ export async function GET() {
 
   try {
     const supabase = createSupabaseAdminClient();
-    const users = await listManagedUsers({ supabase });
+    const users = await listManagedUsers({
+      supabase,
+      tenantId: authorization.effectiveTenantId,
+    });
     return NextResponse.json(users);
   } catch (error) {
     return NextResponse.json(
@@ -37,6 +42,8 @@ export async function POST(request: Request) {
     contextLabel: "POST /api/admin/users",
     permission: "administrador.usuarios",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -52,9 +59,19 @@ export async function POST(request: Request) {
     );
   }
 
+  if (isMasterRole(payload.role)) {
+    return NextResponse.json(
+      { message: "O administrador do tenant não pode criar usuários master." },
+      { status: 400 },
+    );
+  }
+
   try {
     const supabase = createSupabaseAdminClient();
-    const user = await createManagedUser(payload, { supabase });
+    const user = await createManagedUser(payload, {
+      supabase,
+      tenantId: authorization.effectiveTenantId,
+    });
     return NextResponse.json(user, { status: 201 });
   } catch (error) {
     return NextResponse.json(

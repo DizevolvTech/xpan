@@ -1,7 +1,10 @@
+"use client";
+
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 
+import { readClientAccessContext } from "@/lib/client-access-context";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
@@ -44,20 +47,30 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  allowInReadOnly = false,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
+    allowInReadOnly?: boolean;
   }) {
   const Comp = asChild ? Slot.Root : "button";
+  const isReadOnlyTenantView = readClientAccessContext().accessMode === "read-only-tenant";
+  const blocksInReadOnly =
+    !allowInReadOnly &&
+    !asChild &&
+    (variant === "default" || variant === "destructive" || props.type === "submit");
+  const disabled = props.disabled || (isReadOnlyTenantView && blocksInReadOnly);
 
   return (
     <Comp
       data-slot="button"
       data-variant={variant}
       data-size={size}
+      data-read-only-disabled={disabled && isReadOnlyTenantView ? "true" : "false"}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      disabled={disabled}
     />
   );
 }

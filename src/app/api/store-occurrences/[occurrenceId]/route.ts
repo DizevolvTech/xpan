@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   getStoreOccurrenceDetail,
   updateStoreOccurrenceStatus,
 } from "@/lib/supabase-data/store-occurrences";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
   params: Promise<{
@@ -14,7 +15,7 @@ type RouteContext = {
 };
 
 function resolveActorRole(role: string) {
-  if (role === "administrador") {
+  if (role === "administrador" || role === "administrador-master") {
     return "administrador" as const;
   }
 
@@ -42,6 +43,7 @@ export async function GET(_request: Request, context: RouteContext) {
     anyOfPermissions: ["loja.ocorrencias", "gestor-fabrica.ocorrencias"],
     minimumLevel: "visualizar",
     includeStoreScope: true,
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -49,12 +51,15 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const { occurrenceId } = await context.params;
     const detail = await getStoreOccurrenceDetail(
       occurrenceId,
       {
-        allowedStoreIds: getAllowedStoreIds(authorization.user),
+        allowedStoreIds: getAllowedStoreIds(authorization),
       },
       supabase,
     );
@@ -72,6 +77,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     anyOfPermissions: ["loja.ocorrencias", "gestor-fabrica.ocorrencias"],
     minimumLevel: "operar",
     includeStoreScope: true,
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -79,7 +86,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const { occurrenceId } = await context.params;
     const body = (await request.json()) as { status: "aberta" | "em_analise" | "resolvida" | "fechada" };
     const updated = await updateStoreOccurrenceStatus(
@@ -90,7 +100,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         updatedByProfileId: authorization.user.id,
       },
       {
-        allowedStoreIds: getAllowedStoreIds(authorization.user),
+        allowedStoreIds: getAllowedStoreIds(authorization),
       },
       supabase,
     );

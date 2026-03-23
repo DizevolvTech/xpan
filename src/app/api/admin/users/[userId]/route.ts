@@ -12,6 +12,7 @@ import {
   saveManagedUserProfile,
   updateManagedUser,
 } from "@/lib/supabase-data/admin-users";
+import { isMasterRole } from "@/lib/tenant";
 
 type UpdateUserBody =
   | {
@@ -39,6 +40,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     contextLabel: "PATCH /api/admin/users/[userId]",
     permission: "administrador.usuarios",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -66,15 +69,28 @@ export async function PATCH(request: Request, context: RouteContext) {
         );
       }
 
+      if (isMasterRole(payload.user.role)) {
+        return NextResponse.json(
+          { message: "O administrador do tenant não pode promover usuários para master." },
+          { status: 400 },
+        );
+      }
+
       const user = await updateManagedUser(userId, {
         ...payload.user,
         resetPermissionsToRoleDefault: payload.resetPermissionsToRoleDefault,
-      }, { supabase });
+      }, {
+        supabase,
+        tenantId: authorization.effectiveTenantId,
+      });
       return NextResponse.json(user);
     }
 
     if (payload.kind === "permissions") {
-      const user = await saveManagedUserPermissions(userId, payload.permissions, { supabase });
+      const user = await saveManagedUserPermissions(userId, payload.permissions, {
+        supabase,
+        tenantId: authorization.effectiveTenantId,
+      });
       return NextResponse.json(user);
     }
 
@@ -85,7 +101,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
-    const user = await saveManagedUserProfile(userId, payload.profile, { supabase });
+    const user = await saveManagedUserProfile(userId, payload.profile, {
+      supabase,
+      tenantId: authorization.effectiveTenantId,
+    });
     return NextResponse.json(user);
   } catch (error) {
     return NextResponse.json(

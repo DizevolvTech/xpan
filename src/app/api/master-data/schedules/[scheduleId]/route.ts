@@ -4,6 +4,7 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { updateScheduleLineStatus } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
   params: Promise<{
@@ -21,6 +22,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     contextLabel: "PATCH /api/master-data/schedules/[scheduleId]",
     permission: "gestor-fabrica.sublinhas",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -38,12 +41,15 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     await updateScheduleLineStatus(scheduleId, payload, {
       supabase,
       actingProfileId: authorization.user.id,
     });
-    invalidateMasterDataCaches();
+    invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

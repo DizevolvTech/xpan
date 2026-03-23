@@ -1,6 +1,8 @@
 import type { UserRole } from "@/lib/auth";
+import type { AccessMode, TenantSummary } from "@/lib/tenant";
 
 export type PermissionGroup =
+  | "administrador-master"
   | "administrador"
   | "gestor-dados"
   | "gestor-fabrica"
@@ -57,6 +59,9 @@ export type AppShellNavigationContext = {
   currentUser: AppShellCurrentUser;
   landingPath: string;
   sections: NavigationSectionDefinition[];
+  accessMode: AccessMode;
+  effectiveTenantId: string | null;
+  selectedTenant: TenantSummary | null;
 };
 
 export type NavigationAccessSummary = {
@@ -67,6 +72,7 @@ export type NavigationAccessSummary = {
 };
 
 export const appAreaPath: Record<PermissionGroup, string> = {
+  "administrador-master": "/administrador-master",
   administrador: "/administrador",
   "gestor-dados": "/gestor-dados",
   "gestor-fabrica": "/gestor-fabrica",
@@ -75,6 +81,7 @@ export const appAreaPath: Record<PermissionGroup, string> = {
 };
 
 export const roleProfilePath: Record<UserRole, string> = {
+  "administrador-master": "/administrador-master/perfil",
   administrador: "/administrador/perfil",
   "gestor-dados": "/gestor-dados/perfil",
   "gestor-fabrica": "/gestor-fabrica/perfil",
@@ -83,6 +90,7 @@ export const roleProfilePath: Record<UserRole, string> = {
 };
 
 export const permissionGroupOrder: PermissionGroup[] = [
+  "administrador-master",
   "administrador",
   "gestor-dados",
   "gestor-fabrica",
@@ -91,6 +99,7 @@ export const permissionGroupOrder: PermissionGroup[] = [
 ];
 
 export const permissionGroupLabels: Record<PermissionGroup, string> = {
+  "administrador-master": "Administrador Master",
   administrador: "Administracao",
   "gestor-dados": "Gestor de Dados",
   "gestor-fabrica": "Gestor de Fabrica",
@@ -107,6 +116,12 @@ export const permissionGroupMeta: Record<
     route: string;
   }
 > = {
+  "administrador-master": {
+    label: "Administrador Master",
+    subtitle: "SaaS, clientes e governança central",
+    badge: "Controle SaaS",
+    route: appAreaPath["administrador-master"],
+  },
   administrador: {
     label: "Administrador",
     subtitle: "Governança e visão total",
@@ -154,6 +169,27 @@ export const permissionLevelRank: Record<PermissionLevel, number> = {
 };
 
 export const permissionModules = [
+  {
+    id: "administrador-master.dashboard",
+    label: "Painel SaaS",
+    route: "/administrador-master",
+    group: "administrador-master",
+    icon: "layout-dashboard",
+    sidebarOrder: 10,
+    landingOrder: 10,
+    minimumNavLevel: "visualizar",
+  },
+  {
+    id: "administrador-master.clientes",
+    label: "Clientes",
+    route: "/administrador-master/clientes",
+    group: "administrador-master",
+    icon: "shield-check",
+    sidebarOrder: 20,
+    landingOrder: 20,
+    minimumNavLevel: "visualizar",
+    matchSubRoutes: true,
+  },
   {
     id: "administrador.dashboard",
     label: "Dashboard Executivo",
@@ -405,8 +441,13 @@ export function buildDefaultPermissions(role: UserRole): PermissionMap {
   switch (role) {
     case "administrador":
       permissionModules.forEach((module) => {
-        permissions[module.id] = "gerenciar";
+        if (module.group !== "administrador-master") {
+          permissions[module.id] = "gerenciar";
+        }
       });
+      break;
+    case "administrador-master":
+      applyGroupLevel(permissions, "administrador-master", "gerenciar");
       break;
     case "gestor-dados":
       applyGroupLevel(permissions, "gestor-dados", "gerenciar");
@@ -426,6 +467,26 @@ export function buildDefaultPermissions(role: UserRole): PermissionMap {
   }
 
   return permissions;
+}
+
+export function sanitizePermissionsForRole(
+  permissions: PermissionMap,
+  role: UserRole,
+): PermissionMap {
+  const nextPermissions = { ...permissions };
+
+  permissionModules.forEach((module) => {
+    if (role === "administrador-master" && module.group !== "administrador-master") {
+      nextPermissions[module.id] = "sem_acesso";
+      return;
+    }
+
+    if (role !== "administrador-master" && module.group === "administrador-master") {
+      nextPermissions[module.id] = "sem_acesso";
+    }
+  });
+
+  return nextPermissions;
 }
 
 export function hasPermissionLevel(
@@ -573,7 +634,8 @@ export function countManagementPermissions(permissions: PermissionMap) {
 export function hasAdministrativeAccess(permissions: PermissionMap) {
   return permissionModules.some(
     (module) =>
-      module.group === "administrador" && permissions[module.id] !== "sem_acesso",
+      (module.group === "administrador" || module.group === "administrador-master") &&
+      permissions[module.id] !== "sem_acesso",
   );
 }
 

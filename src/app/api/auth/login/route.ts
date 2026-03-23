@@ -5,6 +5,7 @@ import {
   findManagedUserByAuthUserId,
 } from "@/lib/supabase-data/admin-users";
 import { createSupabaseRequestClient } from "@/lib/supabase-request-client";
+import { MASTER_TENANT_COOKIE_NAME } from "@/lib/tenant";
 
 type LoginBody = {
   email?: string;
@@ -73,6 +74,12 @@ export async function POST(request: NextRequest) {
       name: managedUser.name,
     },
     redirectTo: resolveLandingPath(managedUser.permissions, managedUser.role),
+  });
+  response.cookies.set({
+    name: MASTER_TENANT_COOKIE_NAME,
+    value: "",
+    path: "/",
+    expires: new Date(0),
   });
 
   return applyResponseCookies(response);

@@ -7,7 +7,32 @@ import { buildDefaultPermissions } from "../../src/lib/permission-modules";
 
 export const initialUsers: ManagedUser[] = [
   {
+    id: "user-master",
+    tenantId: null,
+    name: "Administrador Master",
+    email: "master@danielaugusto.com",
+    role: "administrador-master",
+    status: "ativo",
+    updatedAt: "19/02/2026, 10:10",
+    permissions: buildDefaultPermissions("administrador-master"),
+    profile: buildProfile({
+      phone: "(85) 98888-0999",
+      address: {
+        zipCode: "60160-230",
+        street: "Av. Santos Dumont",
+        number: "2200",
+        complement: "Sala 900",
+        neighborhood: "Aldeota",
+        city: "Fortaleza",
+        state: "CE",
+        country: "Brasil",
+      },
+      passwordUpdatedAt: "19/02/2026, 08:10",
+    }),
+  },
+  {
     id: "user-admin",
+    tenantId: "tenant-seed",
     name: "Administrador Geral",
     email: "admin@danielaugusto.com",
     role: "administrador",
@@ -31,6 +56,7 @@ export const initialUsers: ManagedUser[] = [
   },
   {
     id: "user-dados",
+    tenantId: "tenant-seed",
     name: "Fernanda Engenharia",
     email: "engenharia@danielaugusto.com",
     role: "gestor-dados",
@@ -54,6 +80,7 @@ export const initialUsers: ManagedUser[] = [
   },
   {
     id: "user-fabrica",
+    tenantId: "tenant-seed",
     name: "Marcos Fabrica",
     email: "fabrica@danielaugusto.com",
     role: "gestor-fabrica",
@@ -77,6 +104,7 @@ export const initialUsers: ManagedUser[] = [
   },
   {
     id: "user-chao",
+    tenantId: "tenant-seed",
     name: "Equipe Chao",
     email: "chao@danielaugusto.com",
     role: "chao-fabrica",
@@ -100,6 +128,7 @@ export const initialUsers: ManagedUser[] = [
   },
   {
     id: "user-loja",
+    tenantId: "tenant-seed",
     name: "Rommel Filho",
     email: "loja@danielaugusto.com",
     role: "loja",

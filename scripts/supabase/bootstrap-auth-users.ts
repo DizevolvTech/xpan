@@ -53,7 +53,10 @@ async function listAllAuthUsers() {
     }
 
     users.push(...result.data.users.map((user) => ({ id: user.id, email: user.email })));
-    totalPages = result.data.total_pages;
+    totalPages =
+      "total_pages" in result.data && typeof result.data.total_pages === "number"
+        ? result.data.total_pages
+        : page;
     page += 1;
   }
 
@@ -64,7 +67,7 @@ async function bootstrapAuthUsers() {
   const supabase = createSupabaseAdminClient();
   const profilesResult = await supabase
     .from("profiles")
-    .select("id, legacy_id, email, auth_user_id, name, role");
+    .select("id, legacy_id, email, auth_user_id, name, role, tenant_id");
 
   if (profilesResult.error) {
     throw new Error(`Failed to load profiles: ${profilesResult.error.message}`);
@@ -120,6 +123,10 @@ async function bootstrapAuthUsers() {
           legacyId: profile.legacy_id ?? profile.id,
           role,
           name,
+          tenantId: profile.tenant_id,
+        },
+        app_metadata: {
+          role,
         },
       });
 
@@ -138,6 +145,10 @@ async function bootstrapAuthUsers() {
           legacyId: profile.legacy_id ?? profile.id,
           role,
           name,
+          tenantId: profile.tenant_id,
+        },
+        app_metadata: {
+          role,
         },
       });
 

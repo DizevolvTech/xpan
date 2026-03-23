@@ -6,7 +6,13 @@ type CurrentProfile = {
   id: string;
   name: string;
   email: string;
-  role: "administrador" | "gestor-dados" | "gestor-fabrica" | "chao-fabrica" | "loja";
+  role:
+    | "administrador-master"
+    | "administrador"
+    | "gestor-dados"
+    | "gestor-fabrica"
+    | "chao-fabrica"
+    | "loja";
   avatarUrl: string;
   phone: string;
   address: {

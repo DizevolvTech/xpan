@@ -5,6 +5,7 @@ import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { StoreInput } from "@/lib/supabase-data/master-data-admin";
 import { updateStore } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
   params: Promise<{
@@ -22,6 +23,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     contextLabel: "PATCH /api/master-data/stores/[storeId]",
     permission: "gestor-dados.lojas",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -39,9 +42,12 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     await updateStore(storeId, payload, { supabase });
-    invalidateMasterDataCaches();
+    invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update store";

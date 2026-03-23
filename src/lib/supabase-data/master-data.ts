@@ -2,7 +2,12 @@ import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getCachedServerData } from "@/lib/server-data-cache";
-import { assertSupabaseResult, type SupabaseDataClient } from "@/lib/supabase-data/common";
+import {
+  assertSupabaseResult,
+  assertTenantId,
+  buildTenantCacheKey,
+  type SupabaseDataClient,
+} from "@/lib/supabase-data/common";
 import type {
   IngredientCompositionItem,
   IngredientProfileMirror,
@@ -31,6 +36,7 @@ export interface MasterDataSnapshot {
 type MasterDataSnapshotOptions = {
   supabase?: SupabaseDataClient;
   includeProfileNames?: boolean;
+  tenantId?: string | null;
 };
 
 const MASTER_DATA_CACHE_TTL_MS = 15_000;
@@ -80,6 +86,7 @@ async function loadMasterDataSnapshot(
 ): Promise<MasterDataSnapshot> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const includeProfileNames = options.includeProfileNames ?? true;
+  const tenantId = assertTenantId(options.tenantId);
 
   const [
     operationalSettingsResult,
@@ -94,22 +101,41 @@ async function loadMasterDataSnapshot(
     schedulesResult,
     scheduleSnapshotsResult,
   ] = await Promise.all([
-    supabase.from("operational_settings").select("*").order("created_at", { ascending: true }).limit(1).maybeSingle(),
-    supabase.from("categories").select("*").order("code", { ascending: true }),
-    supabase.from("subcategories").select("*").order("code", { ascending: true }),
-    supabase.from("ingredients").select("*").order("code", { ascending: true }),
-    supabase.from("ingredient_components").select("*").order("sort_order", { ascending: true }),
-    supabase.from("stores").select("*").order("code", { ascending: true }),
-    supabase.from("products").select("*").order("code", { ascending: true }),
-    supabase.from("product_recipe_items").select("*").order("sort_order", { ascending: true }),
+    supabase
+      .from("operational_settings")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase.from("categories").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+    supabase.from("subcategories").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+    supabase.from("ingredients").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+    supabase
+      .from("ingredient_components")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("sort_order", { ascending: true }),
+    supabase.from("stores").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+    supabase.from("products").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+    supabase
+      .from("product_recipe_items")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("sort_order", { ascending: true }),
     includeProfileNames
       ? supabase
           .from("profiles")
           .select("id, legacy_id, name, role, status")
+          .eq("tenant_id", tenantId)
           .order("name", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("schedule_lines").select("*").order("code", { ascending: true }),
-    supabase.from("schedule_line_item_snapshots").select("*").order("created_at", { ascending: true }),
+    supabase.from("schedule_lines").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+    supabase
+      .from("schedule_line_item_snapshots")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: true }),
   ]);
 
   const settingsRow = assertSupabaseResult(
@@ -350,7 +376,12 @@ export async function getMasterDataSnapshot(
   options: MasterDataSnapshotOptions = {},
 ): Promise<MasterDataSnapshot> {
   const includeProfileNames = options.includeProfileNames ?? true;
-  const cacheKey = `master-data:${includeProfileNames ? "with-profiles" : "without-profiles"}`;
+  const tenantId = assertTenantId(options.tenantId);
+  const cacheKey = buildTenantCacheKey(
+    tenantId,
+    "master-data",
+    includeProfileNames ? "with-profiles" : "without-profiles",
+  );
 
   return getCachedServerData(cacheKey, MASTER_DATA_CACHE_TTL_MS, () => loadMasterDataSnapshot(options));
 }

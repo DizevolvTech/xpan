@@ -8,7 +8,7 @@ import {
   type AppShellNavigationContext,
   type PermissionGroup,
 } from "@/lib/permission-modules";
-import { resolveCurrentManagedUser } from "@/lib/server-session";
+import { resolveServerAccess } from "@/lib/server-session";
 
 export type ResolvedAppShellContext = AppShellNavigationContext & {
   currentPath: string;
@@ -27,9 +27,9 @@ function buildCurrentPath(fallbackPath: string, pathnameHeader: string | null) {
 export async function getAppShellContext(
   areaGroup: PermissionGroup,
 ): Promise<ResolvedAppShellContext | null> {
-  const user = await resolveCurrentManagedUser();
+  const accessContext = await resolveServerAccess();
 
-  if (!user) {
+  if (!accessContext) {
     return null;
   }
 
@@ -38,23 +38,30 @@ export async function getAppShellContext(
     permissionGroupMeta[areaGroup].route,
     headerStore.get("x-app-pathname"),
   );
+  const effectivePermissions =
+    areaGroup === "administrador-master"
+      ? accessContext.user.permissions
+      : accessContext.permissions;
   const access = resolveAreaAccess({
-    permissions: user.permissions,
-    baseRole: user.role,
+    permissions: effectivePermissions,
+    baseRole: accessContext.user.role,
     areaGroup,
     currentPath,
   });
 
   return {
     currentUser: {
-      name: user.name,
-      email: user.email,
-      baseRole: user.role,
-      baseRoleLabel: permissionGroupMeta[user.role].label,
+      name: accessContext.user.name,
+      email: accessContext.user.email,
+      baseRole: accessContext.user.role,
+      baseRoleLabel: permissionGroupMeta[accessContext.user.role].label,
       profilePath: access.profilePath,
     },
     landingPath: access.landingPath,
     sections: access.sections,
+    accessMode: accessContext.accessMode,
+    effectiveTenantId: accessContext.effectiveTenantId,
+    selectedTenant: accessContext.selectedTenant,
     currentPath: access.currentPath,
     canAccessCurrentPath: access.canAccessCurrentPath,
     accessDeniedReason: access.accessDeniedReason,

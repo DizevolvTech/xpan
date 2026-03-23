@@ -14,7 +14,14 @@ export type Database = {
           id: string;
           legacy_id: string | null;
           auth_user_id: string | null;
-          role: "administrador" | "gestor-dados" | "gestor-fabrica" | "chao-fabrica" | "loja";
+          tenant_id: string | null;
+          role:
+            | "administrador-master"
+            | "administrador"
+            | "gestor-dados"
+            | "gestor-fabrica"
+            | "chao-fabrica"
+            | "loja";
           status: "ativo" | "inativo";
           name: string;
           email: string;
@@ -36,7 +43,14 @@ export type Database = {
           id?: string;
           legacy_id?: string | null;
           auth_user_id?: string | null;
-          role: "administrador" | "gestor-dados" | "gestor-fabrica" | "chao-fabrica" | "loja";
+          tenant_id?: string | null;
+          role:
+            | "administrador-master"
+            | "administrador"
+            | "gestor-dados"
+            | "gestor-fabrica"
+            | "chao-fabrica"
+            | "loja";
           status?: "ativo" | "inativo";
           name: string;
           email: string;
@@ -56,13 +70,40 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
       };
+      tenants: {
+        Row: {
+          id: string;
+          legacy_id: string | null;
+          slug: string;
+          name: string;
+          status: "ativo" | "inativo";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          legacy_id?: string | null;
+          slug: string;
+          name: string;
+          status?: "ativo" | "inativo";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["tenants"]["Insert"]>;
+      };
       permission_modules: {
         Row: {
           id: string;
           module_key: string;
           label: string;
           route: string;
-          group_key: "administrador" | "gestor-dados" | "gestor-fabrica" | "chao-fabrica" | "loja";
+          group_key:
+            | "administrador-master"
+            | "administrador"
+            | "gestor-dados"
+            | "gestor-fabrica"
+            | "chao-fabrica"
+            | "loja";
           created_at: string;
         };
         Insert: {
@@ -70,7 +111,13 @@ export type Database = {
           module_key: string;
           label: string;
           route: string;
-          group_key: "administrador" | "gestor-dados" | "gestor-fabrica" | "chao-fabrica" | "loja";
+          group_key:
+            | "administrador-master"
+            | "administrador"
+            | "gestor-dados"
+            | "gestor-fabrica"
+            | "chao-fabrica"
+            | "loja";
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["permission_modules"]["Insert"]>;
@@ -78,6 +125,7 @@ export type Database = {
       user_permissions: {
         Row: {
           id: string;
+          tenant_id: string | null;
           profile_id: string;
           module_key: string;
           access_level: "sem_acesso" | "visualizar" | "operar" | "gerenciar";
@@ -86,6 +134,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id?: string | null;
           profile_id: string;
           module_key: string;
           access_level: "sem_acesso" | "visualizar" | "operar" | "gerenciar";
@@ -97,12 +146,14 @@ export type Database = {
       profile_store_access: {
         Row: {
           id: string;
+          tenant_id: string;
           profile_id: string;
           store_id: string;
           created_at: string;
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           profile_id: string;
           store_id: string;
           created_at?: string;
@@ -112,6 +163,7 @@ export type Database = {
       operational_settings: {
         Row: {
           id: string;
+          tenant_id: string;
           order_cutoff_time: string;
           expedition_lead_days: number;
           created_at: string;
@@ -119,6 +171,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           order_cutoff_time: string;
           expedition_lead_days: number;
           created_at?: string;
@@ -130,6 +183,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           name: string;
           responsible: string;
@@ -148,6 +202,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           name: string;
           responsible: string;
@@ -169,6 +224,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           external_code: string | null;
           name: string;
@@ -180,6 +236,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           external_code?: string | null;
           name: string;
@@ -194,6 +251,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           external_code: string | null;
           name: string;
@@ -208,6 +266,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           external_code?: string | null;
           name: string;
@@ -225,6 +284,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           name: string;
           subcategory_id: string;
@@ -241,6 +301,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           name: string;
           subcategory_id: string;
@@ -259,6 +320,7 @@ export type Database = {
       schedule_line_item_snapshots: {
         Row: {
           id: string;
+          tenant_id: string;
           schedule_line_id: string;
           product_id: string;
           minimum_production: number;
@@ -267,6 +329,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           schedule_line_id: string;
           product_id: string;
           minimum_production: number;
@@ -279,6 +342,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           name: string;
           type: "puro" | "misturado";
@@ -292,6 +356,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           name: string;
           type: "puro" | "misturado";
@@ -307,6 +372,7 @@ export type Database = {
       ingredient_components: {
         Row: {
           id: string;
+          tenant_id: string;
           ingredient_id: string;
           ingredient_reference_id: string | null;
           product_reference_id: string | null;
@@ -320,6 +386,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           ingredient_id: string;
           ingredient_reference_id?: string | null;
           product_reference_id?: string | null;
@@ -337,6 +404,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           external_code: string | null;
           name: string;
@@ -373,6 +441,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           external_code?: string | null;
           name: string;
@@ -411,6 +480,7 @@ export type Database = {
       product_recipe_items: {
         Row: {
           id: string;
+          tenant_id: string;
           product_id: string;
           source_type: "ingrediente" | "produto";
           ingredient_source_id: string | null;
@@ -424,6 +494,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           product_id: string;
           source_type: "ingrediente" | "produto";
           ingredient_source_id?: string | null;
@@ -441,6 +512,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           store_id: string;
           created_by_profile_id: string | null;
@@ -461,6 +533,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           store_id: string;
           created_by_profile_id?: string | null;
@@ -484,6 +557,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           order_id: string;
           product_id: string;
           product_code_snapshot: string;
@@ -501,6 +575,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           order_id: string;
           product_id: string;
           product_code_snapshot: string;
@@ -520,6 +595,7 @@ export type Database = {
       workflow_order_releases: {
         Row: {
           id: string;
+          tenant_id: string;
           order_id: string;
           released_at: string;
           released_by_profile_id: string | null;
@@ -528,6 +604,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           order_id: string;
           released_at?: string;
           released_by_profile_id?: string | null;
@@ -539,6 +616,7 @@ export type Database = {
       workflow_production_items: {
         Row: {
           id: string;
+          tenant_id: string;
           production_item_key: string;
           status: "nao_iniciado" | "em_preparacao" | "em_producao" | "em_forno" | "embalando" | "concluido";
           progress: number;
@@ -548,6 +626,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           production_item_key: string;
           status?: "nao_iniciado" | "em_preparacao" | "em_producao" | "em_forno" | "embalando" | "concluido";
           progress?: number;
@@ -560,6 +639,7 @@ export type Database = {
       delivery_executions: {
         Row: {
           id: string;
+          tenant_id: string;
           order_id: string;
           status: "aguardando_expedicao" | "pronto_coleta" | "em_rota" | "no_destino" | "entregue" | "tentativa_falha";
           checklist_state: Json;
@@ -570,6 +650,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          tenant_id: string;
           order_id: string;
           status?: "aguardando_expedicao" | "pronto_coleta" | "em_rota" | "no_destino" | "entregue" | "tentativa_falha";
           checklist_state?: Json;
@@ -584,6 +665,7 @@ export type Database = {
         Row: {
           id: string;
           legacy_id: string | null;
+          tenant_id: string;
           code: string;
           order_id: string;
           order_item_id: string | null;
@@ -604,6 +686,7 @@ export type Database = {
         Insert: {
           id?: string;
           legacy_id?: string | null;
+          tenant_id: string;
           code: string;
           order_id: string;
           order_item_id?: string | null;

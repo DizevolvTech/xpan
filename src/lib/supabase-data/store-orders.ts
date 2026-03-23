@@ -18,6 +18,7 @@ import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 export interface CreateStoreOrderInput {
   storeId: string;
   createdByProfileId?: string | null;
+  tenantId?: string | null;
   orderedAt?: string;
   note?: string;
   items: Array<{
@@ -29,6 +30,7 @@ export interface CreateStoreOrderInput {
 
 export interface UpdateStoreOrderInput {
   note?: string;
+  tenantId?: string | null;
   items: Array<{
     productId: string;
     quantity: number;
@@ -141,6 +143,7 @@ async function validateStoreOrderItems(
   options: {
     storeId: string;
     orderedAt: string;
+    tenantId: string;
     supabase: SupabaseDataClient;
   },
 ) {
@@ -152,6 +155,7 @@ async function validateStoreOrderItems(
   const snapshot = await getMasterDataSnapshot({
     supabase: options.supabase,
     includeProfileNames: false,
+    tenantId: options.tenantId,
   });
   const store = snapshot.stores.find((row) => row.id === options.storeId);
 
@@ -304,6 +308,7 @@ export async function buildFactoryInputFromDb(
   options: {
     supabase?: SupabaseDataClient;
     includeProfileNames?: boolean;
+    tenantId?: string | null;
   } = {},
 ): Promise<FactoryPlanningInput> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
@@ -311,6 +316,7 @@ export async function buildFactoryInputFromDb(
     getMasterDataSnapshot({
       supabase,
       includeProfileNames: options.includeProfileNames,
+      tenantId: options.tenantId,
     }),
     listFactoryStoreOrders(supabase),
   ]);
@@ -340,10 +346,17 @@ export async function createStoreOrder(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<{ orderId: string; code: string }> {
   const orderedAt = input.orderedAt ?? new Date().toISOString();
-  const createdByProfileDatabaseId = await resolveProfileDatabaseId(supabase, input.createdByProfileId ?? null);
+  const createdByProfileDatabaseId = await resolveProfileDatabaseId(
+    supabase,
+    input.createdByProfileId ?? null,
+    {
+      tenantId: input.tenantId,
+    },
+  );
   const { snapshot, store, orderWindow, validatedItems } = await validateStoreOrderItems(input.items, {
     storeId: input.storeId,
     orderedAt,
+    tenantId: input.tenantId ?? "",
     supabase,
   });
   const storeDatabaseId = await resolveStoreDatabaseId(input.storeId, supabase);
@@ -406,10 +419,17 @@ export async function updateStoreOrder(
   const storeRowsResult = await supabase.from("stores").select("id, legacy_id");
   const storeRows = assertSupabaseResult(storeRowsResult, "Failed to resolve store for order update");
   const storeLegacyId = storeRows.find((row) => row.id === orderRow.store_id)?.legacy_id ?? orderRow.store_id;
-  const updatedByProfileDatabaseId = await resolveProfileDatabaseId(supabase, input.updatedByProfileId ?? null);
+  const updatedByProfileDatabaseId = await resolveProfileDatabaseId(
+    supabase,
+    input.updatedByProfileId ?? null,
+    {
+      tenantId: input.tenantId,
+    },
+  );
   const { validatedItems } = await validateStoreOrderItems(input.items, {
     storeId: storeLegacyId,
     orderedAt: orderRow.ordered_at,
+    tenantId: input.tenantId ?? "",
     supabase,
   });
 

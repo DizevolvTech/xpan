@@ -5,6 +5,7 @@ import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { ProductInput } from "@/lib/supabase-data/master-data-admin";
 import { updateProduct } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
   params: Promise<{
@@ -17,6 +18,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     contextLabel: "PATCH /api/master-data/products/[productId]",
     permission: "gestor-dados.produtos",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -34,12 +37,15 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     await updateProduct(productId, payload, {
       supabase,
       actingProfileId: authorization.user.id,
     });
-    invalidateMasterDataCaches();
+    invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

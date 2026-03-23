@@ -5,6 +5,7 @@ import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { StoreInput } from "@/lib/supabase-data/master-data-admin";
 import { createStore } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 function isClientValidationError(message: string) {
   const normalized = message.toLowerCase();
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
     contextLabel: "POST /api/master-data/stores",
     permission: "gestor-dados.lojas",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -32,9 +35,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     await createStore(payload, { supabase });
-    invalidateMasterDataCaches();
+    invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create store";

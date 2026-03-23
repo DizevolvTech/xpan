@@ -33,6 +33,10 @@ test("store scope resolves preferred, persisted and fallback store ids", () => {
 test("store scope storage key is stable regardless of store ordering", () => {
   assert.equal(
     buildStoreScopeStorageKey(stores),
-    "xpan.store-scope.store-a.store-b.store-c",
+    "xpan.store-scope.global.store-a.store-b.store-c",
+  );
+  assert.equal(
+    buildStoreScopeStorageKey(stores, "tenant-123"),
+    "xpan.store-scope.tenant-123.store-a.store-b.store-c",
   );
 });

@@ -7,6 +7,7 @@ import {
   sortItemsByTemporalValue,
   type TemporalSortOrder,
 } from "@/lib/temporal-table-sort";
+import { readClientAccessContext } from "@/lib/client-access-context";
 import { cn, formatKgValue } from "@/lib/utils";
 import { LucideIcon, Eye, Pencil, Trash2, Printer, Plus, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ interface Action<T> {
   label: string;
   onClick: (item: T) => void;
   variant?: "default" | "destructive" | "outline";
+  allowInReadOnly?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -51,7 +53,14 @@ interface DataTableProps<T> {
     label: string;
     onClick: () => void;
     icon?: LucideIcon;
+    allowInReadOnly?: boolean;
   };
+}
+
+function blocksReadOnlyAction(label: string) {
+  return /editar|excluir|inativ|ativar|delegar|perfil|senha|criar|novo|cadastrar|liberar|cancelar|adicionar|salvar|confirmar/i.test(
+    label,
+  );
 }
 
 function formatDefaultCellValue(key: string, value: unknown) {
@@ -89,6 +98,7 @@ export function DataTable<T extends object>({
   tableClassName,
   emptyStateAction,
 }: DataTableProps<T>) {
+  const isReadOnlyTenantView = readClientAccessContext().accessMode === "read-only-tenant";
   const actionIcons: Record<string, LucideIcon> = {
     view: Eye,
     edit: Pencil,
@@ -138,7 +148,14 @@ export function DataTable<T extends object>({
       <div className="flex h-44 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-strong/35 bg-card px-6 text-center shadow-[var(--shadow-soft)]">
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         {emptyStateAction && (
-          <Button type="button" variant="outline" size="sm" onClick={emptyStateAction.onClick}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={emptyStateAction.onClick}
+            disabled={isReadOnlyTenantView && !emptyStateAction.allowInReadOnly}
+            allowInReadOnly={emptyStateAction.allowInReadOnly}
+          >
             {emptyStateAction.icon && <emptyStateAction.icon className="mr-1.5 size-4" />}
             {emptyStateAction.label}
           </Button>
@@ -252,6 +269,10 @@ export function DataTable<T extends object>({
                       {actions.map((action, actionIndex) => {
                         const Icon = actionIcons[action.icon];
                         const isDestructive = action.variant === "destructive";
+                        const isBlockedInReadOnly =
+                          isReadOnlyTenantView &&
+                          !action.allowInReadOnly &&
+                          blocksReadOnlyAction(action.label);
                         return (
                           <Button
                             key={actionIndex}
@@ -264,8 +285,13 @@ export function DataTable<T extends object>({
                                 ? "text-danger-foreground/80 hover:bg-danger/40 hover:text-danger-foreground"
                                 : "text-muted-foreground hover:text-foreground",
                             )}
+                            disabled={isBlockedInReadOnly}
+                            allowInReadOnly={action.allowInReadOnly}
                             onClick={(event) => {
                               event.stopPropagation();
+                              if (isBlockedInReadOnly) {
+                                return;
+                              }
                               action.onClick(item);
                             }}
                             title={action.label}

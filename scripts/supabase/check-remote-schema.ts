@@ -3,6 +3,7 @@ import { loadEnvConfig } from "@next/env";
 loadEnvConfig(process.cwd());
 
 const expectedTables = [
+  "tenants",
   "profiles",
   "permission_modules",
   "user_permissions",
@@ -23,6 +24,9 @@ const expectedTables = [
   "workflow_production_items",
   "delivery_executions",
   "store_occurrences",
+  "store_order_events",
+  "store_occurrence_events",
+  "business_code_sequences",
 ] as const;
 
 async function main() {

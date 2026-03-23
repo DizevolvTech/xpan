@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { readClientAccessContext } from "@/lib/client-access-context";
 import {
   buildStoreScopeStorageKey,
   resolveActiveStoreId,
@@ -16,13 +17,14 @@ export function useStoreScope<TStore extends StoreLike>(
   stores: TStore[],
   allowedStoreIds?: string[],
 ) {
+  const tenantId = readClientAccessContext().tenantId;
   const availableStores = useMemo(
     () => resolveAvailableStores(stores, allowedStoreIds),
     [allowedStoreIds, stores],
   );
   const storageKey = useMemo(
-    () => buildStoreScopeStorageKey(availableStores),
-    [availableStores],
+    () => buildStoreScopeStorageKey(availableStores, tenantId),
+    [availableStores, tenantId],
   );
   const [preferredStoreId, setPreferredStoreIdState] = useState("");
   const activeStoreId = useMemo(() => {

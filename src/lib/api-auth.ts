@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
-import type { ManagedUser } from "@/lib/admin-users";
 import { resolveAuthorizationDecision } from "@/lib/authorization-decision";
 import { logApiAuthorizationFailure } from "@/lib/access-audit";
-import { resolveCurrentManagedUser } from "@/lib/server-session";
+import {
+  resolveServerAccess,
+  type ResolvedServerAccess,
+} from "@/lib/server-session";
 import { hasStoreAccess, resolveAllowedStoreIds } from "@/lib/store-access";
 import type { PermissionLevel, PermissionModuleId } from "@/lib/permission-modules";
+import { canWriteInAccessMode } from "@/lib/tenant";
 
 type AuthorizeApiOptions = {
   permission?: PermissionModuleId;
@@ -13,6 +16,8 @@ type AuthorizeApiOptions = {
   minimumLevel?: PermissionLevel;
   contextLabel?: string;
   includeStoreScope?: boolean;
+  requireTenantContext?: boolean;
+  requireWritableTenant?: boolean;
 };
 
 function buildUnauthorizedResponse() {
@@ -23,13 +28,35 @@ function buildForbiddenResponse(message = "Você não tem permissão para esta o
   return NextResponse.json({ message }, { status: 403 });
 }
 
+function buildMissingTenantContextResponse() {
+  return NextResponse.json(
+    { message: "Selecione um cliente no painel master para acessar este ecossistema." },
+    { status: 403 },
+  );
+}
+
+function buildReadOnlyTenantResponse() {
+  return NextResponse.json(
+    { message: "O cliente selecionado está aberto em modo leitura." },
+    { status: 403 },
+  );
+}
+
 export async function authorizeApiRequest(
   options: AuthorizeApiOptions = {},
-): Promise<{ user: ManagedUser } | { response: NextResponse }> {
-  const user = await resolveCurrentManagedUser({
+): Promise<ResolvedServerAccess | { response: NextResponse }> {
+  const access = await resolveServerAccess({
     includeStoreAccess: options.includeStoreScope ?? false,
   });
-  const decision = resolveAuthorizationDecision(user, options);
+  const decision = resolveAuthorizationDecision(
+    access
+      ? {
+          ...access.user,
+          permissions: access.permissions,
+        }
+      : null,
+    options,
+  );
 
   if (decision.kind === "unauthorized") {
     logApiAuthorizationFailure({
@@ -61,15 +88,34 @@ export async function authorizeApiRequest(
     };
   }
 
-  return { user: decision.user };
+  if (options.requireTenantContext && !access?.effectiveTenantId) {
+    return {
+      response: buildMissingTenantContextResponse(),
+    };
+  }
+
+  if (options.requireWritableTenant && access && !canWriteInAccessMode(access.accessMode)) {
+    return {
+      response: buildReadOnlyTenantResponse(),
+    };
+  }
+
+  return access as ResolvedServerAccess;
 }
 
-export function getAllowedStoreIds(user: ManagedUser): string[] | null {
-  return resolveAllowedStoreIds(user.storeIds);
+export function getAllowedStoreIds(access: Pick<ResolvedServerAccess, "user" | "accessMode">): string[] | null {
+  if (access.accessMode !== "tenant") {
+    return null;
+  }
+
+  return resolveAllowedStoreIds(access.user.storeIds);
 }
 
-export function canAccessStore(user: ManagedUser, storeId: string) {
-  return hasStoreAccess(storeId, getAllowedStoreIds(user));
+export function canAccessStore(
+  access: Pick<ResolvedServerAccess, "user" | "accessMode">,
+  storeId: string,
+) {
+  return hasStoreAccess(storeId, getAllowedStoreIds(access));
 }
 
 export function buildStoreScopeResponse() {

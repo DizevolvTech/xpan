@@ -28,6 +28,7 @@ export type ManagedUserProfile = {
 
 export type ManagedUser = {
   id: string;
+  tenantId: string | null;
   name: string;
   email: string;
   role: UserRole;
@@ -65,6 +66,7 @@ export type ManagedUserProfileInput = {
 };
 
 export const roleLabels: Record<UserRole, string> = {
+  "administrador-master": "Administrador Master",
   administrador: "Administrador",
   "gestor-dados": "Gestor de Dados",
   "gestor-fabrica": "Gestor de Fábrica",

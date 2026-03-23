@@ -1,5 +1,12 @@
 export const demoCredentialPresets = [
   {
+    legacyId: "user-master",
+    role: "administrador-master",
+    name: "Administrador Master",
+    email: "master@danielaugusto.com",
+    password: "Master@123",
+  },
+  {
     legacyId: "user-admin",
     role: "administrador",
     name: "Administrador Geral",

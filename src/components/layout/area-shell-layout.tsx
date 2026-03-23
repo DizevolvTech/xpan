@@ -44,6 +44,9 @@ export async function AreaShellLayout({
         currentUser: context.currentUser,
         landingPath: context.landingPath,
         sections: context.sections,
+        accessMode: context.accessMode,
+        effectiveTenantId: context.effectiveTenantId,
+        selectedTenant: context.selectedTenant,
       }}
     >
       {children}

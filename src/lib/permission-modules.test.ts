@@ -11,6 +11,7 @@ import {
   getPermissionModule,
   hasAnyNonStoreAccess,
   resolveLandingPath,
+  sanitizePermissionsForRole,
 } from "@/lib/permission-modules";
 
 test("resolveLandingPath uses the first allowed capability instead of the base role", () => {
@@ -70,4 +71,26 @@ test("describeNavigationAccess falls back to the profile page when no module is 
   assert.equal(summary.landingPath, "/gestor-dados/perfil");
   assert.equal(summary.visibleModuleCount, 0);
   assert.equal(summary.visibleGroupCount, 0);
+});
+
+test("tenant administrators do not inherit master modules by default", () => {
+  const permissions = buildDefaultPermissions("administrador");
+
+  assert.equal(permissions["administrador.dashboard"], "gerenciar");
+  assert.equal(permissions["administrador-master.dashboard"], "sem_acesso");
+  assert.equal(permissions["administrador-master.clientes"], "sem_acesso");
+});
+
+test("sanitizePermissionsForRole strips modules that do not belong to the base role model", () => {
+  const permissions = buildEmptyPermissions();
+  permissions["administrador-master.dashboard"] = "gerenciar";
+  permissions["administrador.dashboard"] = "gerenciar";
+
+  const tenantAdminPermissions = sanitizePermissionsForRole(permissions, "administrador");
+  const masterPermissions = sanitizePermissionsForRole(permissions, "administrador-master");
+
+  assert.equal(tenantAdminPermissions["administrador-master.dashboard"], "sem_acesso");
+  assert.equal(tenantAdminPermissions["administrador.dashboard"], "gerenciar");
+  assert.equal(masterPermissions["administrador-master.dashboard"], "gerenciar");
+  assert.equal(masterPermissions["administrador.dashboard"], "sem_acesso");
 });

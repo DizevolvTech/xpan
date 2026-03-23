@@ -6,6 +6,7 @@ import {
   type DeliveryChecklistState,
   type DeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
+import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 
 export type { DeliveryChecklistState, DeliveryExecutionStatus } from "@/lib/delivery-workflow";
 
@@ -23,7 +24,6 @@ type DeliveryExecutionCacheEntry = {
 };
 
 const DELIVERY_EXECUTION_CLIENT_CACHE_TTL_MS = 10_000;
-const DELIVERY_EXECUTION_CACHE_KEY = "all";
 const deliveryExecutionCache = new Map<string, DeliveryExecutionCacheEntry>();
 const deliveryExecutionInflight = new Map<string, Promise<DeliveryExecutionState>>();
 
@@ -31,29 +31,34 @@ function getFallbackStatus(): DeliveryExecutionStatus {
   return "aguardando_expedicao";
 }
 
-function getDeliveryExecutionCacheEntry() {
-  return deliveryExecutionCache.get(DELIVERY_EXECUTION_CACHE_KEY) ?? null;
+function getDeliveryExecutionCacheKey() {
+  return buildClientTenantCacheKey("delivery-executions", "all");
+}
+
+function getDeliveryExecutionCacheEntry(cacheKey = getDeliveryExecutionCacheKey()) {
+  return deliveryExecutionCache.get(cacheKey) ?? null;
 }
 
 function isDeliveryExecutionCacheFresh(entry: DeliveryExecutionCacheEntry) {
   return Date.now() - entry.fetchedAt < DELIVERY_EXECUTION_CLIENT_CACHE_TTL_MS;
 }
 
-function setDeliveryExecutionCache(data: DeliveryExecutionState) {
-  deliveryExecutionCache.set(DELIVERY_EXECUTION_CACHE_KEY, {
+function setDeliveryExecutionCache(data: DeliveryExecutionState, cacheKey = getDeliveryExecutionCacheKey()) {
+  deliveryExecutionCache.set(cacheKey, {
     data,
     fetchedAt: Date.now(),
   });
 }
 
 async function fetchDeliveryExecutionState(forceRefresh: boolean) {
-  const cachedEntry = getDeliveryExecutionCacheEntry();
+  const cacheKey = getDeliveryExecutionCacheKey();
+  const cachedEntry = getDeliveryExecutionCacheEntry(cacheKey);
 
   if (!forceRefresh && cachedEntry && isDeliveryExecutionCacheFresh(cachedEntry)) {
     return cachedEntry.data;
   }
 
-  const inflightRequest = deliveryExecutionInflight.get(DELIVERY_EXECUTION_CACHE_KEY);
+  const inflightRequest = deliveryExecutionInflight.get(cacheKey);
   if (inflightRequest) {
     return inflightRequest;
   }
@@ -65,14 +70,14 @@ async function fetchDeliveryExecutionState(forceRefresh: boolean) {
       }
 
       const payload = (await response.json()) as DeliveryExecutionState;
-      setDeliveryExecutionCache(payload);
+      setDeliveryExecutionCache(payload, cacheKey);
       return payload;
     })
     .finally(() => {
-      deliveryExecutionInflight.delete(DELIVERY_EXECUTION_CACHE_KEY);
+      deliveryExecutionInflight.delete(cacheKey);
     });
 
-  deliveryExecutionInflight.set(DELIVERY_EXECUTION_CACHE_KEY, request);
+  deliveryExecutionInflight.set(cacheKey, request);
   return request;
 }
 

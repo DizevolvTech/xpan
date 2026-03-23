@@ -14,13 +14,16 @@ import { buildTemporaryPassword } from "@/lib/auth-credentials";
 import type { Database } from "@/lib/database.types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
+  assertTenantId,
   assertSupabaseResult,
   isUuid,
+  scopeTenantQuery,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
 import {
   buildDefaultPermissions,
   permissionModules,
+  sanitizePermissionsForRole,
   type PermissionMap,
   type PermissionModuleId,
 } from "@/lib/permission-modules";
@@ -36,6 +39,7 @@ type AuthUserSummary = {
 
 type QueryOptions = {
   supabase?: SupabaseDataClient;
+  tenantId?: string | null;
 };
 
 type ManagedUserLookupOptions = QueryOptions & {
@@ -57,7 +61,7 @@ function buildPermissionMap(
     permissions[row.module_key as PermissionModuleId] = row.access_level;
   });
 
-  return permissions;
+  return sanitizePermissionsForRole(permissions, role);
 }
 
 function mapManagedUser(
@@ -69,6 +73,7 @@ function mapManagedUser(
 
   return {
     id: profile.legacy_id ?? profile.id,
+    tenantId: profile.tenant_id,
     name: profile.name,
     email: profile.email,
     role: profile.role,
@@ -92,6 +97,16 @@ function mapManagedUser(
     }),
     storeIds: normalizedStoreIds,
   };
+}
+
+function assertManagedUserRoleForTenant(role: ManagedUser["role"], tenantId?: string | null) {
+  if (role === "administrador-master" && tenantId) {
+    throw new Error("Usuários master não podem ser vinculados a um tenant.");
+  }
+
+  if (role !== "administrador-master" && !tenantId) {
+    throw new Error("Tenant context is required for tenant users.");
+  }
 }
 
 async function findAuthUserByEmail(email: string): Promise<AuthUserSummary | null> {
@@ -129,7 +144,7 @@ async function findAuthUserByEmail(email: string): Promise<AuthUserSummary | nul
 }
 
 async function syncProfileAuthUser(
-  profile: Pick<ProfileRow, "id" | "legacy_id" | "auth_user_id" | "email" | "name" | "role">,
+  profile: Pick<ProfileRow, "id" | "legacy_id" | "auth_user_id" | "email" | "name" | "role" | "tenant_id">,
   overrides?: {
     email?: string;
     name?: string;
@@ -162,6 +177,7 @@ async function syncProfileAuthUser(
         legacyId: profile.legacy_id ?? profile.id,
         role,
         name,
+        tenantId: profile.tenant_id,
       },
     });
 
@@ -179,6 +195,7 @@ async function syncProfileAuthUser(
         legacyId: profile.legacy_id ?? profile.id,
         role,
         name,
+        tenantId: profile.tenant_id,
       },
     };
 
@@ -223,13 +240,16 @@ async function syncProfileAuthUser(
 async function resolveProfileByIdentifier(
   identifier: string,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  options: {
+    tenantId?: string | null;
+  } = {},
 ) {
-
-  const legacyResult = await supabase
+  const legacyQuery = supabase
     .from("profiles")
-    .select("*")
-    .eq("legacy_id", identifier)
-    .maybeSingle();
+    .select("*");
+  const legacyResult = await (options.tenantId
+    ? scopeTenantQuery(legacyQuery, options.tenantId).eq("legacy_id", identifier)
+    : legacyQuery.eq("legacy_id", identifier)).maybeSingle();
 
   if (legacyResult.error) {
     throw new Error(`Failed to resolve profile by legacy id: ${legacyResult.error.message}`);
@@ -243,7 +263,10 @@ async function resolveProfileByIdentifier(
     throw new Error("User not found");
   }
 
-  const idResult = await supabase.from("profiles").select("*").eq("id", identifier).maybeSingle();
+  const idQuery = supabase.from("profiles").select("*");
+  const idResult = await (options.tenantId
+    ? scopeTenantQuery(idQuery, options.tenantId).eq("id", identifier)
+    : idQuery.eq("id", identifier)).maybeSingle();
 
   if (idResult.error) {
     throw new Error(`Failed to resolve profile by id: ${idResult.error.message}`);
@@ -257,9 +280,13 @@ async function resolveProfileByIdentifier(
 }
 
 async function resolveStoreRows(
+  tenantId: string,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
-  const storesResult = await supabase.from("stores").select("id, legacy_id, status");
+  const storesResult = await supabase
+    .from("stores")
+    .select("id, legacy_id, status")
+    .eq("tenant_id", tenantId);
   return assertSupabaseResult(storesResult, "Failed to load stores") as Pick<
     StoreRow,
     "id" | "legacy_id" | "status"
@@ -268,15 +295,20 @@ async function resolveStoreRows(
 
 async function syncStoreAccess(
   profileId: string,
+  tenantId: string,
   storeIds?: string[],
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
-  const deleteResult = await supabase.from("profile_store_access").delete().eq("profile_id", profileId);
+  const deleteResult = await supabase
+    .from("profile_store_access")
+    .delete()
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", profileId);
   if (deleteResult.error) {
     throw new Error(`Failed to reset store access: ${deleteResult.error.message}`);
   }
 
-  const storeRows = await resolveStoreRows(supabase);
+  const storeRows = await resolveStoreRows(tenantId, supabase);
   const storeIdsToAssign =
     storeIds && storeIds.length > 0
       ? storeRows
@@ -290,6 +322,7 @@ async function syncStoreAccess(
 
   const insertResult = await supabase.from("profile_store_access").insert(
     storeIdsToAssign.map((storeId) => ({
+      tenant_id: tenantId,
       profile_id: profileId,
       store_id: storeId,
     })),
@@ -303,6 +336,7 @@ async function syncStoreAccess(
 async function upsertPermissions(
   profileId: string,
   permissions: PermissionMap,
+  tenantId: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const modulesSyncResult = await supabase.from("permission_modules").upsert(
@@ -322,6 +356,7 @@ async function upsertPermissions(
   }
 
   const payload = permissionModules.map((module) => ({
+    tenant_id: tenantId,
     profile_id: profileId,
     module_key: module.id,
     access_level: permissions[module.id],
@@ -342,10 +377,12 @@ async function loadManagedUserByProfile(
 ): Promise<ManagedUser> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const includeStoreAccess = options.includeStoreAccess ?? true;
-  const permissionsResult = await supabase
+  const permissionsQuery = supabase
     .from("user_permissions")
-    .select("*")
-    .eq("profile_id", profile.id);
+    .select("*");
+  const permissionsResult = await (profile.tenant_id
+    ? scopeTenantQuery(permissionsQuery, profile.tenant_id).eq("profile_id", profile.id)
+    : permissionsQuery.is("tenant_id", null).eq("profile_id", profile.id));
 
   const permissions = assertSupabaseResult(
     permissionsResult,
@@ -356,9 +393,20 @@ async function loadManagedUserByProfile(
     return mapManagedUser(profile, permissions, []);
   }
 
+  if (!profile.tenant_id) {
+    return mapManagedUser(profile, permissions, []);
+  }
+
   const [storeAccessResult, storesResult] = await Promise.all([
-    supabase.from("profile_store_access").select("*").eq("profile_id", profile.id),
-    supabase.from("stores").select("id, legacy_id"),
+    supabase
+      .from("profile_store_access")
+      .select("*")
+      .eq("tenant_id", profile.tenant_id)
+      .eq("profile_id", profile.id),
+    supabase
+      .from("stores")
+      .select("id, legacy_id")
+      .eq("tenant_id", profile.tenant_id),
   ]);
   const storeAccessRows = assertSupabaseResult(
     storeAccessResult,
@@ -393,11 +441,12 @@ async function resolveProfileByAuthUserId(
 
 export async function listManagedUsers(options: QueryOptions = {}): Promise<ManagedUser[]> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  const tenantId = assertTenantId(options.tenantId);
   const [profilesResult, permissionsResult, storeAccessResult, storesResult] = await Promise.all([
-    supabase.from("profiles").select("*").order("updated_at", { ascending: false }),
-    supabase.from("user_permissions").select("*"),
-    supabase.from("profile_store_access").select("*"),
-    supabase.from("stores").select("id, legacy_id"),
+    supabase.from("profiles").select("*").eq("tenant_id", tenantId).order("updated_at", { ascending: false }),
+    supabase.from("user_permissions").select("*").eq("tenant_id", tenantId),
+    supabase.from("profile_store_access").select("*").eq("tenant_id", tenantId),
+    supabase.from("stores").select("id, legacy_id").eq("tenant_id", tenantId),
   ]);
 
   const profiles = assertSupabaseResult(profilesResult, "Failed to load profiles") as ProfileRow[];
@@ -442,7 +491,9 @@ export async function getManagedUserByIdentifier(
   const supabase = options.supabase ?? createSupabaseAdminClient();
 
   try {
-    const profile = await resolveProfileByIdentifier(identifier, supabase);
+    const profile = await resolveProfileByIdentifier(identifier, supabase, {
+      tenantId: options.tenantId,
+    });
     return await loadManagedUserByProfile(profile, {
       ...options,
       supabase,
@@ -477,11 +528,14 @@ export async function createManagedUser(
   options: QueryOptions = {},
 ): Promise<CreateManagedUserResult> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  const tenantId = options.tenantId ?? null;
+  assertManagedUserRoleForTenant(input.role, tenantId);
   const normalizedStoreIds = normalizeStoreIdsForRole(input.role, input.storeIds);
   const insertResult = await supabase
     .from("profiles")
     .insert({
       legacy_id: `user-${crypto.randomUUID()}`,
+      tenant_id: tenantId,
       name: input.name.trim(),
       email: input.email.trim().toLowerCase(),
       role: input.role,
@@ -492,15 +546,20 @@ export async function createManagedUser(
     .single();
 
   const profile = assertSupabaseResult(insertResult, "Failed to create user") as ProfileRow;
-  await upsertPermissions(profile.id, buildDefaultPermissions(input.role), supabase);
-  await syncStoreAccess(profile.id, normalizedStoreIds, supabase);
+  await upsertPermissions(profile.id, buildDefaultPermissions(input.role), profile.tenant_id, supabase);
+  if (profile.tenant_id) {
+    await syncStoreAccess(profile.id, profile.tenant_id, normalizedStoreIds, supabase);
+  }
   const authProvisioning = await syncProfileAuthUser(profile, {
     email: profile.email,
     name: profile.name,
     role: profile.role,
   });
 
-  const createdUser = await getManagedUserByIdentifier(profile.id, { supabase });
+  const createdUser = await getManagedUserByIdentifier(profile.id, {
+    supabase,
+    tenantId: profile.tenant_id,
+  });
 
   if (!createdUser) {
     throw new Error("Created user could not be loaded");
@@ -520,8 +579,11 @@ export async function updateManagedUser(
   options: QueryOptions = {},
 ): Promise<ManagedUser> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  const profile = await resolveProfileByIdentifier(identifier, supabase, {
+    tenantId: options.tenantId,
+  });
+  assertManagedUserRoleForTenant(input.role, profile.tenant_id);
   const normalizedStoreIds = normalizeStoreIdsForRole(input.role, input.storeIds);
-  const profile = await resolveProfileByIdentifier(identifier, supabase);
 
   const updateResult = await supabase
     .from("profiles")
@@ -539,11 +601,16 @@ export async function updateManagedUser(
   const updatedProfile = assertSupabaseResult(updateResult, "Failed to update user") as ProfileRow;
 
   if (input.resetPermissionsToRoleDefault) {
-    await upsertPermissions(updatedProfile.id, buildDefaultPermissions(input.role), supabase);
+    await upsertPermissions(
+      updatedProfile.id,
+      buildDefaultPermissions(input.role),
+      updatedProfile.tenant_id,
+      supabase,
+    );
   }
 
-  if (input.storeIds !== undefined) {
-    await syncStoreAccess(updatedProfile.id, normalizedStoreIds, supabase);
+  if (input.storeIds !== undefined && updatedProfile.tenant_id) {
+    await syncStoreAccess(updatedProfile.id, updatedProfile.tenant_id, normalizedStoreIds, supabase);
   }
   await syncProfileAuthUser(updatedProfile, {
     email: updatedProfile.email,
@@ -551,7 +618,10 @@ export async function updateManagedUser(
     role: updatedProfile.role,
   });
 
-  const managedUser = await getManagedUserByIdentifier(updatedProfile.id, { supabase });
+  const managedUser = await getManagedUserByIdentifier(updatedProfile.id, {
+    supabase,
+    tenantId: updatedProfile.tenant_id,
+  });
 
   if (!managedUser) {
     throw new Error("Updated user could not be loaded");
@@ -566,9 +636,19 @@ export async function saveManagedUserPermissions(
   options: QueryOptions = {},
 ): Promise<ManagedUser> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
-  const profile = await resolveProfileByIdentifier(identifier, supabase);
-  await upsertPermissions(profile.id, permissions, supabase);
-  const managedUser = await getManagedUserByIdentifier(profile.id, { supabase });
+  const profile = await resolveProfileByIdentifier(identifier, supabase, {
+    tenantId: options.tenantId,
+  });
+  await upsertPermissions(
+    profile.id,
+    sanitizePermissionsForRole(permissions, profile.role),
+    profile.tenant_id,
+    supabase,
+  );
+  const managedUser = await getManagedUserByIdentifier(profile.id, {
+    supabase,
+    tenantId: profile.tenant_id,
+  });
 
   if (!managedUser) {
     throw new Error("Updated user could not be loaded");
@@ -583,7 +663,9 @@ export async function saveManagedUserProfile(
   options: QueryOptions = {},
 ): Promise<ManagedUser> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
-  const profile = await resolveProfileByIdentifier(identifier, supabase);
+  const profile = await resolveProfileByIdentifier(identifier, supabase, {
+    tenantId: options.tenantId,
+  });
 
   const updateResult = await supabase
     .from("profiles")
@@ -618,7 +700,10 @@ export async function saveManagedUserProfile(
     newPassword: input.newPassword,
   });
 
-  const managedUser = await getManagedUserByIdentifier(updatedProfile.id, { supabase });
+  const managedUser = await getManagedUserByIdentifier(updatedProfile.id, {
+    supabase,
+    tenantId: updatedProfile.tenant_id,
+  });
 
   if (!managedUser) {
     throw new Error("Updated user could not be loaded");

@@ -10,6 +10,7 @@ import {
   reopenOrder,
   updateProductionItemStatus,
 } from "@/lib/supabase-data/workflow";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 export async function PATCH(request: Request) {
   try {
@@ -37,15 +38,20 @@ export async function PATCH(request: Request) {
         contextLabel: "PATCH /api/factory-planning/workflow release-order",
         permission: "gestor-fabrica.pedidos",
         minimumLevel: "operar",
+        requireTenantContext: true,
+        requireWritableTenant: true,
       });
 
       if ("response" in authorization) {
         return authorization.response;
       }
 
-      const supabase = createSupabaseAdminClient();
+      const supabase = createTenantScopedSupabaseClient(
+        authorization.effectiveTenantId,
+        createSupabaseAdminClient(),
+      );
       await releaseOrder(body.orderId, authorization.user.id, supabase);
-      invalidatePlanningCaches();
+      invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
     }
 
@@ -54,13 +60,18 @@ export async function PATCH(request: Request) {
         contextLabel: `PATCH /api/factory-planning/workflow ${body.action}`,
         permission: "gestor-fabrica.pedidos",
         minimumLevel: "operar",
+        requireTenantContext: true,
+        requireWritableTenant: true,
       });
 
       if ("response" in authorization) {
         return authorization.response;
       }
 
-      const supabase = createSupabaseAdminClient();
+      const supabase = createTenantScopedSupabaseClient(
+        authorization.effectiveTenantId,
+        createSupabaseAdminClient(),
+      );
 
       if (body.action === "cancel-order") {
         await cancelOrder(body.orderId, authorization.user.id, supabase);
@@ -68,7 +79,7 @@ export async function PATCH(request: Request) {
         await reopenOrder(body.orderId, authorization.user.id, supabase);
       }
 
-      invalidatePlanningCaches();
+      invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
     }
 
@@ -77,15 +88,26 @@ export async function PATCH(request: Request) {
         contextLabel: "PATCH /api/factory-planning/workflow update-production-item-status",
         anyOfPermissions: ["gestor-fabrica.ops", "chao-fabrica.ops"],
         minimumLevel: "operar",
+        requireTenantContext: true,
+        requireWritableTenant: true,
       });
 
       if ("response" in authorization) {
         return authorization.response;
       }
 
-      const supabase = createSupabaseAdminClient();
-      await updateProductionItemStatus(body.productionItemKey, body.status, authorization.user.id, supabase);
-      invalidatePlanningCaches();
+      const supabase = createTenantScopedSupabaseClient(
+        authorization.effectiveTenantId,
+        createSupabaseAdminClient(),
+      );
+      await updateProductionItemStatus(
+        body.productionItemKey,
+        body.status,
+        authorization.user.id,
+        authorization.effectiveTenantId,
+        supabase,
+      );
+      invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
     }
 

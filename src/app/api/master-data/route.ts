@@ -4,11 +4,13 @@ import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
 import { hasAnyNonStoreAccess } from "@/lib/permission-modules";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 export async function GET() {
   const authorization = await authorizeApiRequest({
     contextLabel: "GET /api/master-data",
     includeStoreScope: true,
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -16,12 +18,16 @@ export async function GET() {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const snapshot = await getMasterDataSnapshot({
       supabase,
-      includeProfileNames: hasAnyNonStoreAccess(authorization.user.permissions),
+      tenantId: authorization.effectiveTenantId,
+      includeProfileNames: hasAnyNonStoreAccess(authorization.permissions),
     });
-    const allowedStoreIds = getAllowedStoreIds(authorization.user);
+    const allowedStoreIds = getAllowedStoreIds(authorization);
 
     return NextResponse.json({
       ...snapshot,

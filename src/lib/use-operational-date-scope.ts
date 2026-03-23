@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 
+import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 import { getTodayDateKey } from "@/lib/order-planning";
 import {
   createDefaultOperationalDateScope,
@@ -13,13 +14,16 @@ import {
   type OperationalDateScopeMode,
 } from "@/lib/operational-date-scope";
 
-const OPERATIONAL_SCOPE_STORAGE_KEY = "xpan:operational-date-scope:v1";
 const OPERATIONAL_SCOPE_CHANGE_EVENT = "xpan:operational-date-scope:change";
 let cachedClientSnapshot: { key: string; value: OperationalDateScope } | null = null;
 let cachedServerSnapshot: { key: string; value: OperationalDateScope } | null = null;
 
+function getOperationalScopeStorageKey() {
+  return buildClientTenantCacheKey("operational-date-scope", "v1");
+}
+
 function buildOperationalDateScopeCacheKey(scope: OperationalDateScope) {
-  return `${scope.mode}|${scope.date}|${scope.startDate}|${scope.endDate}`;
+  return `${getOperationalScopeStorageKey()}|${scope.mode}|${scope.date}|${scope.startDate}|${scope.endDate}`;
 }
 
 function memoizeOperationalDateScopeSnapshot(
@@ -69,7 +73,7 @@ function readStoredOperationalDateScope(today: string) {
     );
   }
 
-  const storedValue = window.localStorage.getItem(OPERATIONAL_SCOPE_STORAGE_KEY);
+  const storedValue = window.localStorage.getItem(getOperationalScopeStorageKey());
   if (!storedValue) {
     return createDefaultOperationalDateScope(today);
   }
@@ -148,7 +152,7 @@ function persistOperationalDateScope(scope: OperationalDateScope) {
     return;
   }
 
-  window.localStorage.setItem(OPERATIONAL_SCOPE_STORAGE_KEY, JSON.stringify(scope));
+  window.localStorage.setItem(getOperationalScopeStorageKey(), JSON.stringify(scope));
   writeOperationalDateScopeToUrl(scope);
   window.dispatchEvent(new Event(OPERATIONAL_SCOPE_CHANGE_EVENT));
 }

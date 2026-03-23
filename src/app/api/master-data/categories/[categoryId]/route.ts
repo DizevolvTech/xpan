@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { CategoryInput } from "@/lib/supabase-data/master-data-admin";
 import { updateCategory } from "@/lib/supabase-data/master-data-admin";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
   params: Promise<{
@@ -17,6 +18,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     contextLabel: "PATCH /api/master-data/categories/[categoryId]",
     permission: "gestor-dados.setores",
     minimumLevel: "gerenciar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -34,9 +37,12 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     await updateCategory(categoryId, payload, { supabase });
-    invalidateMasterDataCaches();
+    invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

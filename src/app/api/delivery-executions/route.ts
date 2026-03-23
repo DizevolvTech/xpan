@@ -5,6 +5,7 @@ import type { DeliveryChecklistState, DeliveryExecutionStatus } from "@/lib/deli
 import { invalidateDeliveryExecutionCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions, updateDeliveryExecution } from "@/lib/supabase-data/delivery";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 function isClientValidationError(message: string) {
   const normalized = message.toLowerCase();
@@ -22,6 +23,7 @@ export async function GET() {
     contextLabel: "GET /api/delivery-executions",
     anyOfPermissions: ["gestor-fabrica.expedicao", "chao-fabrica.expedicao"],
     minimumLevel: "visualizar",
+    requireTenantContext: true,
   });
 
   if ("response" in authorization) {
@@ -29,8 +31,14 @@ export async function GET() {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
-    const executions = await getPersistedDeliveryExecutions(supabase);
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
+    const executions = await getPersistedDeliveryExecutions({
+      tenantId: authorization.effectiveTenantId,
+      supabase,
+    });
     return NextResponse.json(executions);
   } catch (error) {
     console.error("Failed to load delivery executions", error);
@@ -48,6 +56,8 @@ export async function PATCH(request: Request) {
     contextLabel: "PATCH /api/delivery-executions",
     anyOfPermissions: ["gestor-fabrica.expedicao", "chao-fabrica.expedicao"],
     minimumLevel: "operar",
+    requireTenantContext: true,
+    requireWritableTenant: true,
   });
 
   if ("response" in authorization) {
@@ -55,7 +65,10 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const supabase = createSupabaseAdminClient();
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
     const body = (await request.json()) as {
       orderId: string;
       status: DeliveryExecutionStatus;
@@ -69,11 +82,12 @@ export async function PATCH(request: Request) {
       {
         checklistState: body.checklistState,
         checklistCompletedAt: body.checklistCompletedAt,
+        tenantId: authorization.effectiveTenantId,
       },
       authorization.user.id,
       supabase,
     );
-    invalidateDeliveryExecutionCaches();
+    invalidateDeliveryExecutionCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Failed to update delivery execution", error);
