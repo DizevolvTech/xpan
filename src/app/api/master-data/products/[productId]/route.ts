@@ -36,6 +36,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  if (!Array.isArray(payload.preparationStages) || payload.preparationStages.length === 0) {
+    return NextResponse.json(
+      { message: "Configure ao menos uma etapa intermediária de preparo para o produto." },
+      { status: 400 },
+    );
+  }
+
   try {
     const supabase = createTenantScopedSupabaseClient(
       authorization.effectiveTenantId,

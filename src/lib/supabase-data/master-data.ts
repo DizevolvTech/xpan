@@ -6,6 +6,7 @@ import {
   assertSupabaseResult,
   assertTenantId,
   buildTenantCacheKey,
+  isSupabaseMissingSchemaError,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
 import type {
@@ -22,6 +23,7 @@ import type {
   WeeklyProductionSchedule,
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
+import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 export interface MasterDataSnapshot {
   operationalSettings: OperationalSettings;
@@ -97,6 +99,7 @@ async function loadMasterDataSnapshot(
     storesResult,
     productsResult,
     recipeItemsResult,
+    preparationStepsResult,
     profilesResult,
     schedulesResult,
     scheduleSnapshotsResult,
@@ -120,6 +123,11 @@ async function loadMasterDataSnapshot(
     supabase.from("products").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
     supabase
       .from("product_recipe_items")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("product_preparation_steps")
       .select("*")
       .eq("tenant_id", tenantId)
       .order("sort_order", { ascending: true }),
@@ -152,6 +160,15 @@ async function loadMasterDataSnapshot(
   const storeRows = assertSupabaseResult(storesResult, "Failed to load stores");
   const productRows = assertSupabaseResult(productsResult, "Failed to load products");
   const recipeRows = assertSupabaseResult(recipeItemsResult, "Failed to load product recipe items");
+  const preparationStepRows = isSupabaseMissingSchemaError(
+    preparationStepsResult.error,
+    ["product_preparation_steps"],
+  )
+    ? []
+    : assertSupabaseResult(
+        preparationStepsResult,
+        "Failed to load product preparation steps",
+      );
   const profileRows = assertSupabaseResult(
     profilesResult as {
       data: Array<{
@@ -279,6 +296,15 @@ async function loadMasterDataSnapshot(
     acc.set(key, current);
     return acc;
   }, new Map());
+  const preparationStagesByProductId = preparationStepRows.reduce<
+    Map<string, ProductionProduct["preparationStages"]>
+  >((acc, row) => {
+    const key = productLegacyById.get(row.product_id) ?? row.product_id;
+    const current = acc.get(key) ?? [];
+    current.push(row.stage_key);
+    acc.set(key, current);
+    return acc;
+  }, new Map());
 
   const products: ProductionProduct[] = productRows.map((row) => ({
     id: row.legacy_id ?? row.id,
@@ -308,6 +334,9 @@ async function loadMasterDataSnapshot(
     packagingProfile: coercePackagingProfile(row.packaging_profile),
     isSoldLoose: row.is_sold_loose,
     recipe: recipeByProductId.get(row.legacy_id ?? row.id) ?? [],
+    preparationStages: normalizeProductPreparationStages(
+      preparationStagesByProductId.get(row.legacy_id ?? row.id),
+    ),
     preparationMode: row.preparation_mode,
     breakPercent: Number(row.break_percent),
     breakStage: row.break_stage,

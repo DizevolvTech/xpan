@@ -100,10 +100,10 @@ export function ProductionOrderStatusDialog({
                     </thead>
                     <tbody>
                       {paginatedItems.map((item) => {
-                    const previousStatus = getPreviousProductionItemStatus(item.status);
-                    const nextStatus = getNextProductionItemStatus(item.status);
-                    const previousActionLabel = getPreviousProductionActionLabel(item.status);
-                    const nextActionLabel = getNextProductionActionLabel(item.status);
+                    const previousStatus = getPreviousProductionItemStatus(item.status, item.preparationStages);
+                    const nextStatus = getNextProductionItemStatus(item.status, item.preparationStages);
+                    const previousActionLabel = getPreviousProductionActionLabel(item.status, item.preparationStages);
+                    const nextActionLabel = getNextProductionActionLabel(item.status, item.preparationStages);
                     const sourceDates = op.sourceItems.filter(
                       (sourceItem) => sourceItem.productionItemKey === item.productionItemKey,
                     );

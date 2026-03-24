@@ -7,6 +7,7 @@ import {
   getNextProductionItemStatus,
   getPreviousProductionActionLabel,
   getPreviousProductionItemStatus,
+  getProductionStatusProgress,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
 
@@ -28,4 +29,14 @@ test("production workflow exposes previous and next actions", () => {
   assert.equal(getProductionStatusLabel("em_preparacao"), "Preparação");
   assert.equal(getNextProductionActionLabel("em_preparacao"), "Iniciar produção");
   assert.equal(getPreviousProductionActionLabel("em_producao"), "Voltar para preparação");
+});
+
+test("production workflow respects per-product custom stages", () => {
+  const customStages = ["em_preparacao", "embalando"] as const;
+
+  assert.equal(getNextProductionItemStatus("em_preparacao", customStages), "embalando");
+  assert.equal(getPreviousProductionItemStatus("embalando", customStages), "em_preparacao");
+  assert.equal(canTransitionProductionItemStatus("em_preparacao", "em_forno", customStages), false);
+  assert.equal(getNextProductionActionLabel("em_preparacao", customStages), "Iniciar embalagem");
+  assert.equal(getProductionStatusProgress("embalando", customStages), 66.7);
 });

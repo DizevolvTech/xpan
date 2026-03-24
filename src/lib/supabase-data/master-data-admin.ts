@@ -2,6 +2,7 @@ import "server-only";
 
 import type {
   IngredientCompositionItem,
+  ProductPreparationStageKey,
   ProductionIngredient,
   ProductionLine,
   ProductionProduct,
@@ -14,6 +15,7 @@ import {
   isUuid,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
+import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 type RecordStatus = "ativo" | "inativo";
 
@@ -728,6 +730,38 @@ async function replaceProductRecipeItems(
   }
 }
 
+async function replaceProductPreparationSteps(
+  productId: string,
+  preparationStages: ProductPreparationStageKey[],
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const deleteResult = await supabase
+    .from("product_preparation_steps")
+    .delete()
+    .eq("product_id", productId);
+
+  if (deleteResult.error) {
+    throw new Error(`Failed to reset product preparation steps: ${deleteResult.error.message}`);
+  }
+
+  const normalizedStages = normalizeProductPreparationStages(preparationStages);
+  if (normalizedStages.length === 0) {
+    return;
+  }
+
+  const insertResult = await supabase.from("product_preparation_steps").insert(
+    normalizedStages.map((stageKey, index) => ({
+      product_id: productId,
+      stage_key: stageKey,
+      sort_order: index,
+    })),
+  );
+
+  if (insertResult.error) {
+    throw new Error(`Failed to save product preparation steps: ${insertResult.error.message}`);
+  }
+}
+
 function normalizeProductPayload(input: ProductInput) {
   return {
     external_code: normalizeOptionalCode(input.externalCode),
@@ -991,6 +1025,7 @@ export async function createProduct(input: ProductInput, options: MutationOption
 
   const product = assertSupabaseResult(insertResult, "Failed to create product");
   await replaceProductRecipeItems(product.id, input.recipe, supabase);
+  await replaceProductPreparationSteps(product.id, input.preparationStages, supabase);
 
   return {
     id: legacyId,
@@ -1034,6 +1069,7 @@ export async function updateProduct(
   }
 
   await replaceProductRecipeItems(String(row.id), input.recipe, supabase);
+  await replaceProductPreparationSteps(String(row.id), input.preparationStages, supabase);
 
   const affectedOperationalSubcategoryIds = [
     ...new Set(

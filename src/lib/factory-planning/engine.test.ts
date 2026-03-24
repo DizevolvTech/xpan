@@ -9,6 +9,7 @@ import {
   resolveScheduledProductAvailability,
   resolveProductionDateInWindow,
 } from "@/lib/factory-planning/engine";
+import { defaultProductPreparationStages } from "@/lib/production-planning";
 import type {
   OperationalSettings,
   ProductionLine,
@@ -190,6 +191,7 @@ test("factory planning uses operational subcategory instead of cadastral subcate
       packagingProfile: undefined,
       isSoldLoose: true,
       recipe: [],
+      preparationStages: [...defaultProductPreparationStages],
       preparationMode: "",
       breakPercent: 0,
       breakStage: "antes_divisao",
@@ -312,6 +314,7 @@ test("factory planning keeps non-scheduled products out of production and expedi
       packagingProfile: undefined,
       isSoldLoose: true,
       recipe: [],
+      preparationStages: [...defaultProductPreparationStages],
       preparationMode: "",
       breakPercent: 0,
       breakStage: "antes_divisao",
@@ -418,6 +421,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       packagingProfile: undefined,
       isSoldLoose: true,
       recipe: [],
+      preparationStages: [...defaultProductPreparationStages],
       preparationMode: "",
       breakPercent: 0,
       breakStage: "antes_divisao",
@@ -455,6 +459,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       packagingProfile: undefined,
       isSoldLoose: true,
       recipe: [],
+      preparationStages: [...defaultProductPreparationStages],
       preparationMode: "",
       breakPercent: 0,
       breakStage: "antes_divisao",

@@ -508,6 +508,27 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["product_recipe_items"]["Insert"]>;
       };
+      product_preparation_steps: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          product_id: string;
+          stage_key: "em_preparacao" | "em_producao" | "em_forno" | "embalando";
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          product_id: string;
+          stage_key: "em_preparacao" | "em_producao" | "em_forno" | "embalando";
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_preparation_steps"]["Insert"]>;
+      };
       store_orders: {
         Row: {
           id: string;

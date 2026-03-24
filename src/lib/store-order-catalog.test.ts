@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { defaultProductPreparationStages } from "@/lib/production-planning";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
@@ -80,6 +81,7 @@ function buildSnapshot(
         packagingProfile: undefined,
         isSoldLoose: true,
         recipe: [],
+        preparationStages: [...defaultProductPreparationStages],
         preparationMode: "",
         breakPercent: 0,
         breakStage: "antes_divisao",

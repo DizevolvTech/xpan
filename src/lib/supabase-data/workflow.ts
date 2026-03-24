@@ -1,8 +1,12 @@
 import "server-only";
 
 import type { ProductionItemStatus } from "@/lib/order-planning";
-import { buildFactoryPlanningData, productionStageProgress } from "@/lib/order-planning";
-import { canTransitionProductionItemStatus } from "@/lib/production-workflow";
+import { buildFactoryPlanningData } from "@/lib/order-planning";
+import {
+  canTransitionProductionItemStatus,
+  getProductionStatusProgress,
+  normalizeProductPreparationStages,
+} from "@/lib/production-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { buildFactoryInputFromDb } from "@/lib/supabase-data/store-orders";
 import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
@@ -102,6 +106,46 @@ async function appendOrderEventsForProductionItem(
   );
 }
 
+async function resolvePreparationStagesForProductionItem(
+  productionItemKey: string,
+  supabase: SupabaseDataClient,
+) {
+  const productIdentifier = productionItemKey.split("|").at(-1);
+  if (!productIdentifier) {
+    return normalizeProductPreparationStages();
+  }
+
+  const productQuery = supabase.from("products").select("id");
+  const productResult = await (isUuid(productIdentifier)
+    ? productQuery.eq("id", productIdentifier)
+    : productQuery.eq("legacy_id", productIdentifier)).maybeSingle();
+
+  if (productResult.error) {
+    throw new Error(`Failed to resolve product for workflow item: ${productResult.error.message}`);
+  }
+
+  if (!productResult.data) {
+    return normalizeProductPreparationStages();
+  }
+
+  const stepsResult = await supabase
+    .from("product_preparation_steps")
+    .select("stage_key")
+    .eq("product_id", productResult.data.id)
+    .order("sort_order", { ascending: true });
+
+  if (isSupabaseMissingSchemaError(stepsResult.error, ["product_preparation_steps"])) {
+    return normalizeProductPreparationStages();
+  }
+
+  const steps = assertSupabaseResult(
+    stepsResult,
+    "Failed to load product preparation steps for workflow item",
+  );
+
+  return normalizeProductPreparationStages(steps.map((row) => row.stage_key));
+}
+
 export async function releaseOrder(
   orderId: string,
   releasedByProfileId?: string | null,
@@ -150,6 +194,10 @@ export async function updateProductionItemStatus(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
+  const preparationStages = await resolvePreparationStagesForProductionItem(
+    productionItemKey,
+    supabase,
+  );
   const currentResult = await supabase
     .from("workflow_production_items")
     .select("status")
@@ -165,7 +213,7 @@ export async function updateProductionItemStatus(
 
   const currentStatus = currentResult.data?.status ?? "nao_iniciado";
 
-  if (!canTransitionProductionItemStatus(currentStatus, status)) {
+  if (!canTransitionProductionItemStatus(currentStatus, status, preparationStages)) {
     throw new Error("Invalid production workflow transition");
   }
 
@@ -173,7 +221,7 @@ export async function updateProductionItemStatus(
     {
       production_item_key: productionItemKey,
       status,
-      progress: productionStageProgress[status],
+      progress: getProductionStatusProgress(status, preparationStages),
       updated_at: new Date().toISOString(),
       updated_by_profile_id: updatedByDatabaseId,
     },

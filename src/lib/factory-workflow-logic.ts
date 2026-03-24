@@ -1,4 +1,4 @@
-import { buildProductionOrdersFromPlannedItems, productionStageProgress } from "@/lib/order-planning";
+import { buildProductionOrdersFromPlannedItems } from "@/lib/order-planning";
 import type {
   FactoryPlanningData,
   OrderStatus,
@@ -6,6 +6,7 @@ import type {
   PlannedOrderRow,
   ProductionItemStatus,
 } from "@/lib/order-planning";
+import { getProductionStatusProgress } from "@/lib/production-workflow";
 
 function getWorkflowOrderStatus(items: PlannedOrderItem[]): OrderStatus {
   if (items.length === 0) {
@@ -105,7 +106,10 @@ export function applyFactoryWorkflowState(
     }
 
     const productionItemStatus = workflow.resolveProductionItemStatus(item.productionItemKey) ?? "nao_iniciado";
-    const workflowProgress = productionStageProgress[productionItemStatus];
+    const workflowProgress = getProductionStatusProgress(
+      productionItemStatus,
+      item.preparationStages,
+    );
     const status: OrderStatus =
       productionItemStatus === "concluido"
         ? "aguardando_expedicao"

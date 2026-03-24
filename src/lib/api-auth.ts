@@ -3,11 +3,15 @@ import { NextResponse } from "next/server";
 import { resolveAuthorizationDecision } from "@/lib/authorization-decision";
 import { logApiAuthorizationFailure } from "@/lib/access-audit";
 import {
+  type PermissionLevel,
+  type PermissionModuleId,
+} from "@/lib/permission-modules";
+import { resolveApiPermissionMap } from "@/lib/api-permission-context";
+import {
   resolveServerAccess,
   type ResolvedServerAccess,
 } from "@/lib/server-session";
 import { hasStoreAccess, resolveAllowedStoreIds } from "@/lib/store-access";
-import type { PermissionLevel, PermissionModuleId } from "@/lib/permission-modules";
 import { canWriteInAccessMode } from "@/lib/tenant";
 
 type AuthorizeApiOptions = {
@@ -48,11 +52,12 @@ export async function authorizeApiRequest(
   const access = await resolveServerAccess({
     includeStoreAccess: options.includeStoreScope ?? false,
   });
+  const permissionMap = resolveApiPermissionMap(access, options);
   const decision = resolveAuthorizationDecision(
     access
       ? {
           ...access.user,
-          permissions: access.permissions,
+          permissions: permissionMap ?? access.permissions,
         }
       : null,
     options,

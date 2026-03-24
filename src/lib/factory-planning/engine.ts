@@ -1,4 +1,5 @@
 import {
+  defaultProductPreparationStages,
   formatDateBr,
   getEnabledOrderingDays,
   getEnabledReceivingDays,
@@ -26,6 +27,7 @@ import type {
   StoreProfile,
 } from "@/lib/factory-planning/types";
 import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
+import { getProductionStatusProgress, normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 export interface FactoryPlanningInput {
   stores: StoreProfile[];
@@ -57,10 +59,10 @@ const weekdayByIndex: ProductionWeekDay[] = [
 
 export const productionStageProgress: Record<ProductionItemStatus, number> = {
   nao_iniciado: 0,
-  em_preparacao: 20,
-  em_producao: 40,
-  em_forno: 60,
-  embalando: 80,
+  em_preparacao: getProductionStatusProgress("em_preparacao", defaultProductPreparationStages),
+  em_producao: getProductionStatusProgress("em_producao", defaultProductPreparationStages),
+  em_forno: getProductionStatusProgress("em_forno", defaultProductPreparationStages),
+  embalando: getProductionStatusProgress("embalando", defaultProductPreparationStages),
   concluido: 100,
 };
 
@@ -562,6 +564,7 @@ function buildPlannedItems(
           releasedToProduction: false,
           productionItemKey,
           productionItemStatus: canPlan ? "nao_iniciado" : null,
+          preparationStages: normalizeProductPreparationStages(product.preparationStages),
           workflowProgress: 0,
           opCode: null,
           status: getPotentialItemStatus(availability.productionDate, canPlan, referenceDate),
@@ -645,6 +648,7 @@ export function buildProductionOrdersFromPlannedItems(
           totalKg: 0,
           progress: item.workflowProgress,
           status: item.productionItemStatus ?? "nao_iniciado",
+          preparationStages: item.preparationStages,
           sourceItemsCount: 0,
         });
       }

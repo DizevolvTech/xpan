@@ -6,6 +6,11 @@ export type LineType = "Seco" | "Úmido";
 export type ScheduleStatus = "pendente" | "ativo" | "inativo";
 export type IngredientType = "puro" | "misturado";
 export type RecipeSourceType = "ingrediente" | "produto";
+export type ProductPreparationStageKey =
+  | "em_preparacao"
+  | "em_producao"
+  | "em_forno"
+  | "embalando";
 export type BreakStage =
   | "antes_divisao"
   | "depois_divisao"
@@ -146,6 +151,7 @@ export interface ProductionProduct {
   packagingProfile?: PackagingProfile;
   isSoldLoose: boolean;
   recipe: RecipeIngredientReference[];
+  preparationStages: ProductPreparationStageKey[];
   preparationMode: string;
   breakPercent: number;
   breakStage: BreakStage;
@@ -200,6 +206,20 @@ export const productionWeekDays: { key: ProductionWeekDay; label: string; shortL
   { key: "sabado", label: "Sábado", shortLabel: "Sab" },
   { key: "domingo", label: "Domingo", shortLabel: "Dom" },
 ];
+
+export const defaultProductPreparationStages: ProductPreparationStageKey[] = [
+  "em_preparacao",
+  "em_producao",
+  "em_forno",
+  "embalando",
+];
+
+export const productPreparationStageLabels: Record<ProductPreparationStageKey, string> = {
+  em_preparacao: "Preparação",
+  em_producao: "Em produção",
+  em_forno: "Em forno",
+  embalando: "Embalando",
+};
 
 export const operationalSettings: OperationalSettings = {
   orderCutoffTime: "18:00",
@@ -491,6 +511,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Fermentar, dividir, modelar e assar.",
     breakPercent: 4,
     breakStage: "depois_divisao",
@@ -548,6 +569,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Misturar, cilindrar e assar em forma fechada.",
     breakPercent: 5,
     breakStage: "antes_forno",
@@ -618,6 +640,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Modelar, fermentar e finalizar com cobertura.",
     breakPercent: 6,
     breakStage: "depois_divisao",
@@ -677,6 +700,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Bater até homogeneizar e reservar para montagem dos pudins.",
     breakPercent: 0,
     breakStage: "antes_divisao",
@@ -739,6 +763,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Porcionar a base, finalizar com calda e assar em banho-maria.",
     breakPercent: 1.5,
     breakStage: "depois_forno",
@@ -796,6 +821,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Dosar a base, cobrir com calda e finalizar no forno.",
     breakPercent: 1.2,
     breakStage: "depois_forno",
@@ -853,6 +879,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Montagem em forma grande com calda e cocção lenta.",
     breakPercent: 0.8,
     breakStage: "depois_forno",
@@ -910,6 +937,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Misturar, assar e porcionar individualmente.",
     breakPercent: 8,
     breakStage: "depois_divisao",
@@ -959,6 +987,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Temperar, assar e embalar em caixa térmica.",
     breakPercent: 3,
     breakStage: "antes_forno",
@@ -1008,6 +1037,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Montar em camadas, assar e resfriar antes da expedição.",
     breakPercent: 2.5,
     breakStage: "depois_forno",
@@ -1057,6 +1087,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Modelar, empanar e fritar.",
     breakPercent: 3,
     breakStage: "depois_divisao",
@@ -1106,6 +1137,7 @@ export const productionProducts: ProductionProduct[] = [
         unit: "Kg",
       },
     ],
+    preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Forrar, rechear e assar.",
     breakPercent: 2.8,
     breakStage: "depois_forno",

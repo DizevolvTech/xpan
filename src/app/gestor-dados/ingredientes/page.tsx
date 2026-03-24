@@ -5,13 +5,13 @@ import { Clock3, Package, Plus } from "lucide-react";
 
 import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
 import { IngredientProfileFields } from "@/components/production/ingredient-profile-fields";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { KPICard } from "@/components/shared/kpi-card";
+import { ProductFormDialog } from "@/components/production/product-form-dialog";
 import { DataTable } from "@/components/shared/data-table";
-import { SearchFilter } from "@/components/shared/search-filter";
+import { KPICard } from "@/components/shared/kpi-card";
 import { PageLayout } from "@/components/shared/page-layout";
+import { SearchFilter } from "@/components/shared/search-filter";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -19,8 +19,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -28,10 +29,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import {
   type IngredientCompositionItem,
   type ProductionIngredient,
+  type ProductionProduct,
 } from "@/lib/production-planning";
 import {
   getOperationalUnitLabel,
@@ -52,7 +53,21 @@ type IngredientFormState = {
   observation: string;
   composition: IngredientCompositionItem[];
 };
+
 type IngredientDialogMode = "view" | "edit";
+
+type IngredientListRow = {
+  rowKey: string;
+  rowKind: "ingredient" | "mpiProduct";
+  code: string;
+  externalCode: string;
+  name: string;
+  typeLabel: string;
+  unitLabel: string;
+  compositionLabel: string;
+  ingredient?: ProductionIngredient;
+  product?: ProductionProduct;
+};
 
 function buildFormState(ingredient?: IngredientRow | null): IngredientFormState {
   return {
@@ -67,12 +82,28 @@ function buildFormState(ingredient?: IngredientRow | null): IngredientFormState 
   };
 }
 
+function renderTypeBadge(row: IngredientListRow) {
+  const toneClass =
+    row.rowKind === "mpiProduct"
+      ? "border-info/40 bg-info/10 text-info-foreground"
+      : row.ingredient?.type === "misturado"
+        ? "border-warning/40 bg-warning/20 text-warning-foreground"
+        : "border-border/70 bg-panel/40 text-foreground";
+
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${toneClass}`}>
+      {row.typeLabel}
+    </span>
+  );
+}
+
 export default function IngredientesPage() {
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  const [isIngredientDialogOpen, setIsIngredientDialogOpen] = useState(false);
   const [editingIngredient, setEditingIngredient] = useState<IngredientRow | null>(null);
-  const [dialogMode, setDialogMode] = useState<IngredientDialogMode>("edit");
+  const [ingredientDialogMode, setIngredientDialogMode] = useState<IngredientDialogMode>("edit");
   const [formState, setFormState] = useState<IngredientFormState>(() => buildFormState());
   const [formBaseline, setFormBaseline] = useState("");
   const [draftComponentId, setDraftComponentId] = useState("");
@@ -81,9 +112,14 @@ export default function IngredientesPage() {
   const [draftComponentObservation, setDraftComponentObservation] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const isReadOnly = dialogMode === "view";
+
+  const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<ProductionProduct | null>(null);
+  const [productDialogMode, setProductDialogMode] = useState<"view" | "edit">("view");
+
+  const isReadOnly = ingredientDialogMode === "view";
   const formDirty =
-    isDialogOpen &&
+    isIngredientDialogOpen &&
     !isReadOnly &&
     JSON.stringify({
       formState,
@@ -93,21 +129,63 @@ export default function IngredientesPage() {
       draftComponentObservation,
     }) !== formBaseline;
   const formGuard = useUnsavedChangesGuard({
-    enabled: isDialogOpen && !isReadOnly,
+    enabled: isIngredientDialogOpen && !isReadOnly,
     isDirty: formDirty,
   });
 
   const ingredients = snapshot.ingredients;
+  const mpiProducts = useMemo(
+    () => snapshot.products.filter((product) => product.canBeIngredient),
+    [snapshot.products],
+  );
 
-  const filteredIngredients = useMemo(
+  const ingredientRows = useMemo<IngredientListRow[]>(
     () =>
-      ingredients.filter(
+      ingredients.map((ingredient) => ({
+        rowKey: `ingredient-${ingredient.id}`,
+        rowKind: "ingredient",
+        code: ingredient.code,
+        externalCode: ingredient.externalCode ?? "",
+        name: ingredient.name,
+        typeLabel: ingredient.type === "misturado" ? "Ingrediente misturado" : "Ingrediente puro",
+        unitLabel: getOperationalUnitLabel(ingredient.unit),
+        compositionLabel:
+          ingredient.type === "misturado"
+            ? `${ingredient.composition.length} componentes`
+            : "N/A",
+        ingredient,
+      })),
+    [ingredients],
+  );
+
+  const mpiRows = useMemo<IngredientListRow[]>(
+    () =>
+      mpiProducts.map((product) => ({
+        rowKey: `mpi-product-${product.id}`,
+        rowKind: "mpiProduct",
+        code: product.code,
+        externalCode: product.externalCode ?? "",
+        name: product.name,
+        typeLabel: "Produto MPI",
+        unitLabel: getOperationalUnitLabel(
+          product.ingredientProfile?.unit ?? product.unitProfiles.sales.unit,
+        ),
+        compositionLabel: `${product.recipe.length} itens da receita`,
+        product,
+      })),
+    [mpiProducts],
+  );
+
+  const filteredRows = useMemo(
+    () =>
+      [...ingredientRows, ...mpiRows].filter(
         (item) =>
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (item.externalCode ?? "").toLowerCase().includes(searchTerm.toLowerCase()),
+          item.externalCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.typeLabel.toLowerCase().includes(searchTerm.toLowerCase()),
       ),
-    [ingredients, searchTerm],
+    [ingredientRows, mpiRows, searchTerm],
   );
 
   const columns = [
@@ -115,71 +193,32 @@ export default function IngredientesPage() {
     {
       key: "externalCode",
       header: "Código ERP",
-      render: (item: IngredientRow) => item.externalCode || "-",
+      render: (item: IngredientListRow) => item.externalCode || "-",
     },
     { key: "name", header: "Nome" },
-    { key: "type", header: "Tipo" },
-    { key: "unit", header: "Un. Medida" },
     {
-      key: "components",
-      header: "Composição",
-      render: (item: IngredientRow) =>
-        item.type === "misturado" ? `${item.composition.length} componentes` : "N/A",
+      key: "typeLabel",
+      header: "Tipo",
+      render: (item: IngredientListRow) => renderTypeBadge(item),
     },
+    { key: "unitLabel", header: "Un. Medida" },
+    { key: "compositionLabel", header: "Composição" },
   ];
 
-  const actions = [
-    {
-      icon: "view" as const,
-      label: "Visualizar",
-      onClick: (item: IngredientRow) => {
-        setDialogMode("view");
-        setEditingIngredient(item);
-        setFormState(buildFormState(item));
-        setFormBaseline(
-          JSON.stringify({
-            formState: buildFormState(item),
-            draftComponentId: "",
-            draftComponentQty: "",
-            draftComponentUnit: "Kg",
-            draftComponentObservation: "",
-          }),
-        );
-        setFormError(null);
-        setIsDialogOpen(true);
-      },
-    },
-    {
-      icon: "edit" as const,
-      label: "Editar",
-      onClick: (item: IngredientRow) => {
-        setDialogMode("edit");
-        setEditingIngredient(item);
-        setFormState(buildFormState(item));
-        setFormBaseline(
-          JSON.stringify({
-            formState: buildFormState(item),
-            draftComponentId: "",
-            draftComponentQty: "",
-            draftComponentUnit: "Kg",
-            draftComponentObservation: "",
-          }),
-        );
-        setFormError(null);
-        setIsDialogOpen(true);
-      },
-    },
-  ];
-
-  const productOptions = snapshot.products
-    .filter((product) => product.canBeIngredient)
-    .map((product) => ({ id: product.id, label: `${product.code} · ${product.name}`, type: "produto" as const }));
-
+  const productOptions = mpiProducts.map((product) => ({
+    id: product.id,
+    label: `${product.code} · ${product.name}`,
+    type: "produto" as const,
+  }));
   const ingredientOptions = ingredients
     .filter((ingredient) => ingredient.status === "ativo")
-    .map((ingredient) => ({ id: ingredient.id, label: `${ingredient.code} · ${ingredient.name}`, type: "ingrediente" as const }));
-
+    .map((ingredient) => ({
+      id: ingredient.id,
+      label: `${ingredient.code} · ${ingredient.name}`,
+      type: "ingrediente" as const,
+    }));
   const compositionOptions = [...ingredientOptions, ...productOptions];
+
   const ingredientUnitOptions = useMemo(
     () =>
       getOperationalUnitOptions(
@@ -190,10 +229,10 @@ export default function IngredientesPage() {
     [draftComponentUnit, formState.composition, formState.unit],
   );
 
-  function openNewIngredient() {
-    setDialogMode("edit");
-    setEditingIngredient(null);
-    const nextFormState = buildFormState();
+  function openIngredientDialog(ingredient: IngredientRow | null, mode: IngredientDialogMode) {
+    setIngredientDialogMode(mode);
+    setEditingIngredient(ingredient);
+    const nextFormState = buildFormState(ingredient);
     setFormState(nextFormState);
     setDraftComponentId("");
     setDraftComponentQty("");
@@ -209,6 +248,17 @@ export default function IngredientesPage() {
       }),
     );
     setFormError(null);
+    setIsIngredientDialogOpen(true);
+  }
+
+  function openProductDialog(product: ProductionProduct, mode: "view" | "edit") {
+    setSelectedProduct(product);
+    setProductDialogMode(mode);
+    setIsProductDialogOpen(true);
+  }
+
+  function openNewIngredient() {
+    openIngredientDialog(null, "edit");
   }
 
   function addCompositionItem() {
@@ -325,7 +375,7 @@ export default function IngredientesPage() {
       }
 
       await refresh();
-      setIsDialogOpen(false);
+      setIsIngredientDialogOpen(false);
     } catch (saveError) {
       setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar ingrediente");
     } finally {
@@ -333,10 +383,41 @@ export default function IngredientesPage() {
     }
   }
 
+  const actions = [
+    {
+      icon: "view" as const,
+      label: "Visualizar",
+      onClick: (item: IngredientListRow) => {
+        if (item.rowKind === "mpiProduct" && item.product) {
+          openProductDialog(item.product, "view");
+          return;
+        }
+
+        if (item.ingredient) {
+          openIngredientDialog(item.ingredient, "view");
+        }
+      },
+    },
+    {
+      icon: "edit" as const,
+      label: "Editar",
+      onClick: (item: IngredientListRow) => {
+        if (item.rowKind === "mpiProduct" && item.product) {
+          openProductDialog(item.product, "edit");
+          return;
+        }
+
+        if (item.ingredient) {
+          openIngredientDialog(item.ingredient, "edit");
+        }
+      },
+    },
+  ];
+
   return (
     <PageLayout
       title="Gestão de Ingredientes"
-      description="Cadastre ingredientes puros, misturados e suas composições com rastreabilidade."
+      description="Cadastre ingredientes puros, misturados e acompanhe os produtos MPI reutilizáveis na mesma listagem."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
@@ -344,223 +425,32 @@ export default function IngredientesPage() {
       ]}
     >
       <div className="grid gap-3 md:grid-cols-2">
-        <KPICard title="Registros Ativos" value={`${ingredients.length} ingredientes`} icon={Package} tone="success" />
         <KPICard
-          title="Última Atualização"
-          value={isLoading ? "Carregando..." : `${ingredients.filter((item) => item.status === "ativo").length} ativos`}
+          title="Ingredientes Cadastrados"
+          value={`${ingredients.length} ingredientes`}
+          icon={Package}
+          tone="success"
+        />
+        <KPICard
+          title="Produtos MPI"
+          value={isLoading ? "Carregando..." : `${mpiProducts.length} produtos`}
           icon={Clock3}
           tone="neutral"
+          subtitle={isLoading ? undefined : `${filteredRows.length} linhas visíveis na busca atual`}
         />
       </div>
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Ingredientes</CardTitle>
-          <Dialog
-            open={isDialogOpen}
-            onOpenChange={(open) => {
-              if (!open) {
-                if (!formGuard.confirmIfNeeded()) {
-                  return;
-                }
-                setFormError(null);
-              }
-              setIsDialogOpen(open);
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button type="button" onClick={openNewIngredient}>
-                <Plus className="size-4" />
-                Novo Ingrediente
-              </Button>
-            </DialogTrigger>
-            <DialogContent size="2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  {!editingIngredient
-                    ? "Cadastrar Novo Ingrediente"
-                    : isReadOnly
-                      ? "Visualizar Ingrediente"
-                      : "Editar Ingrediente"}
-                </DialogTitle>
-                <DialogDescription>
-                  {isReadOnly
-                    ? "Consulte o cadastro técnico, a composição e o código ERP sem alterar o ingrediente."
-                    : "O código XPAN permanece imutável após o cadastro. Use o Código ERP para integrar com sistemas externos e detalhe a composição quando o ingrediente for misturado."}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-5 py-2">
-                {formError ? (
-                  <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-                    {formError}
-                  </div>
-                ) : null}
-                {isReadOnly ? (
-                  <div className="rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground">
-                    Modo visualização: use o lápis para editar este ingrediente.
-                  </div>
-                ) : null}
-                {formDirty ? (
-                  <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
-                    Existem alterações pendentes neste ingrediente.
-                  </div>
-                ) : null}
-
-                <fieldset disabled={isReadOnly} className="grid gap-5">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="grid gap-2">
-                    <Label htmlFor="ingredient-name">Nome do Ingrediente *</Label>
-                    <Input
-                      id="ingredient-name"
-                      value={formState.name}
-                      onChange={(event) =>
-                        setFormState((current) => ({ ...current, name: event.target.value }))
-                      }
-                      placeholder="Ex: Mistura Pão"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Código XPAN</Label>
-                    <Input value={formState.code} disabled className="bg-muted" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="ingredient-external-code">Código ERP</Label>
-                    <Input
-                      id="ingredient-external-code"
-                      value={formState.externalCode}
-                      onChange={(event) =>
-                        setFormState((current) => ({ ...current, externalCode: event.target.value }))
-                      }
-                      placeholder="Código externo do ERP"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Tipo *</Label>
-                    <Select
-                      value={formState.type}
-                      onValueChange={(value) =>
-                        setFormState((current) => ({
-                          ...current,
-                          type: value as IngredientRow["type"],
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="puro">Puro</SelectItem>
-                        <SelectItem value="misturado">Misturado (MPI)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Unidade de Medida *</Label>
-                    <Select
-                      value={formState.unit}
-                      onValueChange={(value) =>
-                        setFormState((current) => ({
-                          ...current,
-                          unit: value as IngredientRow["unit"],
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ingredientUnitOptions.map((unit) => (
-                          <SelectItem key={unit} value={unit}>
-                            {getOperationalUnitLabel(unit)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <IngredientProfileFields
-                  profile={{
-                    unit: formState.unit,
-                    metadata: formState.metadata,
-                    observation: formState.observation,
-                  }}
-                  unitOptions={ingredientUnitOptions}
-                  showWeightKg={false}
-                  metadataLabel="Metadados / Uso"
-                  metadataPlaceholder="Ex: MPI de confeitaria usada como base"
-                  observationPlaceholder="Explique o uso deste ingrediente na receita."
-                  onChange={(patch) =>
-                    setFormState((current) => ({
-                      ...current,
-                      unit: (patch.unit as IngredientRow["unit"] | undefined) ?? current.unit,
-                      metadata: patch.metadata ?? current.metadata,
-                      observation: patch.observation ?? current.observation,
-                    }))
-                  }
-                />
-
-                {formState.type === "misturado" ? (
-                  <IngredientCompositionEditor
-                    title="Composição do Misturado"
-                    description="Informe os componentes da mistura em quantidade e observação operacional por item."
-                    composition={formState.composition}
-                    emptyMessage="Nenhum componente adicionado."
-                    options={compositionOptions.map((option) => ({ id: option.id, label: option.label }))}
-                    draft={{
-                      componentId: draftComponentId,
-                      quantity: draftComponentQty,
-                      unit: draftComponentUnit,
-                      observation: draftComponentObservation,
-                    }}
-                    unitOptions={ingredientUnitOptions}
-                    onDraftChange={(patch) => {
-                      if (patch.componentId !== undefined) {
-                        setDraftComponentId(patch.componentId);
-                      }
-                      if (patch.quantity !== undefined) {
-                        setDraftComponentQty(patch.quantity);
-                      }
-                      if (patch.unit !== undefined) {
-                        setDraftComponentUnit(patch.unit as IngredientRow["unit"]);
-                      }
-                      if (patch.observation !== undefined) {
-                        setDraftComponentObservation(patch.observation);
-                      }
-                    }}
-                    onAdd={addCompositionItem}
-                    onMove={moveCompositionItem}
-                    onRemove={removeCompositionItem}
-                    onUpdate={updateCompositionItem}
-                  />
-                ) : null}
-                </fieldset>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    if (!formGuard.confirmIfNeeded()) {
-                      return;
-                    }
-                    setIsDialogOpen(false);
-                  }}
-                >
-                  {isReadOnly ? "Fechar" : "Cancelar"}
-                </Button>
-                {!isReadOnly ? (
-                  <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
-                    {editingIngredient ? "Salvar Alterações" : "Cadastrar Ingrediente"}
-                  </Button>
-                ) : null}
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <CardTitle>Lista de Ingredientes e MPI</CardTitle>
+          <Button type="button" onClick={openNewIngredient}>
+            <Plus className="size-4" />
+            Novo Ingrediente
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código XPAN, ERP ou nome..."
+            searchPlaceholder="Buscar por código XPAN, ERP, nome ou tipo..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}
@@ -571,32 +461,234 @@ export default function IngredientesPage() {
             </div>
           ) : null}
           <DataTable
-            data={filteredIngredients}
+            data={filteredRows}
             columns={columns}
             actions={actions}
-            keyField="id"
+            keyField="rowKey"
             onRowClick={(item) => {
-              setDialogMode("view");
-              setEditingIngredient(item);
-              const nextFormState = buildFormState(item);
-              setFormState(nextFormState);
-              setFormBaseline(
-                JSON.stringify({
-                  formState: nextFormState,
-                  draftComponentId: "",
-                  draftComponentQty: "",
-                  draftComponentUnit: "Kg",
-                  draftComponentObservation: "",
-                }),
-              );
-              setFormError(null);
-              setIsDialogOpen(true);
+              if (item.rowKind === "mpiProduct" && item.product) {
+                openProductDialog(item.product, "view");
+                return;
+              }
+
+              if (item.ingredient) {
+                openIngredientDialog(item.ingredient, "view");
+              }
             }}
-            emptyMessage={isLoading ? "Carregando ingredientes..." : "Nenhum ingrediente encontrado"}
+            emptyMessage={isLoading ? "Carregando ingredientes..." : "Nenhuma referência encontrada"}
             stickyHeader
           />
         </CardContent>
       </Card>
+
+      <Dialog
+        open={isIngredientDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (!formGuard.confirmIfNeeded()) {
+              return;
+            }
+            setFormError(null);
+          }
+
+          setIsIngredientDialogOpen(open);
+        }}
+      >
+        <DialogContent size="2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {!editingIngredient
+                ? "Cadastrar Novo Ingrediente"
+                : isReadOnly
+                  ? "Visualizar Ingrediente"
+                  : "Editar Ingrediente"}
+            </DialogTitle>
+            <DialogDescription>
+              {isReadOnly
+                ? "Consulte o cadastro técnico, a composição e o código ERP sem alterar o ingrediente."
+                : "O código XPAN permanece imutável após o cadastro. Use o Código ERP para integrar com sistemas externos e detalhe a composição quando o ingrediente for misturado."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-5 py-2">
+            {formError ? (
+              <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+                {formError}
+              </div>
+            ) : null}
+            {isReadOnly ? (
+              <div className="rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground">
+                Modo visualização: use o lápis para editar este ingrediente.
+              </div>
+            ) : null}
+            {formDirty ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                Existem alterações pendentes neste ingrediente.
+              </div>
+            ) : null}
+
+            <fieldset disabled={isReadOnly} className="grid gap-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="ingredient-name">Nome do Ingrediente *</Label>
+                  <Input
+                    id="ingredient-name"
+                    value={formState.name}
+                    onChange={(event) =>
+                      setFormState((current) => ({ ...current, name: event.target.value }))
+                    }
+                    placeholder="Ex: Mistura Pão"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Código XPAN</Label>
+                  <Input value={formState.code} disabled className="bg-muted" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ingredient-external-code">Código ERP</Label>
+                  <Input
+                    id="ingredient-external-code"
+                    value={formState.externalCode}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        externalCode: event.target.value,
+                      }))
+                    }
+                    placeholder="Código externo do ERP"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Tipo *</Label>
+                  <Select
+                    value={formState.type}
+                    onValueChange={(value) =>
+                      setFormState((current) => ({
+                        ...current,
+                        type: value as IngredientRow["type"],
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="puro">Puro</SelectItem>
+                      <SelectItem value="misturado">Misturado (MPI)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Unidade de Medida *</Label>
+                  <Select
+                    value={formState.unit}
+                    onValueChange={(value) =>
+                      setFormState((current) => ({
+                        ...current,
+                        unit: value as IngredientRow["unit"],
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ingredientUnitOptions.map((unit) => (
+                        <SelectItem key={unit} value={unit}>
+                          {getOperationalUnitLabel(unit)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <IngredientProfileFields
+                profile={{
+                  unit: formState.unit,
+                  metadata: formState.metadata,
+                  observation: formState.observation,
+                }}
+                unitOptions={ingredientUnitOptions}
+                showWeightKg={false}
+                metadataLabel="Metadados / Uso"
+                metadataPlaceholder="Ex: MPI de confeitaria usada como base"
+                observationPlaceholder="Explique o uso deste ingrediente na receita."
+                onChange={(patch) =>
+                  setFormState((current) => ({
+                    ...current,
+                    unit: (patch.unit as IngredientRow["unit"] | undefined) ?? current.unit,
+                    metadata: patch.metadata ?? current.metadata,
+                    observation: patch.observation ?? current.observation,
+                  }))
+                }
+              />
+
+              {formState.type === "misturado" ? (
+                <IngredientCompositionEditor
+                  title="Composição do Misturado"
+                  description="Informe os componentes da mistura em quantidade e observação operacional por item."
+                  composition={formState.composition}
+                  emptyMessage="Nenhum componente adicionado."
+                  options={compositionOptions.map((option) => ({ id: option.id, label: option.label }))}
+                  draft={{
+                    componentId: draftComponentId,
+                    quantity: draftComponentQty,
+                    unit: draftComponentUnit,
+                    observation: draftComponentObservation,
+                  }}
+                  unitOptions={ingredientUnitOptions}
+                  onDraftChange={(patch) => {
+                    if (patch.componentId !== undefined) {
+                      setDraftComponentId(patch.componentId);
+                    }
+                    if (patch.quantity !== undefined) {
+                      setDraftComponentQty(patch.quantity);
+                    }
+                    if (patch.unit !== undefined) {
+                      setDraftComponentUnit(patch.unit as IngredientRow["unit"]);
+                    }
+                    if (patch.observation !== undefined) {
+                      setDraftComponentObservation(patch.observation);
+                    }
+                  }}
+                  onAdd={addCompositionItem}
+                  onMove={moveCompositionItem}
+                  onRemove={removeCompositionItem}
+                  onUpdate={updateCompositionItem}
+                />
+              ) : null}
+            </fieldset>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!formGuard.confirmIfNeeded()) {
+                  return;
+                }
+                setIsIngredientDialogOpen(false);
+              }}
+            >
+              {isReadOnly ? "Fechar" : "Cancelar"}
+            </Button>
+            {!isReadOnly ? (
+              <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
+                {editingIngredient ? "Salvar Alterações" : "Cadastrar Ingrediente"}
+              </Button>
+            ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ProductFormDialog
+        open={isProductDialogOpen}
+        onOpenChange={setIsProductDialogOpen}
+        product={selectedProduct}
+        mode={productDialogMode}
+        snapshot={snapshot}
+        refresh={refresh}
+      />
     </PageLayout>
   );
 }

@@ -258,7 +258,7 @@ export default function OrdemProducaoDetailsPage() {
                       <div className="space-y-2">
                         <StatusBadge status={item.status} />
                         <div className="flex flex-wrap gap-2">
-                          {getPreviousProductionItemStatus(item.status) ? (
+                          {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (
                             <Button
                               type="button"
                               variant="outline"
@@ -267,15 +267,15 @@ export default function OrdemProducaoDetailsPage() {
                               onClick={() =>
                                 void handleWorkflowAction(
                                   item.productionItemKey,
-                                  getPreviousProductionItemStatus(item.status)!,
+                                  getPreviousProductionItemStatus(item.status, item.preparationStages)!,
                                 )
                               }
                             >
-                              {getPreviousProductionActionLabel(item.status) ??
-                                `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status)!)}`}
+                              {getPreviousProductionActionLabel(item.status, item.preparationStages) ??
+                                `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status, item.preparationStages)!)}`}
                             </Button>
                           ) : null}
-                          {getNextProductionItemStatus(item.status) ? (
+                          {getNextProductionItemStatus(item.status, item.preparationStages) ? (
                             <Button
                               type="button"
                               size="sm"
@@ -283,12 +283,12 @@ export default function OrdemProducaoDetailsPage() {
                               onClick={() =>
                                 void handleWorkflowAction(
                                   item.productionItemKey,
-                                  getNextProductionItemStatus(item.status)!,
+                                  getNextProductionItemStatus(item.status, item.preparationStages)!,
                                 )
                               }
                             >
-                              {getNextProductionActionLabel(item.status) ??
-                                `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status)!)}`}
+                              {getNextProductionActionLabel(item.status, item.preparationStages) ??
+                                `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
                             </Button>
                           ) : (
                             <span className="text-xs font-semibold text-success-foreground">

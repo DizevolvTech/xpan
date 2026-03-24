@@ -2,7 +2,6 @@
 
 import { Menu } from "lucide-react";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
@@ -16,17 +15,27 @@ interface AppShellProps {
 export function AppShell({ navigationContext, children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isLeavingReadOnly, setIsLeavingReadOnly] = useState(false);
-  const router = useRouter();
+  const [leaveReadOnlyError, setLeaveReadOnlyError] = useState<string | null>(null);
 
   async function handleLeaveReadOnly() {
     setIsLeavingReadOnly(true);
+    setLeaveReadOnlyError(null);
 
     try {
-      await fetch("/api/master/context/tenant", {
+      const response = await fetch("/api/master/context/tenant", {
         method: "DELETE",
       });
-      router.replace("/administrador-master/clientes");
-      router.refresh();
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(body?.message ?? "Não foi possível voltar ao painel master.");
+      }
+
+      window.location.assign("/administrador-master/clientes");
+    } catch (error) {
+      setLeaveReadOnlyError(
+        error instanceof Error ? error.message : "Não foi possível voltar ao painel master.",
+      );
     } finally {
       setIsLeavingReadOnly(false);
     }
@@ -75,6 +84,11 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
                 Voltar ao painel master
               </Button>
             </div>
+            {leaveReadOnlyError ? (
+              <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
+                {leaveReadOnlyError}
+              </div>
+            ) : null}
           </div>
         ) : null}
         <div

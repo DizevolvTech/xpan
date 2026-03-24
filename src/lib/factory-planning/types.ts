@@ -1,4 +1,4 @@
-import type { ProductionWeekDay } from "@/lib/production-planning";
+import type { ProductPreparationStageKey, ProductionWeekDay } from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 
 export type OrderStatus =
@@ -76,6 +76,7 @@ export interface PlannedOrderItem {
   releasedToProduction: boolean;
   productionItemKey: string | null;
   productionItemStatus: ProductionItemStatus | null;
+  preparationStages: ProductPreparationStageKey[];
   workflowProgress: number;
   opCode: string | null;
   status: OrderStatus;
@@ -109,6 +110,7 @@ export interface ProductionOrderItem {
   totalKg: number;
   progress: number;
   status: ProductionItemStatus;
+  preparationStages: ProductPreparationStageKey[];
   sourceItemsCount: number;
 }
 
