@@ -212,6 +212,17 @@ export const permissionModules = [
     matchSubRoutes: true,
   },
   {
+    id: "administrador.ocorrencias",
+    label: "Canal com o Sistema",
+    route: "/administrador/ocorrencias",
+    group: "administrador",
+    icon: "alert-circle",
+    sidebarOrder: 30,
+    landingOrder: 30,
+    minimumNavLevel: "visualizar",
+    matchSubRoutes: true,
+  },
+  {
     id: "gestor-dados.dashboard",
     label: "Visão Geral",
     route: "/gestor-dados",

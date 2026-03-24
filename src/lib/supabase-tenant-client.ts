@@ -25,6 +25,8 @@ const tenantOwnedTables = new Set([
   "store_occurrences",
   "store_order_events",
   "store_occurrence_events",
+  "tenant_support_occurrences",
+  "tenant_support_occurrence_events",
   "business_code_sequences",
 ]);
 

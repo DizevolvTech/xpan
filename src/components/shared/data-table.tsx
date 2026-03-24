@@ -9,7 +9,17 @@ import {
 } from "@/lib/temporal-table-sort";
 import { readClientAccessContext } from "@/lib/client-access-context";
 import { cn, formatKgValue } from "@/lib/utils";
-import { LucideIcon, Eye, Pencil, Trash2, Printer, Plus, UserRound } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowUpRight,
+  Eye,
+  LucideIcon,
+  Pencil,
+  Plus,
+  Printer,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { paginateArray } from "@/lib/pagination";
@@ -21,7 +31,7 @@ interface Column<T> {
 }
 
 interface Action<T> {
-  icon: "view" | "edit" | "delete" | "print" | "add" | "user";
+  icon: "view" | "edit" | "delete" | "print" | "add" | "user" | "alert" | "launch";
   label: string;
   onClick: (item: T) => void;
   variant?: "default" | "destructive" | "outline";
@@ -106,6 +116,8 @@ export function DataTable<T extends object>({
     print: Printer,
     add: Plus,
     user: UserRound,
+    alert: AlertCircle,
+    launch: ArrowUpRight,
   };
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);

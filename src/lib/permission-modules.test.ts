@@ -77,6 +77,7 @@ test("tenant administrators do not inherit master modules by default", () => {
   const permissions = buildDefaultPermissions("administrador");
 
   assert.equal(permissions["administrador.dashboard"], "gerenciar");
+  assert.equal(permissions["administrador.ocorrencias"], "gerenciar");
   assert.equal(permissions["administrador-master.dashboard"], "sem_acesso");
   assert.equal(permissions["administrador-master.clientes"], "sem_acesso");
 });

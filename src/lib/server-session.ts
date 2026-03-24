@@ -114,6 +114,15 @@ export async function resolveServerAccess(
   }
 
   if (!isMasterRole(managedUser.role)) {
+    const tenant =
+      managedUser.tenantId
+        ? await getTenantByIdentifier(managedUser.tenantId)
+        : null;
+
+    if (tenant && tenant.status !== "ativo") {
+      return null;
+    }
+
     return {
       user: {
         ...managedUser,

@@ -56,6 +56,14 @@ const quickAccessGroups: Array<{ label: string; modules: QuickAccessModule[] }> 
         icon: ShieldCheck,
         tone: "blue",
       },
+      {
+        href: "/administrador/ocorrencias",
+        title: "Canal com o Sistema",
+        subtitle: "Suporte com o Master",
+        description: "Abra ocorrências administrativas, acompanhe respostas e confirme quando o caso for resolvido.",
+        icon: Users,
+        tone: "violet",
+      },
     ],
   },
   {

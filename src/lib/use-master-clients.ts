@@ -91,6 +91,27 @@ export function useMasterClients() {
     }
   }, []);
 
+  const updateClientStatus = useCallback(
+    async (tenantId: string, status: "ativo" | "inativo") => {
+      setIsSubmitting(true);
+
+      try {
+        const updated = await readJson<MasterClient>(`/api/master/clients/${tenantId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        });
+        await refresh();
+        return updated;
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [refresh],
+  );
+
   return useMemo(
     () => ({
       clients,
@@ -100,7 +121,17 @@ export function useMasterClients() {
       refresh,
       createClient,
       enterTenantReadOnly,
+      updateClientStatus,
     }),
-    [clients, createClient, enterTenantReadOnly, error, isLoading, isSubmitting, refresh],
+    [
+      clients,
+      createClient,
+      enterTenantReadOnly,
+      error,
+      isLoading,
+      isSubmitting,
+      refresh,
+      updateClientStatus,
+    ],
   );
 }

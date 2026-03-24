@@ -706,6 +706,94 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["store_occurrences"]["Insert"]>;
       };
+      tenant_support_occurrences: {
+        Row: {
+          id: string;
+          legacy_id: string | null;
+          tenant_id: string;
+          code: string;
+          title: string;
+          category:
+            | "cadastro"
+            | "usuarios"
+            | "acesso"
+            | "financeiro"
+            | "operacao"
+            | "outro";
+          priority: "baixa" | "media" | "alta";
+          description: string;
+          status:
+            | "aberta"
+            | "em_analise"
+            | "aguardando_cliente"
+            | "resolvida"
+            | "fechada";
+          opened_by_profile_id: string | null;
+          assigned_to_profile_id: string | null;
+          last_message_at: string;
+          resolved_at: string | null;
+          closed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          legacy_id?: string | null;
+          tenant_id: string;
+          code: string;
+          title: string;
+          category?:
+            | "cadastro"
+            | "usuarios"
+            | "acesso"
+            | "financeiro"
+            | "operacao"
+            | "outro";
+          priority?: "baixa" | "media" | "alta";
+          description: string;
+          status?:
+            | "aberta"
+            | "em_analise"
+            | "aguardando_cliente"
+            | "resolvida"
+            | "fechada";
+          opened_by_profile_id?: string | null;
+          assigned_to_profile_id?: string | null;
+          last_message_at?: string;
+          resolved_at?: string | null;
+          closed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["tenant_support_occurrences"]["Insert"]
+        >;
+      };
+      tenant_support_occurrence_events: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          occurrence_id: string;
+          event_type: string;
+          author_scope: "cliente" | "master" | "sistema";
+          content: string;
+          created_by_profile_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          occurrence_id: string;
+          event_type: string;
+          author_scope?: "cliente" | "master" | "sistema";
+          content: string;
+          created_by_profile_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["tenant_support_occurrence_events"]["Insert"]
+        >;
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

@@ -4,8 +4,9 @@ import { resolveLandingPath } from "@/lib/permission-modules";
 import {
   findManagedUserByAuthUserId,
 } from "@/lib/supabase-data/admin-users";
+import { getTenantByIdentifier } from "@/lib/supabase-data/tenants";
 import { createSupabaseRequestClient } from "@/lib/supabase-request-client";
-import { MASTER_TENANT_COOKIE_NAME } from "@/lib/tenant";
+import { MASTER_TENANT_COOKIE_NAME, isMasterRole } from "@/lib/tenant";
 
 type LoginBody = {
   email?: string;
@@ -65,6 +66,24 @@ export async function POST(request: NextRequest) {
         { status: 403 },
       ),
     );
+  }
+
+  if (!isMasterRole(managedUser.role) && managedUser.tenantId) {
+    const tenant = await getTenantByIdentifier(managedUser.tenantId);
+
+    if (tenant && tenant.status !== "ativo") {
+      await supabase.auth.signOut();
+
+      return applyResponseCookies(
+        NextResponse.json(
+          {
+            message:
+              "O cliente deste usuário está inativo. Fale com o administrador master para reativar o acesso.",
+          },
+          { status: 403 },
+        ),
+      );
+    }
   }
 
   const response = NextResponse.json({

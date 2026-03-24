@@ -20,7 +20,7 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
-export function useManagedUsers() {
+export function useManagedUsers(basePath = "/api/admin/users") {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,7 +31,7 @@ export function useManagedUsers() {
     setError(null);
 
     try {
-      const data = await readJson<ManagedUser[]>("/api/admin/users");
+      const data = await readJson<ManagedUser[]>(basePath);
       setUsers(data);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Falha ao carregar usuários");
@@ -39,16 +39,16 @@ export function useManagedUsers() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [basePath]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [basePath, refresh]);
 
   const createUser = useCallback(async (payload: UserFormState) => {
     setIsSubmitting(true);
     try {
-      const created = await readJson<CreateManagedUserResult>("/api/admin/users", {
+      const created = await readJson<CreateManagedUserResult>(basePath, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -60,7 +60,7 @@ export function useManagedUsers() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [refresh]);
+  }, [basePath, refresh]);
 
   const updateUser = useCallback(
     async (
@@ -70,7 +70,7 @@ export function useManagedUsers() {
     ) => {
       setIsSubmitting(true);
       try {
-        await readJson<ManagedUser>(`/api/admin/users/${userId}`, {
+        await readJson<ManagedUser>(`${basePath}/${userId}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -86,14 +86,14 @@ export function useManagedUsers() {
         setIsSubmitting(false);
       }
     },
-    [refresh],
+    [basePath, refresh],
   );
 
   const savePermissions = useCallback(
     async (userId: string, permissions: PermissionMap) => {
       setIsSubmitting(true);
       try {
-        await readJson<ManagedUser>(`/api/admin/users/${userId}`, {
+        await readJson<ManagedUser>(`${basePath}/${userId}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -108,14 +108,14 @@ export function useManagedUsers() {
         setIsSubmitting(false);
       }
     },
-    [refresh],
+    [basePath, refresh],
   );
 
   const saveProfile = useCallback(
     async (userId: string, profile: ManagedUserProfileInput) => {
       setIsSubmitting(true);
       try {
-        await readJson<ManagedUser>(`/api/admin/users/${userId}`, {
+        await readJson<ManagedUser>(`${basePath}/${userId}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
@@ -130,7 +130,7 @@ export function useManagedUsers() {
         setIsSubmitting(false);
       }
     },
-    [refresh],
+    [basePath, refresh],
   );
 
   return useMemo(

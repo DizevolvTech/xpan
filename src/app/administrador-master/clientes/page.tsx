@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Building2, ShieldCheck, ShoppingCart, Store, Users } from "lucide-react";
@@ -32,8 +32,10 @@ import type {
   CreateMasterClientResult,
   MasterClient,
 } from "@/lib/master-clients";
+import { isMasterClientAdminEmailConflictMessage } from "@/lib/master-clients";
 import { getTenantIdentifier } from "@/lib/tenant";
 import { useMasterClients } from "@/lib/use-master-clients";
+import { cn } from "@/lib/utils";
 
 function buildInitialForm(): CreateMasterClientPayload {
   return {
@@ -85,12 +87,8 @@ export default function AdministradorMasterClientesPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [createdResult, setCreatedResult] = useState<CreateMasterClientResult | null>(null);
-
-  useEffect(() => {
-    if (searchParams.get("new") === "1") {
-      setIsCreateDialogOpen(true);
-    }
-  }, [searchParams]);
+  const adminEmailInputRef = useRef<HTMLInputElement>(null);
+  const isCreateDialogVisible = isCreateDialogOpen || searchParams.get("new") === "1";
 
   const filteredClients = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase();
@@ -123,12 +121,8 @@ export default function AdministradorMasterClientesPage() {
       key: "name",
       header: "Cliente",
       render: (client: MasterClient) => (
-        <div className="min-w-[16rem] space-y-1">
+        <div className="min-w-[16rem]">
           <p className="text-sm font-semibold text-foreground">{client.name}</p>
-          <p className="text-xs text-muted-foreground">
-            {client.slug}
-            {client.legacyId ? ` · ${client.legacyId}` : ""}
-          </p>
         </div>
       ),
     },
@@ -185,7 +179,16 @@ export default function AdministradorMasterClientesPage() {
       },
     },
     {
-      icon: "add" as const,
+      icon: "alert" as const,
+      label: "Ver ocorrências",
+      onClick: (client: MasterClient) => {
+        router.push(
+          `/administrador-master/clientes/${getTenantIdentifier(client)}?tab=occurrences`,
+        );
+      },
+    },
+    {
+      icon: "launch" as const,
       label: "Abrir ecossistema",
       onClick: (client: MasterClient) => {
         void handleEnterTenant(client);
@@ -211,8 +214,43 @@ export default function AdministradorMasterClientesPage() {
     setFormError(null);
   }
 
+  function updateTenantForm<K extends keyof CreateMasterClientPayload["tenant"]>(
+    key: K,
+    value: CreateMasterClientPayload["tenant"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      tenant: {
+        ...current.tenant,
+        [key]: value,
+      },
+    }));
+    setFormError(null);
+  }
+
+  function updateAdminForm<K extends keyof CreateMasterClientPayload["admin"]>(
+    key: K,
+    value: CreateMasterClientPayload["admin"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      admin: {
+        ...current.admin,
+        [key]: value,
+      },
+    }));
+    setFormError(null);
+  }
+
   async function handleCreateClient() {
-    if (!form.tenant.name.trim() || !form.admin.name.trim() || !form.admin.email.trim()) {
+    setFormError(null);
+    setPageError(null);
+
+    const tenantName = form.tenant.name.trim();
+    const adminName = form.admin.name.trim();
+    const adminEmail = form.admin.email.trim().toLowerCase();
+
+    if (!tenantName || !adminName || !adminEmail) {
       setFormError("Preencha o nome do cliente e os dados iniciais do administrador.");
       return;
     }
@@ -220,12 +258,12 @@ export default function AdministradorMasterClientesPage() {
     try {
       const created = await createClient({
         tenant: {
-          name: form.tenant.name.trim(),
+          name: tenantName,
           status: form.tenant.status,
         },
         admin: {
-          name: form.admin.name.trim(),
-          email: form.admin.email.trim().toLowerCase(),
+          name: adminName,
+          email: adminEmail,
           status: form.admin.status,
         },
       });
@@ -236,11 +274,18 @@ export default function AdministradorMasterClientesPage() {
       resetForm();
       router.replace("/administrador-master/clientes");
     } catch (createError) {
-      setFormError(
-        createError instanceof Error ? createError.message : "Não foi possível criar o cliente.",
-      );
+      const message =
+        createError instanceof Error ? createError.message : "Não foi possível criar o cliente.";
+      setFormError(message);
+
+      if (isMasterClientAdminEmailConflictMessage(message)) {
+        adminEmailInputRef.current?.focus();
+        adminEmailInputRef.current?.select();
+      }
     }
   }
+
+  const hasAdminEmailConflict = isMasterClientAdminEmailConflictMessage(formError);
 
   return (
     <PageLayout
@@ -365,7 +410,7 @@ export default function AdministradorMasterClientesPage() {
       </Card>
 
       <Dialog
-        open={isCreateDialogOpen}
+        open={isCreateDialogVisible}
         onOpenChange={(open) => {
           setIsCreateDialogOpen(open);
           if (!open) {
@@ -383,21 +428,21 @@ export default function AdministradorMasterClientesPage() {
           </DialogHeader>
 
           <div className="grid gap-5 py-2">
+            <div className="rounded-xl border border-border/70 bg-panel/20 p-4">
+              <p className="text-sm font-semibold text-foreground">Provisionamento seguro</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                O cliente só é criado quando o e-mail do administrador inicial estiver livre. Se
+                esse e-mail já existir, nada é salvo e você pode corrigir o cadastro na hora.
+              </p>
+            </div>
+
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="tenant-name">Nome do cliente</Label>
                 <Input
                   id="tenant-name"
                   value={form.tenant.name}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      tenant: {
-                        ...current.tenant,
-                        name: event.target.value,
-                      },
-                    }))
-                  }
+                  onChange={(event) => updateTenantForm("name", event.target.value)}
                   placeholder="Padaria Exemplo"
                 />
               </div>
@@ -407,13 +452,7 @@ export default function AdministradorMasterClientesPage() {
                 <Select
                   value={form.tenant.status}
                   onValueChange={(value) =>
-                    setForm((current) => ({
-                      ...current,
-                      tenant: {
-                        ...current.tenant,
-                        status: value as CreateMasterClientPayload["tenant"]["status"],
-                      },
-                    }))
+                    updateTenantForm("status", value as CreateMasterClientPayload["tenant"]["status"])
                   }
                 >
                   <SelectTrigger>
@@ -435,15 +474,7 @@ export default function AdministradorMasterClientesPage() {
                   <Input
                     id="admin-name"
                     value={form.admin.name}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        admin: {
-                          ...current.admin,
-                          name: event.target.value,
-                        },
-                      }))
-                    }
+                    onChange={(event) => updateAdminForm("name", event.target.value)}
                     placeholder="Gestor responsável"
                   />
                 </div>
@@ -451,20 +482,25 @@ export default function AdministradorMasterClientesPage() {
                 <div className="grid gap-2">
                   <Label htmlFor="admin-email">E-mail</Label>
                   <Input
+                    ref={adminEmailInputRef}
                     id="admin-email"
                     type="email"
                     value={form.admin.email}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        admin: {
-                          ...current.admin,
-                          email: event.target.value,
-                        },
-                      }))
-                    }
+                    onChange={(event) => updateAdminForm("email", event.target.value)}
                     placeholder="admin@cliente.com"
+                    aria-invalid={hasAdminEmailConflict}
+                    className={cn(hasAdminEmailConflict && "border-danger focus-visible:ring-danger/40")}
                   />
+                  <p
+                    className={cn(
+                      "text-xs text-muted-foreground",
+                      hasAdminEmailConflict && "font-medium text-danger-foreground",
+                    )}
+                  >
+                    {hasAdminEmailConflict
+                      ? "Esse e-mail já pertence a outro usuário. Troque o endereço para continuar."
+                      : "Use um e-mail exclusivo para o administrador inicial desse cliente."}
+                  </p>
                 </div>
 
                 <div className="grid gap-2">
@@ -472,13 +508,7 @@ export default function AdministradorMasterClientesPage() {
                   <Select
                     value={form.admin.status}
                     onValueChange={(value) =>
-                      setForm((current) => ({
-                        ...current,
-                        admin: {
-                          ...current.admin,
-                          status: value as CreateMasterClientPayload["admin"]["status"],
-                        },
-                      }))
+                      updateAdminForm("status", value as CreateMasterClientPayload["admin"]["status"])
                     }
                   >
                     <SelectTrigger>
@@ -513,7 +543,7 @@ export default function AdministradorMasterClientesPage() {
               Cancelar
             </Button>
             <Button type="button" onClick={() => void handleCreateClient()} disabled={isSubmitting}>
-              Provisionar cliente
+              {isSubmitting ? "Provisionando..." : "Provisionar cliente"}
             </Button>
           </DialogFooter>
         </DialogContent>

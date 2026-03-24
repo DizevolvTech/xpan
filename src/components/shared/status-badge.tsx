@@ -23,6 +23,7 @@ type StatusType =
   | "reprovado"
   | "aberta"
   | "em_analise"
+  | "aguardando_cliente"
   | "resolvida"
   | "fechada"
   | "aguardando_expedicao"
@@ -67,6 +68,10 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
   reprovado: { label: "Reprovado", className: "bg-danger text-danger-foreground" },
   aberta: { label: "Aberta", className: "bg-danger text-danger-foreground" },
   em_analise: { label: "Em Análise", className: "bg-warning text-warning-foreground" },
+  aguardando_cliente: {
+    label: "Aguardando Cliente",
+    className: "bg-[oklch(0.88_0.05_214)] text-[oklch(0.4_0.06_228)]",
+  },
   resolvida: { label: "Resolvida", className: "bg-info text-info-foreground" },
   fechada: { label: "Fechada", className: "bg-secondary text-secondary-foreground" },
   aguardando_expedicao: { label: "Aguardando Expedição", className: "bg-secondary text-secondary-foreground" },

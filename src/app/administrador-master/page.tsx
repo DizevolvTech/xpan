@@ -101,6 +101,19 @@ export default function AdministradorMasterPage() {
                 "Configuração operacional padrão",
               ]}
             />
+            <ModuleCard
+              href="/administrador-master/clientes"
+              title="Canal com clientes"
+              subtitle="Ocorrências administrativas"
+              description="Acompanhe as conversas entre o administrador do cliente e o Master entrando no detalhe do tenant e abrindo a aba de ocorrências."
+              icon={ShieldCheck}
+              tone="violet"
+              items={[
+                "Bloqueios de acesso e reativação",
+                "Usuários e troca de senha",
+                "Histórico de tratativas por cliente",
+              ]}
+            />
           </CardContent>
         </Card>
 
@@ -136,7 +149,10 @@ export default function AdministradorMasterPage() {
                 <div className="space-y-1">
                   <p className="text-sm font-semibold text-foreground">{client.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {client.slug} · {client.metrics.users} usuários · {client.metrics.stores} lojas
+                    {client.metrics.users} usuários · {client.metrics.stores} lojas
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {client.metrics.openOccurrences} ocorrências abertas
                   </p>
                 </div>
                 <div className="text-right text-xs text-muted-foreground">

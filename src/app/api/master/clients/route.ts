@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
-import type { CreateMasterClientPayload } from "@/lib/master-clients";
+import {
+  isMasterClientAdminEmailConflictMessage,
+  type CreateMasterClientPayload,
+} from "@/lib/master-clients";
 import { createTenantWithAdmin, listMasterClients } from "@/lib/supabase-data/tenants";
 import { isMasterRole } from "@/lib/tenant";
 
@@ -105,11 +108,12 @@ export async function POST(request: Request) {
     const createdClient = await createTenantWithAdmin(payload);
     return NextResponse.json(createdClient, { status: 201 });
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Não foi possível criar o cliente.";
+
     return NextResponse.json(
-      {
-        message: error instanceof Error ? error.message : "Não foi possível criar o cliente.",
-      },
-      { status: 500 },
+      { message },
+      { status: isMasterClientAdminEmailConflictMessage(message) ? 409 : 500 },
     );
   }
 }
