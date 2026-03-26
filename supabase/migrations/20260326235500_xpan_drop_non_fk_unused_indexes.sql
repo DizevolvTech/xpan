@@ -1,0 +1,2 @@
+drop index if exists public.idx_tenant_support_occurrences_tenant_status;
+drop index if exists public.idx_workflow_production_items_status;

@@ -31,7 +31,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (!payload?.name?.trim() || !payload?.sectorId) {
     return NextResponse.json(
-      { message: "Informe nome e categoria da subcategoria." },
+      { message: "Informe nome e categoria da linha de produção." },
       { status: 400 },
     );
   }

@@ -71,6 +71,8 @@ export type StoreOrderCatalogProduct = {
   blockedReason: string | null;
   baseDate: string;
   deliveryDate: string;
+  productionDate: string | null;
+  saleDate: string;
   sex: number;
   sab: number;
   dom: number;

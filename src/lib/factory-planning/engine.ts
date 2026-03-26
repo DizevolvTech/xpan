@@ -184,6 +184,10 @@ export interface OperationalAvailabilityResult {
   scheduleItemId: string | null;
 }
 
+function normalizeSaleLeadDays(saleLeadDays: number | undefined) {
+  return Number.isFinite(saleLeadDays) && Number(saleLeadDays) > 0 ? Number(saleLeadDays) : 1;
+}
+
 function getMatchingProductionDays(
   productDays: ProductionWeekDay[],
   scheduleItemDays: ProductionWeekDay[] | null,
@@ -218,7 +222,7 @@ export function resolveScheduledProductAvailability(
       productionDate: null,
       available: false,
       delayed: false,
-      blockedReason: "Produto fora da sublinha ativa.",
+      blockedReason: "Produto fora da linha de produção ativa.",
       matchingDays: [],
       scheduleItemId: null,
     };
@@ -237,7 +241,7 @@ export function resolveScheduledProductAvailability(
       productionDate: null,
       available: false,
       delayed: false,
-      blockedReason: "Dias da ficha do produto não coincidem com a sublinha ativa.",
+      blockedReason: "Dias da ficha do produto não coincidem com a linha de produção ativa.",
       matchingDays,
       scheduleItemId: options.scheduleItem.id,
     };
@@ -293,7 +297,6 @@ export function getOperationalTimeline(
   productionDays: ProductionWeekDay[],
   saleLeadDays = 0,
 ) {
-  void saleLeadDays;
   const availability = resolveScheduledProductAvailability(orderedAt, store, settings, {
     productProductionDays: productionDays,
     scheduleItem: {
@@ -305,7 +308,7 @@ export function getOperationalTimeline(
   return {
     baseDate: availability.baseDate,
     deliveryDate: availability.deliveryDate,
-    saleDate: availability.deliveryDate,
+    saleDate: addDays(availability.deliveryDate, normalizeSaleLeadDays(saleLeadDays)),
     productionDate: availability.productionDate,
     delayed: availability.delayed,
   };
@@ -540,7 +543,7 @@ function buildPlannedItems(
           orderedAt: formatDateTimeBr(order.orderedAt),
           baseDate: availability.baseDate,
           deliveryDate: availability.deliveryDate,
-          saleDate: availability.deliveryDate,
+          saleDate: addDays(availability.deliveryDate, normalizeSaleLeadDays(product.saleLeadDays)),
           productionDate: availability.productionDate,
           delayed: availability.delayed,
           productId: product.id,

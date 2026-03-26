@@ -1,0 +1,10 @@
+drop index if exists public.idx_categories_tenant;
+drop index if exists public.idx_delivery_executions_tenant;
+drop index if exists public.idx_ingredients_tenant;
+drop index if exists public.idx_operational_settings_tenant;
+drop index if exists public.idx_schedule_lines_tenant;
+drop index if exists public.idx_store_occurrences_tenant;
+drop index if exists public.idx_store_orders_tenant;
+drop index if exists public.idx_stores_tenant;
+drop index if exists public.idx_subcategories_tenant;
+drop index if exists public.idx_workflow_order_releases_tenant;

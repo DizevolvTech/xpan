@@ -138,7 +138,9 @@ test("store catalog returns only products that match the active subline and vali
   assert.equal(catalog[0]?.minimumProductionKg, 15);
   assert.equal(catalog[0]?.salesToKgFactor, 0.1);
   assert.equal(catalog[0]?.baseDate, "2026-03-17");
+  assert.equal(catalog[0]?.productionDate, "2026-03-19");
   assert.equal(catalog[0]?.deliveryDate, "2026-03-19");
+  assert.equal(catalog[0]?.saleDate, "2026-03-20");
 });
 
 test("store catalog keeps products outside the active schedule snapshot with a blocked reason", () => {
@@ -149,7 +151,7 @@ test("store catalog keeps products outside the active schedule snapshot with a b
 
   assert.equal(catalog.length, 1);
   assert.equal(catalog[0]?.available, false);
-  assert.equal(catalog[0]?.blockedReason, "Produto fora da sublinha ativa.");
+  assert.equal(catalog[0]?.blockedReason, "Produto fora da linha de produção ativa.");
 });
 
 test("store catalog keeps blocked products when subline day and product day do not intersect", () => {
@@ -160,5 +162,8 @@ test("store catalog keeps blocked products when subline day and product day do n
 
   assert.equal(catalog.length, 1);
   assert.equal(catalog[0]?.available, false);
-  assert.equal(catalog[0]?.blockedReason, "Dias da ficha do produto não coincidem com a sublinha ativa.");
+  assert.equal(
+    catalog[0]?.blockedReason,
+    "Dias da ficha do produto não coincidem com a linha de produção ativa.",
+  );
 });

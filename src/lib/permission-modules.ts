@@ -265,7 +265,7 @@ export const permissionModules = [
   },
   {
     id: "gestor-dados.linhas",
-    label: "Subcategorias",
+    label: "Linhas de produção",
     route: "/gestor-dados/linhas-producao",
     group: "gestor-dados",
     icon: "factory",
@@ -297,7 +297,7 @@ export const permissionModules = [
   },
   {
     id: "gestor-fabrica.sublinhas",
-    label: "Linhas - Subcategoria",
+    label: "Auditoria do cronograma ativo",
     route: "/gestor-fabrica/sublinhas-producao",
     group: "gestor-fabrica",
     icon: "clipboard-list",

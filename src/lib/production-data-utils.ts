@@ -8,6 +8,7 @@ import type {
   WeeklyProductionSchedule,
 } from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
+import { roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { productionWeekDays } from "@/lib/production-planning";
 
 export function getLinesBySectorFromData(
@@ -29,6 +30,12 @@ export function getProductsByLineFromData<T extends ProductionProduct>(
   products: T[],
 ) {
   return products.filter((product) => product.operationalLineId === lineId);
+}
+
+export function getProductOperationalStatusLabel(
+  product: Pick<ProductionProduct, "operationalLineId">,
+) {
+  return product.operationalLineId ? "No cronograma ativo" : "Fora do cronograma ativo";
 }
 
 export function getSchedulesByLineFromData(
@@ -111,6 +118,42 @@ function convertKnownUnitToKg(quantity: number, unit: UnitCode): number {
   }
 }
 
+function normalizeIngredientPurchaseUnit(ingredient: ProductionIngredient) {
+  return ingredient.purchaseUnit ?? ingredient.unit;
+}
+
+function normalizeIngredientPurchaseFactor(ingredient: ProductionIngredient) {
+  return Number.isFinite(ingredient.purchaseToConsumptionFactor) &&
+    Number(ingredient.purchaseToConsumptionFactor) > 0
+    ? Number(ingredient.purchaseToConsumptionFactor)
+    : 1;
+}
+
+function convertIngredientQuantityToConsumptionUnit(
+  item: RecipeIngredientReference,
+  ingredient: ProductionIngredient,
+) {
+  const purchaseUnit = normalizeIngredientPurchaseUnit(ingredient);
+  if (item.unit === ingredient.unit) {
+    return {
+      quantity: item.quantity,
+      unit: ingredient.unit,
+    };
+  }
+
+  if (item.unit === purchaseUnit) {
+    return {
+      quantity: item.quantity * normalizeIngredientPurchaseFactor(ingredient),
+      unit: ingredient.unit,
+    };
+  }
+
+  return {
+    quantity: item.quantity,
+    unit: item.unit,
+  };
+}
+
 function getRecipeReferenceWeightKgFromData(
   item: RecipeIngredientReference,
   ingredientsById: Map<string, ProductionIngredient>,
@@ -122,11 +165,13 @@ function getRecipeReferenceWeightKgFromData(
       return convertKnownUnitToKg(item.quantity, item.unit);
     }
 
+    const normalized = convertIngredientQuantityToConsumptionUnit(item, ingredient);
+
     if (ingredient.unit === "Kg" || ingredient.unit === "L") {
-      return convertKnownUnitToKg(item.quantity, item.unit);
+      return convertKnownUnitToKg(normalized.quantity, normalized.unit);
     }
 
-    return convertKnownUnitToKg(item.quantity, ingredient.unit);
+    return convertKnownUnitToKg(normalized.quantity, ingredient.unit);
   }
 
   const product = productsById.get(item.sourceId);
@@ -155,10 +200,23 @@ export function getProductRecipeTotalsFromData(
       .toFixed(3),
   );
   const outputAfterBreakKg = Number((totalIngredientsKg * (1 - product.breakPercent / 100)).toFixed(3));
+  const salesUnit = product.unitProfiles.sales.unit;
+  const unitWeightKg =
+    salesUnit === "Kg" || salesUnit === "L"
+      ? 1
+      : product.unitProfiles.sales.weightKg > 0
+        ? product.unitProfiles.sales.weightKg
+        : 1;
+  const finalOutputQuantity =
+    salesUnit === "Kg" || salesUnit === "L"
+      ? Number(outputAfterBreakKg.toFixed(3))
+      : roundQuantityForUnit(outputAfterBreakKg / unitWeightKg, salesUnit);
 
   return {
     totalIngredientsKg,
     outputAfterBreakKg,
+    finalOutputQuantity,
+    finalOutputUnit: salesUnit,
   };
 }
 

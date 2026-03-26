@@ -54,7 +54,7 @@ export default function SetorDetailsPage() {
   return (
     <PageLayout
       title={sector ? `${sector.code} · ${sector.name}` : "Carregando categoria"}
-      description="Visualize os detalhes da categoria e as subcategorias vinculadas."
+      description="Visualize os detalhes da categoria e as linhas de produção vinculadas."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
@@ -73,14 +73,14 @@ export default function SetorDetailsPage() {
             <Button asChild type="button">
               <Link href={`/gestor-dados/linhas-producao?sectorId=${sector.id}&new=1`}>
                 <Users className="size-4" />
-                Nova subcategoria
+                Nova linha de produção
               </Link>
             </Button>
           ) : null}
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/linhas-producao">
               <Factory className="size-4" />
-              Ver todas as subcategorias
+              Ver todas as linhas de produção
             </Link>
           </Button>
         </div>
@@ -103,7 +103,7 @@ export default function SetorDetailsPage() {
             <p className="mt-1 text-sm font-semibold">{sector?.responsible ?? "-"}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Subcategorias vinculadas</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linhas de produção vinculadas</p>
             <p className="mt-1 text-sm font-semibold">
               {lines.length} ({activeLines} ativas)
             </p>
@@ -119,33 +119,33 @@ export default function SetorDetailsPage() {
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Subcategorias Vinculadas</CardTitle>
+          <CardTitle>Linhas de produção vinculadas</CardTitle>
           <div className="flex flex-wrap gap-2">
             {sector ? (
               <Button asChild type="button">
                 <Link href={`/gestor-dados/linhas-producao?sectorId=${sector.id}&new=1`}>
                   <Users className="size-4" />
-                  Criar subcategoria
+                  Criar linha de produção
                 </Link>
               </Button>
             ) : null}
             <Button asChild type="button" variant="outline">
               <Link href="/gestor-dados/linhas-producao">
                 <Users className="size-4" />
-                Ir para módulo de subcategorias
+                Ir para módulo de linhas de produção
               </Link>
             </Button>
           </div>
         </CardHeader>
         <CardContent>
-          <PaginatedSection items={lines} label="subcategorias" initialPageSize={8}>
+          <PaginatedSection items={lines} label="linhas de produção" initialPageSize={8}>
             {(paginatedLines) => (
               <div className="overflow-x-auto rounded-xl border border-border/80">
                 <table className="w-full min-w-[920px] border-collapse">
                   <thead className="bg-panel">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Código</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Subcategoria</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha de produção</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Tipo</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Horário</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Capacidade/dia</th>
@@ -160,7 +160,7 @@ export default function SetorDetailsPage() {
                           colSpan={7}
                           className="border-t border-border/70 bg-card px-4 py-3 text-sm text-muted-foreground"
                         >
-                          Esta categoria ainda não possui subcategorias vinculadas.
+                          Esta categoria ainda não possui linhas de produção vinculadas.
                         </td>
                       </tr>
                     ) : (
@@ -176,7 +176,7 @@ export default function SetorDetailsPage() {
                           </td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
                             <Button asChild type="button" size="sm" variant="outline">
-                              <Link href={`/gestor-dados/linhas-producao/${line.id}`}>Abrir subcategoria</Link>
+                              <Link href={`/gestor-dados/linhas-producao/${line.id}`}>Abrir linha de produção</Link>
                             </Button>
                           </td>
                         </tr>

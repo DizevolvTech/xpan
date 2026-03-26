@@ -110,7 +110,7 @@ const quickAccessGroups: Array<{ label: string; modules: QuickAccessModule[] }> 
         href: "/gestor-fabrica/ordens-producao",
         title: "Ordens de Produção",
         subtitle: "Planejamento por linha executora",
-        description: "Monitore OPs por categoria, subcategoria e progresso operacional diário.",
+        description: "Monitore OPs por categoria, linha de produção e progresso operacional diário.",
         icon: Factory,
         tone: "amber",
       },

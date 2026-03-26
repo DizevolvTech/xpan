@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, MessageSquarePlus, Plus, RotateCcw } from "l
 import { DataTable } from "@/components/shared/data-table";
 import { KPICard } from "@/components/shared/kpi-card";
 import { PageLayout } from "@/components/shared/page-layout";
+import { SearchableSelect } from "@/components/shared/searchable-select";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -138,6 +139,26 @@ export default function OcorrenciasLojaPage() {
     () => scopedOrderSummaries.filter((order) => eligibleOccurrenceStatuses.has(order.status)),
     [scopedOrderSummaries],
   );
+  const storeOptionsForSearch = useMemo(
+    () =>
+      availableStores.map((store) => ({
+        value: store.id,
+        label: store.name,
+        description: "Filtra as ocorrências e os pedidos elegíveis desta loja.",
+        keywords: [store.id],
+      })),
+    [availableStores],
+  );
+  const eligibleOrderOptionsForSearch = useMemo(
+    () =>
+      eligibleOrderSummaries.map((order) => ({
+        value: order.id,
+        label: `${order.code} - ${order.deliveryDate}`,
+        description: `${order.store} · ${order.status.replaceAll("_", " ")}`,
+        keywords: [order.code, order.store, order.deliveryDate, order.status],
+      })),
+    [eligibleOrderSummaries],
+  );
 
   useEffect(() => {
     if (!requestedOrderId) {
@@ -167,6 +188,16 @@ export default function OcorrenciasLojaPage() {
   const selectedProduct = useMemo(
     () => selectedOrder?.items.find((item) => item.id === effectiveProductId) ?? null,
     [effectiveProductId, selectedOrder],
+  );
+  const selectedOrderItemsForSearch = useMemo(
+    () =>
+      (selectedOrder?.items ?? []).map((item) => ({
+        value: item.id,
+        label: `${item.code} - ${item.name}`,
+        description: `${item.category} · ${item.quantity} ${item.unit}`,
+        keywords: [item.code, item.name, item.category, item.operationalUnit],
+      })),
+    [selectedOrder],
   );
   const operationalUnit = selectedProduct?.operationalUnit ?? selectedProduct?.unit ?? "-";
   const quantityUnit = quantityType === "percentual" ? "%" : quantityType === "kg" ? "Kg" : operationalUnit;
@@ -374,18 +405,32 @@ export default function OcorrenciasLojaPage() {
             </p>
           </div>
           {shouldShowStoreSelector ? (
-            <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
-              <SelectTrigger className="w-[260px] bg-card">
-                <SelectValue placeholder="Filtrar por loja" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableStores.map((store) => (
-                  <SelectItem key={store.id} value={store.id}>
-                    {store.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            availableStores.length >= 8 ? (
+              <SearchableSelect
+                value={selectedStoreId}
+                onValueChange={setSelectedStoreId}
+                options={storeOptionsForSearch}
+                placeholder="Filtrar por loja"
+                searchPlaceholder="Buscar loja..."
+                emptyMessage="Nenhuma loja encontrada."
+                title="Selecionar loja"
+                description="Busque a loja para restringir a lista de ocorrências e os pedidos elegíveis."
+                className="w-[260px] bg-card"
+              />
+            ) : (
+              <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+                <SelectTrigger className="w-[260px] bg-card">
+                  <SelectValue placeholder="Filtrar por loja" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStores.map((store) => (
+                    <SelectItem key={store.id} value={store.id}>
+                      {store.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )
           ) : selectedStore ? (
             <span className="rounded-md border border-border/70 bg-panel px-3 py-2 text-sm text-foreground">
               {selectedStore.name}
@@ -421,18 +466,31 @@ export default function OcorrenciasLojaPage() {
               <div className="grid gap-4 py-2">
                 <div className="grid gap-2">
                   <Label>Pedido Relacionado *</Label>
-                  <Select value={effectiveOrderId} onValueChange={handleOrderChange}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o pedido" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {eligibleOrderSummaries.map((order) => (
-                        <SelectItem key={order.id} value={order.id}>
-                          {order.code} - {order.deliveryDate} - {order.store}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {eligibleOrderSummaries.length >= 8 ? (
+                    <SearchableSelect
+                      value={effectiveOrderId}
+                      onValueChange={handleOrderChange}
+                      options={eligibleOrderOptionsForSearch}
+                      placeholder="Selecione o pedido"
+                      searchPlaceholder="Buscar pedido..."
+                      emptyMessage="Nenhum pedido elegível encontrado."
+                      title="Selecionar pedido"
+                      description="Busque por código, loja, data de entrega ou status do pedido."
+                    />
+                  ) : (
+                    <Select value={effectiveOrderId} onValueChange={handleOrderChange}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o pedido" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {eligibleOrderSummaries.map((order) => (
+                          <SelectItem key={order.id} value={order.id}>
+                            {order.code} - {order.deliveryDate} - {order.store}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Somente pedidos em rota, no destino ou já entregues podem abrir ocorrência.
                   </p>
@@ -440,18 +498,42 @@ export default function OcorrenciasLojaPage() {
 
                 <div className="grid gap-2">
                   <Label>Produto Afetado *</Label>
-                  <Select value={effectiveProductId} onValueChange={setProductId} disabled={!selectedOrder}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={selectedOrder ? "Selecione o produto" : "Selecione um pedido primeiro"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(selectedOrder?.items ?? []).map((item) => (
-                        <SelectItem key={item.id} value={item.id}>
-                          {item.code} - {item.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {(selectedOrder?.items.length ?? 0) >= 8 ? (
+                    <SearchableSelect
+                      value={effectiveProductId}
+                      onValueChange={setProductId}
+                      options={selectedOrderItemsForSearch}
+                      placeholder={
+                        selectedOrder ? "Selecione o produto" : "Selecione um pedido primeiro"
+                      }
+                      searchPlaceholder="Buscar produto..."
+                      emptyMessage="Nenhum produto encontrado neste pedido."
+                      title="Selecionar produto afetado"
+                      description="Busque pelo código, nome ou categoria do item entregue."
+                      disabled={!selectedOrder}
+                    />
+                  ) : (
+                    <Select
+                      value={effectiveProductId}
+                      onValueChange={setProductId}
+                      disabled={!selectedOrder}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            selectedOrder ? "Selecione o produto" : "Selecione um pedido primeiro"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(selectedOrder?.items ?? []).map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.code} - {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
                 <div className="grid gap-2">
@@ -496,8 +578,19 @@ export default function OcorrenciasLojaPage() {
                       step={quantityType === "operacional" ? "1" : "0.1"}
                       value={quantity}
                       onChange={(event) => setQuantity(event.target.value)}
-                      placeholder={quantityType === "percentual" ? "0 a 100" : "Informe a quantidade"}
+                      placeholder={
+                        quantityType === "percentual"
+                          ? "Informe o percentual afetado"
+                          : "Informe o valor afetado"
+                      }
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {quantityType === "percentual"
+                        ? "Use apenas o número do percentual, sem o símbolo %."
+                        : quantityType === "kg"
+                          ? "Informe o peso afetado em quilogramas."
+                          : `Informe a quantidade afetada em ${quantityUnit}.`}
+                    </p>
                   </div>
 
                   <div className="grid gap-2">

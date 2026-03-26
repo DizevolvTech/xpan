@@ -1,6 +1,10 @@
 import type { LineType } from "@/lib/production-planning";
 import { getUnitDefinition } from "@/lib/factory-planning/units";
-import { getOperationalOrderWindow, resolveScheduledProductAvailability } from "@/lib/order-planning";
+import {
+  getOperationalOrderWindow,
+  getOperationalTimeline,
+  resolveScheduledProductAvailability,
+} from "@/lib/order-planning";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import type { StoreOrderCatalogProduct } from "@/lib/store-order-types";
 
@@ -21,6 +25,8 @@ type ApprovedCatalogEntry = {
   minimumProductionKg: number;
   baseDate: string;
   deliveryDate: string;
+  productionDate: string | null;
+  saleDate: string;
   available: boolean;
   blockedReason: string | null;
 };
@@ -81,6 +87,13 @@ export function buildStoreOrderCatalog(
           },
         )
       : null;
+    const timeline = getOperationalTimeline(
+      options.orderedAt,
+      store,
+      snapshot.operationalSettings,
+      product.productionDays,
+      product.saleLeadDays,
+    );
 
     const key = `${schedule?.id ?? line.id}|${product.id}`;
     if (entries.has(key)) {
@@ -104,8 +117,11 @@ export function buildStoreOrderCatalog(
       minimumProductionKg: product.minimumProductionKg,
       baseDate: availability?.baseDate ?? orderWindow.baseDate,
       deliveryDate: availability?.deliveryDate ?? orderWindow.deliveryDate,
+      productionDate: availability?.productionDate ?? timeline.productionDate,
+      saleDate: timeline.saleDate,
       available: availability?.available ?? false,
-      blockedReason: availability ? availability.blockedReason : "Sublinha sem cronograma ativo.",
+      blockedReason:
+        availability ? availability.blockedReason : "Linha de produção sem cronograma ativo.",
     });
   });
 
@@ -131,6 +147,8 @@ export function buildStoreOrderCatalog(
         blockedReason: entry.blockedReason,
         baseDate: entry.baseDate,
         deliveryDate: entry.deliveryDate,
+        productionDate: entry.productionDate,
+        saleDate: entry.saleDate,
         sex: 0,
         sab: 0,
         dom: 0,

@@ -16,6 +16,8 @@ import { Textarea } from "@/components/ui/textarea";
 type IngredientProfileLike = {
   unit: UnitCode;
   weightKg?: number;
+  purchaseUnit?: UnitCode;
+  purchaseToConsumptionFactor?: number;
   metadata: string;
   observation: string;
 };
@@ -30,6 +32,11 @@ interface IngredientProfileFieldsProps {
   observationLabel?: string;
   metadataPlaceholder?: string;
   observationPlaceholder?: string;
+  showPurchaseFields?: boolean;
+  purchaseUnitOptions?: readonly UnitCode[];
+  purchaseUnitLabel?: string;
+  purchaseFactorLabel?: string;
+  purchaseHelperText?: string;
   showWeightKg?: boolean;
   disabled?: boolean;
 }
@@ -44,10 +51,16 @@ export function IngredientProfileFields({
   observationLabel = "Observação",
   metadataPlaceholder,
   observationPlaceholder,
+  showPurchaseFields = false,
+  purchaseUnitOptions,
+  purchaseUnitLabel = "Unidade de compra",
+  purchaseFactorLabel = "Conversão compra -> consumo",
+  purchaseHelperText,
   showWeightKg = true,
   disabled = false,
 }: IngredientProfileFieldsProps) {
   const weightLocked = profile.unit === "Kg";
+  const normalizedPurchaseUnitOptions = purchaseUnitOptions ?? unitOptions;
 
   return (
     <section className="space-y-4 rounded-xl border border-border/80 p-4">
@@ -89,6 +102,44 @@ export function IngredientProfileFields({
               disabled={disabled || weightLocked}
               onChange={(event) => onChange({ weightKg: Number(event.target.value) })}
             />
+          </div>
+        ) : null}
+
+        {showPurchaseFields ? (
+          <div className="grid gap-2">
+            <Label>{purchaseUnitLabel}</Label>
+            <Select
+              value={profile.purchaseUnit ?? profile.unit}
+              onValueChange={(value) => onChange({ purchaseUnit: value as UnitCode })}
+              disabled={disabled}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {normalizedPurchaseUnitOptions.map((unit) => (
+                  <SelectItem key={unit} value={unit}>
+                    {getOperationalUnitLabel(unit)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+
+        {showPurchaseFields ? (
+          <div className="grid gap-2">
+            <Label>{purchaseFactorLabel}</Label>
+            <Input
+              type="number"
+              step="0.001"
+              value={profile.purchaseToConsumptionFactor ?? 1}
+              disabled={disabled}
+              onChange={(event) => onChange({ purchaseToConsumptionFactor: Number(event.target.value) })}
+            />
+            {purchaseHelperText ? (
+              <p className="text-xs text-muted-foreground">{purchaseHelperText}</p>
+            ) : null}
           </div>
         ) : null}
 

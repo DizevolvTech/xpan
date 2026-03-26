@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AlertCircle, ArrowUpDown, ArrowUpRight, ChevronDown, ChevronUp, Eye, LucideIcon, Pencil, Plus, Printer, Trash2, UserRound } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { PaginationControls } from "@/components/shared/pagination-controls";
+import { paginateArray } from "@/lib/pagination";
+import {
+  applyColumnSort,
+  toggleColumnSort,
+  type ColumnSortState,
+} from "@/lib/data-table-sort";
 import {
   hasTemporalSortValue,
   sortItemsByTemporalValue,
@@ -9,25 +18,14 @@ import {
 } from "@/lib/temporal-table-sort";
 import { readClientAccessContext } from "@/lib/client-access-context";
 import { cn, formatKgValue } from "@/lib/utils";
-import {
-  AlertCircle,
-  ArrowUpRight,
-  Eye,
-  LucideIcon,
-  Pencil,
-  Plus,
-  Printer,
-  Trash2,
-  UserRound,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { PaginationControls } from "@/components/shared/pagination-controls";
-import { paginateArray } from "@/lib/pagination";
 
 interface Column<T> {
   key: string;
   header: string;
   render?: (item: T) => React.ReactNode;
+  sortable?: boolean;
+  sortValue?: (item: T) => unknown;
+  sortComparator?: (left: T, right: T) => number;
 }
 
 interface Action<T> {
@@ -85,6 +83,16 @@ function formatDefaultCellValue(key: string, value: unknown) {
   return String(value);
 }
 
+function isPrimitiveSortValue(value: unknown) {
+  return (
+    value === null ||
+    value === undefined ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
 export function DataTable<T extends object>({
   data,
   columns,
@@ -122,13 +130,66 @@ export function DataTable<T extends object>({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
+  const [columnSort, setColumnSort] = useState<ColumnSortState | null>(null);
   const canSortByDate = useMemo(
     () => hasTemporalSortValue(data, temporalSortKeys),
     [data, temporalSortKeys],
   );
+  const sortableColumns = useMemo(
+    () =>
+      new Set(
+        columns
+          .filter((column) => {
+            if (column.sortable === false) {
+              return false;
+            }
+            if (column.sortable === true || column.sortValue || column.sortComparator) {
+              return true;
+            }
+
+            const sampleValue =
+              data.length > 0 ? (data[0] as Record<string, unknown>)[column.key] : undefined;
+            return isPrimitiveSortValue(sampleValue);
+          })
+          .map((column) => column.key),
+      ),
+    [columns, data],
+  );
+  const sortResolvers = useMemo(
+    () =>
+      Object.fromEntries(
+        columns.map((column) => [
+          column.key,
+          column.sortValue ?? ((item: T) => (item as Record<string, unknown>)[column.key]),
+        ]),
+      ) as Record<string, (item: T) => unknown>,
+    [columns],
+  );
+  const columnSortedData = useMemo(() => {
+    if (!columnSort) {
+      return null;
+    }
+
+    const activeColumn = columns.find((column) => column.key === columnSort.key);
+    if (!activeColumn || !sortableColumns.has(columnSort.key)) {
+      return data;
+    }
+
+    if (activeColumn.sortComparator) {
+      const sorted = [...data].sort((left, right) => activeColumn.sortComparator!(left, right));
+      return columnSort.direction === "asc" ? sorted : sorted.reverse();
+    }
+
+    return applyColumnSort(data, columnSort, sortResolvers);
+  }, [columnSort, columns, data, sortResolvers, sortableColumns]);
   const sortedData = useMemo(
-    () => (canSortByDate ? sortItemsByTemporalValue(data, sortOrder, temporalSortKeys) : data),
-    [canSortByDate, data, sortOrder, temporalSortKeys],
+    () =>
+      columnSort
+        ? (columnSortedData ?? data)
+        : canSortByDate
+          ? sortItemsByTemporalValue(data, sortOrder, temporalSortKeys)
+          : data,
+    [canSortByDate, columnSort, columnSortedData, data, sortOrder, temporalSortKeys],
   );
   const paginated = useMemo(
     () => paginateArray(sortedData, page, pageSize),
@@ -196,12 +257,41 @@ export function DataTable<T extends object>({
               {columns.map((column) => (
                 <th
                   key={column.key}
+                  aria-sort={
+                    columnSort?.key === column.key
+                      ? columnSort.direction === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
                   className={cn(
                     "whitespace-nowrap px-4 text-left text-xs font-semibold text-muted-foreground/95",
                     compact ? "py-2.5" : "py-3.5",
                   )}
                 >
-                  {column.header}
+                  {sortableColumns.has(column.key) ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 transition-colors hover:text-foreground"
+                      onClick={() => {
+                        setColumnSort((current) => toggleColumnSort(current, column.key));
+                        setPage(1);
+                      }}
+                    >
+                      <span>{column.header}</span>
+                      {columnSort?.key === column.key ? (
+                        columnSort.direction === "asc" ? (
+                          <ChevronUp className="size-3.5" />
+                        ) : (
+                          <ChevronDown className="size-3.5" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="size-3.5 opacity-60" />
+                      )}
+                    </button>
+                  ) : (
+                    column.header
+                  )}
                 </th>
               ))}
               {actions && actions.length > 0 && (
@@ -334,7 +424,7 @@ export function DataTable<T extends object>({
         </div>
       </div>
 
-      {showFooterControls && (pagination || canSortByDate) ? (
+      {showFooterControls && (pagination || (canSortByDate && !columnSort)) ? (
         <PaginationControls
           page={footerPagination.page}
           pageSize={footerPagination.pageSize}
@@ -351,7 +441,7 @@ export function DataTable<T extends object>({
           label={paginationLabel}
           sortOrder={sortOrder}
           onSortOrderChange={
-            canSortByDate
+            canSortByDate && !columnSort
               ? (nextSortOrder) => {
                   setSortOrder(nextSortOrder);
                   setPage(1);

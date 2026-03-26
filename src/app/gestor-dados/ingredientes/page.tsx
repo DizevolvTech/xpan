@@ -38,8 +38,10 @@ import {
   getOperationalUnitLabel,
   getOperationalUnitOptions,
 } from "@/lib/operational-units";
+import { validateIngredientFormState } from "@/lib/ingredient-form-logic";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
+import { cn } from "@/lib/utils";
 
 type IngredientRow = ProductionIngredient;
 
@@ -47,8 +49,11 @@ type IngredientFormState = {
   code: string;
   externalCode: string;
   name: string;
+  shortName: string;
   type: ProductionIngredient["type"];
   unit: ProductionIngredient["unit"];
+  purchaseUnit: ProductionIngredient["purchaseUnit"];
+  purchaseToConsumptionFactor: number;
   metadata: string;
   observation: string;
   composition: IngredientCompositionItem[];
@@ -62,6 +67,7 @@ type IngredientListRow = {
   code: string;
   externalCode: string;
   name: string;
+  shortName: string;
   typeLabel: string;
   unitLabel: string;
   compositionLabel: string;
@@ -74,8 +80,14 @@ function buildFormState(ingredient?: IngredientRow | null): IngredientFormState 
     code: ingredient?.code ?? `IN-${String(Date.now()).slice(-6)}`,
     externalCode: ingredient?.externalCode ?? "",
     name: ingredient?.name ?? "",
+    shortName: ingredient?.shortName ?? "",
     type: ingredient?.type ?? "puro",
     unit: ingredient?.unit ?? "Kg",
+    purchaseUnit: ingredient?.purchaseUnit ?? ingredient?.unit ?? "Kg",
+    purchaseToConsumptionFactor:
+      ingredient?.purchaseToConsumptionFactor && ingredient.purchaseToConsumptionFactor > 0
+        ? ingredient.purchaseToConsumptionFactor
+        : 1,
     metadata: ingredient?.metadata ?? "",
     observation: ingredient?.observation ?? "",
     composition: ingredient?.composition ?? [],
@@ -111,6 +123,7 @@ export default function IngredientesPage() {
   const [draftComponentUnit, setDraftComponentUnit] = useState<ProductionIngredient["unit"]>("Kg");
   const [draftComponentObservation, setDraftComponentObservation] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
@@ -147,6 +160,7 @@ export default function IngredientesPage() {
         code: ingredient.code,
         externalCode: ingredient.externalCode ?? "",
         name: ingredient.name,
+        shortName: ingredient.shortName ?? "",
         typeLabel: ingredient.type === "misturado" ? "Ingrediente misturado" : "Ingrediente puro",
         unitLabel: getOperationalUnitLabel(ingredient.unit),
         compositionLabel:
@@ -166,6 +180,7 @@ export default function IngredientesPage() {
         code: product.code,
         externalCode: product.externalCode ?? "",
         name: product.name,
+        shortName: product.shortName ?? "",
         typeLabel: "Produto MPI",
         unitLabel: getOperationalUnitLabel(
           product.ingredientProfile?.unit ?? product.unitProfiles.sales.unit,
@@ -181,6 +196,7 @@ export default function IngredientesPage() {
       [...ingredientRows, ...mpiRows].filter(
         (item) =>
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.shortName.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.externalCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.typeLabel.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -195,7 +211,12 @@ export default function IngredientesPage() {
       header: "Código ERP",
       render: (item: IngredientListRow) => item.externalCode || "-",
     },
-    { key: "name", header: "Nome" },
+    { key: "name", header: "Nome completo" },
+    {
+      key: "shortName",
+      header: "Nome reduzido",
+      render: (item: IngredientListRow) => item.shortName || "-",
+    },
     {
       key: "typeLabel",
       header: "Tipo",
@@ -208,6 +229,10 @@ export default function IngredientesPage() {
   const productOptions = mpiProducts.map((product) => ({
     id: product.id,
     label: `${product.code} · ${product.name}`,
+    description: product.shortName?.trim() ? `Nome reduzido: ${product.shortName}` : undefined,
+    keywords: [product.code, product.shortName].filter((keyword): keyword is string =>
+      Boolean(keyword?.trim()),
+    ),
     type: "produto" as const,
   }));
   const ingredientOptions = ingredients
@@ -215,6 +240,12 @@ export default function IngredientesPage() {
     .map((ingredient) => ({
       id: ingredient.id,
       label: `${ingredient.code} · ${ingredient.name}`,
+      description: ingredient.shortName?.trim()
+        ? `Nome reduzido: ${ingredient.shortName}`
+        : undefined,
+      keywords: [ingredient.code, ingredient.shortName].filter((keyword): keyword is string =>
+        Boolean(keyword?.trim()),
+      ),
       type: "ingrediente" as const,
     }));
   const compositionOptions = [...ingredientOptions, ...productOptions];
@@ -248,6 +279,7 @@ export default function IngredientesPage() {
       }),
     );
     setFormError(null);
+    setInvalidFields([]);
     setIsIngredientDialogOpen(true);
   }
 
@@ -344,13 +376,19 @@ export default function IngredientesPage() {
   }
 
   async function handleSave() {
-    if (!formState.name.trim()) {
-      setFormError("Informe o nome do ingrediente.");
+    const validation = validateIngredientFormState({ name: formState.name });
+    if (validation.error) {
+      setInvalidFields(validation.invalidFields);
+      setFormError(validation.error);
+      setTimeout(() => {
+        document.getElementById("ingredient-name")?.focus();
+      }, 0);
       return;
     }
 
     setIsSubmitting(true);
     setFormError(null);
+    setInvalidFields([]);
 
     try {
       const response = await fetch(
@@ -450,7 +488,7 @@ export default function IngredientesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código XPAN, ERP, nome ou tipo..."
+            searchPlaceholder="Buscar por código XPAN, ERP, nome completo, nome reduzido ou tipo..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}
@@ -489,6 +527,7 @@ export default function IngredientesPage() {
               return;
             }
             setFormError(null);
+            setInvalidFields([]);
           }
 
           setIsIngredientDialogOpen(open);
@@ -529,14 +568,27 @@ export default function IngredientesPage() {
             <fieldset disabled={isReadOnly} className="grid gap-5">
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="ingredient-name">Nome do Ingrediente *</Label>
+                  <Label htmlFor="ingredient-name">Nome completo do ingrediente *</Label>
                   <Input
                     id="ingredient-name"
+                    aria-invalid={invalidFields.includes("name")}
+                    className={cn(invalidFields.includes("name") && "border-danger/60 ring-1 ring-danger/30")}
                     value={formState.name}
                     onChange={(event) =>
                       setFormState((current) => ({ ...current, name: event.target.value }))
                     }
                     placeholder="Ex: Mistura Pão"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ingredient-short-name">Nome reduzido</Label>
+                  <Input
+                    id="ingredient-short-name"
+                    value={formState.shortName}
+                    onChange={(event) =>
+                      setFormState((current) => ({ ...current, shortName: event.target.value }))
+                    }
+                    placeholder="Ex: Mistura base"
                   />
                 </div>
                 <div className="grid gap-2">
@@ -602,26 +654,36 @@ export default function IngredientesPage() {
                 </div>
               </div>
 
-              <IngredientProfileFields
-                profile={{
-                  unit: formState.unit,
-                  metadata: formState.metadata,
-                  observation: formState.observation,
-                }}
-                unitOptions={ingredientUnitOptions}
-                showWeightKg={false}
-                metadataLabel="Metadados / Uso"
-                metadataPlaceholder="Ex: MPI de confeitaria usada como base"
-                observationPlaceholder="Explique o uso deste ingrediente na receita."
-                onChange={(patch) =>
-                  setFormState((current) => ({
-                    ...current,
-                    unit: (patch.unit as IngredientRow["unit"] | undefined) ?? current.unit,
-                    metadata: patch.metadata ?? current.metadata,
-                    observation: patch.observation ?? current.observation,
-                  }))
-                }
-              />
+                <IngredientProfileFields
+                  profile={{
+                    unit: formState.unit,
+                    purchaseUnit: formState.purchaseUnit,
+                    purchaseToConsumptionFactor: formState.purchaseToConsumptionFactor,
+                    metadata: formState.metadata,
+                    observation: formState.observation,
+                  }}
+                  unitOptions={ingredientUnitOptions}
+                  showPurchaseFields
+                  showWeightKg={false}
+                  metadataLabel="Metadados / Uso"
+                  metadataPlaceholder="Ex: MPI de confeitaria usada como base"
+                  observationPlaceholder="Explique o uso deste ingrediente na receita."
+                  purchaseHelperText={`1 ${getOperationalUnitLabel(formState.purchaseUnit ?? formState.unit)} = ${formState.purchaseToConsumptionFactor || 1} ${getOperationalUnitLabel(formState.unit)}`}
+                  onChange={(patch) =>
+                    setFormState((current) => ({
+                      ...current,
+                      unit: (patch.unit as IngredientRow["unit"] | undefined) ?? current.unit,
+                      purchaseUnit:
+                        (patch.purchaseUnit as IngredientRow["purchaseUnit"] | undefined) ??
+                        current.purchaseUnit ??
+                        current.unit,
+                      purchaseToConsumptionFactor:
+                        patch.purchaseToConsumptionFactor ?? current.purchaseToConsumptionFactor,
+                      metadata: patch.metadata ?? current.metadata,
+                      observation: patch.observation ?? current.observation,
+                    }))
+                  }
+                />
 
               {formState.type === "misturado" ? (
                 <IngredientCompositionEditor
@@ -629,7 +691,12 @@ export default function IngredientesPage() {
                   description="Informe os componentes da mistura em quantidade e observação operacional por item."
                   composition={formState.composition}
                   emptyMessage="Nenhum componente adicionado."
-                  options={compositionOptions.map((option) => ({ id: option.id, label: option.label }))}
+                  options={compositionOptions.map((option) => ({
+                    id: option.id,
+                    label: option.label,
+                    description: option.description,
+                    keywords: option.keywords,
+                  }))}
                   draft={{
                     componentId: draftComponentId,
                     quantity: draftComponentQty,
@@ -659,6 +726,11 @@ export default function IngredientesPage() {
               ) : null}
             </fieldset>
           </div>
+          {formError && !isReadOnly ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/15 px-3 py-2 text-sm text-danger-foreground">
+              {formError}
+            </div>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"

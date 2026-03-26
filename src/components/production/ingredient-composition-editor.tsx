@@ -6,6 +6,7 @@ import type { UnitCode } from "@/lib/factory-planning/units";
 import { getOperationalUnitLabel, preferredOperationalUnits } from "@/lib/operational-units";
 import type { IngredientCompositionItem } from "@/lib/production-planning";
 import { PaginatedSection } from "@/components/shared/paginated-section";
+import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,8 @@ import {
 type CompositionOption = {
   id: string;
   label: string;
+  description?: string;
+  keywords?: string[];
 };
 
 type CompositionDraft = {
@@ -65,6 +68,8 @@ export function IngredientCompositionEditor({
   onUpdate,
   readOnly = false,
 }: IngredientCompositionEditorProps) {
+  const shouldUseSearchableSelect = options.length >= 8;
+
   return (
     <section className="space-y-4 rounded-xl border border-border/80 bg-panel/20 p-4">
       <div>
@@ -76,18 +81,39 @@ export function IngredientCompositionEditor({
         <div className="grid gap-3 md:grid-cols-[1.4fr_0.7fr_0.7fr_1fr_auto]">
           <div className="grid gap-2">
             <Label>Componente</Label>
-            <Select value={draft.componentId} onValueChange={(value) => onDraftChange({ componentId: value })}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione um componente" />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {shouldUseSearchableSelect ? (
+              <SearchableSelect
+                value={draft.componentId}
+                onValueChange={(value) => onDraftChange({ componentId: value })}
+                options={options.map((option) => ({
+                  value: option.id,
+                  label: option.label,
+                  description: option.description,
+                  keywords: option.keywords,
+                }))}
+                placeholder="Selecione um componente"
+                searchPlaceholder="Buscar ingrediente ou produto..."
+                emptyMessage="Nenhum componente encontrado."
+                title="Selecionar componente"
+                description="Busque pelo nome ou código do ingrediente ou produto MPI."
+              />
+            ) : (
+              <Select
+                value={draft.componentId}
+                onValueChange={(value) => onDraftChange({ componentId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um componente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {options.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="grid gap-2">
@@ -98,7 +124,6 @@ export function IngredientCompositionEditor({
               step="0.001"
               value={draft.quantity}
               onChange={(event) => onDraftChange({ quantity: event.target.value })}
-              placeholder="0,000"
             />
           </div>
 

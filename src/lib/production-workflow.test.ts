@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ProductPreparationStageKey } from "@/lib/production-planning";
 import {
   canTransitionProductionItemStatus,
   getNextProductionActionLabel,
@@ -32,7 +33,7 @@ test("production workflow exposes previous and next actions", () => {
 });
 
 test("production workflow respects per-product custom stages", () => {
-  const customStages = ["em_preparacao", "embalando"] as const;
+  const customStages: ProductPreparationStageKey[] = ["em_preparacao", "embalando"];
 
   assert.equal(getNextProductionItemStatus("em_preparacao", customStages), "embalando");
   assert.equal(getPreviousProductionItemStatus("embalando", customStages), "em_preparacao");

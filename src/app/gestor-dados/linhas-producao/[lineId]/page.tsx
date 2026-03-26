@@ -158,26 +158,26 @@ export default function LinhaProducaoDetailsPage() {
   if (!isLoading && !line) {
     return (
       <PageLayout
-        title="Subcategoria não encontrada"
-        description="A subcategoria solicitada não existe ou foi removida."
+        title="Linha de produção não encontrada"
+        description="A linha de produção solicitada não existe ou foi removida."
         badge="Dados Mestres"
         breadcrumbs={[
           { label: "Gestor de Dados", href: "/gestor-dados" },
-          { label: "Subcategorias", href: "/gestor-dados/linhas-producao" },
+          { label: "Linhas de produção", href: "/gestor-dados/linhas-producao" },
           { label: "Detalhes" },
         ]}
         actions={
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/linhas-producao">
               <ArrowLeft className="size-4" />
-              Voltar para subcategorias
+              Voltar para linhas de produção
             </Link>
           </Button>
         }
       >
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Verifique se o código da subcategoria está correto e tente novamente.
+            Verifique se o código da linha de produção está correto e tente novamente.
           </CardContent>
         </Card>
       </PageLayout>
@@ -203,7 +203,7 @@ export default function LinhaProducaoDetailsPage() {
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message ?? "Falha ao adicionar produto à carteira operacional");
+        throw new Error(body?.message ?? "Falha ao adicionar produto ao cronograma ativo");
       }
 
       await refresh();
@@ -211,7 +211,7 @@ export default function LinhaProducaoDetailsPage() {
       setPageError(
         mutationError instanceof Error
           ? mutationError.message
-          : "Falha ao adicionar produto à carteira operacional",
+          : "Falha ao adicionar produto ao cronograma ativo",
       );
     } finally {
       setIsSubmittingProductId(null);
@@ -236,7 +236,7 @@ export default function LinhaProducaoDetailsPage() {
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message ?? "Falha ao remover produto da carteira operacional");
+        throw new Error(body?.message ?? "Falha ao remover produto do cronograma ativo");
       }
 
       await refresh();
@@ -244,7 +244,7 @@ export default function LinhaProducaoDetailsPage() {
       setPageError(
         mutationError instanceof Error
           ? mutationError.message
-          : "Falha ao remover produto da carteira operacional",
+          : "Falha ao remover produto do cronograma ativo",
       );
     } finally {
       setIsSubmittingProductId(null);
@@ -253,19 +253,19 @@ export default function LinhaProducaoDetailsPage() {
 
   return (
     <PageLayout
-      title={line ? `${line.code} · ${line.name}` : "Carregando subcategoria"}
-      description="Gerencie a carteira operacional desta subcategoria. O vínculo cadastral do produto continua no cadastro do produto, mas cronograma e auditoria passam a olhar para a carteira abaixo."
+      title={line ? `${line.code} · ${line.name}` : "Carregando linha de produção"}
+      description="Gerencie o cronograma ativo desta linha de produção. O vínculo cadastral do produto continua no cadastro do produto, mas cronograma e auditoria passam a olhar para a carteira abaixo."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
-        { label: "Subcategorias", href: "/gestor-dados/linhas-producao" },
+        { label: "Linhas de produção", href: "/gestor-dados/linhas-producao" },
         { label: line?.name ?? "Detalhes" },
       ]}
       actions={
         <Button asChild type="button" variant="outline">
           <Link href="/gestor-dados/linhas-producao">
             <ArrowLeft className="size-4" />
-            Voltar para subcategorias
+            Voltar para linhas de produção
           </Link>
         </Button>
       }
@@ -277,7 +277,7 @@ export default function LinhaProducaoDetailsPage() {
       ) : null}
 
       <Card>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-5">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-6">
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">{hierarchyLabels.sector}</p>
             <p className="mt-1 text-sm font-medium">{line ? sectorNameById.get(line.sectorId) ?? "-" : "-"}</p>
@@ -295,20 +295,33 @@ export default function LinhaProducaoDetailsPage() {
             <p className="mt-1 text-sm font-medium">{masterProducts.length} produtos</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Carteira operacional</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Cronograma ativo</p>
             <div className="mt-1 flex items-center gap-2">
               <p className="text-sm font-medium">{operationalProducts.length} produtos ativos</p>
               <StatusBadge status={line?.status ?? "inativo"} />
             </div>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Última atualização</p>
+            <p className="mt-1 text-sm font-medium">
+              {line?.updatedAt
+                ? formatDateBr(line.updatedAt)
+                : line?.createdAt
+                  ? formatDateBr(line.createdAt)
+                  : "-"}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              O cadastro da linha é atualizado no mesmo registro, sem gerar versão duplicada.
+            </p>
           </div>
         </CardContent>
       </Card>
 
       <Tabs defaultValue="operational">
         <TabsList variant="line">
-          <TabsTrigger value="operational">Carteira Operacional</TabsTrigger>
-          <TabsTrigger value="audit">Auditoria / Revisões</TabsTrigger>
-          <TabsTrigger value="summary">Resumo Derivado</TabsTrigger>
+          <TabsTrigger value="operational">Cronograma ativo</TabsTrigger>
+          <TabsTrigger value="audit">Auditoria / Histórico</TabsTrigger>
+          <TabsTrigger value="summary">Resumo operacional</TabsTrigger>
         </TabsList>
 
         <TabsContent value="operational" className="space-y-4">
@@ -316,18 +329,18 @@ export default function LinhaProducaoDetailsPage() {
             <CardContent className="grid gap-3 p-4 md:grid-cols-2">
               <div className="rounded-xl border border-border/70 bg-panel/20 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Subcategoria cadastral
+                  Linha de produção cadastral
                 </p>
                 <p className="mt-2 text-sm text-foreground">
-                  Produtos podem continuar cadastrados nesta subcategoria mesmo sem participar do cronograma operacional.
+                  Produtos podem continuar cadastrados nesta linha de produção mesmo sem participar do cronograma ativo.
                 </p>
               </div>
               <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Subcategoria operacional
+                  Status
                 </p>
                 <p className="mt-2 text-sm text-foreground">
-                  Só os produtos cadastrados nesta subcategoria podem ser adicionados abaixo e entrar na revisão de auditoria e no cronograma.
+                  Só os produtos desta linha de produção podem entrar no cronograma ativo e no histórico de auditoria.
                 </p>
               </div>
             </CardContent>
@@ -335,7 +348,7 @@ export default function LinhaProducaoDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Produtos atualmente na carteira operacional</CardTitle>
+              <CardTitle>Produtos atualmente no cronograma ativo</CardTitle>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -343,7 +356,7 @@ export default function LinhaProducaoDetailsPage() {
                 columns={[
                   { key: "code", header: "Código" },
                   { key: "name", header: "Produto" },
-                  { key: "masterLineName", header: "Subcategoria Cadastral" },
+                  { key: "masterLineName", header: "Linha cadastral" },
                   {
                     key: "productionDays",
                     header: "Cronograma do Produto",
@@ -358,7 +371,7 @@ export default function LinhaProducaoDetailsPage() {
                 actions={[
                   {
                     icon: "delete",
-                    label: "Remover da carteira operacional",
+                    label: "Remover do cronograma ativo",
                     onClick: (product: ProductRow) => void handleRemoveProduct(product.id),
                     variant: "destructive",
                   },
@@ -367,8 +380,8 @@ export default function LinhaProducaoDetailsPage() {
                 paginationLabel="produtos operacionais"
                 emptyMessage={
                   isLoading
-                    ? "Carregando carteira operacional..."
-                    : "Nenhum produto ativo está alocado operacionalmente nesta subcategoria."
+                    ? "Carregando cronograma ativo..."
+                    : "Nenhum produto ativo está alocado no cronograma ativo desta linha."
                 }
               />
             </CardContent>
@@ -376,11 +389,11 @@ export default function LinhaProducaoDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Produtos ativos desta subcategoria</CardTitle>
+              <CardTitle>Produtos ativos desta linha de produção</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <SearchFilter
-                searchPlaceholder="Buscar por código, produto ou status operacional..."
+                searchPlaceholder="Buscar por código, produto, linha ou status..."
                 onSearch={setSearchTerm}
                 searchValue={searchTerm}
                 filters={[
@@ -390,8 +403,8 @@ export default function LinhaProducaoDetailsPage() {
                     value: scopeFilter,
                     onChange: (value) => setScopeFilter(value as ProductScopeFilter),
                     options: [
-                      { value: "outside-portfolio", label: "Fora da carteira operacional" },
-                      { value: "current", label: "Já nesta subcategoria" },
+                      { value: "outside-portfolio", label: "Fora do cronograma ativo" },
+                      { value: "current", label: "Já nesta linha" },
                     ],
                   },
                 ]}
@@ -402,13 +415,13 @@ export default function LinhaProducaoDetailsPage() {
                 columns={[
                   { key: "code", header: "Código" },
                   { key: "name", header: "Produto" },
-                  { key: "masterLineName", header: "Subcategoria Cadastral" },
+                  { key: "masterLineName", header: "Linha cadastral" },
                   {
                     key: "operationalLineName",
-                    header: "Subcategoria Operacional",
+                    header: "Status",
                     render: (product: ProductRow) =>
                       product.operationalLineId === lineId ? (
-                        <span className="text-sm font-medium text-primary">Nesta subcategoria</span>
+                        <span className="text-sm font-medium text-primary">No cronograma ativo</span>
                       ) : (
                         product.operationalLineName
                       ),
@@ -457,7 +470,7 @@ export default function LinhaProducaoDetailsPage() {
                 emptyMessage={
                   isLoading
                     ? "Carregando produtos..."
-                    : "Nenhum produto ativo desta subcategoria foi encontrado para este filtro."
+                    : "Nenhum produto ativo desta linha de produção foi encontrado para este filtro."
                 }
               />
             </CardContent>
@@ -465,10 +478,16 @@ export default function LinhaProducaoDetailsPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="space-y-4">
+          <div className="rounded-xl border border-info/35 bg-info/10 px-4 py-3 text-sm text-info-foreground">
+            A linha de produção permanece em registro único. Quando o cadastro é editado, o sistema
+            atualiza a mesma linha; o histórico auditável fica nas revisões do cronograma ativo
+            desta linha.
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Revisão pendente</CardTitle>
+                <CardTitle>Auditoria pendente</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
                 {pendingSchedule ? (
@@ -483,14 +502,14 @@ export default function LinhaProducaoDetailsPage() {
                     </p>
                   </div>
                 ) : (
-                  <p>Nenhuma revisão pendente no momento.</p>
+                  <p>Nenhuma auditoria pendente no momento.</p>
                 )}
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Revisão ativa</CardTitle>
+                <CardTitle>Auditoria ativa</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
                 {activeSchedule ? (
@@ -505,7 +524,7 @@ export default function LinhaProducaoDetailsPage() {
                     </p>
                   </div>
                 ) : (
-                  <p>Nenhuma revisão ativa cadastrada.</p>
+                  <p>Nenhuma auditoria ativa cadastrada.</p>
                 )}
               </CardContent>
             </Card>
@@ -513,7 +532,7 @@ export default function LinhaProducaoDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Histórico de revisões</CardTitle>
+              <CardTitle>Histórico operacional auditável</CardTitle>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -549,7 +568,11 @@ export default function LinhaProducaoDetailsPage() {
                 ]}
                 keyField="id"
                 paginationLabel="revisões"
-                emptyMessage={isLoading ? "Carregando revisões..." : "Nenhuma revisão encontrada para esta subcategoria."}
+                emptyMessage={
+                  isLoading
+                    ? "Carregando histórico operacional..."
+                    : "Nenhum histórico operacional encontrado para esta linha."
+                }
               />
             </CardContent>
           </Card>
@@ -558,12 +581,12 @@ export default function LinhaProducaoDetailsPage() {
         <TabsContent value="summary" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Grade semanal da carteira operacional</CardTitle>
+              <CardTitle>Grade semanal do cronograma ativo</CardTitle>
             </CardHeader>
             <CardContent>
               {operationalProductsSorted.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border/70 bg-panel/20 px-4 py-6 text-sm text-muted-foreground">
-                  Nenhum produto ativo foi adicionado a esta carteira operacional ainda.
+                  Nenhum produto ativo foi adicionado a este cronograma ativo ainda.
                 </div>
               ) : (
                 <PaginatedSection
@@ -642,7 +665,7 @@ export default function LinhaProducaoDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Resumo derivado da carteira operacional</CardTitle>
+              <CardTitle>Resumo operacional derivado</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-4">
               {productionWeekDays.map((day) => (
@@ -672,14 +695,14 @@ export default function LinhaProducaoDetailsPage() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>
-                O cronograma acima lê apenas a <strong>carteira operacional</strong> desta subcategoria.
+                O cronograma acima lê apenas o <strong>cronograma ativo</strong> desta linha de produção.
               </p>
               <p>
                 A ficha cadastral do produto continua preservada no cadastro mestre, para manter histórico e margem de
                 armazenamento de produtos fora do fluxo atual.
               </p>
               <p>
-                Toda alteração na carteira recria a revisão pendente desta subcategoria para auditoria posterior.
+                Toda alteração na carteira recria a auditoria pendente desta linha de produção para validação posterior.
               </p>
             </CardContent>
           </Card>

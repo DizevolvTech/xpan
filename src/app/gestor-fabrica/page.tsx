@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
+import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { ModuleCard } from "@/components/shared/module-card";
 import { Button } from "@/components/ui/button";
@@ -103,13 +104,60 @@ export default function GestorFabricaPage() {
       ? `D+${Math.max(0, expeditionLeadDaysValue)}`
       : `D+${masterDataSnapshot.operationalSettings.expeditionLeadDays}`;
 
-    return `Pedidos feitos até ${settingsDraft.orderCutoffTime || masterDataSnapshot.operationalSettings.orderCutoffTime} mantêm a base do dia. Após esse horário, a expedição passa a considerar a próxima base operacional e entrega padrão em ${leadDaysLabel}.`;
+    return `Pedidos feitos até ${settingsDraft.orderCutoffTime || masterDataSnapshot.operationalSettings.orderCutoffTime} mantêm a base do dia. Depois disso, a base avança para o próximo dia operacional, a entrega é prometida em ${leadDaysLabel} e a produção precisa caber antes dessa data.`;
   }, [
     expeditionLeadDaysValue,
     masterDataSnapshot.operationalSettings.expeditionLeadDays,
     masterDataSnapshot.operationalSettings.orderCutoffTime,
     settingsDraft.orderCutoffTime,
   ]);
+  const operationalRuleSteps = useMemo(
+    () => [
+      {
+        key: "ordered",
+        label: "Pedido",
+        value: `Até ${settingsDraft.orderCutoffTime || masterDataSnapshot.operationalSettings.orderCutoffTime}`,
+        helper: "Dentro do cutoff, a base pode continuar no mesmo dia.",
+        tone: "neutral" as const,
+      },
+      {
+        key: "base",
+        label: "Base operacional",
+        value: "Mesmo dia ou próximo dia válido",
+        helper: "Se o pedido passar do cutoff ou cair fora do dia operacional da loja, a base avança.",
+        tone: "info" as const,
+      },
+      {
+        key: "production",
+        label: "Produção",
+        value: "Antes da entrega",
+        helper: "O cronograma procura um dia de produção compatível entre a base operacional e a data prometida para entregar.",
+        tone: "warning" as const,
+      },
+      {
+        key: "delivery",
+        label: "Expedir / entregar",
+        value: Number.isFinite(expeditionLeadDaysValue)
+          ? `D+${Math.max(0, expeditionLeadDaysValue)} da base`
+          : `D+${masterDataSnapshot.operationalSettings.expeditionLeadDays} da base`,
+        helper: "Essa é a promessa mostrada para a loja no catálogo e no pedido.",
+        tone: "warning" as const,
+      },
+      {
+        key: "sale",
+        label: "Venda",
+        value: "Depois da entrega",
+        helper: "A venda prevista começa após a entrega, respeitando o lead configurado no produto.",
+        tone: "success" as const,
+      },
+    ],
+    [
+      expeditionLeadDaysValue,
+      masterDataSnapshot.operationalSettings.expeditionLeadDays,
+      masterDataSnapshot.operationalSettings.orderCutoffTime,
+      settingsDraft.orderCutoffTime,
+    ],
+  );
 
   async function handleSaveOperationalSettings() {
     if (!settingsFormIsValid || isSavingSettings) {
@@ -156,9 +204,9 @@ export default function GestorFabricaPage() {
     () => [
       {
         href: "/gestor-fabrica/sublinhas-producao",
-        title: "Linhas - Subcategoria",
-        subtitle: "Auditoria e grade por subcategoria",
-        description: "Acompanhe a linha executora derivada das subcategorias e a carga consolidada por dia.",
+        title: "Auditoria do cronograma ativo",
+        subtitle: "Auditoria e grade por linha de produção",
+        description: "Acompanhe o cronograma ativo das linhas de produção e a carga consolidada por dia.",
         icon: ClipboardList,
         tone: "emerald" as const,
         items: [
@@ -181,7 +229,7 @@ export default function GestorFabricaPage() {
       {
         href: "/gestor-fabrica/ordens-producao",
         title: "Ordens de Produção",
-        subtitle: "OP por categoria e subcategoria",
+        subtitle: "OP por categoria e linha de produção",
         description: "Visualize as OPs liberadas com progresso derivado por item operacional.",
         icon: Factory,
         tone: "amber" as const,
@@ -248,7 +296,7 @@ export default function GestorFabricaPage() {
             </div>
             <CardTitle className="text-base">Regras globais de pedido e expedição</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Ajuste o horário limite do pedido e o prazo D+X usado pela fábrica para prometer recebimento às lojas.
+              Ajuste o horário limite do pedido e o prazo D+X usado pela fábrica para prometer recebimento às lojas. A produção sempre é derivada para caber antes dessa entrega.
             </p>
           </div>
           <div className="max-w-xl rounded-2xl border border-border/70 bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
@@ -325,6 +373,14 @@ export default function GestorFabricaPage() {
               </p>
             </div>
           </div>
+
+          <OperationalSequenceCard
+            eyebrow="Relação entre produção e expedição"
+            title="A regra global sempre segue esta ordem"
+            description="Assim a fábrica transforma a regra operacional em datas que a loja consegue entender e acompanhar."
+            steps={operationalRuleSteps}
+            footer="Resumo da regra: a entrega nasce do D+X sobre a base operacional; a produção é calculada para acontecer antes dessa entrega; a venda começa depois que a loja recebe."
+          />
         </CardContent>
       </Card>
 

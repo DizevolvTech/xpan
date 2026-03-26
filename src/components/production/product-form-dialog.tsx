@@ -6,7 +6,9 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
 import { IngredientProfileFields } from "@/components/production/ingredient-profile-fields";
 import { ProductPreparationStagesEditor } from "@/components/production/product-preparation-stages-editor";
+import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
+import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -29,7 +31,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  defaultProductPreparationStages,
   hierarchyLabels,
   productionWeekDays,
   type BreakStage,
@@ -46,10 +47,16 @@ import {
   preferredOperationalUnits,
 } from "@/lib/operational-units";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import {
+  buildProductFormState,
+  calculateQuantityPerPackage,
+  validateProductFormState,
+  type ProductValidationField,
+} from "@/lib/product-form-logic";
 import { type MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
-import { formatKgLabel } from "@/lib/utils";
+import { cn, formatKgLabel } from "@/lib/utils";
 
 export type ProductDialogMode = "view" | "edit";
 
@@ -85,88 +92,6 @@ const breakStageLabels: Record<BreakStage, string> = {
   depois_forno: "Depois do forno",
 };
 
-function createUnitProfile(
-  unit: ProductUnitProfile["unit"],
-  description: string,
-  weightKg: number,
-): ProductUnitProfile {
-  return {
-    unit,
-    description,
-    weightKg: unit === "Kg" ? 1 : weightKg,
-  };
-}
-
-function buildProductFormState(
-  lines: ProductionLine[],
-  product?: ProductionProduct | null,
-): ProductFormState {
-  if (product) {
-    return {
-      ...product,
-      recipe: product.recipe.map((item) => ({ ...item })),
-      preparationStages: normalizeProductPreparationStages(product.preparationStages),
-      unitProfiles: {
-        sales: { ...product.unitProfiles.sales },
-        production: { ...product.unitProfiles.production },
-        expedition: { ...product.unitProfiles.expedition },
-      },
-      packagingProfile: product.packagingProfile ? { ...product.packagingProfile } : undefined,
-      ingredientProfile: product.ingredientProfile ? { ...product.ingredientProfile } : undefined,
-      productionDays: [...product.productionDays],
-    };
-  }
-
-  const defaultLine = lines[0];
-  return {
-    id: `product-${Date.now()}`,
-    code: `PR-${String(Date.now()).slice(-5)}`,
-    externalCode: "",
-    name: "",
-    description: "",
-    lineId: defaultLine?.id ?? "",
-    active: true,
-    availableForOrdering: true,
-    validityDays: 5,
-    minimumProductionKg: 100,
-    economicProductionKg: 140,
-    allowsStorage: false,
-    productionDays: ["segunda", "quarta", "sexta"],
-    unitProfiles: {
-      sales: createUnitProfile("Kg", "Unidade de venda", 1),
-      production: createUnitProfile("Kg", "Unidade de produção", 1),
-      expedition: createUnitProfile("Kg", "Unidade de expedição", 1),
-    },
-    packagingProfile: {
-      unit: "Un",
-      description: "Embalagem individual",
-      weightKg: 0.2,
-      quantityPerPackage: 1,
-    },
-    isSoldLoose: false,
-    recipe: [],
-    preparationStages: [...defaultProductPreparationStages],
-    preparationMode: "",
-    breakPercent: 0,
-    breakStage: "depois_divisao",
-    breakComment: "",
-    canBeIngredient: false,
-    ingredientProfile: {
-      unit: "Kg",
-      weightKg: 1,
-      metadata: "",
-      observation: "",
-    },
-    weight: formatKgLabel(1, { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
-    productionUnit: "Kg",
-    salesUnit: "Kg",
-    salesToKgFactor: 1,
-    expeditionUnit: "Kg",
-    expeditionToKgFactor: 1,
-    isMpiIngredient: false,
-  };
-}
-
 function buildLineDraft(sectorId: string): LineDraftState {
   return {
     name: "",
@@ -192,19 +117,6 @@ function getPackagingUnitsForSalesUnit(
   return options;
 }
 
-function calculateQuantityPerPackage(unitWeightKg: number, packagingWeightKg: number) {
-  if (
-    !Number.isFinite(unitWeightKg) ||
-    unitWeightKg <= 0 ||
-    !Number.isFinite(packagingWeightKg) ||
-    packagingWeightKg <= 0
-  ) {
-    return 0;
-  }
-
-  return Number((packagingWeightKg / unitWeightKg).toFixed(3));
-}
-
 export function ProductFormDialog({
   open,
   onOpenChange,
@@ -225,7 +137,9 @@ export function ProductFormDialog({
   const [draftRecipeQuantity, setDraftRecipeQuantity] = useState("");
   const [draftRecipeUnit, setDraftRecipeUnit] = useState<RecipeIngredientReference["unit"]>("Kg");
   const [formError, setFormError] = useState<string | null>(null);
+  const [invalidFields, setInvalidFields] = useState<ProductValidationField[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState("cadastro");
   const isReadOnly = mode === "view";
   const formDirty =
     open &&
@@ -261,6 +175,8 @@ export function ProductFormDialog({
       }),
     );
     setFormError(null);
+    setInvalidFields([]);
+    setActiveTab("cadastro");
   }, [mode, open, product, snapshot.lines, snapshot.sectors]);
 
   const sectorNameById = useMemo(
@@ -275,21 +191,34 @@ export function ProductFormDialog({
       })),
     [sectorNameById, snapshot.lines],
   );
-
-  const recipeSourceOptions: RecipeSourceOption[] = [
-    ...snapshot.ingredients.map((ingredient) => ({
-      id: ingredient.id,
-      label: `${ingredient.code} · ${ingredient.name}`,
-      sourceType: "ingrediente" as const,
-    })),
-    ...snapshot.products
-      .filter((candidate) => candidate.canBeIngredient)
-      .map((candidate) => ({
-        id: candidate.id,
-        label: `${candidate.code} · ${candidate.name}`,
-        sourceType: "produto" as const,
+  const lineOptionsForSearch = useMemo(
+    () =>
+      snapshot.lines.map((line) => ({
+        value: line.id,
+        label: line.name,
+        description: sectorNameById.get(line.sectorId) ?? "Sem categoria",
+        keywords: [line.code],
       })),
-  ];
+    [sectorNameById, snapshot.lines],
+  );
+
+  const recipeSourceOptions = useMemo<RecipeSourceOption[]>(
+    () => [
+      ...snapshot.ingredients.map((ingredient) => ({
+        id: ingredient.id,
+        label: `${ingredient.code} · ${ingredient.name}`,
+        sourceType: "ingrediente" as const,
+      })),
+      ...snapshot.products
+        .filter((candidate) => candidate.canBeIngredient)
+        .map((candidate) => ({
+          id: candidate.id,
+          label: `${candidate.code} · ${candidate.name}`,
+          sourceType: "produto" as const,
+        })),
+    ],
+    [snapshot.ingredients, snapshot.products],
+  );
 
   const recipeTotals = useMemo(
     () => getProductRecipeTotalsFromData(formState, snapshot.ingredients, snapshot.products),
@@ -363,6 +292,51 @@ export function ProductFormDialog({
     () => Math.max(0, Number((100 - formState.breakPercent).toFixed(2))),
     [formState.breakPercent],
   );
+  const recipeSourceOptionsForSearch = useMemo(
+    () =>
+      recipeSourceOptions.map((option) => ({
+        value: option.id,
+        label: option.label,
+        description:
+          option.sourceType === "ingrediente" ? "Ingrediente cadastrado" : "Produto MPI",
+        keywords: [
+          option.sourceType === "ingrediente"
+            ? snapshot.ingredients.find((ingredient) => ingredient.id === option.id)?.shortName
+            : snapshot.products.find((product) => product.id === option.id)?.shortName,
+        ].filter((keyword): keyword is string => Boolean(keyword?.trim())),
+      })),
+    [recipeSourceOptions, snapshot.ingredients, snapshot.products],
+  );
+
+  function getInvalidFieldTarget(field: ProductValidationField) {
+    switch (field) {
+      case "name":
+        return { tab: "cadastro", id: "product-name" };
+      case "lineId":
+        return { tab: "cadastro", id: "product-line" };
+      case "packagingDescription":
+        return { tab: "cadastro", id: "product-packaging-description" };
+      case "packagingWeight":
+      case "packagingQuantity":
+        return { tab: "cadastro", id: "product-packaging-weight" };
+      case "preparationStages":
+        return { tab: "receita", id: "product-preparation-stages" };
+      default:
+        return null;
+    }
+  }
+
+  function focusFirstInvalidField(fields: ProductValidationField[]) {
+    const target = fields.map(getInvalidFieldTarget).find(Boolean);
+    if (!target) {
+      return;
+    }
+
+    setActiveTab(target.tab);
+    window.setTimeout(() => {
+      document.getElementById(target.id)?.focus();
+    }, 0);
+  }
 
   function updateUnitProfile(
     scope: keyof ProductFormState["unitProfiles"],
@@ -521,16 +495,6 @@ export function ProductFormDialog({
   }
 
   async function handleSaveProduct() {
-    if (!formState.name.trim() || !formState.lineId) {
-      setFormError("Informe nome e subcategoria do produto.");
-      return;
-    }
-
-    if (formState.preparationStages.length === 0) {
-      setFormError("Selecione ao menos uma etapa intermediária de preparo.");
-      return;
-    }
-
     const normalizedPackagingProfile = formState.isSoldLoose
       ? undefined
       : {
@@ -547,23 +511,6 @@ export function ProductFormDialog({
             : availablePackagingUnits[0],
         };
 
-    if (!formState.isSoldLoose && formState.unitProfiles.sales.unit === "Kg") {
-      if (!normalizedPackagingProfile?.description.trim()) {
-        setFormError(
-          "Informe a descrição da embalagem para itens vendidos em Kg e embalados individualmente.",
-        );
-        return;
-      }
-
-      if (
-        !Number.isFinite(normalizedPackagingProfile.weightKg) ||
-        normalizedPackagingProfile.weightKg <= 0
-      ) {
-        setFormError("Informe o peso padrão da embalagem para itens vendidos em Kg.");
-        return;
-      }
-    }
-
     const salesWeight =
       formState.unitProfiles.sales.unit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
     const expeditionWeight =
@@ -579,15 +526,6 @@ export function ProductFormDialog({
             : (normalizedPackagingProfile?.weightKg ?? 0),
         );
 
-    if (
-      !formState.isSoldLoose &&
-      normalizedPackagingProfile &&
-      normalizedQuantityPerPackage <= 0
-    ) {
-      setFormError("Informe pesos válidos para calcular o conteúdo por embalagem.");
-      return;
-    }
-
     const nextProduct: ProductFormState = {
       ...formState,
       preparationStages: normalizeProductPreparationStages(formState.preparationStages),
@@ -600,6 +538,7 @@ export function ProductFormDialog({
         minimumFractionDigits: 3,
         maximumFractionDigits: 3,
       }),
+      saleLeadDays: formState.saleLeadDays && formState.saleLeadDays > 0 ? formState.saleLeadDays : 1,
       isMpiIngredient: formState.canBeIngredient,
       packagingProfile: normalizedPackagingProfile
         ? {
@@ -613,8 +552,20 @@ export function ProductFormDialog({
         : undefined,
     };
 
+    const validation = validateProductFormState({
+      product: nextProduct,
+      availablePackagingUnits,
+    });
+    if (validation.error) {
+      setInvalidFields(validation.invalidFields);
+      setFormError(validation.error);
+      focusFirstInvalidField(validation.invalidFields);
+      return;
+    }
+
     setIsSubmitting(true);
     setFormError(null);
+    setInvalidFields([]);
 
     try {
       const response = await fetch(
@@ -674,7 +625,7 @@ export function ProductFormDialog({
         id?: string;
       } | null;
       if (!response.ok) {
-        throw new Error(body?.message ?? "Falha ao criar subcategoria");
+        throw new Error(body?.message ?? `Falha ao criar ${hierarchyLabels.line.toLowerCase()}`);
       }
 
       const createdLineId = body?.id ?? null;
@@ -686,7 +637,9 @@ export function ProductFormDialog({
       setLineDraft(buildLineDraft(lineDraft.sectorId));
     } catch (saveError) {
       setFormError(
-        saveError instanceof Error ? saveError.message : "Falha ao criar subcategoria",
+        saveError instanceof Error
+          ? saveError.message
+          : `Falha ao criar ${hierarchyLabels.line.toLowerCase()}`,
       );
     } finally {
       setIsSubmitting(false);
@@ -702,6 +655,7 @@ export function ProductFormDialog({
             return;
           }
           setFormError(null);
+          setInvalidFields([]);
         }
 
         onOpenChange(nextOpen);
@@ -742,7 +696,7 @@ export function ProductFormDialog({
           </div>
         ) : null}
 
-        <Tabs defaultValue="cadastro" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="grid w-full grid-cols-4 rounded-xl bg-panel/60 p-1">
             <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
             <TabsTrigger value="receita">Receita</TabsTrigger>
@@ -756,18 +710,37 @@ export function ProductFormDialog({
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Dados do Produto</h3>
                   <p className="text-xs text-muted-foreground">
-                    Nome, código XPAN, código ERP, descrição e vínculo com a linha principal de produção.
+                    Nome completo, nome reduzido, código XPAN, código ERP, descrição e vínculo com a linha principal de produção.
                   </p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="product-name">Nome do Produto *</Label>
+                    <Label htmlFor="product-name">Nome completo do produto *</Label>
                     <Input
                       id="product-name"
                       placeholder="Ex: Pão Francês"
+                      aria-invalid={invalidFields.includes("name")}
+                      className={cn(
+                        invalidFields.includes("name") &&
+                          "border-danger/60 ring-1 ring-danger/40 focus-visible:ring-danger/50",
+                      )}
                       value={formState.name}
                       onChange={(event) =>
                         setFormState((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="product-short-name">Nome reduzido</Label>
+                    <Input
+                      id="product-short-name"
+                      placeholder="Ex: Pão Fr."
+                      value={formState.shortName ?? ""}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          shortName: event.target.value,
+                        }))
                       }
                     />
                   </div>
@@ -789,7 +762,7 @@ export function ProductFormDialog({
                       placeholder="Código externo do ERP"
                     />
                   </div>
-                  <div className="grid gap-2 md:col-span-3">
+                  <div className="grid gap-2 md:col-span-4">
                     <Label>Descrição</Label>
                     <Input
                       value={formState.description}
@@ -806,29 +779,57 @@ export function ProductFormDialog({
 
                 <div className="grid gap-4 md:grid-cols-[1fr_auto]">
                   <div className="grid gap-2">
-                    <Label>{hierarchyLabels.line} Cadastral *</Label>
-                    <Select
-                      value={formState.lineId}
-                      onValueChange={(value) =>
-                        setFormState((current) => ({ ...current, lineId: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={`Selecione a ${hierarchyLabels.line.toLowerCase()}`}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {lineOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>{hierarchyLabels.line} *</Label>
+                    {lineOptions.length >= 8 ? (
+                      <SearchableSelect
+                        id="product-line"
+                        ariaInvalid={invalidFields.includes("lineId")}
+                        value={formState.lineId}
+                        onValueChange={(value) =>
+                          setFormState((current) => ({ ...current, lineId: value }))
+                        }
+                        options={lineOptionsForSearch}
+                        placeholder={`Selecione a ${hierarchyLabels.line.toLowerCase()}`}
+                        searchPlaceholder="Buscar linha de produção..."
+                        emptyMessage="Nenhuma linha encontrada."
+                        title="Selecionar linha de produção"
+                        description="Busque pela linha ou pelo código para vincular o produto ao cadastro mestre."
+                        className={cn(
+                          invalidFields.includes("lineId") &&
+                            "border-danger/60 ring-1 ring-danger/40 focus-visible:ring-danger/50",
+                        )}
+                      />
+                    ) : (
+                      <Select
+                        value={formState.lineId}
+                        onValueChange={(value) =>
+                          setFormState((current) => ({ ...current, lineId: value }))
+                        }
+                      >
+                        <SelectTrigger
+                          id="product-line"
+                          aria-invalid={invalidFields.includes("lineId")}
+                          className={cn(
+                            invalidFields.includes("lineId") &&
+                              "border-danger/60 ring-1 ring-danger/40 focus:ring-danger/50",
+                          )}
+                        >
+                          <SelectValue
+                            placeholder={`Selecione a ${hierarchyLabels.line.toLowerCase()}`}
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {lineOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                     <p className="text-xs text-muted-foreground">
-                      A carteira operacional do cronograma é gerenciada na tela da subcategoria. Se
-                      precisar realocar o produto entre subcategorias, faça a alteração aqui no cadastro.
+                      O cronograma ativo usa esta linha de produção como referência cadastral. Se
+                      precisar realocar o produto entre linhas de produção, faça a alteração aqui.
                     </p>
                   </div>
                   <div className="flex items-end">
@@ -858,7 +859,7 @@ export function ProductFormDialog({
                         </DialogHeader>
                         <div className="grid gap-4 py-2">
                           <div className="grid gap-2">
-                            <Label>Nome *</Label>
+                            <Label>Nome completo da linha de produção *</Label>
                             <Input
                               value={lineDraft.name}
                               onChange={(event) =>
@@ -1105,9 +1106,15 @@ export function ProductFormDialog({
                     </div>
                     <div className="border-r border-border/70 px-3 py-3">
                       <Input
+                        id="product-packaging-description"
                         aria-label="Descrição da embalagem"
                         value={formState.packagingProfile?.description ?? ""}
                         disabled={formState.isSoldLoose}
+                        aria-invalid={invalidFields.includes("packagingDescription")}
+                        className={cn(
+                          invalidFields.includes("packagingDescription") &&
+                            "border-danger/60 ring-1 ring-danger/40 focus-visible:ring-danger/50",
+                        )}
                         onChange={(event) =>
                           updatePackagingProfile({ description: event.target.value })
                         }
@@ -1143,6 +1150,7 @@ export function ProductFormDialog({
                     </div>
                     <div className="border-r border-border/70 px-3 py-3">
                       <Input
+                        id="product-packaging-weight"
                         aria-label="Peso padrão da embalagem"
                         type="number"
                         step="0.001"
@@ -1154,6 +1162,15 @@ export function ProductFormDialog({
                               : (formState.packagingProfile?.weightKg ?? "")
                         }
                         disabled={formState.isSoldLoose || packagingWeightLockedToKg}
+                        aria-invalid={
+                          invalidFields.includes("packagingWeight") ||
+                          invalidFields.includes("packagingQuantity")
+                        }
+                        className={cn(
+                          (invalidFields.includes("packagingWeight") ||
+                            invalidFields.includes("packagingQuantity")) &&
+                            "border-danger/60 ring-1 ring-danger/40 focus-visible:ring-danger/50",
+                        )}
                         onChange={(event) =>
                           updatePackagingProfile({ weightKg: Number(event.target.value) })
                         }
@@ -1365,18 +1382,31 @@ export function ProductFormDialog({
                 <div className="grid gap-4 md:grid-cols-4">
                   <div className="grid gap-2 md:col-span-2">
                     <Label>Ingrediente / Produto MPI</Label>
-                    <Select value={draftRecipeSourceId} onValueChange={setDraftRecipeSourceId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione a referência" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {recipeSourceOptions.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {recipeSourceOptions.length >= 8 ? (
+                      <SearchableSelect
+                        value={draftRecipeSourceId}
+                        onValueChange={setDraftRecipeSourceId}
+                        options={recipeSourceOptionsForSearch}
+                        placeholder="Selecione a referência"
+                        searchPlaceholder="Buscar ingrediente ou produto MPI..."
+                        emptyMessage="Nenhuma referência encontrada."
+                        title="Selecionar referência da receita"
+                        description="Busque pelo nome ou código do ingrediente ou produto MPI."
+                      />
+                    ) : (
+                      <Select value={draftRecipeSourceId} onValueChange={setDraftRecipeSourceId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a referência" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {recipeSourceOptions.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   <div className="grid gap-2">
                     <Label>Quantidade</Label>
@@ -1385,7 +1415,6 @@ export function ProductFormDialog({
                       step="0.001"
                       value={draftRecipeQuantity}
                       onChange={(event) => setDraftRecipeQuantity(event.target.value)}
-                      placeholder="1,500"
                     />
                   </div>
                   <div className="grid gap-2">
@@ -1560,6 +1589,12 @@ export function ProductFormDialog({
                       maximumFractionDigits: 3,
                     })}
                   </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Quantidade final prevista:{" "}
+                    <strong>
+                      {recipeTotals.finalOutputQuantity} {recipeTotals.finalOutputUnit}
+                    </strong>
+                  </p>
                 </div>
                 <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
                   <div className="grid gap-2">
@@ -1601,13 +1636,23 @@ export function ProductFormDialog({
                 </div>
               </section>
 
-              <ProductPreparationStagesEditor
-                value={formState.preparationStages}
-                disabled={isReadOnly}
-                onChange={(preparationStages) =>
-                  setFormState((current) => ({ ...current, preparationStages }))
-                }
-              />
+              <div
+                id="product-preparation-stages"
+                tabIndex={-1}
+                className={cn(
+                  "rounded-xl",
+                  invalidFields.includes("preparationStages") &&
+                    "border border-danger/50 bg-danger/10 p-2",
+                )}
+              >
+                <ProductPreparationStagesEditor
+                  value={formState.preparationStages}
+                  disabled={isReadOnly}
+                  onChange={(preparationStages) =>
+                    setFormState((current) => ({ ...current, preparationStages }))
+                  }
+                />
+              </div>
 
               <section className="grid gap-2">
                 <Label>Instruções de preparo</Label>
@@ -1634,38 +1679,46 @@ export function ProductFormDialog({
                     Cronograma definido pelo produto
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Defina os dias de fabricação do produto. A entrega segue apenas a regra global
-                    D+X.
+                    Defina os dias de fabricação. O fluxo operacional sempre considera: dia do
+                    pedido, dia de produção, dia de expedição/entrega e dia previsto de venda.
                   </p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="rounded-xl border border-border/70 bg-panel/25 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Produção
-                    </p>
-                    <p className="mt-2 text-sm text-foreground">
-                      O produto só entra em OP nos dias marcados abaixo.
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-border/70 bg-panel/25 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Recebimento
-                    </p>
-                    <p className="mt-2 text-sm text-foreground">
-                      A loja recebe em D+{snapshot.operationalSettings.expeditionLeadDays},
-                      respeitando os dias operacionais da loja.
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-border/70 bg-card p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Regra operacional
-                    </p>
-                    <p className="mt-2 text-sm text-foreground">
-                      A disponibilidade para pedido usa a interseção entre sublinha ativa e os dias
-                      de fabricação definidos aqui.
-                    </p>
-                  </div>
-                </div>
+                <OperationalSequenceCard
+                  eyebrow="Leitura do cronograma"
+                  title="Como o sistema transforma o pedido em produção, entrega e venda"
+                  description="O produto participa do cronograma da loja dentro desta sequência, sempre na mesma ordem."
+                  steps={[
+                    {
+                      key: "ordered",
+                      label: "Pedido",
+                      value: "Janela operacional da loja",
+                      helper: "O pedido entra no dia-base permitido para a loja, respeitando cutoff e dias operacionais.",
+                      tone: "neutral",
+                    },
+                    {
+                      key: "production",
+                      label: "Produzir em",
+                      value: "Dias marcados abaixo",
+                      helper: "O produto só entra em produção se os dias do produto coincidirem com o cronograma ativo.",
+                      tone: "info",
+                    },
+                    {
+                      key: "delivery",
+                      label: "Expedir / entregar",
+                      value: `D+${snapshot.operationalSettings.expeditionLeadDays} da base`,
+                      helper: "A entrega respeita os dias operacionais da loja e a regra global da fábrica.",
+                      tone: "warning",
+                    },
+                    {
+                      key: "sale",
+                      label: "Vender a partir de",
+                      value: `Entrega + ${Math.max(1, formState.saleLeadDays || 1)} dia(s)`,
+                      helper: "A venda prevista começa depois da entrega, com base no lead do produto.",
+                      tone: "success",
+                    },
+                  ]}
+                  footer="Relação explícita: a produção precisa caber entre a base operacional do pedido e a entrega prometida. Se não houver um dia compatível, o item fica bloqueado no cronograma."
+                />
                 <div className="grid gap-3 md:grid-cols-4">
                   {productionWeekDays.map((day) => {
                     const checked = formState.productionDays.includes(day.key);
@@ -1690,8 +1743,10 @@ export function ProductFormDialog({
                   })}
                 </div>
                 <div className="rounded-xl border border-border/70 bg-panel/25 p-4 text-sm text-muted-foreground">
-                  Exemplo operacional: se a sublinha ativa e a ficha do produto coincidirem na
-                  quinta, o item pode ser pedido para uma entrega cujo D+X também caia em quinta.
+                  Exemplo operacional: pedido dentro da janela da loja, depois produção no
+                  primeiro dia compatível do cronograma, depois expedição/entrega em D+
+                  {snapshot.operationalSettings.expeditionLeadDays} e, por fim, venda depois da
+                  entrega.
                 </div>
               </section>
             </fieldset>
@@ -1735,10 +1790,18 @@ export function ProductFormDialog({
                             ? 1
                             : (formState.ingredientProfile?.weightKg ??
                               formState.unitProfiles.sales.weightKg),
+                        purchaseUnit:
+                          formState.ingredientProfile?.purchaseUnit ??
+                          formState.ingredientProfile?.unit ??
+                          "Kg",
+                        purchaseToConsumptionFactor:
+                          formState.ingredientProfile?.purchaseToConsumptionFactor ?? 1,
                         metadata: formState.ingredientProfile?.metadata ?? "",
                         observation: formState.ingredientProfile?.observation ?? "",
                       }}
                       unitOptions={productUnitOptions}
+                      showPurchaseFields
+                      purchaseHelperText="1 unidade de compra equivale a este fator multiplicado pela unidade de consumo."
                       metadataPlaceholder="Ex: usar como base de sanduíches"
                       observationPlaceholder="Ex: consumir após resfriar"
                       onChange={(patch) =>
@@ -1755,6 +1818,15 @@ export function ProductFormDialog({
                                 : (patch.weightKg ??
                                   current.ingredientProfile?.weightKg ??
                                   current.unitProfiles.sales.weightKg),
+                            purchaseUnit:
+                              (patch.purchaseUnit as ProductUnitProfile["unit"] | undefined) ??
+                              current.ingredientProfile?.purchaseUnit ??
+                              current.ingredientProfile?.unit ??
+                              "Kg",
+                            purchaseToConsumptionFactor:
+                              patch.purchaseToConsumptionFactor ??
+                              current.ingredientProfile?.purchaseToConsumptionFactor ??
+                              1,
                             metadata:
                               patch.metadata ?? current.ingredientProfile?.metadata ?? "",
                             observation:
@@ -1784,6 +1856,12 @@ export function ProductFormDialog({
             </fieldset>
           </TabsContent>
         </Tabs>
+
+        {formError && !isReadOnly ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {formError}
+          </div>
+        ) : null}
 
         <DialogFooter>
           <Button

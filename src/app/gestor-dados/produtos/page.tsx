@@ -15,11 +15,13 @@ import {
   hierarchyLabels,
   type ProductionProduct,
 } from "@/lib/production-planning";
+import { getProductOperationalStatusLabel } from "@/lib/production-data-utils";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 type ProductRow = ProductionProduct & {
   lineName: string;
   operationalLineName: string;
+  operationalStatusLabel: string;
   sectorName: string;
   validityLabel: string;
   productionDaysLabel: string;
@@ -49,6 +51,7 @@ export default function ProdutosPage() {
           operationalLineName:
             operationalLine?.name ??
             (product.operationalLineId ? "-" : "Fora da carteira operacional"),
+          operationalStatusLabel: getProductOperationalStatusLabel(product),
           sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
           validityLabel: `${product.validityDays} dias`,
           productionDaysLabel: product.productionDays.map((day) => day.slice(0, 3)).join(" · "),
@@ -62,8 +65,10 @@ export default function ProdutosPage() {
       productRows.filter(
         (item) =>
           item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (item.shortName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
           (item.externalCode ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.operationalStatusLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.lineName.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.operationalLineName.toLowerCase().includes(searchTerm.toLowerCase()),
       ),
@@ -86,9 +91,28 @@ export default function ProdutosPage() {
       header: "Código ERP",
       render: (item: ProductRow) => item.externalCode || "-",
     },
-    { key: "name", header: "Nome" },
+    { key: "name", header: "Nome completo" },
+    {
+      key: "shortName",
+      header: "Nome reduzido",
+      render: (item: ProductRow) => item.shortName || "-",
+    },
     { key: "lineName", header: `${hierarchyLabels.line} Cadastral` },
-    { key: "operationalLineName", header: `${hierarchyLabels.line} Operacional` },
+    {
+      key: "operationalStatusLabel",
+      header: "Status",
+      render: (item: ProductRow) => (
+        <span
+          className={
+            item.operationalLineId
+              ? "text-sm font-medium text-primary"
+              : "text-sm text-muted-foreground"
+          }
+        >
+          {item.operationalStatusLabel}
+        </span>
+      ),
+    },
     { key: "sectorName", header: hierarchyLabels.sector },
     {
       key: "active",
@@ -165,7 +189,7 @@ export default function ProdutosPage() {
 
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código XPAN, ERP ou nome..."
+            searchPlaceholder="Buscar por código XPAN, ERP, nome completo, nome reduzido ou status..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}

@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
+import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
+import { SearchableSelect } from "@/components/shared/searchable-select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -32,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { summarizeOperationalDates } from "@/lib/operational-sequence";
 import { cn, formatKgLabel } from "@/lib/utils";
 import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import {
@@ -63,6 +66,9 @@ type SelectedOrderItemSummary = {
   unit: StoreOrderCatalogProduct["unit"];
   unitKind: StoreOrderCatalogProduct["unitKind"];
   minimumProductionAlert: string | null;
+  productionDate: string | null;
+  deliveryDate: string;
+  saleDate: string;
 };
 
 const WEEK_SEQUENCE: EditableDayField[] = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
@@ -199,6 +205,14 @@ export default function PedidosLojaPage() {
   const highlightedDay = useMemo(() => getDayFieldByDate(deliveryDate), [deliveryDate]);
   const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
   const deliveryDateLabel = useMemo(() => formatDateWithWeekday(deliveryDate), [deliveryDate]);
+  const baseOperationalDateLabel = useMemo(
+    () => formatDateKeyWithWeekday(effectiveBaseDateKey),
+    [effectiveBaseDateKey],
+  );
+  const orderDateLabel = useMemo(
+    () => formatDateKeyWithWeekday(orderCalendarDateKey),
+    [orderCalendarDateKey],
+  );
   const orderingDaysLabel = useMemo(
     () => (selectedStore ? formatOperationalDays(selectedStore.orderingDays) : "-"),
     [selectedStore],
@@ -277,6 +291,15 @@ export default function PedidosLojaPage() {
         .map((value) => ({ value, label: value })),
     [orderProducts],
   );
+  const storeOptions = useMemo(
+    () =>
+      availableStores.map((store) => ({
+        value: store.id,
+        label: store.name,
+      })),
+    [availableStores],
+  );
+  const shouldUseSearchableStoreSelect = availableStores.length >= 8;
 
   const filteredOrderProducts = useMemo(() => {
     const term = catalogSearchTerm.trim().toLowerCase();
@@ -305,9 +328,102 @@ export default function PedidosLojaPage() {
           unit: product.unit,
           unitKind: product.unitKind,
           minimumProductionAlert: getMinimumProductionAlert(product, product[highlightedDay]),
+          productionDate: product.productionDate,
+          deliveryDate: product.deliveryDate,
+          saleDate: product.saleDate,
         }))
         .sort((left, right) => left.name.localeCompare(right.name)),
     [highlightedDay, orderProducts],
+  );
+  const selectedProductionSummary = useMemo(
+    () =>
+      summarizeOperationalDates(
+        selectedOrderItems.map((item) => item.productionDate),
+        {
+          emptyValue: "Escolha os itens abaixo",
+          emptyHelper: "Cada produto mostra sua própria data de produção conforme o cronograma ativo.",
+          mixedValue: "Varia por item",
+        },
+      ),
+    [selectedOrderItems],
+  );
+  const selectedSaleSummary = useMemo(
+    () =>
+      summarizeOperationalDates(
+        selectedOrderItems.map((item) => item.saleDate),
+        {
+          emptyValue: "Escolha os itens abaixo",
+          emptyHelper: "A previsão de venda aparece por item depois que a entrega é calculada.",
+          mixedValue: "Varia por item",
+        },
+      ),
+    [selectedOrderItems],
+  );
+  const orderSequenceSteps = useMemo(
+    () => [
+      {
+        key: "ordered",
+        label: "Pedido lançado",
+        value: orderDateLabel,
+        helper: selectedStore
+          ? "Este é o dia em que a loja registra a necessidade."
+          : "Selecione uma loja para calcular a janela operacional.",
+        tone: "neutral" as const,
+      },
+      {
+        key: "base",
+        label: "Base operacional",
+        value: baseOperationalDateLabel,
+        helper:
+          effectiveBaseDateKey === orderCalendarDateKey
+            ? "A base permaneceu no mesmo dia porque o pedido está dentro da regra operacional."
+            : "Depois do cutoff ou fora do dia permitido, a base avança para o próximo dia operacional.",
+        tone: "info" as const,
+      },
+      {
+        key: "production",
+        label: "Produzir em",
+        value: selectedProductionSummary.value,
+        helper:
+          selectedOrderItems.length > 0
+            ? selectedProductionSummary.helper ??
+              "A produção sempre precisa caber antes do dia prometido para expedir e entregar."
+            : selectedProductionSummary.helper,
+        tone: "warning" as const,
+      },
+      {
+        key: "delivery",
+        label: "Receber na loja",
+        value: deliveryDateLabel,
+        helper: `Prazo global da fábrica: D+${snapshot.operationalSettings.expeditionLeadDays} a partir da base operacional.`,
+        tone: "warning" as const,
+      },
+      {
+        key: "sale",
+        label: "Vender a partir de",
+        value: selectedSaleSummary.value,
+        helper:
+          selectedOrderItems.length > 0
+            ? selectedSaleSummary.helper ??
+              "A venda prevista começa depois da entrega, conforme a regra operacional do produto."
+            : selectedSaleSummary.helper,
+        tone: "success" as const,
+      },
+    ],
+    [
+      baseOperationalDateLabel,
+      deliveryDateLabel,
+      effectiveBaseDateKey,
+      orderCalendarDateKey,
+      orderDateLabel,
+      selectedOrderItems.length,
+      selectedProductionSummary.helper,
+      selectedProductionSummary.value,
+      selectedSaleSummary.helper,
+      selectedSaleSummary.value,
+      selectedStore,
+      snapshot.operationalSettings.expeditionLeadDays,
+    ],
   );
   const availableCatalogCount = useMemo(
     () => orderProducts.filter((item) => item.available).length,
@@ -319,19 +435,26 @@ export default function PedidosLojaPage() {
   );
 
   const columns = [
-    { key: "code", header: "Código" },
-    { key: "date", header: "Data" },
+    { key: "code", header: "Código", sortable: true },
+    { key: "date", header: "Pedido lançado", sortable: true },
     {
       key: "deliveryDate",
-      header: "Data Prevista Entrega",
+      header: "Recebimento previsto",
+      sortable: true,
+      sortValue: (item: StoreOrderSummary) => item.deliveryDate,
       render: (item: StoreOrderSummary) => (
         <span className="rounded-md bg-warning/30 px-2 py-1 text-xs font-semibold text-warning-foreground">
           {item.deliveryDate}
         </span>
       ),
     },
-    { key: "status", header: "Status", render: (item: StoreOrderSummary) => <StatusBadge status={item.status} /> },
-    { key: "store", header: "Loja Solicitante" },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      render: (item: StoreOrderSummary) => <StatusBadge status={item.status} />,
+    },
+    { key: "store", header: "Loja solicitante", sortable: true },
   ];
 
   const actions = [
@@ -453,18 +576,32 @@ export default function PedidosLojaPage() {
           shouldShowStoreSelector ? (
             <div className="min-w-[260px] space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground">Loja</p>
-              <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
-                <SelectTrigger className="w-[260px] bg-background/80">
-                  <SelectValue placeholder="Filtrar por loja" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableStores.map((store) => (
-                    <SelectItem key={store.id} value={store.id}>
-                      {store.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {shouldUseSearchableStoreSelect ? (
+                <SearchableSelect
+                  value={selectedStoreId}
+                  onValueChange={setSelectedStoreId}
+                  options={storeOptions}
+                  placeholder="Filtrar por loja"
+                  searchPlaceholder="Buscar loja..."
+                  emptyMessage="Nenhuma loja encontrada."
+                  title="Filtrar por loja"
+                  description="Selecione a loja para atualizar a janela operacional e o catálogo."
+                  className="w-[260px] bg-background/80"
+                />
+              ) : (
+                <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+                  <SelectTrigger className="w-[260px] bg-background/80">
+                    <SelectValue placeholder="Filtrar por loja" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableStores.map((store) => (
+                      <SelectItem key={store.id} value={store.id}>
+                        {store.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           ) : selectedStore ? (
             <div className="min-w-[260px] space-y-1.5">
@@ -509,24 +646,50 @@ export default function PedidosLojaPage() {
                 ) : null}
 
                 <div className="rounded-lg border border-border/80 bg-panel p-4">
-                  <div className="grid gap-4 md:grid-cols-4">
+                  <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
                     <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Nome da Loja</Label>
-                      <Select value={selectedStore?.id ?? ""} onValueChange={setSelectedStoreId} disabled={availableStores.length === 0}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione uma loja" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableStores.map((store) => (
-                            <SelectItem key={store.id} value={store.id}>
-                              {store.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-xs text-muted-foreground">Loja</Label>
+                      {shouldUseSearchableStoreSelect ? (
+                        <SearchableSelect
+                          value={selectedStore?.id ?? ""}
+                          onValueChange={setSelectedStoreId}
+                          options={storeOptions}
+                          placeholder="Selecione uma loja"
+                          searchPlaceholder="Buscar loja..."
+                          emptyMessage="Nenhuma loja encontrada."
+                          title="Selecionar loja"
+                          description="A loja define a janela operacional e as regras de entrega."
+                          disabled={availableStores.length === 0}
+                        />
+                      ) : (
+                        <Select
+                          value={selectedStore?.id ?? ""}
+                          onValueChange={setSelectedStoreId}
+                          disabled={availableStores.length === 0}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione uma loja" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableStores.map((store) => (
+                              <SelectItem key={store.id} value={store.id}>
+                                {store.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                     <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Data de Entrega (D+X)</Label>
+                      <Label className="text-xs text-muted-foreground">Pedido lançado em</Label>
+                      <Input value={orderDateLabel} disabled className="bg-muted" />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs text-muted-foreground">Base operacional</Label>
+                      <Input value={baseOperationalDateLabel} disabled className="bg-muted" />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs text-muted-foreground">Recebimento previsto da loja</Label>
                       <Input
                         value={`${deliveryDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays})`}
                         disabled
@@ -562,6 +725,14 @@ export default function PedidosLojaPage() {
                       {orderingWindowAdjustmentMessage}
                     </div>
                   ) : null}
+                  <OperationalSequenceCard
+                    className="mt-4"
+                    eyebrow="Leitura simples do cronograma"
+                    title="O sistema sempre liga pedido, produção, entrega e venda"
+                    description="Quem lança o pedido não precisa pensar em engenharia de produção: acompanhe só a sequência abaixo."
+                    steps={orderSequenceSteps}
+                    footer="A produção sempre precisa acontecer até a data prometida para expedir e entregar. Se não existir um dia compatível nessa janela, o item fica bloqueado no catálogo."
+                  />
                 </div>
 
                 <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
@@ -604,7 +775,8 @@ export default function PedidosLojaPage() {
                     Coluna ativa do pedido: <strong>{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Disponibilidade considera apenas produtos da sublinha ativa compatíveis com os dias de fabricação da ficha do produto. Avisos de mínimo produtivo não bloqueiam o pedido.
+                    A disponibilidade considera o cronograma ativo da linha de produção e os dias
+                    de fabricação da ficha do produto. Avisos de mínimo produtivo não bloqueiam o pedido.
                   </p>
                 </div>
 
@@ -654,8 +826,25 @@ export default function PedidosLojaPage() {
                                   <div className="text-xs text-muted-foreground">
                                     {product.scheduleName}
                                     {product.productionDays.length > 0
-                                      ? ` · Fabrica em ${formatOperationalDays(product.productionDays)}`
+                                      ? ` · Produz em ${formatOperationalDays(product.productionDays)}`
                                       : ""}
+                                  </div>
+                                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                                    <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
+                                      Pedido: {orderDateLabel}
+                                    </span>
+                                    <span className="rounded-full border border-info/35 bg-info/10 px-2 py-1 text-info-foreground">
+                                      Produzir:{" "}
+                                      {product.productionDate
+                                        ? formatDateKeyWithWeekday(product.productionDate)
+                                        : "sem dia compatível"}
+                                    </span>
+                                    <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
+                                      Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
+                                    </span>
+                                    <span className="rounded-full border border-success/35 bg-success/10 px-2 py-1 text-success-foreground">
+                                      Vender: {formatDateKeyWithWeekday(product.saleDate)}
+                                    </span>
                                   </div>
                                   {!product.available && product.blockedReason ? (
                                     <div className="mt-1 text-xs font-medium text-danger-foreground">

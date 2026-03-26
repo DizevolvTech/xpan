@@ -138,7 +138,7 @@ export default function LinhasProducaoPage() {
 
   const columns = [
     { key: "code", header: "Código" },
-    { key: "name", header: "Subcategoria" },
+    { key: "name", header: "Linha de produção" },
     { key: "sectorName", header: "Categoria" },
     { key: "type", header: "Tipo" },
     {
@@ -197,7 +197,7 @@ export default function LinhasProducaoPage() {
 
   async function handleSave() {
     if (!formState.name.trim() || !formState.sectorId) {
-      setFormError("Informe nome e categoria da subcategoria.");
+      setFormError("Informe nome e categoria da linha de produção.");
       return;
     }
 
@@ -220,13 +220,15 @@ export default function LinhasProducaoPage() {
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message ?? "Falha ao salvar subcategoria");
+        throw new Error(body?.message ?? "Falha ao salvar linha de produção");
       }
 
       await refresh();
       setIsDialogOpen(false);
     } catch (saveError) {
-      setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar subcategoria");
+      setFormError(
+        saveError instanceof Error ? saveError.message : "Falha ao salvar linha de produção",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -234,18 +236,18 @@ export default function LinhasProducaoPage() {
 
   return (
     <PageLayout
-      title="Subcategorias"
-      description="Cada subcategoria pertence a uma categoria e agora controla sua carteira operacional de produtos para cronograma e auditoria."
+      title="Linhas de produção"
+      description="Cada linha de produção pertence a uma categoria e controla o cronograma ativo usado na operação e na auditoria."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
-        { label: "Subcategorias" },
+        { label: "Linhas de produção" },
       ]}
     >
       <div className="grid gap-3 md:grid-cols-3">
-        <KPICard title="Subcategorias Ativas" value={`${activeLines} subcategorias`} icon={Layers3} tone="success" />
+        <KPICard title="Linhas ativas" value={`${activeLines} linhas`} icon={Layers3} tone="success" />
         <KPICard
-          title="Linhas Derivadas"
+          title="Auditorias pendentes"
           value={`${pendingAudits} revisões`}
           icon={CalendarDays}
           tone="warning"
@@ -260,15 +262,15 @@ export default function LinhasProducaoPage() {
 
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Subcategorias</CardTitle>
+          <CardTitle>Lista de linhas de produção</CardTitle>
           <Button type="button" onClick={openNewLine} disabled={isSubmitting}>
             <Plus className="size-4" />
-            Nova Subcategoria
+            Nova linha de produção
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código, subcategoria ou categoria..."
+            searchPlaceholder="Buscar por código, linha de produção ou categoria..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}
@@ -285,7 +287,11 @@ export default function LinhasProducaoPage() {
             keyField="id"
             onRowClick={(item) => router.push(`/gestor-dados/linhas-producao/${item.id}`)}
             stickyHeader
-            emptyMessage={isLoading ? "Carregando subcategorias..." : "Nenhuma subcategoria encontrada"}
+            emptyMessage={
+              isLoading
+                ? "Carregando linhas de produção..."
+                : "Nenhuma linha de produção encontrada"
+            }
           />
         </CardContent>
       </Card>
@@ -304,7 +310,9 @@ export default function LinhasProducaoPage() {
       >
         <DialogContent size="xl">
           <DialogHeader>
-            <DialogTitle>{editingLine ? "Editar Subcategoria" : "Nova Subcategoria"}</DialogTitle>
+            <DialogTitle>
+              {editingLine ? "Editar linha de produção" : "Nova linha de produção"}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             {formError ? (
@@ -314,11 +322,11 @@ export default function LinhasProducaoPage() {
             ) : null}
             {formDirty ? (
               <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
-                Existem alterações pendentes nesta subcategoria.
+                Existem alterações pendentes nesta linha de produção.
               </div>
             ) : null}
             <div className="grid gap-2">
-              <Label>Nome da Subcategoria *</Label>
+              <Label>Nome completo da linha de produção *</Label>
               <Input
                 placeholder="Ex: Linha de Pães"
                 value={formState.name}

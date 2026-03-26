@@ -221,7 +221,7 @@ export default function OrdemProducaoDetailsPage() {
             <p className="mt-1 text-lg font-semibold">{op.progress.toFixed(1)}%</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Capacidade da subcategoria</p>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Capacidade da linha de produção</p>
             <p className="mt-1 text-lg font-semibold">{formatKgValue(lineCapacity)} Kg/dia</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">

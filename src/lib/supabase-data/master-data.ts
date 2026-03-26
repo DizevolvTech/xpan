@@ -78,6 +78,8 @@ function coerceIngredientProfile(value: unknown): IngredientProfileMirror | unde
   return {
     unit: String(record.unit ?? "Kg") as IngredientProfileMirror["unit"],
     weightKg: Number(record.weightKg ?? 1),
+    purchaseUnit: String(record.purchaseUnit ?? record.unit ?? "Kg") as IngredientProfileMirror["purchaseUnit"],
+    purchaseToConsumptionFactor: Number(record.purchaseToConsumptionFactor ?? 1),
     metadata: String(record.metadata ?? ""),
     observation: String(record.observation ?? ""),
   };
@@ -248,8 +250,11 @@ async function loadMasterDataSnapshot(
     createdAt: row.created_at ?? undefined,
     updatedAt: row.updated_at ?? undefined,
     name: row.name,
+    shortName: row.short_name ?? undefined,
     type: row.type,
     unit: row.unit as ProductionIngredient["unit"],
+    purchaseUnit: (row.purchase_unit ?? row.unit) as ProductionIngredient["purchaseUnit"],
+    purchaseToConsumptionFactor: Number(row.purchase_to_consumption_factor ?? 1),
     metadata: row.metadata,
     observation: row.observation,
     composition: compositionByIngredientId.get(row.legacy_id ?? row.id) ?? [],
@@ -313,6 +318,7 @@ async function loadMasterDataSnapshot(
     createdAt: row.created_at ?? undefined,
     updatedAt: row.updated_at ?? undefined,
     name: row.name,
+    shortName: row.short_name ?? undefined,
     description: row.description,
     lineId: lineLegacyById.get(row.subcategory_id) ?? row.subcategory_id,
     masterLineId: lineLegacyById.get(row.subcategory_id) ?? row.subcategory_id,
@@ -326,6 +332,7 @@ async function loadMasterDataSnapshot(
     economicProductionKg: Number(row.economic_production_kg),
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
+    saleLeadDays: Number(row.sale_lead_days ?? 1) > 0 ? Number(row.sale_lead_days ?? 1) : 1,
     unitProfiles: {
       sales: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).sales),
       production: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).production),

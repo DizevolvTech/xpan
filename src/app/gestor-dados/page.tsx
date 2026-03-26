@@ -91,12 +91,12 @@ export default function GestorDadosPage() {
           items: [`${activeCategories.length} ativas`],
         },
         {
-          title: "Subcategorias",
-          description: "Capacidade, tipo operacional e vínculo de produtos por subcategoria.",
+          title: "Linhas de produção",
+          description: "Capacidade, tipo operacional e vínculo de produtos por linha de produção.",
           href: "/gestor-dados/linhas-producao",
           icon: Factory,
           tone: "amber" as const,
-          subtitle: `${snapshot.lines.length} subcategorias`,
+          subtitle: `${snapshot.lines.length} linhas de produção`,
           items: [
             `${activeSubcategories.length} ativas`,
             `${activeSchedules.length} linhas auditadas`,
@@ -140,7 +140,7 @@ export default function GestorDadosPage() {
         <KPICard
           title="Registros Ativos"
           value={isLoading ? "..." : dashboard.activeRecords}
-          subtitle="Categorias, subcategorias, lojas, ingredientes e produtos ativos"
+          subtitle="Categorias, linhas de produção, lojas, ingredientes e produtos ativos"
           tone="info"
           icon={Database}
         />

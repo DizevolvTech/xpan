@@ -51,6 +51,8 @@ export interface IngredientCompositionItem {
 export interface IngredientProfileMirror {
   unit: UnitCode;
   weightKg: number;
+  purchaseUnit?: UnitCode;
+  purchaseToConsumptionFactor?: number;
   metadata: string;
   observation: string;
 }
@@ -71,8 +73,11 @@ export interface ProductionIngredient {
   createdAt?: string;
   updatedAt?: string;
   name: string;
+  shortName?: string;
   type: IngredientType;
   unit: UnitCode;
+  purchaseUnit?: UnitCode;
+  purchaseToConsumptionFactor?: number;
   metadata: string;
   observation: string;
   composition: IngredientCompositionItem[];
@@ -132,6 +137,7 @@ export interface ProductionProduct {
   createdAt?: string;
   updatedAt?: string;
   name: string;
+  shortName?: string;
   description: string;
   lineId: string;
   masterLineId?: string;
@@ -143,6 +149,7 @@ export interface ProductionProduct {
   economicProductionKg: number;
   allowsStorage: boolean;
   productionDays: ProductionWeekDay[];
+  saleLeadDays?: number;
   unitProfiles: {
     sales: ProductUnitProfile;
     production: ProductUnitProfile;
@@ -193,8 +200,8 @@ export interface WeeklyProductionSchedule {
 
 export const hierarchyLabels = {
   sector: "Categoria",
-  line: "Subcategoria",
-  schedule: "Linha",
+  line: "Linha de produção",
+  schedule: "Cronograma",
 } as const;
 
 export const productionWeekDays: { key: ProductionWeekDay; label: string; shortLabel: string }[] = [

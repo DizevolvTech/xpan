@@ -4,7 +4,8 @@ import { cookies } from "next/headers";
 
 import type { ManagedUser } from "@/lib/admin-users";
 import type { SessionUser } from "@/lib/auth";
-import { buildEmptyPermissions, permissionModules, type PermissionMap } from "@/lib/permission-modules";
+import { type PermissionMap } from "@/lib/permission-modules";
+import { resolveMasterAccessContext } from "@/lib/master-access-context";
 import { findManagedUserByAuthUserId } from "@/lib/supabase-data/admin-users";
 import { getTenantByIdentifier } from "@/lib/supabase-data/tenants";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
@@ -84,18 +85,6 @@ export async function resolveCurrentManagedUser(options: ResolveManagedUserOptio
   return resolveManagedUserFromSession(authUser.id, options);
 }
 
-export function buildMasterTenantReadOnlyPermissions() {
-  const permissions = buildEmptyPermissions();
-
-  permissionModules.forEach((module) => {
-    if (module.group !== "administrador-master") {
-      permissions[module.id] = "gerenciar";
-    }
-  });
-
-  return permissions;
-}
-
 export async function resolveServerAccess(
   options: ResolveManagedUserOptions = {},
 ): Promise<ResolvedServerAccess | null> {
@@ -151,18 +140,18 @@ export async function resolveServerAccess(
         status: selectedTenantRecord.status,
       }
     : null;
-  const accessMode: AccessMode = selectedTenant ? "read-only-tenant" : "master";
+  const masterAccessContext = resolveMasterAccessContext(managedUser, selectedTenant);
 
   return {
     user: {
       ...managedUser,
       authUserId: authUser.id,
     },
-    actorRole: managedUser.role,
-    actorTenantId: managedUser.tenantId,
-    effectiveTenantId: selectedTenant?.id ?? null,
-    accessMode,
-    permissions: selectedTenant ? buildMasterTenantReadOnlyPermissions() : managedUser.permissions,
-    selectedTenant,
+    actorRole: masterAccessContext.actorRole,
+    actorTenantId: masterAccessContext.actorTenantId,
+    effectiveTenantId: masterAccessContext.effectiveTenantId,
+    accessMode: masterAccessContext.accessMode,
+    permissions: masterAccessContext.permissions,
+    selectedTenant: masterAccessContext.selectedTenant,
   };
 }

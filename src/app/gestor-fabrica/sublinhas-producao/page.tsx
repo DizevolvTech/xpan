@@ -85,7 +85,7 @@ function buildScheduleSnapshotProducts(
         masterLineName: product ? lineNameById.get(product.masterLineId ?? product.lineId) ?? "-" : "-",
         operationalLineName: product?.operationalLineId
           ? lineNameById.get(product.operationalLineId) ?? "-"
-          : "Fora da carteira operacional",
+          : "Fora do cronograma ativo",
       };
     })
     .sort((left, right) => `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, "pt-BR"));
@@ -216,7 +216,7 @@ export default function SublinhasProducaoPage() {
   const columns = [
     { key: "code", header: "Código" },
     { key: "name", header: "Linha" },
-    { key: "lineName", header: "Subcategoria" },
+    { key: "lineName", header: "Linha de produção" },
     { key: "sectorName", header: "Categoria" },
     { key: "itemsCount", header: "Produtos" },
     {
@@ -406,16 +406,16 @@ export default function SublinhasProducaoPage() {
 
   return (
     <PageLayout
-      title="Linhas - Subcategoria"
-      description="Acompanhe as revisões pendentes das subcategorias e aprove a grade semanal que será usada pela fábrica."
+      title="Auditoria do cronograma ativo"
+      description="Acompanhe as auditorias pendentes das linhas de produção e aprove a grade semanal que será usada pela fábrica."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
-        { label: "Linhas - Subcategoria" },
+        { label: "Auditoria do cronograma ativo" },
       ]}
     >
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Total Subcategorias" value={String(kpis.total)} icon={Clock} tone="info" />
+        <KPICard title="Total de auditorias" value={String(kpis.total)} icon={Clock} tone="info" />
         <KPICard title="Pendentes" value={String(kpis.pendentes)} icon={Clock} tone="warning" />
         <KPICard title="Ativas" value={String(kpis.ativas)} icon={PlayCircle} tone="success" />
         <KPICard title="Inativas" value={String(kpis.inativas)} icon={PauseCircle} tone="neutral" />
@@ -424,7 +424,7 @@ export default function SublinhasProducaoPage() {
       {pendingAuditRows.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Auditorias pendentes de subcategoria</CardTitle>
+            <CardTitle>Auditorias pendentes do cronograma ativo</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 xl:grid-cols-2">
             {pendingAuditRows.map((schedule) => (
@@ -449,7 +449,7 @@ export default function SublinhasProducaoPage() {
                     </p>
                   </div>
                   <Button type="button" onClick={() => openScheduleDetails(schedule)}>
-                    Auditar subcategoria
+                    Auditar cronograma
                   </Button>
                 </div>
               </article>
@@ -460,11 +460,11 @@ export default function SublinhasProducaoPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Lista de Linhas - Subcategoria</CardTitle>
+          <CardTitle>Lista de auditorias do cronograma ativo</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código, linha, subcategoria ou categoria..."
+            searchPlaceholder="Buscar por código, linha de produção ou categoria..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             filters={[
@@ -481,7 +481,7 @@ export default function SublinhasProducaoPage() {
               },
               {
                 key: "line",
-                label: "Subcategoria",
+                label: "Linha de produção",
                 value: lineFilter,
                 onChange: setLineFilter,
                 options: snapshot.lines.map((line) => ({ value: line.id, label: line.name })),
@@ -519,10 +519,12 @@ export default function SublinhasProducaoPage() {
         <DialogContent size="full" className="space-y-4">
           <DialogHeader>
             <DialogTitle>
-              {selectedSchedule ? `Auditoria da Subcategoria · ${selectedSchedule.lineName}` : "Auditoria"}
+              {selectedSchedule
+                ? `Auditoria do cronograma ativo · ${selectedSchedule.lineName}`
+                : "Auditoria"}
             </DialogTitle>
             <DialogDescription>
-              Revise a grade completa da subcategoria, com os produtos aprovados e os dias planejados para fabricação.
+              Revise a grade completa do cronograma ativo, com os produtos aprovados e os dias planejados para fabricação.
             </DialogDescription>
           </DialogHeader>
 
@@ -534,7 +536,7 @@ export default function SublinhasProducaoPage() {
                   <p className="mt-1 text-sm font-semibold text-foreground">{selectedSchedule.name}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Subcategoria</p>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linha de produção</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{selectedSchedule.lineName}</p>
                 </div>
                 <div>
@@ -557,7 +559,7 @@ export default function SublinhasProducaoPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Grade da revisão da subcategoria</CardTitle>
+                  <CardTitle>Grade auditável do cronograma ativo</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <PaginatedSection
@@ -575,7 +577,7 @@ export default function SublinhasProducaoPage() {
                                 Produto
                               </th>
                               <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground/95">
-                                Subcategoria Cadastral
+                                Linha cadastral
                               </th>
                               <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground/95">
                                 Base (Kg)
@@ -670,7 +672,7 @@ export default function SublinhasProducaoPage() {
               </div>
 
               <div className="grid gap-2 rounded-lg border border-border/80 bg-card p-4">
-                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Resumo da Subcategoria Auditada</p>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Resumo do cronograma auditado</p>
                 <p className="text-sm text-foreground">
                   <strong>{selectedSchedule.lineName}</strong> criada por{" "}
                   <strong>{selectedSchedule.createdBy || "automação da plataforma"}</strong> em{" "}
@@ -680,7 +682,7 @@ export default function SublinhasProducaoPage() {
                 </p>
                 {selectedSchedule.revisionOfId && (
                   <p className="text-sm text-muted-foreground">
-                    Revisão da linha{" "}
+                    Revisão do cronograma{" "}
                     {scheduleNameById.get(selectedSchedule.revisionOfId) ?? selectedSchedule.revisionOfId}.
                   </p>
                 )}

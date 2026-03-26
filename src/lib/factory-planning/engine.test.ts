@@ -69,7 +69,7 @@ test("scheduled availability requires schedule item membership", () => {
   );
 
   assert.equal(availability.available, false);
-  assert.equal(availability.blockedReason, "Produto fora da sublinha ativa.");
+  assert.equal(availability.blockedReason, "Produto fora da linha de produção ativa.");
 });
 
 test("scheduled availability requires intersection between product and schedule days", () => {
@@ -87,7 +87,10 @@ test("scheduled availability requires intersection between product and schedule 
   );
 
   assert.equal(availability.available, false);
-  assert.equal(availability.blockedReason, "Dias da ficha do produto não coincidem com a sublinha ativa.");
+  assert.equal(
+    availability.blockedReason,
+    "Dias da ficha do produto não coincidem com a linha de produção ativa.",
+  );
 });
 
 test("scheduled availability resolves an earlier production day inside the operational window", () => {
@@ -117,19 +120,19 @@ test("scheduled availability resolves an earlier production day inside the opera
   });
 });
 
-test("operational timeline uses delivery day and ignores sale lead days", () => {
+test("operational timeline derives sale day after delivery", () => {
   const timeline = getOperationalTimeline(
     "2026-03-17T09:00:00",
     baseStore,
     settings,
     ["quinta"],
-    99,
+    1,
   );
 
   assert.deepEqual(timeline, {
     baseDate: "2026-03-17",
     deliveryDate: "2026-03-19",
-    saleDate: "2026-03-19",
+    saleDate: "2026-03-20",
     productionDate: "2026-03-19",
     delayed: false,
   });

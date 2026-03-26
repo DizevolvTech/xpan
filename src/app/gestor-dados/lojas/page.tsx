@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
+import { SearchableSelect } from "@/components/shared/searchable-select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -114,10 +115,20 @@ export default function LojasPage() {
     () => storeUsers.find((user) => user.id === formState.responsibleProfileId) ?? null,
     [formState.responsibleProfileId, storeUsers],
   );
+  const storeUserOptionsForSearch = useMemo(
+    () =>
+      storeUserOptions.map((user) => ({
+        value: user.id,
+        label: user.name,
+        description: `${user.email}${user.status === "inativo" ? " · inativo" : ""}`,
+        keywords: [user.email],
+      })),
+    [storeUserOptions],
+  );
 
   const columns = [
     { key: "code", header: "Código" },
-    { key: "name", header: "Nome" },
+    { key: "name", header: "Nome completo" },
     { key: "responsible", header: "Responsável" },
     {
       key: "orderingDays",
@@ -388,7 +399,7 @@ export default function LojasPage() {
               <h3 className="mb-4 text-sm font-semibold">Informações Básicas</h3>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label>Nome da Loja *</Label>
+                  <Label>Nome completo da loja *</Label>
                   <Input
                     value={formState.name}
                     onChange={(event) =>
@@ -403,36 +414,61 @@ export default function LojasPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label>Usuário Responsável *</Label>
-                  <Select
-                    value={formState.responsibleProfileId ?? undefined}
-                    onValueChange={(value) => {
-                      const responsibleUser = storeUsers.find((user) => user.id === value) ?? null;
-                      setFormState((current) => ({
-                        ...current,
-                        responsibleProfileId: value,
-                        responsible: responsibleUser?.name ?? current.responsible,
-                      }));
-                    }}
-                    disabled={isStoreUsersLoading || storeUserOptions.length === 0}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          isStoreUsersLoading
-                            ? "Carregando usuários de loja..."
-                            : "Selecione um usuário do tipo loja"
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {storeUserOptions.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.name}
-                          {user.status === "inativo" ? " (inativo)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {storeUserOptions.length >= 8 ? (
+                    <SearchableSelect
+                      value={formState.responsibleProfileId ?? ""}
+                      onValueChange={(value) => {
+                        const responsibleUser = storeUsers.find((user) => user.id === value) ?? null;
+                        setFormState((current) => ({
+                          ...current,
+                          responsibleProfileId: value,
+                          responsible: responsibleUser?.name ?? current.responsible,
+                        }));
+                      }}
+                      options={storeUserOptionsForSearch}
+                      placeholder={
+                        isStoreUsersLoading
+                          ? "Carregando usuários de loja..."
+                          : "Selecione um usuário do tipo loja"
+                      }
+                      searchPlaceholder="Buscar usuário responsável..."
+                      emptyMessage="Nenhum usuário de loja encontrado."
+                      title="Selecionar usuário responsável"
+                      description="Busque pelo nome ou e-mail do usuário de loja que ficará vinculado a esta unidade."
+                      disabled={isStoreUsersLoading || storeUserOptions.length === 0}
+                    />
+                  ) : (
+                    <Select
+                      value={formState.responsibleProfileId ?? undefined}
+                      onValueChange={(value) => {
+                        const responsibleUser = storeUsers.find((user) => user.id === value) ?? null;
+                        setFormState((current) => ({
+                          ...current,
+                          responsibleProfileId: value,
+                          responsible: responsibleUser?.name ?? current.responsible,
+                        }));
+                      }}
+                      disabled={isStoreUsersLoading || storeUserOptions.length === 0}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            isStoreUsersLoading
+                              ? "Carregando usuários de loja..."
+                              : "Selecione um usuário do tipo loja"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {storeUserOptions.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.name}
+                            {user.status === "inativo" ? " (inativo)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Apenas usuários do perfil <strong>Loja</strong> aparecem nesta lista e o acesso à loja será vinculado automaticamente.
                   </p>

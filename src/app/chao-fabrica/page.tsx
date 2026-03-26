@@ -32,7 +32,7 @@ export default function ChaoFabricaPage() {
       href: "/chao-fabrica/ordens-producao",
       title: "Produção",
       subtitle: "O que produzir agora",
-      description: "Lista operacional de OPs por categoria, subcategoria e linha, pronta para execução.",
+      description: "Lista operacional de OPs por categoria, linha de produção e linha executora, pronta para execução.",
       icon: Factory,
       tone: "amber" as const,
     },

@@ -460,6 +460,11 @@ function normalizeOptionalCode(value: string | undefined) {
   return normalized ? normalized : null;
 }
 
+function normalizeOptionalText(value: string | undefined) {
+  const normalized = value?.trim() ?? "";
+  return normalized ? normalized : null;
+}
+
 function normalizeOperationalSettingsPayload(input: OperationalSettingsInput) {
   const orderCutoffTime = input.orderCutoffTime.trim();
   const timeMatch = orderCutoffTime.match(/^(\d{2}):(\d{2})$/);
@@ -640,8 +645,14 @@ export async function createIngredient(input: IngredientInput, options: Mutation
       code,
       external_code: externalCode,
       name: input.name.trim(),
+      short_name: normalizeOptionalText(input.shortName),
       type: input.type,
       unit: input.unit,
+      purchase_unit: input.purchaseUnit ?? input.unit,
+      purchase_to_consumption_factor:
+        Number.isFinite(input.purchaseToConsumptionFactor) && Number(input.purchaseToConsumptionFactor) > 0
+          ? Number(input.purchaseToConsumptionFactor)
+          : 1,
       metadata: input.metadata.trim(),
       observation: input.observation.trim(),
       status: input.status ?? "ativo",
@@ -674,8 +685,14 @@ export async function updateIngredient(
     .update({
       external_code: externalCode,
       name: input.name.trim(),
+      short_name: normalizeOptionalText(input.shortName),
       type: input.type,
       unit: input.unit,
+      purchase_unit: input.purchaseUnit ?? input.unit,
+      purchase_to_consumption_factor:
+        Number.isFinite(input.purchaseToConsumptionFactor) && Number(input.purchaseToConsumptionFactor) > 0
+          ? Number(input.purchaseToConsumptionFactor)
+          : 1,
       metadata: input.metadata.trim(),
       observation: input.observation.trim(),
       status: input.status ?? "ativo",
@@ -766,6 +783,7 @@ function normalizeProductPayload(input: ProductInput) {
   return {
     external_code: normalizeOptionalCode(input.externalCode),
     name: input.name.trim(),
+    short_name: normalizeOptionalText(input.shortName),
     description: input.description.trim(),
     active: input.active,
     available_for_ordering: input.availableForOrdering,
@@ -774,7 +792,10 @@ function normalizeProductPayload(input: ProductInput) {
     economic_production_kg: input.economicProductionKg,
     allows_storage: input.allowsStorage,
     production_days: input.productionDays,
-    sale_lead_days: 0,
+    sale_lead_days:
+      Number.isFinite(input.saleLeadDays) && Number(input.saleLeadDays) > 0
+        ? Number(input.saleLeadDays)
+        : 1,
     unit_profiles: input.unitProfiles,
     packaging_profile: input.isSoldLoose ? null : input.packagingProfile ?? null,
     is_sold_loose: input.isSoldLoose,
@@ -783,7 +804,17 @@ function normalizeProductPayload(input: ProductInput) {
     break_stage: input.breakStage,
     break_comment: input.breakComment.trim(),
     can_be_ingredient: input.canBeIngredient,
-    ingredient_profile: input.canBeIngredient ? input.ingredientProfile ?? null : null,
+    ingredient_profile: input.canBeIngredient
+      ? {
+          ...(input.ingredientProfile ?? {}),
+          purchaseUnit: input.ingredientProfile?.purchaseUnit ?? input.ingredientProfile?.unit ?? "Kg",
+          purchaseToConsumptionFactor:
+            Number.isFinite(input.ingredientProfile?.purchaseToConsumptionFactor) &&
+            Number(input.ingredientProfile?.purchaseToConsumptionFactor) > 0
+              ? Number(input.ingredientProfile?.purchaseToConsumptionFactor)
+              : 1,
+        }
+      : null,
     weight_label: input.weight,
     production_unit: input.productionUnit,
     sales_unit: input.salesUnit,
@@ -930,7 +961,7 @@ export async function assignProductToOperationalSubcategory(
 
   if (productMasterSubcategoryId !== targetSubcategoryId) {
     throw new Error(
-      "Somente produtos cadastrados nesta subcategoria podem entrar no cronograma operacional. Para realocar, edite o cadastro do produto.",
+      "Somente produtos cadastrados nesta linha de produção podem entrar no cronograma ativo. Para realocar, edite o cadastro do produto.",
     );
   }
 
@@ -982,7 +1013,7 @@ export async function removeProductFromOperationalSubcategory(
     : null;
 
   if (currentOperationalSubcategoryId !== sourceSubcategoryId) {
-    throw new Error("O produto não está vinculado operacionalmente a esta subcategoria.");
+    throw new Error("O produto não está vinculado operacionalmente a esta linha de produção.");
   }
 
   const updateResult = await supabase

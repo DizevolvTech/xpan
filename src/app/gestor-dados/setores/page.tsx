@@ -88,8 +88,8 @@ export default function SetoresPage() {
 
   const columns = [
     { key: "code", header: "Código" },
-    { key: "name", header: "Nome" },
-    { key: "lines", header: "Nº Subcategorias" },
+    { key: "name", header: "Nome completo" },
+    { key: "lines", header: "Nº Linhas de produção" },
     {
       key: "status",
       header: "Status",
@@ -194,7 +194,7 @@ export default function SetoresPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código ou nome..."
+            searchPlaceholder="Buscar por código ou nome completo..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}
@@ -244,7 +244,7 @@ export default function SetoresPage() {
               </div>
             ) : null}
             <div className="grid gap-2">
-              <Label>Nome da Categoria *</Label>
+              <Label>Nome completo da categoria *</Label>
               <Input
                 placeholder="Ex: Confeitaria"
                 value={formState.name}

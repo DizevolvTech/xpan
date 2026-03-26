@@ -354,7 +354,7 @@ export default function OrdensProducaoPage() {
         <KPICard title="OPs liberadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" compactValue />
         <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={Factory} tone="success" compactValue />
         <KPICard title="% conclusão média" value={`${kpis.avgCompletion}%`} icon={PackageCheck} tone="info" compactValue />
-        <KPICard title="Subcategorias ativas" value={kpis.activeSubcategories} icon={Layers} tone="warning" compactValue />
+        <KPICard title="Linhas ativas" value={kpis.activeSubcategories} icon={Layers} tone="warning" compactValue />
       </div>
 
       <OperationalDateScopeCard
@@ -398,7 +398,7 @@ export default function OrdensProducaoPage() {
         title="Filtros da Produção"
         summary={`${filteredOps.length} de ${opRows.length} OPs visíveis`}
         searchLabel="Busca"
-        searchPlaceholder="Buscar por OP, produto, categoria, subcategoria ou linha..."
+        searchPlaceholder="Buscar por OP, produto, categoria ou linha de produção..."
         searchValue={searchTerm}
         onSearch={(value) => {
           setSearchTerm(value);
@@ -492,7 +492,7 @@ export default function OrdensProducaoPage() {
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Resumo diário por subcategoria</CardTitle>
+            <CardTitle>Resumo diário por linha de produção</CardTitle>
           </CardHeader>
           <CardContent>
             <DataTable
@@ -507,10 +507,10 @@ export default function OrdensProducaoPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Kg por subcategoria e dia</CardTitle>
+            <CardTitle>Kg por linha de produção e dia</CardTitle>
           </CardHeader>
           <CardContent>
-            <PaginatedSection items={alignedLineRows.lines} label="sublinhas" initialPageSize={8}>
+            <PaginatedSection items={alignedLineRows.lines} label="linhas de produção" initialPageSize={8}>
               {(paginatedLines) => (
                 <div className="overflow-x-auto rounded-xl border border-border/80">
                   <table className="w-full min-w-[920px] border-collapse">

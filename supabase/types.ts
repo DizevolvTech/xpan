@@ -344,9 +344,13 @@ export type Database = {
           legacy_id: string | null;
           tenant_id: string;
           code: string;
+          external_code: string | null;
           name: string;
+          short_name: string | null;
           type: "puro" | "misturado";
           unit: string;
+          purchase_unit: string | null;
+          purchase_to_consumption_factor: number;
           metadata: string;
           observation: string;
           status: "ativo" | "inativo";
@@ -358,9 +362,13 @@ export type Database = {
           legacy_id?: string | null;
           tenant_id: string;
           code: string;
+          external_code?: string | null;
           name: string;
+          short_name?: string | null;
           type: "puro" | "misturado";
           unit: string;
+          purchase_unit?: string | null;
+          purchase_to_consumption_factor?: number;
           metadata?: string;
           observation?: string;
           status?: "ativo" | "inativo";
@@ -408,6 +416,7 @@ export type Database = {
           code: string;
           external_code: string | null;
           name: string;
+          short_name: string | null;
           description: string;
           subcategory_id: string;
           operational_subcategory_id: string | null;
@@ -445,6 +454,7 @@ export type Database = {
           code: string;
           external_code?: string | null;
           name: string;
+          short_name?: string | null;
           description?: string;
           subcategory_id: string;
           operational_subcategory_id?: string | null;

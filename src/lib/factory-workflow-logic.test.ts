@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { FactoryPlanningData } from "@/lib/order-planning";
 import { applyFactoryWorkflowState } from "@/lib/factory-workflow-logic";
+import { defaultProductPreparationStages } from "@/lib/production-planning";
 
 test("cancelled orders remain visible in pedidos and leave production/expedition queues", () => {
   const planning: FactoryPlanningData = {
@@ -61,6 +62,7 @@ test("cancelled orders remain visible in pedidos and leave production/expedition
         releasedToProduction: false,
         productionItemKey: "2026-03-19|sector-1|line-1|schedule-1|product-1",
         productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
         workflowProgress: 0,
         opCode: null,
         status: "em_espera",
@@ -196,6 +198,7 @@ test("multiple orders on the same line and day collapse into one production orde
         releasedToProduction: false,
         productionItemKey: "2026-03-20|line-pan|schedule-pan|product-pan",
         productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
         workflowProgress: 0,
         opCode: null,
         status: "em_espera",
@@ -233,6 +236,7 @@ test("multiple orders on the same line and day collapse into one production orde
         releasedToProduction: false,
         productionItemKey: "2026-03-20|line-pan|schedule-pan|product-pan-2",
         productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
         workflowProgress: 0,
         opCode: null,
         status: "em_espera",

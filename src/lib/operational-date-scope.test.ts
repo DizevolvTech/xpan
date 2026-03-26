@@ -7,6 +7,7 @@ import {
   type OperationalDateScope,
 } from "@/lib/operational-date-scope";
 import type { FactoryPlanningData } from "@/lib/order-planning";
+import { defaultProductPreparationStages } from "@/lib/production-planning";
 import type { StoreOrderSummary } from "@/lib/store-order-types";
 
 const baseScope: OperationalDateScope = {
@@ -121,6 +122,7 @@ test("factory orders remain visible on the day they were created even with later
         releasedToProduction: false,
         productionItemKey: "2026-03-19|line-1|schedule-1|product-1",
         productionItemStatus: "nao_iniciado",
+        preparationStages: [...defaultProductPreparationStages],
         workflowProgress: 0,
         opCode: null,
         status: "agendado",
@@ -199,6 +201,7 @@ test("factory scope keeps related OP and expedition visible for the same selecte
         releasedToProduction: true,
         productionItemKey: "2026-03-20|line-1|schedule-1|product-1",
         productionItemStatus: "nao_iniciado",
+        preparationStages: [...defaultProductPreparationStages],
         workflowProgress: 0,
         opCode: "OP-260320-001",
         status: "agendado",
@@ -233,6 +236,7 @@ test("factory scope keeps related OP and expedition visible for the same selecte
             totalKg: 4.35,
             progress: 0,
             status: "nao_iniciado",
+            preparationStages: [...defaultProductPreparationStages],
             sourceItemsCount: 1,
           },
         ],
