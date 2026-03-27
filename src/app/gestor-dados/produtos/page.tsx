@@ -85,10 +85,10 @@ export default function ProdutosPage() {
   );
 
   const columns = [
-    { key: "code", header: "Código XPAN" },
+    { key: "code", header: "Código da fábrica" },
     {
       key: "externalCode",
-      header: "Código ERP",
+      header: "Código da loja",
       render: (item: ProductRow) => item.externalCode || "-",
     },
     { key: "name", header: "Nome completo" },
@@ -189,7 +189,7 @@ export default function ProdutosPage() {
 
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código XPAN, ERP, nome completo, nome reduzido ou status..."
+            searchPlaceholder="Buscar por código da fábrica, código da loja, nome completo, nome reduzido ou status..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             showFilters={false}
@@ -218,6 +218,7 @@ export default function ProdutosPage() {
         mode={dialogMode}
         snapshot={snapshot}
         refresh={refresh}
+        onRequestEdit={() => setDialogMode("edit")}
       />
     </PageLayout>
   );

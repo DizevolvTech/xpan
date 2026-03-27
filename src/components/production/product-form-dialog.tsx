@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
+import { IngredientFormDialog } from "@/components/production/ingredient-form-dialog";
 import { IngredientProfileFields } from "@/components/production/ingredient-profile-fields";
 import { ProductPreparationStagesEditor } from "@/components/production/product-preparation-stages-editor";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
@@ -83,6 +84,7 @@ type ProductFormDialogProps = {
   mode: ProductDialogMode;
   snapshot: MasterDataSnapshot;
   refresh: (forceRefresh?: boolean) => Promise<MasterDataSnapshot>;
+  onRequestEdit?: () => void;
 };
 
 const breakStageLabels: Record<BreakStage, string> = {
@@ -124,8 +126,10 @@ export function ProductFormDialog({
   mode,
   snapshot,
   refresh,
+  onRequestEdit,
 }: ProductFormDialogProps) {
   const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
+  const [isIngredientDialogOpen, setIsIngredientDialogOpen] = useState(false);
   const [formState, setFormState] = useState<ProductFormState>(() =>
     buildProductFormState(snapshot.lines, product),
   );
@@ -647,24 +651,25 @@ export function ProductFormDialog({
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          if (!formGuard.confirmIfNeeded()) {
-            return;
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            if (!formGuard.confirmIfNeeded()) {
+              return;
+            }
+            setFormError(null);
+            setInvalidFields([]);
           }
-          setFormError(null);
-          setInvalidFields([]);
-        }
 
-        onOpenChange(nextOpen);
-      }}
-    >
-      <DialogContent
-        size="3xl"
-        className="max-h-[92vh] overflow-y-auto rounded-[28px] bg-white p-5 sm:max-w-[1080px]"
+          onOpenChange(nextOpen);
+        }}
       >
+        <DialogContent
+          size="3xl"
+          className="max-h-[92vh] overflow-y-auto rounded-[28px] bg-white p-5 sm:max-w-[1080px]"
+        >
         <DialogHeader>
           <DialogTitle className="text-xl">
             {!product
@@ -686,8 +691,14 @@ export function ProductFormDialog({
           </div>
         ) : null}
         {isReadOnly ? (
-          <div className="rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground">
-            Modo visualização: use o lápis para editar este produto.
+          <div className="flex flex-col gap-3 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground sm:flex-row sm:items-center sm:justify-between">
+            <span>Modo visualização: revise os dados do produto sem alterar o cadastro.</span>
+            {product && onRequestEdit ? (
+              <Button type="button" variant="outline" size="sm" onClick={onRequestEdit}>
+                <Pencil className="size-4" />
+                Editar
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {formDirty ? (
@@ -710,7 +721,7 @@ export function ProductFormDialog({
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Dados do Produto</h3>
                   <p className="text-xs text-muted-foreground">
-                    Nome completo, nome reduzido, código XPAN, código ERP, descrição e vínculo com a linha principal de produção.
+                    Nome completo, nome reduzido, código da fábrica, código da loja, descrição e vínculo com a linha principal de produção.
                   </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-4">
@@ -745,11 +756,11 @@ export function ProductFormDialog({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Código XPAN</Label>
+                    <Label>Código da fábrica</Label>
                     <Input value={formState.code} disabled className="bg-muted" />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="product-external-code">Código ERP</Label>
+                    <Label htmlFor="product-external-code">Código da loja</Label>
                     <Input
                       id="product-external-code"
                       value={formState.externalCode ?? ""}
@@ -759,7 +770,7 @@ export function ProductFormDialog({
                           externalCode: event.target.value,
                         }))
                       }
-                      placeholder="Código externo do ERP"
+                      placeholder="Código da loja"
                     />
                   </div>
                   <div className="grid gap-2 md:col-span-4">
@@ -1381,7 +1392,18 @@ export function ProductFormDialog({
                 </div>
                 <div className="grid gap-4 md:grid-cols-4">
                   <div className="grid gap-2 md:col-span-2">
-                    <Label>Ingrediente / Produto MPI</Label>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Label>Ingrediente / Produto MPI</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsIngredientDialogOpen(true)}
+                      >
+                        <Plus className="size-4" />
+                        Novo ingrediente
+                      </Button>
+                    </div>
                     {recipeSourceOptions.length >= 8 ? (
                       <SearchableSelect
                         value={draftRecipeSourceId}
@@ -1407,6 +1429,9 @@ export function ProductFormDialog({
                         </SelectContent>
                       </Select>
                     )}
+                    <p className="text-xs text-muted-foreground">
+                      Se o ingrediente ainda não existir, cadastre-o aqui sem sair do produto.
+                    </p>
                   </div>
                   <div className="grid gap-2">
                     <Label>Quantidade</Label>
@@ -1594,6 +1619,19 @@ export function ProductFormDialog({
                     <strong>
                       {recipeTotals.finalOutputQuantity} {recipeTotals.finalOutputUnit}
                     </strong>
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Peso unitário considerado:{" "}
+                    <strong>
+                      {formatKgLabel(recipeTotals.fractionUnitWeightKg, {
+                        minimumFractionDigits: 3,
+                        maximumFractionDigits: 3,
+                      })}
+                    </strong>
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Frações finais estimadas:{" "}
+                    <strong>{recipeTotals.finalFractionsQuantity}</strong>
                   </p>
                 </div>
                 <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
@@ -1882,7 +1920,22 @@ export function ProductFormDialog({
             </Button>
           ) : null}
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <IngredientFormDialog
+        open={isIngredientDialogOpen}
+        onOpenChange={setIsIngredientDialogOpen}
+        mode="edit"
+        snapshot={snapshot}
+        refresh={refresh}
+        allowSaveAndCreateAnother={false}
+        onSaved={(ingredient) => {
+          setDraftRecipeSourceId(ingredient.id);
+          setDraftRecipeUnit(ingredient.unit);
+          setIsIngredientDialogOpen(false);
+        }}
+      />
+    </>
   );
 }

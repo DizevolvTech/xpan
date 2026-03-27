@@ -9,7 +9,7 @@ import type {
 } from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { roundQuantityForUnit } from "@/lib/factory-planning/units";
-import { productionWeekDays } from "@/lib/production-planning";
+import { productionWeekDays, sortProductionDays } from "@/lib/production-planning";
 
 export function getLinesBySectorFromData(
   sectorId: string,
@@ -36,6 +36,79 @@ export function getProductOperationalStatusLabel(
   product: Pick<ProductionProduct, "operationalLineId">,
 ) {
   return product.operationalLineId ? "No cronograma ativo" : "Fora do cronograma ativo";
+}
+
+export function getScheduleItemDayPriority(
+  item: Pick<WeeklyProductionSchedule["items"][number], "dayPriorities">,
+  day: ProductionWeekDay,
+) {
+  const rawPriority = item.dayPriorities?.[day];
+  return Number.isFinite(rawPriority) && Number(rawPriority) > 0
+    ? Math.trunc(Number(rawPriority))
+    : Number.MAX_SAFE_INTEGER;
+}
+
+export function buildDefaultScheduleDayPriorities<T extends { productionDays: ProductionWeekDay[] }>(
+  items: T[],
+) {
+  const dayCounters = new Map<ProductionWeekDay, number>();
+
+  return items.map((item) =>
+    sortProductionDays(item.productionDays).reduce<Partial<Record<ProductionWeekDay, number>>>(
+      (acc, day) => {
+        const nextPriority = (dayCounters.get(day) ?? 0) + 1;
+        dayCounters.set(day, nextPriority);
+        acc[day] = nextPriority;
+        return acc;
+      },
+      {},
+    ),
+  );
+}
+
+export function normalizeScheduleDayPriorities(
+  dayPriorities: Partial<Record<ProductionWeekDay, number>> | null | undefined,
+  productionDays: ProductionWeekDay[],
+  fallbackPriorities: Partial<Record<ProductionWeekDay, number>> = {},
+) {
+  return sortProductionDays(productionDays).reduce<Partial<Record<ProductionWeekDay, number>>>(
+    (acc, day) => {
+      const rawPriority = dayPriorities?.[day];
+      const fallbackPriority = fallbackPriorities[day];
+      const normalizedPriority =
+        Number.isFinite(rawPriority) && Number(rawPriority) > 0
+          ? Math.trunc(Number(rawPriority))
+          : Number.isFinite(fallbackPriority) && Number(fallbackPriority) > 0
+            ? Math.trunc(Number(fallbackPriority))
+            : undefined;
+
+      if (normalizedPriority) {
+        acc[day] = normalizedPriority;
+      }
+
+      return acc;
+    },
+    {},
+  );
+}
+
+export function sortScheduleEntriesForDay<
+  T extends {
+    code: string;
+    name: string;
+    dayPriorities?: Partial<Record<ProductionWeekDay, number>>;
+  },
+>(items: T[], day: ProductionWeekDay) {
+  return [...items].sort((left, right) => {
+    const byPriority =
+      getScheduleItemDayPriority(left, day) - getScheduleItemDayPriority(right, day);
+
+    if (byPriority !== 0) {
+      return byPriority;
+    }
+
+    return `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, "pt-BR");
+  });
 }
 
 export function getSchedulesByLineFromData(
@@ -211,10 +284,13 @@ export function getProductRecipeTotalsFromData(
     salesUnit === "Kg" || salesUnit === "L"
       ? Number(outputAfterBreakKg.toFixed(3))
       : roundQuantityForUnit(outputAfterBreakKg / unitWeightKg, salesUnit);
+  const finalFractionsQuantity = roundQuantityForUnit(outputAfterBreakKg / unitWeightKg, salesUnit);
 
   return {
     totalIngredientsKg,
     outputAfterBreakKg,
+    fractionUnitWeightKg: unitWeightKg,
+    finalFractionsQuantity,
     finalOutputQuantity,
     finalOutputUnit: salesUnit,
   };

@@ -72,6 +72,7 @@ export interface PlannedOrderItem {
   expeditionQuantityRaw: number;
   expeditionQuantity: number;
   canPlan: boolean;
+  scheduleDayPriority: number | null;
   availableForRelease: boolean;
   releasedToProduction: boolean;
   productionItemKey: string | null;
@@ -108,6 +109,7 @@ export interface ProductionOrderItem {
   productName: string;
   productionItemKey: string;
   totalKg: number;
+  productionSequence: number | null;
   progress: number;
   status: ProductionItemStatus;
   preparationStages: ProductPreparationStageKey[];
@@ -132,6 +134,7 @@ export interface ProductionOrderSourceItem {
   expeditionUnit: OrderUnit;
   expeditionQuantity: number;
   productionItemKey: string;
+  productionSequence: number | null;
   releasedToProduction: boolean;
   productionItemStatus: ProductionItemStatus;
   workflowProgress: number;

@@ -6,10 +6,15 @@ import type {
   ProductionIngredient,
   ProductionLine,
   ProductionProduct,
+  ProductionWeekDay,
   RecipeIngredientReference,
   StoreMasterData,
 } from "@/lib/production-planning";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import {
+  buildDefaultScheduleDayPriorities,
+  normalizeScheduleDayPriorities,
+} from "@/lib/production-data-utils";
 import {
   assertSupabaseResult,
   isUuid,
@@ -635,13 +640,14 @@ export async function createIngredient(input: IngredientInput, options: Mutation
   const existingCodesResult = await supabase.from("ingredients").select("code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load ingredient codes");
   const code = input.code?.trim() || buildNextCode(existingCodes.map((row) => row.code), "IN", 6);
+  const legacyId = buildGeneratedLegacyId("ingredient");
   const externalCode = normalizeOptionalCode(input.externalCode);
   await assertExternalCodeAvailable("ingredients", externalCode, undefined, supabase);
 
   const insertResult = await supabase
     .from("ingredients")
     .insert({
-      legacy_id: buildGeneratedLegacyId("ingredient"),
+      legacy_id: legacyId,
       code,
       external_code: externalCode,
       name: input.name.trim(),
@@ -666,6 +672,11 @@ export async function createIngredient(input: IngredientInput, options: Mutation
     input.type === "misturado" ? input.composition : [],
     supabase,
   );
+
+  return {
+    id: legacyId,
+    code,
+  };
 }
 
 export async function updateIngredient(
@@ -865,12 +876,12 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
       .maybeSingle(),
     supabase
       .from("schedule_lines")
-      .select("id")
+      .select("id, created_at")
       .eq("subcategory_id", subcategoryId)
       .eq("status", "pendente"),
     supabase
       .from("products")
-      .select("id, minimum_production_kg, production_days")
+      .select("id, code, minimum_production_kg, production_days")
       .eq("operational_subcategory_id", subcategoryId)
       .eq("active", true)
       .order("code", { ascending: true }),
@@ -890,6 +901,35 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
     productsResult,
     "Failed to load operational products for schedule revision",
   );
+  const prioritySourceScheduleId =
+    [...pendingSchedules]
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))[0]?.id ??
+    activeSchedule?.id ??
+    null;
+  const prioritySourceItemsByProductId = new Map<string, Partial<Record<ProductionWeekDay, number>>>();
+
+  if (prioritySourceScheduleId) {
+    const sourceItemsResult = await supabase
+      .from("schedule_line_item_snapshots")
+      .select("product_id, production_days, day_priorities")
+      .eq("schedule_line_id", prioritySourceScheduleId);
+    const sourceItems = assertSupabaseResult(
+      sourceItemsResult,
+      "Failed to load schedule priorities for pending revision",
+    );
+
+    sourceItems.forEach((item) => {
+      prioritySourceItemsByProductId.set(
+        item.product_id,
+        normalizeScheduleDayPriorities(
+          typeof item.day_priorities === "object" && item.day_priorities !== null
+            ? (item.day_priorities as Partial<Record<ProductionWeekDay, number>>)
+            : undefined,
+          (item.production_days ?? []) as ProductionWeekDay[],
+        ),
+      );
+    });
+  }
 
   if (pendingSchedules.length > 0) {
     const deleteResult = await supabase
@@ -931,13 +971,28 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
     return;
   }
 
-  const insertItemsResult = await supabase.from("schedule_line_item_snapshots").insert(
+  const fallbackDayPriorities = buildDefaultScheduleDayPriorities(
     products.map((product) => ({
-      schedule_line_id: scheduleRevision.id,
-      product_id: product.id,
-      minimum_production: Number(product.minimum_production_kg),
-      production_days: product.production_days ?? [],
+      productionDays: (product.production_days ?? []) as ProductionWeekDay[],
     })),
+  );
+
+  const insertItemsResult = await supabase.from("schedule_line_item_snapshots").insert(
+    products.map((product, index) => {
+      const productionDays = (product.production_days ?? []) as ProductionWeekDay[];
+
+      return {
+        schedule_line_id: scheduleRevision.id,
+        product_id: product.id,
+        minimum_production: Number(product.minimum_production_kg),
+        production_days: productionDays,
+        day_priorities: normalizeScheduleDayPriorities(
+          prioritySourceItemsByProductId.get(product.id),
+          productionDays,
+          fallbackDayPriorities[index],
+        ),
+      };
+    }),
   );
 
   if (insertItemsResult.error) {
@@ -1120,6 +1175,7 @@ export async function updateScheduleLineStatus(
   input: {
     status: "pendente" | "ativo" | "inativo";
     auditNotes?: string;
+    dayPrioritiesByItemId?: Record<string, Partial<Record<ProductionWeekDay, number>>>;
   },
   options: MutationOptions = {},
 ) {
@@ -1131,6 +1187,37 @@ export async function updateScheduleLineStatus(
   const scheduleId = String(row.id);
   const subcategoryId = String(row.subcategory_id);
   const timestamp = new Date().toISOString();
+
+  if (input.dayPrioritiesByItemId) {
+    const scheduleItemsResult = await supabase
+      .from("schedule_line_item_snapshots")
+      .select("id, production_days")
+      .eq("schedule_line_id", scheduleId);
+    const scheduleItems = assertSupabaseResult(
+      scheduleItemsResult,
+      "Failed to load schedule items for priority update",
+    );
+
+    const priorityUpdates = await Promise.all(
+      scheduleItems.map((item) =>
+        supabase
+          .from("schedule_line_item_snapshots")
+          .update({
+            day_priorities: normalizeScheduleDayPriorities(
+              input.dayPrioritiesByItemId?.[item.id],
+              (item.production_days ?? []) as ProductionWeekDay[],
+            ),
+          })
+          .eq("id", item.id)
+          .eq("schedule_line_id", scheduleId),
+      ),
+    );
+
+    const priorityError = priorityUpdates.find((result) => result.error)?.error;
+    if (priorityError) {
+      throw new Error(`Failed to update schedule priorities: ${priorityError.message}`);
+    }
+  }
 
   if (input.status === "ativo") {
     const deactivateOthersResult = await supabase

@@ -23,6 +23,7 @@ import type {
   WeeklyProductionSchedule,
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
+import { normalizeScheduleDayPriorities } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 export interface MasterDataSnapshot {
@@ -367,6 +368,12 @@ async function loadMasterDataSnapshot(
       productId: productLegacyById.get(row.product_id) ?? row.product_id,
       minimumProduction: Number(row.minimum_production),
       productionDays: (row.production_days ?? []) as WeeklyScheduleItem["productionDays"],
+      dayPriorities: normalizeScheduleDayPriorities(
+        typeof row.day_priorities === "object" && row.day_priorities !== null
+          ? (row.day_priorities as WeeklyScheduleItem["dayPriorities"])
+          : undefined,
+        (row.production_days ?? []) as WeeklyScheduleItem["productionDays"],
+      ),
     });
     acc.set(key, current);
     return acc;

@@ -1,7 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CheckCircle, ChevronDown, ChevronUp, Clock, PauseCircle, PlayCircle } from "lucide-react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
+import {
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  GripVertical,
+  PauseCircle,
+  PlayCircle,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +40,7 @@ import {
   buildSectorNameById,
   getMinimumProductionTotalFromSchedule,
   getPlannedDaysCountFromSchedule,
+  sortScheduleEntriesForDay,
 } from "@/lib/production-data-utils";
 
 type AuditableScheduleProduct = {
@@ -41,8 +50,17 @@ type AuditableScheduleProduct = {
   name: string;
   minimumProduction: number;
   productionDays: ProductionProduct["productionDays"];
+  dayPriorities: WeeklyProductionSchedule["items"][number]["dayPriorities"];
   masterLineName: string;
   operationalLineName: string;
+};
+
+type ScheduleDayBoard = {
+  key: ProductionProduct["productionDays"][number];
+  shortLabel: string;
+  label: string;
+  products: AuditableScheduleProduct[];
+  plannedKg: number;
 };
 
 type SublinhaRow = WeeklyProductionSchedule & {
@@ -82,6 +100,7 @@ function buildScheduleSnapshotProducts(
         name: product?.name ?? "Produto não encontrado",
         minimumProduction: item.minimumProduction,
         productionDays: item.productionDays,
+        dayPriorities: item.dayPriorities,
         masterLineName: product ? lineNameById.get(product.masterLineId ?? product.lineId) ?? "-" : "-",
         operationalLineName: product?.operationalLineId
           ? lineNameById.get(product.operationalLineId) ?? "-"
@@ -106,6 +125,68 @@ function buildScheduleDaySummariesFromSnapshotProducts(products: AuditableSchedu
   });
 }
 
+function buildDayBoardPriorityPayload(dayBoards: ScheduleDayBoard[]) {
+  return dayBoards.reduce<Record<string, WeeklyProductionSchedule["items"][number]["dayPriorities"]>>(
+    (acc, day) => {
+      day.products.forEach((product, index) => {
+        acc[product.snapshotId] = {
+          ...(acc[product.snapshotId] ?? {}),
+          [day.key]: index + 1,
+        };
+      });
+      return acc;
+    },
+    {},
+  );
+}
+
+function buildDayBoardSignature(dayBoards: ScheduleDayBoard[]) {
+  return dayBoards
+    .map((day) => `${day.key}:${day.products.map((product) => product.snapshotId).join(",")}`)
+    .join("|");
+}
+
+function reorderProductsWithinDay(
+  dayBoards: ScheduleDayBoard[],
+  dayKey: ProductionProduct["productionDays"][number],
+  draggedProductId: string,
+  targetProductId?: string,
+) {
+  return dayBoards.map((day) => {
+    if (day.key !== dayKey) {
+      return day;
+    }
+
+    const nextProducts = [...day.products];
+    const draggedIndex = nextProducts.findIndex((product) => product.snapshotId === draggedProductId);
+
+    if (draggedIndex < 0) {
+      return day;
+    }
+
+    const [draggedProduct] = nextProducts.splice(draggedIndex, 1);
+
+    if (!draggedProduct) {
+      return day;
+    }
+
+    if (!targetProductId) {
+      nextProducts.push(draggedProduct);
+      return { ...day, products: nextProducts };
+    }
+
+    const targetIndex = nextProducts.findIndex((product) => product.snapshotId === targetProductId);
+
+    if (targetIndex < 0) {
+      nextProducts.push(draggedProduct);
+      return { ...day, products: nextProducts };
+    }
+
+    nextProducts.splice(targetIndex, 0, draggedProduct);
+    return { ...day, products: nextProducts };
+  });
+}
+
 export default function SublinhasProducaoPage() {
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
@@ -115,6 +196,15 @@ export default function SublinhasProducaoPage() {
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [auditNotes, setAuditNotes] = useState("");
+  const [draftDayBoards, setDraftDayBoards] = useState<ScheduleDayBoard[]>([]);
+  const [dragState, setDragState] = useState<{
+    dayKey: ProductionProduct["productionDays"][number];
+    productId: string;
+  } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    dayKey: ProductionProduct["productionDays"][number];
+    productId?: string;
+  } | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const linesById = useMemo(() => buildLineById(snapshot.lines), [snapshot.lines]);
@@ -165,7 +255,10 @@ export default function SublinhasProducaoPage() {
 
       return orderedDays
         .map((day) => {
-          const products = selectedLineProducts.filter((product) => product.productionDays.includes(day.key));
+          const products = sortScheduleEntriesForDay(
+            selectedLineProducts.filter((product) => product.productionDays.includes(day.key)),
+            day.key,
+          );
           const plannedKg = Number(
             products.reduce((total, product) => total + product.minimumProduction, 0).toFixed(2),
           );
@@ -179,6 +272,18 @@ export default function SublinhasProducaoPage() {
     },
     [selectedLineProducts],
   );
+  const canEditDailyPriority = selectedSchedule?.status === "pendente";
+  const persistedDayBoardSignature = useMemo(
+    () => buildDayBoardSignature(selectedDayBoards),
+    [selectedDayBoards],
+  );
+  const draftDayBoardSignature = useMemo(
+    () => buildDayBoardSignature(draftDayBoards),
+    [draftDayBoards],
+  );
+  const hasPriorityChanges =
+    Boolean(canEditDailyPriority) && draftDayBoardSignature !== persistedDayBoardSignature;
+  const hasAuditNotesChanges = (selectedSchedule?.auditNotes ?? "") !== auditNotes;
   const pendingAuditRows = useMemo(
     () =>
       scheduleRows
@@ -302,8 +407,9 @@ export default function SublinhasProducaoPage() {
 
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
           {schedule.daySummaries.map((day) => {
-            const productsForDay = schedule.snapshotProducts.filter((product) =>
-              product.productionDays.includes(day.day),
+            const productsForDay = sortScheduleEntriesForDay(
+              schedule.snapshotProducts.filter((product) => product.productionDays.includes(day.day)),
+              day.day,
             );
             const previewProducts = productsForDay.slice(0, 3);
 
@@ -361,6 +467,12 @@ export default function SublinhasProducaoPage() {
     setIsDetailsOpen(true);
   };
 
+  useEffect(() => {
+    setDraftDayBoards(selectedDayBoards);
+    setDragState(null);
+    setDropTarget(null);
+  }, [selectedDayBoards]);
+
   const actions = [
     { icon: "view" as const, label: "Visualizar", onClick: openScheduleDetails },
     {
@@ -370,7 +482,10 @@ export default function SublinhasProducaoPage() {
     },
   ];
 
-  const updateScheduleStatus = async (nextStatus: "ativo" | "inativo") => {
+  const updateScheduleStatus = async (
+    nextStatus: "pendente" | "ativo" | "inativo",
+    closeOnSuccess = true,
+  ) => {
     if (!selectedSchedule) {
       return;
     }
@@ -387,6 +502,7 @@ export default function SublinhasProducaoPage() {
         body: JSON.stringify({
           status: nextStatus,
           auditNotes,
+          dayPrioritiesByItemId: buildDayBoardPriorityPayload(draftDayBoards),
         }),
       });
 
@@ -396,12 +512,72 @@ export default function SublinhasProducaoPage() {
       }
 
       await refresh();
-      setIsDetailsOpen(false);
+      if (closeOnSuccess) {
+        setIsDetailsOpen(false);
+      }
     } catch (updateError) {
       setPageError(updateError instanceof Error ? updateError.message : "Falha ao atualizar linha");
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleProductDragStart = (
+    event: DragEvent<HTMLDivElement>,
+    dayKey: ProductionProduct["productionDays"][number],
+    productId: string,
+  ) => {
+    if (!canEditDailyPriority) {
+      return;
+    }
+
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `${dayKey}:${productId}`);
+    setDragState({ dayKey, productId });
+  };
+
+  const handleProductDragEnd = () => {
+    setDragState(null);
+    setDropTarget(null);
+  };
+
+  const handleProductDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    dayKey: ProductionProduct["productionDays"][number],
+    productId?: string,
+  ) => {
+    if (!dragState || dragState.dayKey !== dayKey) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget({ dayKey, productId });
+  };
+
+  const handleProductDrop = (
+    event: DragEvent<HTMLDivElement>,
+    dayKey: ProductionProduct["productionDays"][number],
+    productId?: string,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!dragState || dragState.dayKey !== dayKey) {
+      return;
+    }
+
+    if (productId && dragState.productId === productId) {
+      setDragState(null);
+      setDropTarget(null);
+      return;
+    }
+
+    setDraftDayBoards((current) =>
+      reorderProductsWithinDay(current, dayKey, dragState.productId, productId),
+    );
+    setDragState(null);
+    setDropTarget(null);
   };
 
   return (
@@ -638,9 +814,27 @@ export default function SublinhasProducaoPage() {
                 </CardContent>
               </Card>
 
+              <div
+                className={
+                  canEditDailyPriority
+                    ? "rounded-lg border border-primary/25 bg-primary/[0.05] px-4 py-3 text-sm text-foreground"
+                    : "rounded-lg border border-border/80 bg-panel/40 px-4 py-3 text-sm text-muted-foreground"
+                }
+              >
+                {canEditDailyPriority
+                  ? "Arraste os produtos dentro de cada dia para definir a prioridade da produção. Essa sequência será usada na leitura operacional da revisão."
+                  : "A prioridade diária só pode ser ajustada em revisões pendentes, antes da aprovação do cronograma."}
+              </div>
+
+              {hasPriorityChanges ? (
+                <div className="rounded-lg border border-warning/40 bg-warning/20 px-4 py-3 text-sm text-warning-foreground">
+                  Existem alterações de prioridade diária ainda não salvas nesta revisão.
+                </div>
+              ) : null}
+
               <div className="overflow-hidden rounded-xl border border-border/80">
                 <div className="grid gap-px bg-border/80 md:grid-cols-2 xl:grid-cols-7">
-                  {selectedDayBoards.map((day) => (
+                  {draftDayBoards.map((day) => (
                     <div key={`${selectedSchedule.id}-${day.key}`} className="bg-card">
                       <div className="border-b border-border/80 bg-amber-600 px-3 py-2 text-white">
                         <p className="text-xs font-semibold uppercase tracking-[0.08em]">{day.label}</p>
@@ -648,19 +842,48 @@ export default function SublinhasProducaoPage() {
                           {day.products.length} itens · {formatKgLabel(day.plannedKg)} Kg
                         </p>
                       </div>
-                      <div className="min-h-44 space-y-2 px-3 py-3">
+                      <div
+                        className="min-h-44 space-y-2 px-3 py-3"
+                        onDragOver={(event) => handleProductDragOver(event, day.key)}
+                        onDrop={(event) => handleProductDrop(event, day.key)}
+                      >
                         {day.products.length === 0 ? (
                           <p className="text-xs text-muted-foreground">Sem produção programada.</p>
                         ) : (
                           day.products.map((product) => (
                             <div
                               key={`${day.key}-${product.snapshotId}`}
-                              className="border-b border-dashed border-border/70 pb-2 last:border-b-0 last:pb-0"
+                              draggable={canEditDailyPriority}
+                              onDragStart={(event) =>
+                                handleProductDragStart(event, day.key, product.snapshotId)
+                              }
+                              onDragEnd={handleProductDragEnd}
+                              onDragOver={(event) =>
+                                handleProductDragOver(event, day.key, product.snapshotId)
+                              }
+                              onDrop={(event) => handleProductDrop(event, day.key, product.snapshotId)}
+                              className={[
+                                "border-b border-dashed border-border/70 pb-2 last:border-b-0 last:pb-0",
+                                canEditDailyPriority ? "cursor-grab active:cursor-grabbing" : "",
+                                dragState?.productId === product.snapshotId ? "opacity-45" : "",
+                                dropTarget?.dayKey === day.key && dropTarget?.productId === product.snapshotId
+                                  ? "rounded-lg border border-primary/35 bg-primary/[0.05] px-2 pt-2"
+                                  : "",
+                              ].join(" ")}
                             >
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                                {product.code}
-                              </p>
-                              <p className="text-sm font-medium text-foreground">{product.name}</p>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                                    {product.code}
+                                  </p>
+                                  <p className="text-sm font-medium text-foreground">{product.name}</p>
+                                </div>
+                                {canEditDailyPriority ? (
+                                  <span className="inline-flex shrink-0 items-center justify-center rounded-md border border-border/80 bg-panel px-1.5 py-1 text-muted-foreground">
+                                    <GripVertical className="size-3.5" />
+                                  </span>
+                                ) : null}
+                              </div>
                               <p className="text-xs text-muted-foreground">{formatKgLabel(product.minimumProduction)} Kg mínimos</p>
                             </div>
                           ))
@@ -717,6 +940,14 @@ export default function SublinhasProducaoPage() {
             </Button>
             {selectedSchedule?.status === "pendente" ? (
               <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void updateScheduleStatus("pendente", false)}
+                  disabled={isSubmitting || (!hasPriorityChanges && !hasAuditNotesChanges)}
+                >
+                  Salvar prioridade
+                </Button>
                 <Button
                   type="button"
                   variant="outline"

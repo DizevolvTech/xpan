@@ -43,7 +43,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
     await updateIngredient(ingredientId, payload, { supabase });
     invalidateMasterDataCaches(authorization.effectiveTenantId);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, id: ingredientId });
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to update ingredient" },

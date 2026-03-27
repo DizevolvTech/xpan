@@ -325,6 +325,7 @@ export type Database = {
           product_id: string;
           minimum_production: number;
           production_days: string[];
+          day_priorities: Json;
           created_at: string;
         };
         Insert: {
@@ -334,6 +335,7 @@ export type Database = {
           product_id: string;
           minimum_production: number;
           production_days?: string[];
+          day_priorities?: Json;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["schedule_line_item_snapshots"]["Insert"]>;

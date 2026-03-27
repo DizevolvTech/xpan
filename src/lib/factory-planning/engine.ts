@@ -26,6 +26,7 @@ import type {
   StoreOrder,
   StoreProfile,
 } from "@/lib/factory-planning/types";
+import { getScheduleItemDayPriority } from "@/lib/production-data-utils";
 import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { getProductionStatusProgress, normalizeProductPreparationStages } from "@/lib/production-workflow";
 
@@ -524,6 +525,10 @@ function buildPlannedItems(
             : roundQuantityForUnit(expeditionQuantityRaw, product.expeditionUnit);
 
         const canPlan = Boolean(schedule && availability.available && availability.productionDate);
+        const scheduleDayPriority =
+          canPlan && scheduleItem && availability.productionDate
+            ? getScheduleItemDayPriority(scheduleItem, getWeekDayKey(availability.productionDate))
+            : null;
         const productionItemKey = canPlan
           ? getProductionItemKey({
               productionDate: availability.productionDate,
@@ -563,6 +568,7 @@ function buildPlannedItems(
           expeditionQuantityRaw,
           expeditionQuantity,
           canPlan,
+          scheduleDayPriority,
           availableForRelease: canPlan,
           releasedToProduction: false,
           productionItemKey,
@@ -649,6 +655,7 @@ export function buildProductionOrdersFromPlannedItems(
           productName: item.productName,
           productionItemKey: item.productionItemKey ?? `${planningKey}|${item.productId}`,
           totalKg: 0,
+          productionSequence: item.scheduleDayPriority,
           progress: item.workflowProgress,
           status: item.productionItemStatus ?? "nao_iniciado",
           preparationStages: item.preparationStages,
@@ -658,6 +665,7 @@ export function buildProductionOrdersFromPlannedItems(
 
       const aggregated = group.items.get(item.productId)!;
       aggregated.totalKg = round2(aggregated.totalKg + item.internalKg);
+      aggregated.productionSequence = aggregated.productionSequence ?? item.scheduleDayPriority;
       aggregated.progress = Math.max(aggregated.progress, item.workflowProgress);
       aggregated.status =
         aggregated.progress > item.workflowProgress ? aggregated.status : item.productionItemStatus ?? aggregated.status;
@@ -681,6 +689,7 @@ export function buildProductionOrdersFromPlannedItems(
         expeditionUnit: item.expeditionUnit,
         expeditionQuantity: item.expeditionQuantity,
         productionItemKey: item.productionItemKey ?? `${planningKey}|${item.productId}`,
+        productionSequence: item.scheduleDayPriority,
         releasedToProduction: item.releasedToProduction,
         productionItemStatus: item.productionItemStatus ?? "nao_iniciado",
         workflowProgress: item.workflowProgress,
@@ -733,8 +742,22 @@ export function buildProductionOrdersFromPlannedItems(
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),
-      items: Array.from(group.items.values()).sort((a, b) => a.productCode.localeCompare(b.productCode)),
+      items: Array.from(group.items.values()).sort((a, b) => {
+        const bySequence =
+          (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
+          (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
+        if (bySequence !== 0) {
+          return bySequence;
+        }
+        return a.productCode.localeCompare(b.productCode);
+      }),
       sourceItems: group.sourceItems.sort((a, b) => {
+        const bySequence =
+          (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
+          (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
+        if (bySequence !== 0) {
+          return bySequence;
+        }
         const byOrder = a.orderCode.localeCompare(b.orderCode);
         if (byOrder !== 0) {
           return byOrder;

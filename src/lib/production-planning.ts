@@ -179,6 +179,7 @@ export interface WeeklyScheduleItem {
   productId: string;
   minimumProduction: number;
   productionDays: ProductionWeekDay[];
+  dayPriorities?: Partial<Record<ProductionWeekDay, number>>;
 }
 
 export interface WeeklyProductionSchedule {
@@ -1218,20 +1219,33 @@ export const productsById = new Map(productionProducts.map((product) => [product
 export const ingredientsById = new Map(productionIngredients.map((ingredient) => [ingredient.id, ingredient]));
 export const storesById = new Map(storesMasterData.map((store) => [store.id, store]));
 
-function sortProductionDays(days: ProductionWeekDay[]) {
+export function sortProductionDays(days: ProductionWeekDay[]) {
   const indexByDay = new Map(productionWeekDays.map((day, index) => [day.key, index]));
   return [...days].sort((a, b) => (indexByDay.get(a) ?? 0) - (indexByDay.get(b) ?? 0));
 }
 
 function buildDerivedScheduleItems(lineId: string, products = productionProducts): WeeklyScheduleItem[] {
+  const dayCounters = new Map<ProductionWeekDay, number>();
+
   return products
     .filter((product) => (product.operationalLineId ?? product.lineId) === lineId && product.active)
-    .map((product) => ({
-      id: `item-${lineId}-${product.id}`,
-      productId: product.id,
-      minimumProduction: product.minimumProductionKg,
-      productionDays: sortProductionDays(product.productionDays),
-    }));
+    .map((product) => {
+      const productionDays = sortProductionDays(product.productionDays);
+      const dayPriorities = productionDays.reduce<NonNullable<WeeklyScheduleItem["dayPriorities"]>>((acc, day) => {
+        const nextPriority = (dayCounters.get(day) ?? 0) + 1;
+        dayCounters.set(day, nextPriority);
+        acc[day] = nextPriority;
+        return acc;
+      }, {});
+
+      return {
+        id: `item-${lineId}-${product.id}`,
+        productId: product.id,
+        minimumProduction: product.minimumProductionKg,
+        productionDays,
+        dayPriorities,
+      };
+    });
 }
 
 export const weeklySchedules: WeeklyProductionSchedule[] = weeklyScheduleMetadata.map((schedule) => ({

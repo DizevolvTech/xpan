@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import type { ProductionWeekDay } from "@/lib/production-planning";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -15,6 +16,7 @@ type RouteContext = {
 type UpdateScheduleBody = {
   status: "pendente" | "ativo" | "inativo";
   auditNotes?: string;
+  dayPrioritiesByItemId?: Record<string, Partial<Record<ProductionWeekDay, number>>>;
 };
 
 export async function PATCH(request: Request, context: RouteContext) {

@@ -513,10 +513,10 @@ const scheduleSnapshots = weeklySchedules.flatMap((schedule) =>
 );
 if (scheduleSnapshots.length > 0) {
   seedLines.push(
-    `insert into public.schedule_line_item_snapshots (tenant_id, schedule_line_id, product_id, minimum_production, production_days) values\n${scheduleSnapshots
+    `insert into public.schedule_line_item_snapshots (tenant_id, schedule_line_id, product_id, minimum_production, production_days, day_priorities) values\n${scheduleSnapshots
       .map(
         ({ schedule, item }) =>
-          `  (${seedTenantLookup}, (select id from public.schedule_lines where legacy_id = ${sqlString(schedule.id)}), (select id from public.products where legacy_id = ${sqlString(item.productId)}), ${item.minimumProduction}, ${sqlArray(item.productionDays, "public.weekday_code")})`,
+          `  (${seedTenantLookup}, (select id from public.schedule_lines where legacy_id = ${sqlString(schedule.id)}), (select id from public.products where legacy_id = ${sqlString(item.productId)}), ${item.minimumProduction}, ${sqlArray(item.productionDays, "public.weekday_code")}, ${sqlJson(item.dayPriorities ?? {})})`,
       )
       .join(",\n")};`,
   );

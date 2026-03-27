@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Building2, Clock3, Plus } from "lucide-react";
+import { Building2, Clock3, Pencil, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -384,8 +384,14 @@ export default function LojasPage() {
               </div>
             ) : null}
             {isReadOnly ? (
-              <div className="rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground">
-                Modo visualização: use o lápis para editar esta loja.
+              <div className="flex flex-col gap-3 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground sm:flex-row sm:items-center sm:justify-between">
+                <span>Modo visualização: revise os dados da loja sem alterar o cadastro.</span>
+                {editingStore ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setDialogMode("edit")}>
+                    <Pencil className="size-4" />
+                    Editar
+                  </Button>
+                ) : null}
               </div>
             ) : null}
             {formDirty ? (

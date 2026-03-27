@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildDefaultScheduleDayPriorities,
   getProductOperationalStatusLabel,
   getProductRecipeTotalsFromData,
+  normalizeScheduleDayPriorities,
+  sortScheduleEntriesForDay,
 } from "@/lib/production-data-utils";
 import type { ProductionIngredient, ProductionProduct } from "@/lib/production-planning";
 
@@ -98,6 +101,8 @@ test("recipe totals include final quantity derived from unit sale weight", () =>
   );
 
   assert.equal(totals.outputAfterBreakKg, 2);
+  assert.equal(totals.fractionUnitWeightKg, 0.25);
+  assert.equal(totals.finalFractionsQuantity, 8);
   assert.equal(totals.finalOutputQuantity, 8);
   assert.equal(totals.finalOutputUnit, "Un");
 });
@@ -115,5 +120,60 @@ test("operational status label reflects whether the product is in the active sch
       operationalLineId: undefined,
     }),
     "Fora do cronograma ativo",
+  );
+});
+
+test("schedule day priorities fall back to the production-day order when missing", () => {
+  const defaults = buildDefaultScheduleDayPriorities([
+    { productionDays: ["segunda", "terca"] },
+    { productionDays: ["segunda"] },
+    { productionDays: ["terca"] },
+  ]);
+
+  assert.deepEqual(defaults, [
+    { segunda: 1, terca: 1 },
+    { segunda: 2 },
+    { terca: 2 },
+  ]);
+});
+
+test("schedule day priorities are normalized and keep only active production days", () => {
+  const normalized = normalizeScheduleDayPriorities(
+    { segunda: 3, quinta: 9 },
+    ["segunda", "quarta"],
+    { segunda: 1, quarta: 2 },
+  );
+
+  assert.deepEqual(normalized, {
+    segunda: 3,
+    quarta: 2,
+  });
+});
+
+test("schedule entries sort by day priority before alphabetical fallback", () => {
+  const ordered = sortScheduleEntriesForDay(
+    [
+      {
+        code: "PR-0002",
+        name: "Pão B",
+        dayPriorities: { segunda: 2 },
+      },
+      {
+        code: "PR-0003",
+        name: "Pão C",
+        dayPriorities: {},
+      },
+      {
+        code: "PR-0001",
+        name: "Pão A",
+        dayPriorities: { segunda: 1 },
+      },
+    ],
+    "segunda",
+  );
+
+  assert.deepEqual(
+    ordered.map((item) => item.code),
+    ["PR-0001", "PR-0002", "PR-0003"],
   );
 });
