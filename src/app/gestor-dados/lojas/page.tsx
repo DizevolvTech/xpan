@@ -129,7 +129,11 @@ export default function LojasPage() {
   const columns = [
     { key: "code", header: "Código" },
     { key: "name", header: "Nome completo" },
-    { key: "responsible", header: "Responsável" },
+    {
+      key: "responsible",
+      header: "Responsável",
+      render: (item: Loja) => item.responsible?.trim() || "Não vinculado",
+    },
     {
       key: "orderingDays",
       header: "Dias de Pedido",
@@ -240,8 +244,8 @@ export default function LojasPage() {
   }
 
   async function handleSave() {
-    if (!formState.name.trim() || !formState.responsibleProfileId?.trim()) {
-      setFormError("Informe nome e selecione um usuário do tipo loja para vincular o acesso.");
+    if (!formState.name.trim()) {
+      setFormError("Informe o nome da loja antes de salvar.");
       return;
     }
 
@@ -419,7 +423,7 @@ export default function LojasPage() {
                   <Input value={formState.code} disabled className="bg-muted" />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Usuário Responsável *</Label>
+                  <Label>Usuário Responsável</Label>
                   {storeUserOptions.length >= 8 ? (
                     <SearchableSelect
                       value={formState.responsibleProfileId ?? ""}
@@ -435,12 +439,12 @@ export default function LojasPage() {
                       placeholder={
                         isStoreUsersLoading
                           ? "Carregando usuários de loja..."
-                          : "Selecione um usuário do tipo loja"
+                          : "Vincular depois (opcional)"
                       }
                       searchPlaceholder="Buscar usuário responsável..."
                       emptyMessage="Nenhum usuário de loja encontrado."
                       title="Selecionar usuário responsável"
-                      description="Busque pelo nome ou e-mail do usuário de loja que ficará vinculado a esta unidade."
+                      description="Busque pelo nome ou e-mail do usuário de loja que ficará vinculado a esta unidade. Esse vínculo é opcional no cadastro inicial."
                       disabled={isStoreUsersLoading || storeUserOptions.length === 0}
                     />
                   ) : (
@@ -461,7 +465,7 @@ export default function LojasPage() {
                           placeholder={
                             isStoreUsersLoading
                               ? "Carregando usuários de loja..."
-                              : "Selecione um usuário do tipo loja"
+                              : "Vincular depois (opcional)"
                           }
                         />
                       </SelectTrigger>
@@ -476,18 +480,22 @@ export default function LojasPage() {
                     </Select>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Apenas usuários do perfil <strong>Loja</strong> aparecem nesta lista e o acesso à loja será vinculado automaticamente.
+                    Apenas usuários do perfil <strong>Loja</strong> aparecem nesta lista. Você pode deixar esse vínculo para depois e concluir o cadastro agora.
                   </p>
                   {!isStoreUsersLoading && storeUserOptions.length === 0 ? (
                     <p className="text-xs text-warning-foreground">
-                      Nenhum usuário do tipo loja está disponível. Cadastre ou ative um usuário de loja em Usuários e Permissões para continuar.
+                      Nenhum usuário do tipo loja está disponível no momento. A loja pode ser cadastrada agora e o vínculo pode ser feito depois em Usuários e Permissões.
                     </p>
                   ) : null}
                   {selectedResponsibleUser ? (
                     <p className="text-xs text-muted-foreground">
                       Vinculado a: <strong>{selectedResponsibleUser.email}</strong>
                     </p>
-                  ) : null}
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Nenhum usuário vinculado ainda.
+                    </p>
+                  )}
                 </div>
                 <div className="grid gap-2">
                   <Label>Email</Label>

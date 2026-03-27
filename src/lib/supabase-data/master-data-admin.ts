@@ -191,7 +191,7 @@ async function resolveProfileDbId(
 
 async function syncStoreResponsibleAccess(
   storeId: string,
-  nextResponsibleProfileId: string,
+  nextResponsibleProfileId: string | null,
   previousResponsibleProfileId: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
@@ -205,6 +205,10 @@ async function syncStoreResponsibleAccess(
     if (deleteResult.error) {
       throw new Error(`Failed to reset previous store responsible access: ${deleteResult.error.message}`);
     }
+  }
+
+  if (!nextResponsibleProfileId) {
+    return;
   }
 
   const insertResult = await supabase.from("profile_store_access").upsert(
@@ -342,20 +346,17 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const existingCodesResult = await supabase.from("stores").select("code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load store codes");
-  const responsibleProfileId = input.responsibleProfileId?.trim();
-
-  if (!responsibleProfileId) {
-    throw new Error("Selecione o usuário responsável da loja.");
-  }
-
-  const responsibleProfile = await resolveStoreResponsibleProfile(responsibleProfileId, supabase);
+  const responsibleProfileId = input.responsibleProfileId?.trim() || null;
+  const responsibleProfile = responsibleProfileId
+    ? await resolveStoreResponsibleProfile(responsibleProfileId, supabase)
+    : null;
 
   const result = await supabase.from("stores").insert({
     legacy_id: buildGeneratedLegacyId("store"),
     code: input.code?.trim() || buildNextCode(existingCodes.map((row) => row.code), "LJ", 3),
     name: input.name.trim(),
-    responsible: responsibleProfile.name,
-    responsible_profile_id: responsibleProfile.id,
+    responsible: responsibleProfile?.name ?? "Não vinculado",
+    responsible_profile_id: responsibleProfile?.id ?? null,
     email: input.email.trim(),
     phone: input.phone.trim(),
     status: input.status,
@@ -368,7 +369,7 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
 
   const createdStore = assertSupabaseResult(result, "Failed to create store");
 
-  await syncStoreResponsibleAccess(createdStore.id, responsibleProfile.id, null, supabase);
+  await syncStoreResponsibleAccess(createdStore.id, responsibleProfile?.id ?? null, null, supabase);
 }
 
 export async function updateStore(
@@ -378,20 +379,17 @@ export async function updateStore(
 ) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const row = await resolveRowByIdentifier("stores", identifier, supabase);
-  const responsibleProfileId = input.responsibleProfileId?.trim();
-
-  if (!responsibleProfileId) {
-    throw new Error("Selecione o usuário responsável da loja.");
-  }
-
-  const responsibleProfile = await resolveStoreResponsibleProfile(responsibleProfileId, supabase);
+  const responsibleProfileId = input.responsibleProfileId?.trim() || null;
+  const responsibleProfile = responsibleProfileId
+    ? await resolveStoreResponsibleProfile(responsibleProfileId, supabase)
+    : null;
 
   const result = await supabase
     .from("stores")
     .update({
       name: input.name.trim(),
-      responsible: responsibleProfile.name,
-      responsible_profile_id: responsibleProfile.id,
+      responsible: responsibleProfile?.name ?? "Não vinculado",
+      responsible_profile_id: responsibleProfile?.id ?? null,
       email: input.email.trim(),
       phone: input.phone.trim(),
       status: input.status,
@@ -410,7 +408,7 @@ export async function updateStore(
 
   await syncStoreResponsibleAccess(
     String(row.id),
-    responsibleProfile.id,
+    responsibleProfile?.id ?? null,
     typeof row.responsible_profile_id === "string" ? row.responsible_profile_id : null,
     supabase,
   );

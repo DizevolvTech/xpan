@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Clock,
   GripVertical,
+  History,
   PauseCircle,
   PlayCircle,
 } from "lucide-react";
@@ -53,6 +54,7 @@ type AuditableScheduleProduct = {
   dayPriorities: WeeklyProductionSchedule["items"][number]["dayPriorities"];
   masterLineName: string;
   operationalLineName: string;
+  isActiveInCurrentLine: boolean;
 };
 
 type ScheduleDayBoard = {
@@ -77,6 +79,18 @@ type SublinhaRow = WeeklyProductionSchedule & {
     plannedKg: number;
   }[];
   snapshotProducts: AuditableScheduleProduct[];
+};
+
+type LinhaAuditRow = {
+  lineId: string;
+  lineName: string;
+  sectorName: string;
+  displaySchedule: SublinhaRow;
+  versions: SublinhaRow[];
+  versionsCount: number;
+  activeProductsCount: number;
+  inactiveProductsCount: number;
+  hasPendingVersion: boolean;
 };
 
 function formatKgLabel(value: number) {
@@ -105,6 +119,8 @@ function buildScheduleSnapshotProducts(
         operationalLineName: product?.operationalLineId
           ? lineNameById.get(product.operationalLineId) ?? "-"
           : "Fora do cronograma ativo",
+        isActiveInCurrentLine:
+          Boolean(product?.active) && (product?.operationalLineId ?? product?.lineId) === schedule.lineId,
       };
     })
     .sort((left, right) => `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, "pt-BR"));
@@ -192,8 +208,9 @@ export default function SublinhasProducaoPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
-  const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null);
+  const [expandedLineId, setExpandedLineId] = useState<string | null>(null);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
+  const [selectedLineIdForVersions, setSelectedLineIdForVersions] = useState<string | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [auditNotes, setAuditNotes] = useState("");
   const [draftDayBoards, setDraftDayBoards] = useState<ScheduleDayBoard[]>([]);
@@ -204,6 +221,10 @@ export default function SublinhasProducaoPage() {
   const [dropTarget, setDropTarget] = useState<{
     dayKey: ProductionProduct["productionDays"][number];
     productId?: string;
+  } | null>(null);
+  const [pageNotice, setPageNotice] = useState<{
+    tone: "success" | "warning";
+    message: string;
   } | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -241,6 +262,60 @@ export default function SublinhasProducaoPage() {
   const selectedSchedule = useMemo(
     () => scheduleRows.find((schedule) => schedule.id === selectedScheduleId) ?? null,
     [scheduleRows, selectedScheduleId],
+  );
+  const lineAuditRows = useMemo<LinhaAuditRow[]>(
+    () =>
+      Array.from(
+        scheduleRows.reduce<Map<string, SublinhaRow[]>>((acc, schedule) => {
+          const current = acc.get(schedule.lineId) ?? [];
+          current.push(schedule);
+          acc.set(schedule.lineId, current);
+          return acc;
+        }, new Map()),
+      )
+        .map(([lineId, versions]) => {
+          const orderedVersions = [...versions].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+          const displaySchedule =
+            orderedVersions.find((schedule) => schedule.status === "ativo") ??
+            orderedVersions.find((schedule) => schedule.status === "pendente") ??
+            orderedVersions[0];
+
+          if (!displaySchedule) {
+            return null;
+          }
+
+          const activeProductsCount = displaySchedule.snapshotProducts.filter((product) => product.isActiveInCurrentLine).length;
+
+          return {
+            lineId,
+            lineName: displaySchedule.lineName,
+            sectorName: displaySchedule.sectorName,
+            displaySchedule,
+            versions: orderedVersions,
+            versionsCount: orderedVersions.length,
+            activeProductsCount,
+            inactiveProductsCount: displaySchedule.snapshotProducts.length - activeProductsCount,
+            hasPendingVersion: orderedVersions.some((schedule) => schedule.status === "pendente"),
+          };
+        })
+        .filter((item): item is LinhaAuditRow => item !== null)
+        .sort((left, right) => left.lineName.localeCompare(right.lineName, "pt-BR")),
+    [scheduleRows],
+  );
+  const selectedLineVersions = useMemo(
+    () => lineAuditRows.find((line) => line.lineId === selectedLineIdForVersions) ?? null,
+    [lineAuditRows, selectedLineIdForVersions],
+  );
+  const selectedScheduleVersions = useMemo(
+    () => lineAuditRows.find((line) => line.lineId === selectedSchedule?.lineId)?.versions ?? [],
+    [lineAuditRows, selectedSchedule?.lineId],
+  );
+  const previousActiveSchedule = useMemo(
+    () =>
+      selectedScheduleVersions.find(
+        (schedule) => schedule.status === "ativo" && schedule.id !== selectedSchedule?.id,
+      ) ?? null,
+    [selectedSchedule?.id, selectedScheduleVersions],
   );
   const selectedLineProducts = useMemo(
     () => selectedSchedule?.snapshotProducts ?? [],
@@ -298,53 +373,81 @@ export default function SublinhasProducaoPage() {
 
   const filteredSublinhas = useMemo(
     () =>
-      scheduleRows.filter((item) => {
+      lineAuditRows.filter((item) => {
         const matchesSearch =
-          item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.lineName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.sectorName.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+          item.sectorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.displaySchedule.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.displaySchedule.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesStatus = statusFilter === "all" || item.displaySchedule.status === statusFilter;
         const matchesLine = lineFilter === "all" || item.lineId === lineFilter;
         return matchesSearch && matchesStatus && matchesLine;
       }),
-    [lineFilter, scheduleRows, searchTerm, statusFilter],
+    [lineAuditRows, lineFilter, searchTerm, statusFilter],
   );
 
   const kpis = {
-    total: scheduleRows.length,
-    pendentes: scheduleRows.filter((item) => item.status === "pendente").length,
-    ativas: scheduleRows.filter((item) => item.status === "ativo").length,
-    inativas: scheduleRows.filter((item) => item.status === "inativo").length,
+    total: lineAuditRows.length,
+    pendentes: pendingAuditRows.length,
+    ativas: lineAuditRows.filter((item) => item.displaySchedule.status === "ativo").length,
+    inativas: lineAuditRows.filter((item) => item.displaySchedule.status === "inativo").length,
   };
 
   const columns = [
-    { key: "code", header: "Código" },
-    { key: "name", header: "Linha" },
-    { key: "lineName", header: "Linha de produção" },
-    { key: "sectorName", header: "Categoria" },
-    { key: "itemsCount", header: "Produtos" },
     {
-      key: "daySummaries",
-      header: "Visão Semanal",
-      render: (item: SublinhaRow) => {
-        const activeDays = item.daySummaries.filter((day) => day.productsCount > 0);
-        const isExpanded = expandedScheduleId === item.id;
+      key: "lineName",
+      header: "Linha",
+      render: (item: LinhaAuditRow) => (
+        <div className="min-w-[220px] space-y-1">
+          <p className="font-semibold text-foreground">{item.lineName}</p>
+          <p className="text-xs text-muted-foreground">
+            {item.displaySchedule.code} · {item.displaySchedule.name}
+          </p>
+        </div>
+      ),
+    },
+    { key: "sectorName", header: "Categoria" },
+    {
+      key: "displaySchedule",
+      header: "Versão exibida",
+      render: (item: LinhaAuditRow) => (
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-foreground">{item.displaySchedule.code}</p>
+          <p className="text-xs text-muted-foreground">
+            {item.displaySchedule.status === "ativo"
+              ? "Versão ativa da linha"
+              : item.displaySchedule.status === "pendente"
+                ? "Revisão pendente em destaque"
+                : "Última revisão disponível"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: "itemsCount",
+      header: "Produtos",
+      render: (item: LinhaAuditRow) => item.displaySchedule.itemsCount,
+    },
+    {
+      key: "portfolioSummary",
+      header: "Carteira Atual",
+      render: (item: LinhaAuditRow) => {
+        const isExpanded = expandedLineId === item.lineId;
 
         return (
           <div className="min-w-[220px] space-y-2">
             <div className="flex flex-wrap gap-1.5">
-              {activeDays.slice(0, 2).map((day) => (
+              <span className="rounded-full border border-border/80 bg-panel px-2 py-1 text-[11px] font-medium text-foreground">
+                Ativos · {item.activeProductsCount}
+              </span>
+              <span className="rounded-full border border-border/80 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                Inativos · {item.inactiveProductsCount}
+              </span>
+              {item.hasPendingVersion ? (
                 <span
-                  key={`${item.id}-${day.day}`}
-                  className="rounded-full border border-border/80 bg-panel px-2 py-1 text-[11px] font-medium text-foreground"
+                  className="rounded-full border border-warning/40 bg-warning/10 px-2 py-1 text-[11px] font-medium text-warning-foreground"
                 >
-                  {day.shortLabel} · {day.productsCount} itens · {formatKgLabel(day.plannedKg)} Kg
-                </span>
-              ))}
-              {activeDays.length > 2 ? (
-                <span className="rounded-full border border-dashed border-border/80 bg-card px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                  +{activeDays.length - 2} dias
+                  Revisão pendente
                 </span>
               ) : null}
             </div>
@@ -354,7 +457,7 @@ export default function SublinhasProducaoPage() {
               size="sm"
               className="h-8 gap-1.5 px-3"
               onClick={() =>
-                setExpandedScheduleId((current) => (current === item.id ? null : item.id))
+                setExpandedLineId((current) => (current === item.lineId ? null : item.lineId))
               }
             >
               {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
@@ -367,17 +470,44 @@ export default function SublinhasProducaoPage() {
     {
       key: "minimumTotal",
       header: "Carga Base (Kg)",
-      render: (item: SublinhaRow) => formatKgLabel(item.minimumTotal),
+      render: (item: LinhaAuditRow) => formatKgLabel(item.displaySchedule.minimumTotal),
     },
-    { key: "status", header: "Status", render: (item: SublinhaRow) => <StatusBadge status={item.status} /> },
+    {
+      key: "status",
+      header: "Status",
+      render: (item: LinhaAuditRow) => <StatusBadge status={item.displaySchedule.status} />,
+    },
+    {
+      key: "versions",
+      header: "Versões",
+      render: (item: LinhaAuditRow) => (
+        <div className="min-w-[170px] space-y-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 px-3"
+            onClick={() => setSelectedLineIdForVersions(item.lineId)}
+          >
+            <History className="size-4" />
+            Ver versões
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {item.versionsCount} {item.versionsCount === 1 ? "revisão registrada" : "revisões registradas"}
+          </p>
+        </div>
+      ),
+    },
     {
       key: "createdBy",
       header: "Criado Por",
-      render: (item: SublinhaRow) => item.createdBy || "Automático",
+      render: (item: LinhaAuditRow) => item.displaySchedule.createdBy || "Automático",
     },
   ];
 
-  const renderExpandedWeeklyView = (schedule: SublinhaRow) => {
+  const renderExpandedWeeklyView = (line: LinhaAuditRow) => {
+    const schedule = line.displaySchedule;
+
     return (
       <div className="mt-3 overflow-hidden rounded-2xl border border-primary/20 bg-card shadow-[var(--shadow-soft)]">
         <div className="flex flex-col gap-3 border-b border-border/70 bg-primary/[0.05] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
@@ -397,7 +527,10 @@ export default function SublinhasProducaoPage() {
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span className="rounded-full border border-border/70 bg-panel px-2.5 py-1">
-              {schedule.itemsCount} produtos ativos
+              {line.activeProductsCount} produtos ativos
+            </span>
+            <span className="rounded-full border border-border/70 bg-panel px-2.5 py-1">
+              {line.inactiveProductsCount} produtos inativos
             </span>
             <span className="rounded-full border border-border/70 bg-panel px-2.5 py-1">
               Criado em {formatDateBr(schedule.createdAt)}
@@ -464,6 +597,7 @@ export default function SublinhasProducaoPage() {
   const openScheduleDetails = (schedule: SublinhaRow) => {
     setSelectedScheduleId(schedule.id);
     setAuditNotes(schedule.auditNotes ?? "");
+    setSelectedLineIdForVersions(null);
     setIsDetailsOpen(true);
   };
 
@@ -474,11 +608,11 @@ export default function SublinhasProducaoPage() {
   }, [selectedDayBoards]);
 
   const actions = [
-    { icon: "view" as const, label: "Visualizar", onClick: openScheduleDetails },
+    { icon: "view" as const, label: "Visualizar", onClick: (item: LinhaAuditRow) => openScheduleDetails(item.displaySchedule) },
     {
       icon: "edit" as const,
       label: "Auditar / Operar",
-      onClick: openScheduleDetails,
+      onClick: (item: LinhaAuditRow) => openScheduleDetails(item.displaySchedule),
     },
   ];
 
@@ -490,8 +624,14 @@ export default function SublinhasProducaoPage() {
       return;
     }
 
+    if (nextStatus === "inativo" && !auditNotes.trim()) {
+      setPageError("Descreva o que precisa ser refeito antes de solicitar ajuste desta revisão.");
+      return;
+    }
+
     setIsSubmitting(true);
     setPageError(null);
+    setPageNotice(null);
 
     try {
       const response = await fetch(`/api/master-data/schedules/${selectedSchedule.id}`, {
@@ -512,6 +652,24 @@ export default function SublinhasProducaoPage() {
       }
 
       await refresh();
+      if (nextStatus === "ativo") {
+        setPageNotice({
+          tone: "success",
+          message: `Cronograma ${selectedSchedule.code} aprovado e ativado com sucesso. Esta versão agora é a vigente da linha ${selectedSchedule.lineName}.`,
+        });
+      } else if (nextStatus === "inativo") {
+        setPageNotice({
+          tone: "warning",
+          message: previousActiveSchedule
+            ? `Revisão ${selectedSchedule.code} devolvida para ajuste. A linha continua operando com a versão ${previousActiveSchedule.code} até uma nova revisão ser enviada.`
+            : `Revisão ${selectedSchedule.code} devolvida para ajuste. Ajuste os produtos/linha e envie uma nova revisão para voltar à auditoria.`,
+        });
+      } else {
+        setPageNotice({
+          tone: "success",
+          message: `Revisão ${selectedSchedule.code} salva como pendente. Você pode continuar ajustando prioridades e observações antes da decisão final.`,
+        });
+      }
       if (closeOnSuccess) {
         setIsDetailsOpen(false);
       }
@@ -582,25 +740,41 @@ export default function SublinhasProducaoPage() {
 
   return (
     <PageLayout
-      title="Auditoria do cronograma ativo"
-      description="Acompanhe as auditorias pendentes das linhas de produção e aprove a grade semanal que será usada pela fábrica."
+      title="Auditoria dos cronogramas de produção"
+      description="Acompanhe as revisões pendentes, consulte a versão principal de cada linha e valide a grade semanal usada pela fábrica."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
-        { label: "Auditoria do cronograma ativo" },
+        { label: "Auditoria dos cronogramas" },
       ]}
     >
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Total de auditorias" value={String(kpis.total)} icon={Clock} tone="info" />
-        <KPICard title="Pendentes" value={String(kpis.pendentes)} icon={Clock} tone="warning" />
-        <KPICard title="Ativas" value={String(kpis.ativas)} icon={PlayCircle} tone="success" />
-        <KPICard title="Inativas" value={String(kpis.inativas)} icon={PauseCircle} tone="neutral" />
+        <KPICard title="Total de linhas" value={String(kpis.total)} icon={Clock} tone="info" />
+        <KPICard title="Revisões pendentes" value={String(kpis.pendentes)} icon={Clock} tone="warning" />
+        <KPICard title="Linhas com versão ativa" value={String(kpis.ativas)} icon={PlayCircle} tone="success" />
+        <KPICard title="Linhas sem versão ativa" value={String(kpis.inativas)} icon={PauseCircle} tone="neutral" />
       </div>
+
+      {pageNotice ? (
+        <div
+          className={[
+            "flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3 text-sm",
+            pageNotice.tone === "success"
+              ? "border border-success/35 bg-success/10 text-success-foreground"
+              : "border border-warning/40 bg-warning/20 text-warning-foreground",
+          ].join(" ")}
+        >
+          <span>{pageNotice.message}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => setPageNotice(null)}>
+            Fechar
+          </Button>
+        </div>
+      ) : null}
 
       {pendingAuditRows.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Auditorias pendentes do cronograma ativo</CardTitle>
+            <CardTitle>Revisões pendentes do cronograma</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 xl:grid-cols-2">
             {pendingAuditRows.map((schedule) => (
@@ -636,11 +810,11 @@ export default function SublinhasProducaoPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Lista de auditorias do cronograma ativo</CardTitle>
+          <CardTitle>Linhas auditáveis do cronograma</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <SearchFilter
-            searchPlaceholder="Buscar por código, linha de produção ou categoria..."
+            searchPlaceholder="Buscar por linha, versão exibida ou categoria..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             filters={[
@@ -673,14 +847,110 @@ export default function SublinhasProducaoPage() {
             data={filteredSublinhas}
             columns={columns}
             actions={actions}
-            keyField="id"
-            isRowExpanded={(item) => item.id === expandedScheduleId}
+            keyField="lineId"
+            isRowExpanded={(item) => item.lineId === expandedLineId}
             renderExpandedRow={renderExpandedWeeklyView}
             emptyMessage={isLoading ? "Carregando linhas..." : "Nenhuma linha encontrada"}
             stickyHeader
           />
         </CardContent>
       </Card>
+
+      <Dialog
+        open={selectedLineIdForVersions !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedLineIdForVersions(null);
+          }
+        }}
+      >
+        <DialogContent size="xl" className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedLineVersions
+                ? `Versões da linha · ${selectedLineVersions.lineName}`
+                : "Versões da linha"}
+            </DialogTitle>
+            <DialogDescription>
+              A tabela principal mostra apenas a versão principal da linha. Aqui ficam as demais revisões para consulta e auditoria.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedLineVersions ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 rounded-lg border border-border/80 bg-panel p-4 md:grid-cols-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Linha</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{selectedLineVersions.lineName}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Categoria</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{selectedLineVersions.sectorName}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Versão exibida</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">
+                    {selectedLineVersions.displaySchedule.code}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Total de revisões</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">
+                    {selectedLineVersions.versionsCount}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {selectedLineVersions.versions.map((schedule) => {
+                  const isDisplayedVersion = schedule.id === selectedLineVersions.displaySchedule.id;
+
+                  return (
+                    <article
+                      key={`line-version-${schedule.id}`}
+                      className="rounded-2xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={schedule.status} />
+                            {isDisplayedVersion ? (
+                              <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                                Versão exibida na tabela
+                              </span>
+                            ) : null}
+                            <p className="text-sm font-semibold text-foreground">
+                              {schedule.code} · {schedule.name}
+                            </p>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {schedule.itemsCount} produtos · {schedule.plannedDays} dias ativos ·{" "}
+                            {formatKgLabel(schedule.minimumTotal)} Kg base
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Criada em {formatDateBr(schedule.createdAt)} por{" "}
+                            {schedule.createdBy || "automação da plataforma"}.
+                          </p>
+                          {schedule.revisionOfId ? (
+                            <p className="text-xs text-muted-foreground">
+                              Revisão do cronograma{" "}
+                              {scheduleNameById.get(schedule.revisionOfId) ?? schedule.revisionOfId}.
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <Button type="button" variant="outline" onClick={() => openScheduleDetails(schedule)}>
+                          Abrir versão
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isDetailsOpen}
@@ -696,11 +966,11 @@ export default function SublinhasProducaoPage() {
           <DialogHeader>
             <DialogTitle>
               {selectedSchedule
-                ? `Auditoria do cronograma ativo · ${selectedSchedule.lineName}`
+                ? `Auditoria do cronograma · ${selectedSchedule.lineName} · ${selectedSchedule.code}`
                 : "Auditoria"}
             </DialogTitle>
             <DialogDescription>
-              Revise a grade completa do cronograma ativo, com os produtos aprovados e os dias planejados para fabricação.
+              Revise a grade completa da versão selecionada, com os produtos aprovados e os dias planejados para fabricação.
             </DialogDescription>
           </DialogHeader>
 
@@ -735,7 +1005,7 @@ export default function SublinhasProducaoPage() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Grade auditável do cronograma ativo</CardTitle>
+                  <CardTitle>Grade auditável do cronograma</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <PaginatedSection
@@ -825,6 +1095,17 @@ export default function SublinhasProducaoPage() {
                   ? "Arraste os produtos dentro de cada dia para definir a prioridade da produção. Essa sequência será usada na leitura operacional da revisão."
                   : "A prioridade diária só pode ser ajustada em revisões pendentes, antes da aprovação do cronograma."}
               </div>
+
+              {selectedSchedule.status === "pendente" ? (
+                <div className="rounded-lg border border-warning/35 bg-warning/15 px-4 py-3 text-sm text-warning-foreground">
+                  <p className="font-semibold">Se esta revisão for reprovada, ela volta para ajuste.</p>
+                  <p className="mt-1">
+                    {previousActiveSchedule
+                      ? `A linha continuará operando com a versão ${previousActiveSchedule.code} até que uma nova revisão seja enviada e aprovada.`
+                      : "A linha ficará aguardando uma nova revisão aprovada para voltar a ter uma versão vigente."}
+                  </p>
+                </div>
+              ) : null}
 
               {hasPriorityChanges ? (
                 <div className="rounded-lg border border-warning/40 bg-warning/20 px-4 py-3 text-sm text-warning-foreground">
@@ -923,13 +1204,26 @@ export default function SublinhasProducaoPage() {
               </div>
 
               <div className="grid gap-2">
-                <label className="text-sm font-medium text-foreground">Observações</label>
+                <label className="text-sm font-medium text-foreground">
+                  {selectedSchedule.status === "pendente"
+                    ? "Observações da auditoria / pedido de ajuste"
+                    : "Observações"}
+                </label>
                 <Textarea
                   value={auditNotes}
                   onChange={(event) => setAuditNotes(event.target.value)}
-                  placeholder="Descreva observações da auditoria ou da operação..."
+                  placeholder={
+                    selectedSchedule.status === "pendente"
+                      ? "Descreva o que precisa ser corrigido, refeito ou validado para a próxima revisão..."
+                      : "Descreva observações da auditoria ou da operação..."
+                  }
                   className="min-h-[110px]"
                 />
+                {selectedSchedule.status === "pendente" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Ao solicitar ajuste, esse texto funciona como orientação objetiva do que a equipe deve refazer.
+                  </p>
+                ) : null}
               </div>
             </div>
           )}
@@ -946,7 +1240,7 @@ export default function SublinhasProducaoPage() {
                   onClick={() => void updateScheduleStatus("pendente", false)}
                   disabled={isSubmitting || (!hasPriorityChanges && !hasAuditNotesChanges)}
                 >
-                  Salvar prioridade
+                  Salvar revisão pendente
                 </Button>
                 <Button
                   type="button"
@@ -956,11 +1250,11 @@ export default function SublinhasProducaoPage() {
                   disabled={isSubmitting}
                 >
                   <PauseCircle className="size-4" />
-                  Não Aprovar
+                  Solicitar ajuste
                 </Button>
                 <Button type="button" onClick={() => void updateScheduleStatus("ativo")} disabled={isSubmitting}>
                   <CheckCircle className="size-4" />
-                  Aprovar e Ativar
+                  Aprovar e ativar linha
                 </Button>
               </div>
             ) : selectedSchedule?.status === "ativo" ? (

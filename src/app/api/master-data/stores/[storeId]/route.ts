@@ -34,9 +34,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { storeId } = await context.params;
   const payload = (await request.json().catch(() => null)) as StoreInput | null;
 
-  if (!payload?.name?.trim() || !payload?.responsibleProfileId?.trim()) {
+  if (!payload?.name?.trim()) {
     return NextResponse.json(
-      { message: "Informe nome e selecione o usuário responsável da loja." },
+      { message: "Informe o nome da loja." },
       { status: 400 },
     );
   }

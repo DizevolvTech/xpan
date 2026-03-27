@@ -1895,30 +1895,38 @@ export function ProductFormDialog({
           </TabsContent>
         </Tabs>
 
-        {formError && !isReadOnly ? (
-          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-            {formError}
-          </div>
-        ) : null}
+        <DialogFooter className="-mx-5 sticky bottom-0 z-20 border-t border-border/80 bg-white/95 px-5 py-4 backdrop-blur supports-[backdrop-filter]:bg-white/90">
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            {formError && !isReadOnly ? (
+              <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground sm:max-w-xl">
+                {formError}
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                {!isReadOnly ? "Revise os dados e salve quando concluir as alterações." : null}
+              </div>
+            )}
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              if (!formGuard.confirmIfNeeded()) {
-                return;
-              }
-              onOpenChange(false);
-            }}
-          >
-            {isReadOnly ? "Fechar" : "Cancelar"}
-          </Button>
-          {!isReadOnly ? (
-            <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting}>
-              {product ? "Salvar Alterações" : "Cadastrar Produto"}
-            </Button>
-          ) : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (!formGuard.confirmIfNeeded()) {
+                    return;
+                  }
+                  onOpenChange(false);
+                }}
+              >
+                {isReadOnly ? "Fechar" : "Cancelar"}
+              </Button>
+              {!isReadOnly ? (
+                <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting}>
+                  {product ? "Salvar Alterações" : "Cadastrar Produto"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </DialogFooter>
         </DialogContent>
       </Dialog>
