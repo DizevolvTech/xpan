@@ -1,29 +1,34 @@
 import { redirect } from "next/navigation";
 
 import { ProfilePage } from "@/components/shared/profile-page";
-import { permissionGroupMeta, type PermissionGroup } from "@/lib/permission-modules";
-import { resolveServerSession } from "@/lib/server-session";
+import {
+  permissionGroupMeta,
+  resolveLandingPath,
+  type PermissionGroup,
+} from "@/lib/permission-modules";
+import { resolveServerAccess } from "@/lib/server-session";
 
 type RoleProfileRouteProps = {
   role: PermissionGroup;
 };
 
 export async function RoleProfileRoute({ role }: RoleProfileRouteProps) {
-  const session = await resolveServerSession();
+  const access = await resolveServerAccess();
 
-  if (!session) {
+  if (!access) {
     redirect("/login");
   }
 
   const groupMeta = permissionGroupMeta[role];
+  const homeHref = resolveLandingPath(access.user.permissions, access.user.role);
 
   return (
     <ProfilePage
-      homeHref={groupMeta.route}
+      homeHref={homeHref}
       homeLabel={groupMeta.label}
       roleLabel={groupMeta.label}
-      initialName={session.name}
-      initialEmail={session.email}
+      initialName={access.user.name}
+      initialEmail={access.user.email}
     />
   );
 }

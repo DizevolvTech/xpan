@@ -2,6 +2,7 @@ import "server-only";
 
 import { headers } from "next/headers";
 
+import { resolveAppShellCurrentPath } from "@/lib/app-shell-path";
 import { resolveAreaAccess } from "@/lib/navigation-access";
 import { permissionGroupMeta } from "@/lib/permission-modules";
 import {
@@ -16,14 +17,6 @@ export type ResolvedAppShellContext = AppShellNavigationContext & {
   accessDeniedReason: ReturnType<typeof resolveAreaAccess>["accessDeniedReason"];
 };
 
-function buildCurrentPath(fallbackPath: string, pathnameHeader: string | null) {
-  if (!pathnameHeader || !pathnameHeader.startsWith("/")) {
-    return fallbackPath;
-  }
-
-  return pathnameHeader;
-}
-
 export async function getAppShellContext(
   areaGroup: PermissionGroup,
 ): Promise<ResolvedAppShellContext | null> {
@@ -34,9 +27,13 @@ export async function getAppShellContext(
   }
 
   const headerStore = await headers();
-  const currentPath = buildCurrentPath(
+  const currentPath = resolveAppShellCurrentPath(
+    {
+      pathname: headerStore.get("x-app-pathname"),
+      rewrittenPath: headerStore.get("x-nextjs-rewritten-path"),
+      nextUrl: headerStore.get("next-url"),
+    },
     permissionGroupMeta[areaGroup].route,
-    headerStore.get("x-app-pathname"),
   );
   const effectivePermissions =
     areaGroup === "administrador-master"
