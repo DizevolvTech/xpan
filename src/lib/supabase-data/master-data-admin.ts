@@ -965,36 +965,52 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
     "Failed to create pending schedule revision",
   );
 
-  if (products.length === 0) {
-    return;
+  if (products.length > 0) {
+    const fallbackDayPriorities = buildDefaultScheduleDayPriorities(
+      products.map((product) => ({
+        productionDays: (product.production_days ?? []) as ProductionWeekDay[],
+      })),
+    );
+
+    const insertItemsResult = await supabase.from("schedule_line_item_snapshots").insert(
+      products.map((product, index) => {
+        const productionDays = (product.production_days ?? []) as ProductionWeekDay[];
+
+        return {
+          schedule_line_id: scheduleRevision.id,
+          product_id: product.id,
+          minimum_production: Number(product.minimum_production_kg),
+          production_days: productionDays,
+          day_priorities: normalizeScheduleDayPriorities(
+            prioritySourceItemsByProductId.get(product.id),
+            productionDays,
+            fallbackDayPriorities[index],
+          ),
+        };
+      }),
+    );
+
+    if (insertItemsResult.error) {
+      throw new Error(`Failed to save pending schedule revision items: ${insertItemsResult.error.message}`);
+    }
   }
 
-  const fallbackDayPriorities = buildDefaultScheduleDayPriorities(
-    products.map((product) => ({
-      productionDays: (product.production_days ?? []) as ProductionWeekDay[],
-    })),
-  );
+  if (activeSchedule?.id) {
+    const deactivateActiveResult = await supabase
+      .from("schedule_lines")
+      .update({
+        status: "inativo",
+        deactivated_at: timestamp,
+        deactivated_by_profile_id: actingProfileDbId,
+      })
+      .eq("id", activeSchedule.id)
+      .eq("status", "ativo");
 
-  const insertItemsResult = await supabase.from("schedule_line_item_snapshots").insert(
-    products.map((product, index) => {
-      const productionDays = (product.production_days ?? []) as ProductionWeekDay[];
-
-      return {
-        schedule_line_id: scheduleRevision.id,
-        product_id: product.id,
-        minimum_production: Number(product.minimum_production_kg),
-        production_days: productionDays,
-        day_priorities: normalizeScheduleDayPriorities(
-          prioritySourceItemsByProductId.get(product.id),
-          productionDays,
-          fallbackDayPriorities[index],
-        ),
-      };
-    }),
-  );
-
-  if (insertItemsResult.error) {
-    throw new Error(`Failed to save pending schedule revision items: ${insertItemsResult.error.message}`);
+    if (deactivateActiveResult.error) {
+      throw new Error(
+        `Failed to deactivate active schedule while awaiting audit: ${deactivateActiveResult.error.message}`,
+      );
+    }
   }
 }
 
@@ -1048,7 +1064,10 @@ export async function assignProductToOperationalSubcategory(
   ];
 
   for (const affectedSubcategoryId of affectedSubcategoryIds) {
-    await rebuildPendingScheduleRevisionForSubcategoryDbId(affectedSubcategoryId, { supabase });
+    await rebuildPendingScheduleRevisionForSubcategoryDbId(affectedSubcategoryId, {
+      supabase,
+      actingProfileId: options.actingProfileId,
+    });
   }
 }
 
@@ -1081,7 +1100,10 @@ export async function removeProductFromOperationalSubcategory(
     throw new Error(`Failed to remove operational subcategory: ${updateResult.error.message}`);
   }
 
-  await rebuildPendingScheduleRevisionForSubcategoryDbId(sourceSubcategoryId, { supabase });
+  await rebuildPendingScheduleRevisionForSubcategoryDbId(sourceSubcategoryId, {
+    supabase,
+    actingProfileId: options.actingProfileId,
+  });
 }
 
 export async function createProduct(input: ProductInput, options: MutationOptions = {}) {
@@ -1164,7 +1186,10 @@ export async function updateProduct(
   ];
 
   for (const affectedOperationalSubcategoryId of affectedOperationalSubcategoryIds) {
-    await rebuildPendingScheduleRevisionForSubcategoryDbId(affectedOperationalSubcategoryId, { supabase });
+    await rebuildPendingScheduleRevisionForSubcategoryDbId(affectedOperationalSubcategoryId, {
+      supabase,
+      actingProfileId: options.actingProfileId,
+    });
   }
 }
 

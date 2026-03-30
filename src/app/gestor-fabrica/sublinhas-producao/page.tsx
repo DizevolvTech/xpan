@@ -306,17 +306,6 @@ export default function SublinhasProducaoPage() {
     () => lineAuditRows.find((line) => line.lineId === selectedLineIdForVersions) ?? null,
     [lineAuditRows, selectedLineIdForVersions],
   );
-  const selectedScheduleVersions = useMemo(
-    () => lineAuditRows.find((line) => line.lineId === selectedSchedule?.lineId)?.versions ?? [],
-    [lineAuditRows, selectedSchedule?.lineId],
-  );
-  const previousActiveSchedule = useMemo(
-    () =>
-      selectedScheduleVersions.find(
-        (schedule) => schedule.status === "ativo" && schedule.id !== selectedSchedule?.id,
-      ) ?? null,
-    [selectedSchedule?.id, selectedScheduleVersions],
-  );
   const selectedLineProducts = useMemo(
     () => selectedSchedule?.snapshotProducts ?? [],
     [selectedSchedule],
@@ -660,9 +649,7 @@ export default function SublinhasProducaoPage() {
       } else if (nextStatus === "inativo") {
         setPageNotice({
           tone: "warning",
-          message: previousActiveSchedule
-            ? `Revisão ${selectedSchedule.code} devolvida para ajuste. A linha continua operando com a versão ${previousActiveSchedule.code} até uma nova revisão ser enviada.`
-            : `Revisão ${selectedSchedule.code} devolvida para ajuste. Ajuste os produtos/linha e envie uma nova revisão para voltar à auditoria.`,
+          message: `Revisão ${selectedSchedule.code} devolvida para ajuste. A linha fica indisponível para produção e pedidos até que uma nova revisão seja enviada e aprovada.`,
         });
       } else {
         setPageNotice({
@@ -1100,9 +1087,7 @@ export default function SublinhasProducaoPage() {
                 <div className="rounded-lg border border-warning/35 bg-warning/15 px-4 py-3 text-sm text-warning-foreground">
                   <p className="font-semibold">Se esta revisão for reprovada, ela volta para ajuste.</p>
                   <p className="mt-1">
-                    {previousActiveSchedule
-                      ? `A linha continuará operando com a versão ${previousActiveSchedule.code} até que uma nova revisão seja enviada e aprovada.`
-                      : "A linha ficará aguardando uma nova revisão aprovada para voltar a ter uma versão vigente."}
+                    A linha ficará indisponível para produção e pedidos até que uma nova revisão seja enviada e aprovada.
                   </p>
                 </div>
               ) : null}

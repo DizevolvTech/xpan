@@ -31,6 +31,24 @@ type ApprovedCatalogEntry = {
   blockedReason: string | null;
 };
 
+function buildLatestScheduleByLineId(
+  schedules: Pick<MasterDataSnapshot, "schedules">["schedules"],
+  status: "ativo" | "pendente",
+) {
+  const latestByLineId = new Map<string, (typeof schedules)[number]>();
+
+  schedules
+    .filter((schedule) => schedule.status === status)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .forEach((schedule) => {
+      if (!latestByLineId.has(schedule.lineId)) {
+        latestByLineId.set(schedule.lineId, schedule);
+      }
+    });
+
+  return latestByLineId;
+}
+
 function calculateTotal(
   product: Pick<StoreOrderCatalogProduct, "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui">,
 ) {
@@ -51,11 +69,8 @@ export function buildStoreOrderCatalog(
 
   const sectorById = new Map(snapshot.sectors.map((sector) => [sector.id, sector]));
   const lineById = new Map(snapshot.lines.map((line) => [line.id, line]));
-  const activeScheduleByLineId = new Map(
-    snapshot.schedules
-      .filter((schedule) => schedule.status === "ativo")
-      .map((schedule) => [schedule.lineId, schedule]),
-  );
+  const activeScheduleByLineId = buildLatestScheduleByLineId(snapshot.schedules, "ativo");
+  const pendingScheduleByLineId = buildLatestScheduleByLineId(snapshot.schedules, "pendente");
   const entries = new Map<string, ApprovedCatalogEntry>();
 
   snapshot.products.forEach((product) => {
@@ -73,7 +88,10 @@ export function buildStoreOrderCatalog(
       return;
     }
 
-    const schedule = activeScheduleByLineId.get(line.id);
+    const pendingSchedule = pendingScheduleByLineId.get(line.id) ?? null;
+    const activeSchedule = activeScheduleByLineId.get(line.id) ?? null;
+    const schedule = pendingSchedule ?? activeSchedule;
+    const isAwaitingAudit = Boolean(pendingSchedule);
     const scheduleItem = schedule?.items.find((item) => item.productId === product.id) ?? null;
     const orderWindow = getOperationalOrderWindow(options.orderedAt, store, snapshot.operationalSettings);
     const availability = schedule
@@ -119,9 +137,12 @@ export function buildStoreOrderCatalog(
       deliveryDate: availability?.deliveryDate ?? orderWindow.deliveryDate,
       productionDate: availability?.productionDate ?? timeline.productionDate,
       saleDate: timeline.saleDate,
-      available: availability?.available ?? false,
-      blockedReason:
-        availability ? availability.blockedReason : "Linha de produção sem cronograma ativo.",
+      available: isAwaitingAudit ? false : availability?.available ?? false,
+      blockedReason: isAwaitingAudit
+        ? "Linha aguardando auditoria do cronograma."
+        : availability
+          ? availability.blockedReason
+          : "Linha de produção sem cronograma ativo.",
     });
   });
 

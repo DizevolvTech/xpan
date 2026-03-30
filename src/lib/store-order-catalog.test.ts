@@ -143,6 +143,39 @@ test("store catalog returns only products that match the active subline and vali
   assert.equal(catalog[0]?.saleDate, "2026-03-20");
 });
 
+test("store catalog blocks products from lines that are awaiting audit approval", () => {
+  const snapshot = buildSnapshot(["quinta"]);
+
+  snapshot.schedules.push({
+    id: "schedule-2",
+    code: "SL-002",
+    name: "Sublinha em auditoria",
+    lineId: "line-1",
+    status: "pendente",
+    createdAt: "2026-03-18T08:00:00Z",
+    createdBy: "Fernanda",
+    items: [
+      {
+        id: "schedule-item-2",
+        productId: "product-1",
+        productionDays: ["quinta"],
+        minimumProduction: 15,
+      },
+    ],
+  });
+
+  const catalog = buildStoreOrderCatalog(snapshot, {
+    storeId: "store-1",
+    orderedAt: "2026-03-17T09:00:00Z",
+  });
+
+  assert.equal(catalog.length, 1);
+  assert.equal(catalog[0]?.available, false);
+  assert.equal(catalog[0]?.scheduleId, "schedule-2");
+  assert.equal(catalog[0]?.scheduleName, "Sublinha em auditoria");
+  assert.equal(catalog[0]?.blockedReason, "Linha aguardando auditoria do cronograma.");
+});
+
 test("store catalog keeps products outside the active schedule snapshot with a blocked reason", () => {
   const catalog = buildStoreOrderCatalog(buildSnapshot(["quinta"], false), {
     storeId: "store-1",

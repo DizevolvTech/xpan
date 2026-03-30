@@ -702,7 +702,8 @@ export default function LinhaProducaoDetailsPage() {
                 armazenamento de produtos fora do fluxo atual.
               </p>
               <p>
-                Toda alteração na carteira recria a auditoria pendente desta linha de produção para validação posterior.
+                Toda alteração na carteira recria a auditoria pendente desta linha de produção e suspende sua
+                liberação para produção e pedidos até nova aprovação.
               </p>
             </CardContent>
           </Card>
