@@ -76,11 +76,22 @@ export default function LinhasProducaoPage() {
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [categoryDraft, setCategoryDraft] = useState({ name: "", responsible: "" });
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [lineTypes, setLineTypes] = useState<Array<{ id: string; name: string }>>([]);
+  const [isTypeDialogOpen, setIsTypeDialogOpen] = useState(false);
+  const [typeDraftName, setTypeDraftName] = useState("");
+  const [isCreatingType, setIsCreatingType] = useState(false);
   const formDirty = isDialogOpen && JSON.stringify(formState) !== formBaseline;
   const formGuard = useUnsavedChangesGuard({
     enabled: isDialogOpen,
     isDirty: formDirty,
   });
+
+  useEffect(() => {
+    fetch("/api/master-data/line-types")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: Array<{ id: string; name: string }>) => setLineTypes(data))
+      .catch(() => setLineTypes([]));
+  }, []);
 
   const sectorNameById = useMemo(
     () => new Map(snapshot.sectors.map((sector) => [sector.id, sector.name])),
@@ -401,23 +412,43 @@ export default function LinhasProducaoPage() {
             </div>
             <div className="grid gap-2">
               <Label>Tipo *</Label>
-              <Select
-                value={formState.type}
-                onValueChange={(value) =>
-                  setFormState((current) => ({
-                    ...current,
-                    type: value as ProductionLine["type"],
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Seco">Seco</SelectItem>
-                  <SelectItem value="Úmido">Úmido</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select
+                  value={formState.type}
+                  onValueChange={(value) =>
+                    setFormState((current) => ({
+                      ...current,
+                      type: value as ProductionLine["type"],
+                    }))
+                  }
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(lineTypes.length > 0
+                      ? [...new Map(lineTypes.map((lt) => [lt.name, lt])).values()]
+                      : [{ id: "seco", name: "Seco" }, { id: "congelado", name: "Congelado" }]
+                    ).map((lt) => (
+                      <SelectItem key={lt.id} value={lt.name}>
+                        {lt.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Criar novo tipo"
+                  onClick={() => {
+                    setTypeDraftName("");
+                    setIsTypeDialogOpen(true);
+                  }}
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </div>
             </div>
             <div className="grid gap-2">
               <Label>Horário de Funcionamento</Label>
@@ -557,6 +588,64 @@ export default function LinhasProducaoPage() {
               }}
             >
               {isCreatingCategory ? "Criando..." : "Criar categoria"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isTypeDialogOpen} onOpenChange={setIsTypeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo tipo de linha</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>Nome do tipo *</Label>
+              <Input
+                value={typeDraftName}
+                onChange={(e) => setTypeDraftName(e.target.value)}
+                placeholder="Ex: Congelado, Resfriado..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsTypeDialogOpen(false)}
+              disabled={isCreatingType}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={!typeDraftName.trim() || isCreatingType}
+              onClick={async () => {
+                setIsCreatingType(true);
+                try {
+                  const res = await fetch("/api/master-data/line-types", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: typeDraftName.trim() }),
+                  });
+
+                  if (!res.ok) {
+                    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+                    throw new Error(body?.message ?? "Falha ao criar tipo");
+                  }
+
+                  const created = (await res.json()) as { id: string; name: string };
+                  setLineTypes((current) => [...current, created]);
+                  setFormState((current) => ({ ...current, type: created.name as ProductionLine["type"] }));
+                  setIsTypeDialogOpen(false);
+                } catch (err) {
+                  window.alert(err instanceof Error ? err.message : "Falha ao criar tipo");
+                } finally {
+                  setIsCreatingType(false);
+                }
+              }}
+            >
+              {isCreatingType ? "Criando..." : "Criar tipo"}
             </Button>
           </DialogFooter>
         </DialogContent>

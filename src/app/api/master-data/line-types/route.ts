@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("production_line_types")
     .select("id, name, status, sort_order")
+    .eq("tenant_id", authorization.effectiveTenantId)
     .order("sort_order", { ascending: true });
 
   if (error) {

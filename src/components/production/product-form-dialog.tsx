@@ -1496,24 +1496,13 @@ export function ProductFormDialog({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Unidade da receita</Label>
-                    <Select
-                      value={draftRecipeUnit}
-                      onValueChange={(value) =>
-                        setDraftRecipeUnit(value as RecipeIngredientReference["unit"])
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {productUnitOptions.map((unit) => (
-                          <SelectItem key={unit} value={unit}>
-                            {getOperationalUnitLabel(unit)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label>Unidade</Label>
+                    <div className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground">
+                      {getOperationalUnitLabel(draftRecipeUnit)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Definida no cadastro do ingrediente.
+                    </p>
                   </div>
                 </div>
                 <div className="flex justify-end">
@@ -1570,26 +1559,8 @@ export function ProductFormDialog({
                                     }
                                   />
                                 </td>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                  <Select
-                                    value={item.unit}
-                                    onValueChange={(value) =>
-                                      updateRecipeItem(item.id, {
-                                        unit: value as RecipeIngredientReference["unit"],
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger className="h-9 bg-background">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {productUnitOptions.map((unit) => (
-                                        <SelectItem key={unit} value={unit}>
-                                          {getOperationalUnitLabel(unit)}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
+                                  {getOperationalUnitLabel(item.unit)}
                                 </td>
                                 <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
                                   <div className="flex justify-end gap-1">
