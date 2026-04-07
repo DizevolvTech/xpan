@@ -29,9 +29,7 @@ interface IngredientProfileFieldsProps {
   title?: string;
   description?: string;
   metadataLabel?: string;
-  observationLabel?: string;
   metadataPlaceholder?: string;
-  observationPlaceholder?: string;
   showPurchaseFields?: boolean;
   purchaseUnitOptions?: readonly UnitCode[];
   purchaseUnitLabel?: string;
@@ -48,9 +46,7 @@ export function IngredientProfileFields({
   title,
   description,
   metadataLabel = "Lembretes",
-  observationLabel = "Observação",
   metadataPlaceholder = "Notas rápidas sobre este ingrediente",
-  observationPlaceholder,
   showPurchaseFields = false,
   purchaseUnitOptions,
   purchaseUnitLabel = "Unidade de compra",
@@ -72,25 +68,27 @@ export function IngredientProfileFields({
       )}
 
       <div className={`grid gap-4 ${showWeightKg ? "md:grid-cols-2" : ""}`}>
-        <div className="grid gap-2">
-          <Label>Unidade</Label>
-          <Select
-            value={profile.unit}
-            onValueChange={(value) => onChange({ unit: value as UnitCode, weightKg: value === "Kg" ? 1 : profile.weightKg })}
-            disabled={disabled}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {unitOptions.map((unit) => (
-                <SelectItem key={unit} value={unit}>
-                  {getOperationalUnitLabel(unit)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {!showPurchaseFields ? (
+          <div className="grid gap-2">
+            <Label>Unidade</Label>
+            <Select
+              value={profile.unit}
+              onValueChange={(value) => onChange({ unit: value as UnitCode, weightKg: value === "Kg" ? 1 : profile.weightKg })}
+              disabled={disabled}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {unitOptions.map((unit) => (
+                  <SelectItem key={unit} value={unit}>
+                    {getOperationalUnitLabel(unit)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
 
         {showWeightKg ? (
           <div className="grid gap-2">
@@ -144,25 +142,18 @@ export function IngredientProfileFields({
           </div>
         ) : null}
 
-        <div className="grid gap-2">
+        <div className="grid gap-2 md:col-span-2">
           <Label>{metadataLabel}</Label>
-          <Input
+          <Textarea
             value={profile.metadata}
             disabled={disabled}
             onChange={(event) => onChange({ metadata: event.target.value })}
+            className="min-h-[72px]"
             placeholder={metadataPlaceholder}
           />
-        </div>
-
-        <div className="grid gap-2">
-          <Label>{observationLabel}</Label>
-          <Textarea
-            value={profile.observation}
-            disabled={disabled}
-            onChange={(event) => onChange({ observation: event.target.value })}
-            className="min-h-[88px]"
-            placeholder={observationPlaceholder}
-          />
+          <p className="text-xs text-muted-foreground">
+            Use este campo para lembretes gerais sobre o ingrediente. Instruções de uso na receita devem ser registradas no campo de observação de cada item da receita.
+          </p>
         </div>
       </div>
     </section>

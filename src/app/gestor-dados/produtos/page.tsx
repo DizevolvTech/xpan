@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Box, Clock3, Plus } from "lucide-react";
+import { AlertTriangle, Box, Clock3, Plus } from "lucide-react";
 
 import { ProductFormDialog, type ProductDialogMode } from "@/components/production/product-form-dialog";
 import { DataTable } from "@/components/shared/data-table";
@@ -25,6 +25,7 @@ type ProductRow = ProductionProduct & {
   sectorName: string;
   validityLabel: string;
   productionDaysLabel: string;
+  hasApprovedLp: boolean;
 };
 
 export default function ProdutosPage() {
@@ -39,11 +40,24 @@ export default function ProdutosPage() {
     [snapshot.sectors],
   );
 
+  // Lines that have at least one active schedule
+  const linesWithActiveSchedule = useMemo(
+    () => new Set(
+      snapshot.schedules
+        .filter((s) => s.status === "ativo")
+        .map((s) => s.lineId),
+    ),
+    [snapshot.schedules],
+  );
+
   const productRows = useMemo(
     () =>
       snapshot.products.map((product) => {
         const line = snapshot.lines.find((item) => item.id === product.lineId);
         const operationalLine = snapshot.lines.find((item) => item.id === product.operationalLineId);
+        const hasApprovedLp = product.operationalLineId
+          ? linesWithActiveSchedule.has(product.operationalLineId)
+          : false;
 
         return {
           ...product,
@@ -55,9 +69,10 @@ export default function ProdutosPage() {
           sectorName: line ? sectorNameById.get(line.sectorId) ?? "-" : "-",
           validityLabel: `${product.validityDays} dias`,
           productionDaysLabel: product.productionDays.map((day) => day.slice(0, 3)).join(" · "),
+          hasApprovedLp,
         };
       }),
-    [sectorNameById, snapshot.lines, snapshot.products],
+    [linesWithActiveSchedule, sectorNameById, snapshot.lines, snapshot.products],
   );
 
   const filteredProducts = useMemo(
@@ -83,6 +98,9 @@ export default function ProdutosPage() {
     0,
     activeProductsCount - operationalPortfolioCount,
   );
+  const withoutApprovedLpCount = productRows.filter(
+    (item) => item.active && item.operationalLineId && !item.hasApprovedLp,
+  ).length;
 
   const columns = [
     { key: "code", header: "Código da fábrica" },
@@ -102,15 +120,20 @@ export default function ProdutosPage() {
       key: "operationalStatusLabel",
       header: "Status",
       render: (item: ProductRow) => (
-        <span
-          className={
-            item.operationalLineId
-              ? "text-sm font-medium text-primary"
-              : "text-sm text-muted-foreground"
-          }
-        >
-          {item.operationalStatusLabel}
-        </span>
+        <div className="space-y-0.5">
+          <span
+            className={
+              item.operationalLineId
+                ? "text-sm font-medium text-primary"
+                : "text-sm text-muted-foreground"
+            }
+          >
+            {item.operationalStatusLabel}
+          </span>
+          {item.active && item.operationalLineId && !item.hasApprovedLp && (
+            <span className="block text-xs font-medium text-danger-foreground">Sem LP aprovada</span>
+          )}
+        </div>
       ),
     },
     { key: "sectorName", header: hierarchyLabels.sector },
@@ -184,7 +207,7 @@ export default function ProdutosPage() {
         { label: "Produtos" },
       ]}
     >
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-3">
         <KPICard
           title="Registros Ativos"
           value={`${activeProductsCount} produtos`}
@@ -200,6 +223,17 @@ export default function ProdutosPage() {
             isLoading
               ? undefined
               : `${outsideOperationalPortfolioCount} ativos fora da carteira operacional`
+          }
+        />
+        <KPICard
+          title="Sem LP Aprovada"
+          value={isLoading ? "Carregando..." : `${withoutApprovedLpCount} produtos`}
+          icon={AlertTriangle}
+          tone={withoutApprovedLpCount > 0 ? "danger" : "success"}
+          subtitle={
+            withoutApprovedLpCount > 0
+              ? "Na carteira operacional mas a LP não tem cronograma ativo"
+              : "Todos os produtos operacionais têm LP aprovada"
           }
         />
       </div>

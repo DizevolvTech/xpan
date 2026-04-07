@@ -143,6 +143,9 @@ export function ProductFormDialog({
   const [invalidFields, setInvalidFields] = useState<ProductValidationField[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("cadastro");
+  const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  const [commitDescription, setCommitDescription] = useState("");
+  const [pendingProductPayload, setPendingProductPayload] = useState<ProductFormState | null>(null);
   const isReadOnly = mode === "view";
   const formDirty =
     open &&
@@ -165,13 +168,15 @@ export function ProductFormDialog({
   snapshotLinesRef.current = snapshot.lines;
   const snapshotSectorsRef = useRef(snapshot.sectors);
   snapshotSectorsRef.current = snapshot.sectors;
+  const productRef = useRef(product);
+  productRef.current = product;
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    const nextFormState = buildProductFormState(snapshotLinesRef.current, product);
+    const nextFormState = buildProductFormState(snapshotLinesRef.current, productRef.current);
     setFormState(nextFormState);
     setLineDraft(buildLineDraft(snapshotSectorsRef.current[0]?.id ?? ""));
     setDraftRecipeSourceId("");
@@ -188,7 +193,11 @@ export function ProductFormDialog({
     setFormError(null);
     setInvalidFields([]);
     setActiveTab("cadastro");
-  }, [mode, open, product]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Reset only when
+    // dialog opens, mode changes, or a different product is selected.  Using
+    // `product` (object) would cause a reset on every snapshot refresh because
+    // the parent rebuilds the product reference from the new snapshot.
+  }, [mode, open, product?.id]);
 
   const sectorNameById = useMemo(
     () => new Map(snapshot.sectors.map((sector) => [sector.id, sector.name])),
@@ -574,11 +583,27 @@ export function ProductFormDialog({
       return;
     }
 
+    // For existing products, require a commit description before saving
+    if (product) {
+      setPendingProductPayload(nextProduct);
+      setCommitDescription("");
+      setIsCommitDialogOpen(true);
+      return;
+    }
+
+    await submitProduct(nextProduct, null);
+  }
+
+  async function submitProduct(payload: ProductFormState, changeDescription: string | null) {
     setIsSubmitting(true);
     setFormError(null);
     setInvalidFields([]);
 
     try {
+      const body = changeDescription
+        ? { ...payload, changeDescription }
+        : payload;
+
       const response = await fetch(
         product ? `/api/master-data/products/${product.id}` : "/api/master-data/products",
         {
@@ -586,16 +611,17 @@ export function ProductFormDialog({
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(nextProduct),
+          body: JSON.stringify(body),
         },
       );
 
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message ?? "Falha ao salvar produto");
+        const respBody = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(respBody?.message ?? "Falha ao salvar produto");
       }
 
       await refresh();
+      setIsCommitDialogOpen(false);
       onOpenChange(false);
     } catch (saveError) {
       setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar produto");
@@ -1762,8 +1788,10 @@ export function ProductFormDialog({
                     {
                       key: "delivery",
                       label: "Expedir / entregar",
-                      value: `D+${snapshot.operationalSettings.expeditionLeadDays} da base`,
-                      helper: "A entrega respeita os dias operacionais da loja e a regra global da fábrica.",
+                      value: `D+${formState.expeditionLeadDays ?? snapshot.operationalSettings.expeditionLeadDays} da base${formState.expeditionLeadDays != null ? " (personalizado)" : ""}`,
+                      helper: formState.expeditionLeadDays != null
+                        ? "Este produto tem prazo de expedição personalizado."
+                        : "Usando o prazo global da fábrica. Altere abaixo para personalizar.",
                       tone: "warning",
                     },
                     {
@@ -1799,11 +1827,50 @@ export function ProductFormDialog({
                     );
                   })}
                 </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label>Dias para expedição (D+X)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="30"
+                      value={formState.expeditionLeadDays ?? ""}
+                      placeholder={`Padrão global: D+${snapshot.operationalSettings.expeditionLeadDays}`}
+                      disabled={isReadOnly}
+                      onChange={(e) =>
+                        setFormState((current) => ({
+                          ...current,
+                          expeditionLeadDays: e.target.value === "" ? null : Number(e.target.value),
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Quantos dias da base operacional até a entrega. Deixe vazio para usar o padrão global (D+{snapshot.operationalSettings.expeditionLeadDays}).
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Dias para venda após entrega</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={formState.saleLeadDays ?? 1}
+                      disabled={isReadOnly}
+                      onChange={(e) =>
+                        setFormState((current) => ({
+                          ...current,
+                          saleLeadDays: Number(e.target.value) || 1,
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Quantos dias após a entrega o produto pode ser vendido na loja.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="rounded-xl border border-border/70 bg-panel/25 p-4 text-sm text-muted-foreground">
-                  Exemplo operacional: pedido dentro da janela da loja, depois produção no
-                  primeiro dia compatível do cronograma, depois expedição/entrega em D+
-                  {snapshot.operationalSettings.expeditionLeadDays} e, por fim, venda depois da
-                  entrega.
+                  Fluxo: pedido → produção no dia compatível → expedição em D+{formState.expeditionLeadDays ?? snapshot.operationalSettings.expeditionLeadDays} → venda {Math.max(1, formState.saleLeadDays || 1)} dia(s) após entrega.
                 </div>
               </section>
             </fieldset>
@@ -1859,8 +1926,7 @@ export function ProductFormDialog({
                       unitOptions={productUnitOptions}
                       showPurchaseFields
                       purchaseHelperText="1 unidade de compra equivale a este fator multiplicado pela unidade de consumo."
-                      metadataPlaceholder="Ex: usar como base de sanduíches"
-                      observationPlaceholder="Ex: consumir após resfriar"
+                      metadataPlaceholder="Ex: usar como base de sanduíches, consumir após resfriar"
                       onChange={(patch) =>
                         setFormState((current) => ({
                           ...current,
@@ -1947,6 +2013,55 @@ export function ProductFormDialog({
             </div>
           </div>
         </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCommitDialogOpen} onOpenChange={setIsCommitDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Registrar alteração</DialogTitle>
+            <DialogDescription>
+              Descreva o que foi alterado neste produto. Este registro ficará no histórico de versões.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-2">
+              <Label>Descrição da alteração *</Label>
+              <Textarea
+                value={commitDescription}
+                onChange={(e) => setCommitDescription(e.target.value)}
+                placeholder="Ex: Ajustou peso da receita, alterou dias de produção..."
+                className="min-h-[80px]"
+                autoFocus
+              />
+            </div>
+            <div className="rounded-lg border border-border/70 bg-panel/40 px-3 py-2">
+              <p className="text-xs text-muted-foreground">
+                Assinatura: <strong className="text-foreground">{product?.name ?? "Produto"}</strong>
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCommitDialogOpen(false)}
+              disabled={isSubmitting}
+            >
+              Voltar
+            </Button>
+            <Button
+              type="button"
+              disabled={!commitDescription.trim() || isSubmitting}
+              onClick={() => {
+                if (pendingProductPayload) {
+                  void submitProduct(pendingProductPayload, commitDescription.trim());
+                }
+              }}
+            >
+              {isSubmitting ? "Salvando..." : "Confirmar e salvar"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

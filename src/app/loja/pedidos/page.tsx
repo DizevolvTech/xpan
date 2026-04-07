@@ -381,8 +381,6 @@ export default function PedidosLojaPage() {
     const term = catalogSearchTerm.trim().toLowerCase();
 
     return orderProducts.filter((item) => {
-      if (!item.available) return false;
-
       const matchesSearch =
         term.length === 0 ||
         item.code.toLowerCase().includes(term) ||

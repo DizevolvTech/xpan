@@ -1483,7 +1483,7 @@ export default function AdministradorUsuariosPage() {
               </div>
 
               <div className="max-h-[58vh] space-y-4 overflow-y-auto pr-1">
-                {permissionGroupOrder.map((group) => {
+                {permissionGroupOrder.filter((group) => group !== "administrador-master").map((group) => {
                   const groupModules = permissionModules.filter(
                     (module) => module.group === group,
                   );

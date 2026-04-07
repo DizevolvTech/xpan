@@ -479,7 +479,7 @@ export function IngredientFormDialog({
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label>Unidade de Medida *</Label>
+                <Label>Unidade de Consumo *</Label>
                 <Select
                   value={formState.unit}
                   onValueChange={(value) =>
@@ -514,10 +514,9 @@ export function IngredientFormDialog({
               unitOptions={ingredientUnitOptions}
               showPurchaseFields
               showWeightKg={false}
-              metadataLabel="Metadados / Uso"
-              metadataPlaceholder="Ex: MPI de confeitaria usada como base"
-              observationPlaceholder="Explique o uso deste ingrediente na receita."
-              purchaseHelperText={`1 ${getOperationalUnitLabel(formState.purchaseUnit ?? formState.unit)} = ${formState.purchaseToConsumptionFactor || 1} ${getOperationalUnitLabel(formState.unit)}`}
+              metadataLabel="Lembretes"
+              metadataPlaceholder="Ex: alergênico, armazenar refrigerado, fornecedor preferencial..."
+              purchaseHelperText={`1 ${getOperationalUnitLabel(formState.purchaseUnit ?? formState.unit)} = ${formState.purchaseToConsumptionFactor || 1} ${getOperationalUnitLabel(formState.unit)}. Ex: ovos — compra Dz, consumo g, fator 600 (1 Dz = 600g).`}
               onChange={(patch) =>
                 setFormState((current) => ({
                   ...current,
