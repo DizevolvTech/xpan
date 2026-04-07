@@ -64,6 +64,7 @@ export interface RecipeIngredientReference {
   label: string;
   quantity: number;
   unit: UnitCode;
+  observation?: string;
 }
 
 export interface ProductionIngredient {
@@ -150,6 +151,7 @@ export interface ProductionProduct {
   allowsStorage: boolean;
   productionDays: ProductionWeekDay[];
   saleLeadDays?: number;
+  expeditionLeadDays?: number | null;
   unitProfiles: {
     sales: ProductUnitProfile;
     production: ProductUnitProfile;

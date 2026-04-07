@@ -346,6 +346,57 @@ export default function PedidoDetailsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Previsão por Dia de Produção</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const byDate = new Map<string, typeof aggregatedOrderItems>();
+
+            aggregatedOrderItems.forEach((item) => {
+              const key = item.productionDate ?? "sem-data";
+              const current = byDate.get(key) ?? [];
+              current.push(item);
+              byDate.set(key, current);
+            });
+
+            const sortedDates = [...byDate.keys()].sort();
+
+            return sortedDates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum item para exibir.</p>
+            ) : (
+              <div className="space-y-4">
+                {sortedDates.map((date) => {
+                  const items = byDate.get(date) ?? [];
+                  const totalKg = items.reduce((sum, i) => sum + i.internalKg, 0);
+                  return (
+                    <div key={date} className="rounded-lg border border-border/70 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-foreground">
+                          {date === "sem-data" ? "Sem data de produção" : formatDateKeyBr(date)}
+                        </p>
+                        <span className="text-xs text-muted-foreground">
+                          {items.length} produto(s) · {formatKgValue(totalKg)}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {items.map((item) => (
+                          <div key={item.productCode} className="flex items-center justify-between text-sm">
+                            <span>{item.productCode} · {item.productName}</span>
+                            <span className="text-muted-foreground">{formatKgValue(item.internalKg)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>OPs Relacionadas</CardTitle>
         </CardHeader>
         <CardContent>

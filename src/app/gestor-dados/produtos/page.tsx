@@ -135,6 +135,27 @@ export default function ProdutosPage() {
     setIsDialogOpen(true);
   }
 
+  async function handleCloneProduct(item: ProductRow) {
+    if (!window.confirm(`Deseja clonar o produto "${item.name}"? Uma cópia inativa será criada.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/master-data/products/${item.id}/clone`, { method: "POST" });
+      const payload = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
+
+      if (!response.ok) {
+        window.alert(payload?.message ?? "Falha ao clonar produto.");
+        return;
+      }
+
+      await refresh(true);
+      window.alert(`Produto clonado com sucesso! Código: ${payload?.code}`);
+    } catch {
+      window.alert("Erro inesperado ao clonar produto.");
+    }
+  }
+
   const actions = [
     {
       icon: "view" as const,
@@ -145,6 +166,11 @@ export default function ProdutosPage() {
       icon: "edit" as const,
       label: "Editar",
       onClick: (item: ProductRow) => openProductDialog(item, "edit"),
+    },
+    {
+      icon: "add" as const,
+      label: "Clonar",
+      onClick: (item: ProductRow) => void handleCloneProduct(item),
     },
   ];
 

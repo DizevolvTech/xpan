@@ -9,6 +9,7 @@ export type TenantSummary = {
   slug: string;
   name: string;
   status: TenantStatus;
+  logoUrl?: string | null;
 };
 
 export const MASTER_TENANT_COOKIE_NAME = "da_master_tenant";

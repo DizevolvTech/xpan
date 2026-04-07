@@ -148,8 +148,10 @@ export function getDeliveryDateByStoreRule(
   baseDate: string,
   store: StoreProfile,
   settings: OperationalSettings,
+  productExpeditionLeadDays?: number | null,
 ): string {
-  const calculatedDate = addDays(baseDate, settings.expeditionLeadDays);
+  const leadDays = productExpeditionLeadDays ?? settings.expeditionLeadDays;
+  const calculatedDate = addDays(baseDate, leadDays);
   return moveToNextAllowedWeekday(calculatedDate, getEnabledReceivingDays(store));
 }
 

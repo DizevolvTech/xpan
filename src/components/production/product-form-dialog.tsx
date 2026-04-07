@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
@@ -8,7 +8,6 @@ import { IngredientFormDialog } from "@/components/production/ingredient-form-di
 import { IngredientProfileFields } from "@/components/production/ingredient-profile-fields";
 import { ProductPreparationStagesEditor } from "@/components/production/product-preparation-stages-editor";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
-import { PaginatedSection } from "@/components/shared/paginated-section";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -159,14 +158,22 @@ export function ProductFormDialog({
     isDirty: formDirty,
   });
 
+  // Refs to avoid resetting form state when snapshot refreshes (e.g. after
+  // creating an ingredient inline). The effect below must only re-run when the
+  // dialog opens or the product/mode genuinely changes.
+  const snapshotLinesRef = useRef(snapshot.lines);
+  snapshotLinesRef.current = snapshot.lines;
+  const snapshotSectorsRef = useRef(snapshot.sectors);
+  snapshotSectorsRef.current = snapshot.sectors;
+
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    const nextFormState = buildProductFormState(snapshot.lines, product);
+    const nextFormState = buildProductFormState(snapshotLinesRef.current, product);
     setFormState(nextFormState);
-    setLineDraft(buildLineDraft(snapshot.sectors[0]?.id ?? ""));
+    setLineDraft(buildLineDraft(snapshotSectorsRef.current[0]?.id ?? ""));
     setDraftRecipeSourceId("");
     setDraftRecipeQuantity("");
     setDraftRecipeUnit("Kg");
@@ -181,7 +188,7 @@ export function ProductFormDialog({
     setFormError(null);
     setInvalidFields([]);
     setActiveTab("cadastro");
-  }, [mode, open, product, snapshot.lines, snapshot.sectors]);
+  }, [mode, open, product]);
 
   const sectorNameById = useMemo(
     () => new Map(snapshot.sectors.map((sector) => [sector.id, sector.name])),
@@ -1407,7 +1414,17 @@ export function ProductFormDialog({
                     {recipeSourceOptions.length >= 8 ? (
                       <SearchableSelect
                         value={draftRecipeSourceId}
-                        onValueChange={setDraftRecipeSourceId}
+                        onValueChange={(id) => {
+                          setDraftRecipeSourceId(id);
+                          const source = recipeSourceOptions.find((o) => o.id === id);
+                          if (source?.sourceType === "ingrediente") {
+                            const ingredient = snapshot.ingredients.find((i) => i.id === id);
+                            if (ingredient) setDraftRecipeUnit(ingredient.unit);
+                          } else if (source?.sourceType === "produto") {
+                            const product = snapshot.products.find((p) => p.id === id);
+                            if (product) setDraftRecipeUnit(product.salesUnit);
+                          }
+                        }}
                         options={recipeSourceOptionsForSearch}
                         placeholder="Selecione a referência"
                         searchPlaceholder="Buscar ingrediente ou produto MPI..."
@@ -1416,7 +1433,17 @@ export function ProductFormDialog({
                         description="Busque pelo nome ou código do ingrediente ou produto MPI."
                       />
                     ) : (
-                      <Select value={draftRecipeSourceId} onValueChange={setDraftRecipeSourceId}>
+                      <Select value={draftRecipeSourceId} onValueChange={(id) => {
+                        setDraftRecipeSourceId(id);
+                        const source = recipeSourceOptions.find((o) => o.id === id);
+                        if (source?.sourceType === "ingrediente") {
+                          const ingredient = snapshot.ingredients.find((i) => i.id === id);
+                          if (ingredient) setDraftRecipeUnit(ingredient.unit);
+                        } else if (source?.sourceType === "produto") {
+                          const product = snapshot.products.find((p) => p.id === id);
+                          if (product) setDraftRecipeUnit(product.salesUnit);
+                        }
+                      }}>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione a referência" />
                         </SelectTrigger>
@@ -1470,18 +1497,12 @@ export function ProductFormDialog({
                   </Button>
                 </div>
 
-                <PaginatedSection
-                  items={formState.recipe}
-                  label="itens da receita"
-                  initialPageSize={6}
-                >
-                  {(paginatedRecipe) => (
-                    <div className="overflow-x-auto rounded-xl border border-border/70">
-                      <table className="w-full min-w-[640px] border-collapse">
-                        <thead className="bg-card">
-                          <tr>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                              Referência
+                <div className="overflow-x-auto rounded-xl border border-border/70">
+                  <table className="w-full min-w-[640px] border-collapse">
+                    <thead className="bg-card">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                          Referência
                             </th>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                               Qtd
@@ -1505,7 +1526,7 @@ export function ProductFormDialog({
                               </td>
                             </tr>
                           ) : (
-                            paginatedRecipe.map((item) => (
+                            formState.recipe.map((item) => (
                               <tr key={item.id}>
                                 <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
                                   {item.label}
@@ -1590,9 +1611,7 @@ export function ProductFormDialog({
                           )}
                         </tbody>
                       </table>
-                    </div>
-                  )}
-                </PaginatedSection>
+                </div>
               </section>
 
               <section className="grid gap-4 md:grid-cols-2">

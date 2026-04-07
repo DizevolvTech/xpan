@@ -360,6 +360,22 @@ export async function createStoreOrder(
     supabase,
   });
   const storeDatabaseId = await resolveStoreDatabaseId(input.storeId, supabase);
+
+  // Check for existing active order for the same store + delivery date
+  const existingOrderResult = await supabase
+    .from("store_orders")
+    .select("id, code")
+    .eq("store_id", storeDatabaseId)
+    .eq("delivery_date", orderWindow.deliveryDate)
+    .eq("management_status", "ativo")
+    .maybeSingle();
+
+  if (existingOrderResult.data) {
+    throw new Error(
+      `Já existe um pedido ativo (${existingOrderResult.data.code}) para esta loja na data ${orderWindow.deliveryDate}. Use a opção Editar no pedido existente.`,
+    );
+  }
+
   const legacyId = `order-${crypto.randomUUID()}`;
   const code = await allocateBusinessCode("PD", orderedAt, supabase);
 

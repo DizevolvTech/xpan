@@ -1,0 +1,65 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "CONTEXT7_API_KEY": "ctx7sk-194c38ef-b01e-4493-bcc0-8f637c8b9337"
+      }
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "shadcn@latest",
+        "mcp"
+      ]
+    },
+    "supabase_daniel_augusto": {
+      "command": "/Users/giuseppedangelis/.codex/bin/supabase-daniel-augusto-mcp.sh",
+      "args": []
+    },
+    "supabase_criahub": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_ef3092d3804556fe400d9c00d5df5e5d6c646809",
+        "--project-ref",
+        "gwibmimaquoesgpbdojo"
+      ]
+    },
+    "supabase_artti_captal": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_c3606e8893a13947b6fdf2c87472e77522ed2c52",
+        "--project-ref",
+        "llhnhxnvhzsuyvaqwmgh"
+      ]
+    },
+    "supabase_maquina_vendas": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_5b6a50358bf8f65370937134de48f0dc2126f442",
+        "--project-ref",
+        "pnhpsskftmpgsqrpqaml"
+      ]
+    },
+    "supabase_godoy_prime_2": {
+      "command": "/Users/giuseppedangelis/.codex/bin/supabase-godoy-prime-2-mcp.sh",
+      "args": []
+    }
+  }
+}

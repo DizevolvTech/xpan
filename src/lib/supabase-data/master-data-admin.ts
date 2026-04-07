@@ -62,6 +62,7 @@ export type IngredientInput = Omit<
 export type ProductInput = Omit<ProductionProduct, "id" | "code" | "createdAt" | "updatedAt"> & {
   code?: string;
   externalCode?: string;
+  changeDescription?: string;
 };
 
 export type OperationalSettingsInput = {
@@ -747,6 +748,7 @@ async function replaceProductRecipeItems(
       quantity: item.quantity,
       unit: item.unit,
       sort_order: index,
+      observation: item.observation ?? "",
     })),
   );
 
@@ -805,6 +807,10 @@ function normalizeProductPayload(input: ProductInput) {
       Number.isFinite(input.saleLeadDays) && Number(input.saleLeadDays) > 0
         ? Number(input.saleLeadDays)
         : 1,
+    expedition_lead_days:
+      input.expeditionLeadDays != null && Number.isFinite(input.expeditionLeadDays) && Number(input.expeditionLeadDays) >= 0
+        ? Number(input.expeditionLeadDays)
+        : null,
     unit_profiles: input.unitProfiles,
     packaging_profile: input.isSoldLoose ? null : input.packagingProfile ?? null,
     is_sold_loose: input.isSoldLoose,
@@ -1177,6 +1183,32 @@ export async function updateProduct(
   await replaceProductRecipeItems(String(row.id), input.recipe, supabase);
   await replaceProductPreparationSteps(String(row.id), input.preparationStages, supabase);
 
+  // Record changelog entry if a change description was provided
+  if (input.changeDescription?.trim()) {
+    const versionResult = await supabase
+      .from("product_changelog")
+      .select("version_number")
+      .eq("product_id", productId)
+      .order("version_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextVersion = ((versionResult.data as { version_number: number } | null)?.version_number ?? 0) + 1;
+    const actingProfileName = options.actingProfileId
+      ? ((await supabase.from("profiles").select("name").eq("id", options.actingProfileId).maybeSingle()).data as { name: string } | null)?.name ?? ""
+      : "";
+
+    await supabase.from("product_changelog").insert({
+      tenant_id: row.tenant_id,
+      product_id: productId,
+      version_number: nextVersion,
+      change_description: input.changeDescription.trim(),
+      changed_by_profile_id: options.actingProfileId ?? null,
+      changed_by_name: actingProfileName,
+      snapshot_data: { name: input.name, description: input.description },
+    });
+  }
+
   const affectedOperationalSubcategoryIds = [
     ...new Set(
       [operationalSubcategoryId, nextOperationalSubcategoryId].filter(
@@ -1191,6 +1223,106 @@ export async function updateProduct(
       actingProfileId: options.actingProfileId,
     });
   }
+}
+
+export async function cloneProduct(
+  identifier: string,
+  options: MutationOptions = {},
+): Promise<{ id: string; code: string }> {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const row = await resolveRowByIdentifier("products", identifier, supabase);
+
+  // Generate new code
+  const existingCodesResult = await supabase.from("products").select("code");
+  const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load product codes");
+  const code = buildNextCode(existingCodes.map((r) => r.code), "PR", 5);
+  const legacyId = buildGeneratedLegacyId("product");
+
+  // Copy product (all columns except id, code, legacy_id, external_code, timestamps)
+  const insertResult = await supabase
+    .from("products")
+    .insert({
+      legacy_id: legacyId,
+      code,
+      name: `[Cópia] ${row.name}`,
+      description: row.description,
+      short_name: row.short_name,
+      subcategory_id: row.subcategory_id,
+      operational_subcategory_id: null,
+      external_code: null,
+      active: false,
+      available_for_ordering: false,
+      validity_days: row.validity_days,
+      minimum_production_kg: row.minimum_production_kg,
+      economic_production_kg: row.economic_production_kg,
+      allows_storage: row.allows_storage,
+      production_days: row.production_days,
+      sale_lead_days: row.sale_lead_days,
+      expedition_lead_days: (row as Record<string, unknown>).expedition_lead_days as number | null ?? null,
+      unit_profiles: row.unit_profiles,
+      packaging_profile: row.packaging_profile,
+      is_sold_loose: row.is_sold_loose,
+      preparation_mode: row.preparation_mode,
+      break_percent: row.break_percent,
+      break_stage: row.break_stage,
+      break_comment: row.break_comment,
+      can_be_ingredient: row.can_be_ingredient,
+      ingredient_profile: row.ingredient_profile,
+      is_mpi_ingredient: row.is_mpi_ingredient,
+      weight_label: row.weight_label,
+      production_unit: row.production_unit,
+      sales_unit: row.sales_unit,
+      sales_to_kg_factor: row.sales_to_kg_factor,
+      expedition_unit: row.expedition_unit,
+      expedition_to_kg_factor: row.expedition_to_kg_factor,
+      tenant_id: row.tenant_id,
+    })
+    .select("id")
+    .single();
+
+  const cloned = assertSupabaseResult(insertResult, "Failed to clone product");
+
+  // Copy recipe items
+  const recipeResult = await supabase
+    .from("product_recipe_items")
+    .select("*")
+    .eq("product_id", row.id);
+  const recipeRows = assertSupabaseResult(recipeResult, "Failed to load recipe items for cloning");
+
+  if (recipeRows.length > 0) {
+    const clonedRecipeItems = recipeRows.map((item) => ({
+      product_id: cloned.id,
+      source_type: item.source_type,
+      ingredient_source_id: item.ingredient_source_id,
+      product_source_id: item.product_source_id,
+      label: item.label,
+      quantity: item.quantity,
+      unit: item.unit,
+      sort_order: item.sort_order,
+      tenant_id: item.tenant_id,
+    }));
+    const insertRecipeResult = await supabase.from("product_recipe_items").insert(clonedRecipeItems);
+    assertSupabaseResult(insertRecipeResult, "Failed to clone recipe items");
+  }
+
+  // Copy preparation steps
+  const stepsResult = await supabase
+    .from("product_preparation_steps")
+    .select("*")
+    .eq("product_id", row.id);
+  const stepRows = stepsResult.data ?? [];
+
+  if (stepRows.length > 0) {
+    const clonedSteps = stepRows.map((step) => ({
+      product_id: cloned.id,
+      stage_key: step.stage_key,
+      sort_order: step.sort_order,
+      tenant_id: step.tenant_id,
+    }));
+    await supabase.from("product_preparation_steps").insert(clonedSteps);
+  }
+
+  return { id: legacyId, code };
 }
 
 export async function updateScheduleLineStatus(

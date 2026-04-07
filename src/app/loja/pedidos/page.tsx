@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Clock3, Package, Plus, ShoppingCart, Truck } from "lucide-react";
 
@@ -54,7 +54,7 @@ import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
-import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderSummaries } from "@/lib/use-store-orders";
+import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
 type SelectedOrderItemSummary = {
@@ -114,17 +114,28 @@ function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
 
-function getMinimumProductionAlert(product: StoreOrderCatalogProduct, quantity: number) {
+function getMinimumProductionAlert(
+  product: StoreOrderCatalogProduct,
+  quantity: number,
+  aggregatedKgAllStores?: number,
+) {
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return null;
   }
 
-  const totalKg = Number((quantity * product.salesToKgFactor).toFixed(3));
-  if (totalKg >= product.minimumProductionKg) {
+  const thisStoreKg = Number((quantity * product.salesToKgFactor).toFixed(3));
+  const consolidatedKg = (aggregatedKgAllStores ?? 0) + thisStoreKg;
+
+  if (consolidatedKg >= product.minimumProductionKg) {
     return null;
   }
 
-  return `Pedido abaixo do mínimo produtivo: ${formatKgLabel(totalKg)} informados para mínimo de ${formatKgLabel(product.minimumProductionKg)}.`;
+  const consolidatedNote =
+    aggregatedKgAllStores != null && aggregatedKgAllStores > 0
+      ? ` (consolidado todas as lojas: ${formatKgLabel(consolidatedKg)})`
+      : "";
+
+  return `Abaixo do mínimo produtivo: ${formatKgLabel(thisStoreKg)} informados para mínimo de ${formatKgLabel(product.minimumProductionKg)}${consolidatedNote}.`;
 }
 
 function buildOrderPrintPath(orderId: string, referenceDate: string) {
@@ -148,6 +159,7 @@ function formatRequestedQuantity(quantity: number, unitKind: StoreOrderCatalogPr
 
 export default function PedidosLojaPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { profile } = useCurrentProfile();
   const { snapshot } = useMasterDataSnapshot();
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
@@ -158,10 +170,12 @@ export default function PedidosLojaPage() {
   const [catalogSearchTerm, setCatalogSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [orderNote, setOrderNote] = useState("");
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [aggregatedKgByProduct, setAggregatedKgByProduct] = useState<Map<string, number>>(new Map());
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
-  const { orders: storeOrderSummaries, refresh: refreshStoreOrders } = useStoreOrderSummaries(anchorDate);
+  const { orders: storeOrderSummaries, isLoading: isLoadingOrders, refresh: refreshStoreOrders } = useStoreOrderSummaries(anchorDate);
   const activeStores = useMemo(
     () => snapshot.stores.filter((store) => store.status === "ativo"),
     [snapshot.stores],
@@ -175,15 +189,36 @@ export default function PedidosLojaPage() {
   } = useStoreScope(activeStores, profile?.allowedStoreIds);
   const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso);
   const { occurrences } = useStoreOccurrences(selectedStoreId);
-  const { createOrder, isSubmitting } = useCreateStoreOrder(() => {
+  const { createOrder, isSubmitting: isCreating } = useCreateStoreOrder(() => {
     void refreshStoreOrders();
     setIsNewOrderOpen(false);
+    setEditingOrderId(null);
     setOrderNote("");
   });
+  const { updateOrder, isSubmitting: isUpdating } = useUpdateStoreOrder(() => {
+    void refreshStoreOrders();
+    setIsNewOrderOpen(false);
+    setEditingOrderId(null);
+    setOrderNote("");
+  });
+  const isSubmitting = isCreating || isUpdating;
+  const { order: editingOrderDetail, isLoading: isLoadingEditOrder } = useStoreOrderDetail(editingOrderId ?? "", anchorDate);
+  const isEditOrderLoading = Boolean(editingOrderId) && isLoadingEditOrder;
 
   useEffect(() => {
     setOrderProducts(catalog);
   }, [catalog]);
+
+  // Open edit dialog when redirected from detail page with ?editOrder=id
+  useEffect(() => {
+    const editOrderParam = searchParams.get("editOrder");
+    if (editOrderParam && !isNewOrderOpen) {
+      setEditingOrderId(editOrderParam);
+      setIsNewOrderOpen(true);
+      router.replace("/loja/pedidos");
+    }
+  }, [searchParams, isNewOrderOpen, router]);
+
   const effectiveBaseDateKey = useMemo(() => {
     return selectedStore
       ? getOperationalBaseDateByStoreRule(orderedAtIso, selectedStore, snapshot.operationalSettings)
@@ -202,7 +237,48 @@ export default function PedidosLojaPage() {
     [effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
   );
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
+
+  // Fetch aggregated order quantities from all stores for the delivery date
+  useEffect(() => {
+    if (!deliveryDateKey || !selectedStore) {
+      setAggregatedKgByProduct(new Map());
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(`/api/store-orders/aggregated-quantities?deliveryDate=${deliveryDateKey}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows: Array<{ productId: string; totalKg: number }>) => {
+        if (cancelled) return;
+        setAggregatedKgByProduct(new Map(rows.map((r) => [r.productId, r.totalKg])));
+      })
+      .catch(() => {
+        if (!cancelled) setAggregatedKgByProduct(new Map());
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deliveryDateKey, selectedStore]);
+
   const highlightedDay = useMemo(() => getDayFieldByDate(deliveryDate), [deliveryDate]);
+
+  // Pre-fill the order grid when opening an existing order for editing
+  useEffect(() => {
+    if (!editingOrderDetail || !isNewOrderOpen || catalog.length === 0) return;
+
+    setOrderNote(editingOrderDetail.note ?? "");
+    setOrderProducts((currentProducts) =>
+      currentProducts.map((product) => {
+        const existingItem = editingOrderDetail.items.find((item) => item.productId === product.productId);
+        if (!existingItem) return product;
+
+        return { ...product, [highlightedDay]: existingItem.quantity };
+      }),
+    );
+  }, [editingOrderDetail, isNewOrderOpen, catalog.length, highlightedDay]);
+
   const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
   const deliveryDateLabel = useMemo(() => formatDateWithWeekday(deliveryDate), [deliveryDate]);
   const baseOperationalDateLabel = useMemo(
@@ -305,6 +381,8 @@ export default function PedidosLojaPage() {
     const term = catalogSearchTerm.trim().toLowerCase();
 
     return orderProducts.filter((item) => {
+      if (!item.available) return false;
+
       const matchesSearch =
         term.length === 0 ||
         item.code.toLowerCase().includes(term) ||
@@ -327,13 +405,17 @@ export default function PedidosLojaPage() {
           quantity: product[highlightedDay],
           unit: product.unit,
           unitKind: product.unitKind,
-          minimumProductionAlert: getMinimumProductionAlert(product, product[highlightedDay]),
+          minimumProductionAlert: getMinimumProductionAlert(
+            product,
+            product[highlightedDay],
+            aggregatedKgByProduct.get(product.productId),
+          ),
           productionDate: product.productionDate,
           deliveryDate: product.deliveryDate,
           saleDate: product.saleDate,
         }))
         .sort((left, right) => left.name.localeCompare(right.name)),
-    [highlightedDay, orderProducts],
+    [aggregatedKgByProduct, highlightedDay, orderProducts],
   );
   const selectedProductionSummary = useMemo(
     () =>
@@ -381,17 +463,6 @@ export default function PedidosLojaPage() {
         tone: "info" as const,
       },
       {
-        key: "production",
-        label: "Produzir em",
-        value: selectedProductionSummary.value,
-        helper:
-          selectedOrderItems.length > 0
-            ? selectedProductionSummary.helper ??
-              "A produção sempre precisa caber antes do dia prometido para expedir e entregar."
-            : selectedProductionSummary.helper,
-        tone: "warning" as const,
-      },
-      {
         key: "delivery",
         label: "Receber na loja",
         value: deliveryDateLabel,
@@ -417,8 +488,6 @@ export default function PedidosLojaPage() {
       orderCalendarDateKey,
       orderDateLabel,
       selectedOrderItems.length,
-      selectedProductionSummary.helper,
-      selectedProductionSummary.value,
       selectedSaleSummary.helper,
       selectedSaleSummary.value,
       selectedStore,
@@ -457,11 +526,21 @@ export default function PedidosLojaPage() {
     { key: "store", header: "Loja solicitante", sortable: true },
   ];
 
+  function handleOpenEditOrder(order: StoreOrderSummary) {
+    setEditingOrderId(order.id);
+    setIsNewOrderOpen(true);
+  }
+
   const actions = [
     {
       icon: "view" as const,
       label: "Visualizar",
       onClick: (item: StoreOrderSummary) => router.push(buildOrderDetailPath(item.id, anchorDate)),
+    },
+    {
+      icon: "edit" as const,
+      label: "Editar pedido",
+      onClick: (item: StoreOrderSummary) => handleOpenEditOrder(item),
     },
     {
       icon: "print" as const,
@@ -511,6 +590,7 @@ export default function PedidosLojaPage() {
 
     if (!open) {
       setIsOrderConfirmationOpen(false);
+      setEditingOrderId(null);
       setOrderNote("");
       setOrderProducts(catalog);
       clearCatalogFilters();
@@ -527,6 +607,36 @@ export default function PedidosLojaPage() {
       return;
     }
 
+    // Warn when a filter is active and other categories have zero-quantity items
+    if (categoryFilter !== "all" || catalogSearchTerm.trim().length > 0) {
+      const filledCategories = new Set(selectedOrderItems.map((item) => item.category));
+      const allCategories = new Set(orderProducts.filter((p) => p.available).map((p) => p.category));
+      const emptyCategories = [...allCategories].filter((cat) => !filledCategories.has(cat));
+
+      if (emptyCategories.length > 0) {
+        const proceed = window.confirm(
+          `Você está com filtro ativo. As seguintes categorias não possuem itens no pedido:\n\n• ${emptyCategories.join("\n• ")}\n\nDeseja finalizar assim mesmo?`,
+        );
+
+        if (!proceed) {
+          return;
+        }
+      }
+    }
+
+    // Warn about items below minimum production lot
+    const itemsBelowMinimum = selectedOrderItems.filter((item) => item.minimumProductionAlert);
+    if (itemsBelowMinimum.length > 0) {
+      const names = itemsBelowMinimum.map((item) => `• ${item.code} — ${item.name}`).join("\n");
+      const proceed = window.confirm(
+        `Os seguintes itens estão abaixo do lote mínimo de produção:\n\n${names}\n\nA fábrica pode não produzir itens abaixo do mínimo. Deseja continuar mesmo assim?`,
+      );
+
+      if (!proceed) {
+        return;
+      }
+    }
+
     setIsOrderConfirmationOpen(true);
   }
 
@@ -541,19 +651,38 @@ export default function PedidosLojaPage() {
       return;
     }
 
-    await createOrder({
-      storeId: selectedStore.id,
-      note: orderNote.trim(),
-      orderedAt: referenceDate.toISOString(),
-      items: selectedOrderItems.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        unit: item.unit,
-      })),
-    });
-    setIsOrderConfirmationOpen(false);
-    setOrderProducts(catalog);
-    setOrderNote("");
+    const orderItems = selectedOrderItems.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      unit: item.unit,
+    }));
+
+    try {
+      if (editingOrderId) {
+        await updateOrder(editingOrderId, {
+          note: orderNote.trim(),
+          items: orderItems,
+        });
+      } else {
+        await createOrder({
+          storeId: selectedStore.id,
+          note: orderNote.trim(),
+          orderedAt: referenceDate.toISOString(),
+          items: orderItems,
+        });
+      }
+      setIsOrderConfirmationOpen(false);
+      setEditingOrderId(null);
+      setOrderProducts(catalog);
+      setOrderNote("");
+    } catch (submitError) {
+      setIsOrderConfirmationOpen(false);
+      window.alert(
+        submitError instanceof Error
+          ? submitError.message
+          : editingOrderId ? "Falha ao atualizar pedido." : "Falha ao criar pedido. Tente novamente.",
+      );
+    }
   }
 
   return (
@@ -634,10 +763,17 @@ export default function PedidosLojaPage() {
             </DialogTrigger>
             <DialogContent size="full">
               <DialogHeader>
-                <DialogTitle>Pedido Diário</DialogTitle>
+                <DialogTitle>{editingOrderId ? "Editar Pedido" : "Pedido Diário"}</DialogTitle>
                 <DialogDescription>Faça seu pedido de produtos</DialogDescription>
               </DialogHeader>
 
+              {isEditOrderLoading ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-20">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-foreground" />
+                  <p className="text-sm text-muted-foreground">Carregando dados do pedido…</p>
+                </div>
+              ) : (
+              <>
               <div className="space-y-6 py-2">
                 {availableStores.length === 0 ? (
                   <div className="rounded-lg border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
@@ -728,10 +864,10 @@ export default function PedidosLojaPage() {
                   <OperationalSequenceCard
                     className="mt-4"
                     eyebrow="Leitura simples do cronograma"
-                    title="O sistema sempre liga pedido, produção, entrega e venda"
-                    description="Quem lança o pedido não precisa pensar em engenharia de produção: acompanhe só a sequência abaixo."
+                    title="O sistema liga pedido, entrega e previsão de venda"
+                    description="Acompanhe a sequência abaixo para saber quando os produtos chegarão na loja e quando poderão ser vendidos."
                     steps={orderSequenceSteps}
-                    footer="A produção sempre precisa acontecer até a data prometida para expedir e entregar. Se não existir um dia compatível nessa janela, o item fica bloqueado no catálogo."
+                    footer="Se não existir disponibilidade na janela de entrega, o item fica bloqueado no catálogo."
                   />
                 </div>
 
@@ -782,7 +918,7 @@ export default function PedidosLojaPage() {
 
                 <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
                   {(paginatedProducts) => (
-                    <div className="max-h-[420px] overflow-auto rounded-lg border border-border/80">
+                    <div className="max-h-[640px] overflow-auto rounded-lg border border-border/80">
                       <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
                         <thead className="sticky top-0 z-10">
                           <tr className="bg-secondary/85">
@@ -832,12 +968,6 @@ export default function PedidosLojaPage() {
                                   <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
                                     <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
                                       Pedido: {orderDateLabel}
-                                    </span>
-                                    <span className="rounded-full border border-info/35 bg-info/10 px-2 py-1 text-info-foreground">
-                                      Produzir:{" "}
-                                      {product.productionDate
-                                        ? formatDateKeyWithWeekday(product.productionDate)
-                                        : "sem dia compatível"}
                                     </span>
                                     <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
                                       Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
@@ -890,9 +1020,9 @@ export default function PedidosLojaPage() {
                                       Bloqueado nesta janela
                                     </div>
                                   )}
-                                  {product.available && getMinimumProductionAlert(product, product[highlightedDay]) ? (
+                                  {product.available && getMinimumProductionAlert(product, product[highlightedDay], aggregatedKgByProduct.get(product.productId)) ? (
                                     <div className="mt-1 text-xs font-normal text-warning-foreground">
-                                      {getMinimumProductionAlert(product, product[highlightedDay])}
+                                      {getMinimumProductionAlert(product, product[highlightedDay], aggregatedKgByProduct.get(product.productId))}
                                     </div>
                                   ) : null}
                                 </td>
@@ -929,12 +1059,14 @@ export default function PedidosLojaPage() {
                   Revisar Pedido
                 </Button>
               </DialogFooter>
+              </>
+              )}
             </DialogContent>
           </Dialog>
           <Dialog open={isOrderConfirmationOpen} onOpenChange={setIsOrderConfirmationOpen}>
             <DialogContent size="3xl">
               <DialogHeader>
-                <DialogTitle>Confirmar pedido</DialogTitle>
+                <DialogTitle>{editingOrderId ? "Confirmar alterações" : "Confirmar pedido"}</DialogTitle>
                 <DialogDescription>
                   Revise todos os itens e quantidades antes de enviar o pedido para a operação.
                 </DialogDescription>
@@ -959,7 +1091,7 @@ export default function PedidosLojaPage() {
                       Itens selecionados
                     </p>
                     <p className="mt-1 text-sm font-semibold text-foreground">
-                      {selectedOrderItems.length} item{selectedOrderItems.length === 1 ? "" : "ns"}
+                      {selectedOrderItems.length} {selectedOrderItems.length === 1 ? "item" : "itens"}
                     </p>
                   </div>
                 </div>
@@ -1036,7 +1168,7 @@ export default function PedidosLojaPage() {
                   onClick={() => void handleConfirmOrderSubmission()}
                   disabled={isSubmitting || !selectedStore || selectedOrderItems.length === 0}
                 >
-                  {isSubmitting ? "Confirmando..." : "Confirmar pedido"}
+                  {isSubmitting ? "Salvando..." : editingOrderId ? "Salvar alterações" : "Confirmar pedido"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1056,7 +1188,8 @@ export default function PedidosLojaPage() {
             actions={actions}
             keyField="id"
             onRowClick={(item) => router.push(buildOrderDetailPath(item.id, anchorDate))}
-            emptyMessage="Nenhum pedido encontrado"
+            isLoading={isLoadingOrders}
+            emptyMessage={isLoadingOrders ? "Carregando pedidos…" : "Nenhum pedido encontrado"}
             stickyHeader
           />
         </CardContent>

@@ -35,6 +35,7 @@ function mapTenantSummary(row: TenantRow): TenantSummary {
     slug: row.slug,
     name: row.name,
     status: row.status,
+    logoUrl: (row as Record<string, unknown>).logo_url as string | null ?? null,
   };
 }
 

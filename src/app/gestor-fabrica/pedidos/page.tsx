@@ -347,15 +347,12 @@ export default function PedidosFabricaPage() {
           />
 
           <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[1280px] border-collapse">
+            <table className="w-full min-w-[800px] border-collapse">
               <thead className="bg-panel">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Pedido</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produtos</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Entrega prevista</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
                   <th className="w-px whitespace-nowrap px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Ações</th>
                 </tr>
@@ -383,21 +380,7 @@ export default function PedidosFabricaPage() {
                           <span className="inline-flex whitespace-nowrap rounded-md bg-warning/25 px-2 py-1 text-xs font-semibold text-warning-foreground">
                             {order.deliveryDateLabel}
                           </span>
-                        </td>
-                        <td className="min-w-[120px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          {order.productsCount} produtos
-                        </td>
-                        <td className="min-w-[120px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgLabel(order.totalKg)}</td>
-                        <td className="min-w-[240px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <div className="min-w-[220px]">
-                            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                              <span>{order.workflowProgress.toFixed(1)}%</span>
-                              <span>{order.releasedToProduction ? "Liberado" : "Aguardando liberação"}</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-panel">
-                              <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(order.workflowProgress, 100)}%` }} />
-                            </div>
-                          </div>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{order.dPlusLabel}</p>
                         </td>
                         <td className="min-w-[190px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <StatusBadge status={order.status} />
@@ -485,6 +468,12 @@ export default function PedidosFabricaPage() {
                                 >
                                   <span>Itens originais</span>
                                   <span className="text-xs text-muted-foreground">{items.length}</span>
+                                </Button>
+                                <Button asChild type="button" variant="default" className="justify-between sm:col-span-2 xl:col-span-1">
+                                  <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>
+                                    <span>Auditar pedido completo</span>
+                                    <ArrowRight className="size-4" />
+                                  </Link>
                                 </Button>
                               </div>
                             </div>

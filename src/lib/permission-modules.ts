@@ -480,19 +480,25 @@ export function buildDefaultPermissions(role: UserRole): PermissionMap {
   return permissions;
 }
 
+/** Groups each role is allowed to see in navigation / permissions. */
+const roleAllowedGroups: Record<UserRole, readonly PermissionGroup[]> = {
+  "administrador-master": ["administrador-master"],
+  administrador: ["administrador", "gestor-dados", "gestor-fabrica", "chao-fabrica", "loja"],
+  "gestor-dados": ["gestor-dados"],
+  "gestor-fabrica": ["gestor-fabrica", "chao-fabrica"],
+  "chao-fabrica": ["chao-fabrica"],
+  loja: ["loja"],
+};
+
 export function sanitizePermissionsForRole(
   permissions: PermissionMap,
   role: UserRole,
 ): PermissionMap {
   const nextPermissions = { ...permissions };
+  const allowed = roleAllowedGroups[role];
 
   permissionModules.forEach((module) => {
-    if (role === "administrador-master" && module.group !== "administrador-master") {
-      nextPermissions[module.id] = "sem_acesso";
-      return;
-    }
-
-    if (role !== "administrador-master" && module.group === "administrador-master") {
+    if (!allowed.includes(module.group)) {
       nextPermissions[module.id] = "sem_acesso";
     }
   });

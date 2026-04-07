@@ -154,6 +154,27 @@ function SidebarNav({
         </Link>
       </div>
 
+      {!collapsed && navigationContext.selectedTenant ? (
+        <div className="border-b border-sidebar-border/80 px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            {navigationContext.selectedTenant.logoUrl ? (
+              <img
+                src={navigationContext.selectedTenant.logoUrl}
+                alt={navigationContext.selectedTenant.name}
+                className="h-8 w-8 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-accent/60 text-xs font-bold text-foreground/70">
+                {navigationContext.selectedTenant.name.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <p className="min-w-0 truncate text-sm font-medium text-foreground/85">
+              {navigationContext.selectedTenant.name}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {navigationContext.sections.map((section, sectionIndex) => (
           <div

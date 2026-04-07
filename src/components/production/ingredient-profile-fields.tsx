@@ -47,14 +47,14 @@ export function IngredientProfileFields({
   onChange,
   title,
   description,
-  metadataLabel = "Metadados",
+  metadataLabel = "Lembretes",
   observationLabel = "Observação",
-  metadataPlaceholder,
+  metadataPlaceholder = "Notas rápidas sobre este ingrediente",
   observationPlaceholder,
   showPurchaseFields = false,
   purchaseUnitOptions,
   purchaseUnitLabel = "Unidade de compra",
-  purchaseFactorLabel = "Conversão compra -> consumo",
+  purchaseFactorLabel = "Fator de conversão (compra → consumo)",
   purchaseHelperText,
   showWeightKg = true,
   disabled = false,
@@ -137,9 +137,10 @@ export function IngredientProfileFields({
               disabled={disabled}
               onChange={(event) => onChange({ purchaseToConsumptionFactor: Number(event.target.value) })}
             />
-            {purchaseHelperText ? (
-              <p className="text-xs text-muted-foreground">{purchaseHelperText}</p>
-            ) : null}
+            <p className="text-xs text-muted-foreground">
+              {purchaseHelperText
+                ?? `1 ${getOperationalUnitLabel(profile.purchaseUnit ?? profile.unit)} = ${profile.purchaseToConsumptionFactor ?? 1} ${getOperationalUnitLabel(profile.unit)}. Ex: ovos — 1 Dz = 600g; óleo — 1 Un(900ml) = 0.810 Kg.`}
+            </p>
           </div>
         ) : null}
 

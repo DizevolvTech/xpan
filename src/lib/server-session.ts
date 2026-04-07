@@ -122,7 +122,16 @@ export async function resolveServerAccess(
       effectiveTenantId: managedUser.tenantId,
       accessMode: "tenant",
       permissions: managedUser.permissions,
-      selectedTenant: null,
+      selectedTenant: tenant
+        ? {
+            id: tenant.id,
+            legacyId: tenant.legacyId,
+            name: tenant.name,
+            slug: tenant.slug,
+            status: tenant.status,
+            logoUrl: tenant.logoUrl ?? null,
+          }
+        : null,
     };
   }
 
@@ -138,6 +147,7 @@ export async function resolveServerAccess(
         name: selectedTenantRecord.name,
         slug: selectedTenantRecord.slug,
         status: selectedTenantRecord.status,
+        logoUrl: selectedTenantRecord.logoUrl ?? null,
       }
     : null;
   const masterAccessContext = resolveMasterAccessContext(managedUser, selectedTenant);

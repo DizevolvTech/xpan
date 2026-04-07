@@ -22,8 +22,10 @@ import {
 } from "@/lib/supabase-data/common";
 import {
   buildDefaultPermissions,
+  permissionLevelRank,
   permissionModules,
   sanitizePermissionsForRole,
+  type PermissionLevel,
   type PermissionMap,
   type PermissionModuleId,
 } from "@/lib/permission-modules";
@@ -58,7 +60,21 @@ function buildPermissionMap(
   const permissions = buildDefaultPermissions(role);
 
   rows.forEach((row) => {
-    permissions[row.module_key as PermissionModuleId] = row.access_level;
+    const moduleId = row.module_key as PermissionModuleId;
+    const storedLevel = row.access_level as PermissionLevel;
+    const defaultLevel = permissions[moduleId];
+
+    // For the administrador role, stored permissions must never downgrade below
+    // the role default.  This prevents stale DB rows (created before a module
+    // existed, or manually set too low) from blocking admin access.
+    if (
+      role === "administrador" &&
+      permissionLevelRank[storedLevel] < permissionLevelRank[defaultLevel ?? "sem_acesso"]
+    ) {
+      return;
+    }
+
+    permissions[moduleId] = storedLevel;
   });
 
   return sanitizePermissionsForRole(permissions, role);

@@ -185,7 +185,7 @@ export default function LinhaProducaoDetailsPage() {
   }
 
   const handleAssignProduct = async (productId: string) => {
-    if (!line) {
+    if (!line || isSubmittingProductId !== null) {
       return;
     }
 
@@ -219,7 +219,7 @@ export default function LinhaProducaoDetailsPage() {
   };
 
   const handleRemoveProduct = async (productId: string) => {
-    if (!line) {
+    if (!line || isSubmittingProductId !== null) {
       return;
     }
 
@@ -455,7 +455,7 @@ export default function LinhaProducaoDetailsPage() {
                           size="sm"
                           variant="outline"
                           className="gap-1.5"
-                          disabled={isBusy}
+                          disabled={isSubmittingProductId !== null}
                           onClick={() => void handleAssignProduct(product.id)}
                         >
                           <Plus className="size-4" />

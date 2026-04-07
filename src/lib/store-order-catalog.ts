@@ -70,7 +70,6 @@ export function buildStoreOrderCatalog(
   const sectorById = new Map(snapshot.sectors.map((sector) => [sector.id, sector]));
   const lineById = new Map(snapshot.lines.map((line) => [line.id, line]));
   const activeScheduleByLineId = buildLatestScheduleByLineId(snapshot.schedules, "ativo");
-  const pendingScheduleByLineId = buildLatestScheduleByLineId(snapshot.schedules, "pendente");
   const entries = new Map<string, ApprovedCatalogEntry>();
 
   snapshot.products.forEach((product) => {
@@ -88,10 +87,10 @@ export function buildStoreOrderCatalog(
       return;
     }
 
-    const pendingSchedule = pendingScheduleByLineId.get(line.id) ?? null;
     const activeSchedule = activeScheduleByLineId.get(line.id) ?? null;
-    const schedule = pendingSchedule ?? activeSchedule;
-    const isAwaitingAudit = Boolean(pendingSchedule);
+    // Always use the active schedule for availability — a pending revision
+    // should not block products that are already in the active schedule.
+    const schedule = activeSchedule;
     const scheduleItem = schedule?.items.find((item) => item.productId === product.id) ?? null;
     const orderWindow = getOperationalOrderWindow(options.orderedAt, store, snapshot.operationalSettings);
     const availability = schedule
@@ -137,12 +136,10 @@ export function buildStoreOrderCatalog(
       deliveryDate: availability?.deliveryDate ?? orderWindow.deliveryDate,
       productionDate: availability?.productionDate ?? timeline.productionDate,
       saleDate: timeline.saleDate,
-      available: isAwaitingAudit ? false : availability?.available ?? false,
-      blockedReason: isAwaitingAudit
-        ? "Linha aguardando auditoria do cronograma."
-        : availability
-          ? availability.blockedReason
-          : "Linha de produção sem cronograma ativo.",
+      available: availability?.available ?? false,
+      blockedReason: availability
+        ? availability.blockedReason
+        : "Linha de produção sem cronograma ativo.",
     });
   });
 

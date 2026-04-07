@@ -36,6 +36,7 @@ type LinhaRow = ProductionLine & {
   productCount: number;
   masterProductCount: number;
   pendingAudits: number;
+  hasActiveSchedule: boolean;
 };
 
 type SubcategoryFormState = {
@@ -72,6 +73,9 @@ export default function LinhasProducaoPage() {
   const [formBaseline, setFormBaseline] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState({ name: "", responsible: "" });
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const formDirty = isDialogOpen && JSON.stringify(formState) !== formBaseline;
   const formGuard = useUnsavedChangesGuard({
     enabled: isDialogOpen,
@@ -97,6 +101,9 @@ export default function LinhasProducaoPage() {
         pendingAudits: snapshot.schedules.filter(
           (schedule) => schedule.lineId === line.id && schedule.status === "pendente",
         ).length,
+        hasActiveSchedule: snapshot.schedules.some(
+          (schedule) => schedule.lineId === line.id && schedule.status === "ativo",
+        ),
       })),
     [sectorNameById, snapshot.lines, snapshot.products, snapshot.schedules],
   );
@@ -162,7 +169,17 @@ export default function LinhasProducaoPage() {
     {
       key: "status",
       header: "Status",
-      render: (item: LinhaRow) => <StatusBadge status={item.status} />,
+      render: (item: LinhaRow) => (
+        <div className="space-y-1">
+          <StatusBadge status={item.status} />
+          {item.status === "ativo" && !item.hasActiveSchedule && (
+            <span className="block text-xs font-medium text-danger-foreground">Sem LP aprovada</span>
+          )}
+          {item.status === "ativo" && item.hasActiveSchedule && item.pendingAudits > 0 && (
+            <span className="block text-xs font-medium text-warning-foreground">LP em revisão</span>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -350,23 +367,37 @@ export default function LinhasProducaoPage() {
             </div>
             <div className="grid gap-2">
               <Label>Categoria *</Label>
-              <Select
-                value={formState.sectorId}
-                onValueChange={(value) =>
-                  setFormState((current) => ({ ...current, sectorId: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {snapshot.sectors.map((sector) => (
-                    <SelectItem key={sector.id} value={sector.id}>
-                      {sector.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select
+                  value={formState.sectorId}
+                  onValueChange={(value) =>
+                    setFormState((current) => ({ ...current, sectorId: value }))
+                  }
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {snapshot.sectors.map((sector) => (
+                      <SelectItem key={sector.id} value={sector.id}>
+                        {sector.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Criar nova categoria"
+                  onClick={() => {
+                    setCategoryDraft({ name: "", responsible: "" });
+                    setIsCategoryDialogOpen(true);
+                  }}
+                >
+                  <Plus className="size-4" />
+                </Button>
+              </div>
             </div>
             <div className="grid gap-2">
               <Label>Tipo *</Label>
@@ -435,6 +466,97 @@ export default function LinhasProducaoPage() {
             </Button>
             <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
               {editingLine ? "Salvar" : "Cadastrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nova categoria</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>Nome da categoria *</Label>
+              <Input
+                value={categoryDraft.name}
+                onChange={(e) =>
+                  setCategoryDraft((c) => ({ ...c, name: e.target.value }))
+                }
+                placeholder="Ex: Panificação, Confeitaria..."
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Responsável *</Label>
+              <Input
+                value={categoryDraft.responsible}
+                onChange={(e) =>
+                  setCategoryDraft((c) => ({ ...c, responsible: e.target.value }))
+                }
+                placeholder="Nome do responsável"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCategoryDialogOpen(false)}
+              disabled={isCreatingCategory}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                !categoryDraft.name.trim() ||
+                !categoryDraft.responsible.trim() ||
+                isCreatingCategory
+              }
+              onClick={async () => {
+                setIsCreatingCategory(true);
+                try {
+                  const res = await fetch("/api/master-data/categories", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      name: categoryDraft.name.trim(),
+                      responsible: categoryDraft.responsible.trim(),
+                    }),
+                  });
+
+                  if (!res.ok) {
+                    const body = (await res.json().catch(() => null)) as {
+                      message?: string;
+                    } | null;
+                    throw new Error(body?.message ?? "Falha ao criar categoria");
+                  }
+
+                  const created = (await res.json()) as { id: string };
+                  const nextSnapshot = await refresh();
+                  const newSector = nextSnapshot.sectors.find(
+                    (s) => s.id === created.id || s.name === categoryDraft.name.trim(),
+                  );
+
+                  if (newSector) {
+                    setFormState((current) => ({
+                      ...current,
+                      sectorId: newSector.id,
+                    }));
+                  }
+
+                  setIsCategoryDialogOpen(false);
+                } catch (err) {
+                  window.alert(
+                    err instanceof Error ? err.message : "Falha ao criar categoria",
+                  );
+                } finally {
+                  setIsCreatingCategory(false);
+                }
+              }}
+            >
+              {isCreatingCategory ? "Criando..." : "Criar categoria"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -95,7 +95,7 @@ export default function PedidoLojaDetailsPage() {
   const searchParams = useSearchParams();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { order, refresh } = useStoreOrderDetail(orderId, referenceDate);
+  const { order, isLoading: isLoadingOrder, refresh } = useStoreOrderDetail(orderId, referenceDate);
   const { catalog } = useStoreOrderCatalog(order?.storeId ?? "", order?.orderedAtIso ?? "");
   const { updateOrder, isSubmitting: isUpdating } = useUpdateStoreOrder(() => {
     void refresh();
@@ -194,6 +194,35 @@ export default function PedidoLojaDetailsPage() {
       return;
     }
 
+    // Check minimum production lot for each item
+    const itemsBelowMinimum: string[] = [];
+
+    items.forEach((item) => {
+      const catalogEntry = catalog.find((c) => c.productId === item.productId);
+      const draftItem = draftAddedItems.find((d) => d.productId === item.productId);
+
+      if (!catalogEntry) return;
+
+      const factor = catalogEntry.salesToKgFactor;
+      const minKg = catalogEntry.minimumProductionKg;
+      const requestedKg = Number((item.quantity * factor).toFixed(3));
+
+      if (minKg > 0 && requestedKg < minKg) {
+        const label = catalogEntry.name ?? draftItem?.name ?? item.productId;
+        itemsBelowMinimum.push(`• ${label}: ${formatKgLabel(requestedKg)} (mín. ${formatKgLabel(minKg)})`);
+      }
+    });
+
+    if (itemsBelowMinimum.length > 0) {
+      const proceed = window.confirm(
+        `Os seguintes itens estão abaixo do lote mínimo de produção:\n\n${itemsBelowMinimum.join("\n")}\n\nA fábrica pode não produzir itens abaixo do mínimo. Deseja salvar mesmo assim?`,
+      );
+
+      if (!proceed) {
+        return;
+      }
+    }
+
     await updateOrder(order.id, {
       note: draftNote,
       items,
@@ -261,8 +290,8 @@ export default function PedidoLojaDetailsPage() {
   if (!order) {
     return (
       <PageLayout
-        title="Pedido não encontrado"
-        description="Não foi possível localizar o pedido solicitado."
+        title={isLoadingOrder ? "Carregando pedido…" : "Pedido não encontrado"}
+        description={isLoadingOrder ? "" : "Não foi possível localizar o pedido solicitado."}
         badge="Loja"
         breadcrumbs={[
           { label: "Loja", href: "/loja" },
@@ -280,7 +309,9 @@ export default function PedidoLojaDetailsPage() {
       >
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Verifique se o pedido ainda existe na lista e tente novamente.
+            {isLoadingOrder
+              ? "Buscando dados do pedido…"
+              : "Verifique se o pedido ainda existe na lista e tente novamente."}
           </CardContent>
         </Card>
       </PageLayout>
@@ -336,7 +367,7 @@ export default function PedidoLojaDetailsPage() {
                 </Button>
               </>
             ) : (
-              <Button type="button" variant="outline" onClick={startEditing}>
+              <Button type="button" variant="outline" onClick={() => router.push(`/loja/pedidos?editOrder=${order.id}`)}>
                 <PencilLine className="size-4" />
                 Editar pedido
               </Button>

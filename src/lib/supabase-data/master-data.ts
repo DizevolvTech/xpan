@@ -298,6 +298,7 @@ async function loadMasterDataSnapshot(
       label: row.label,
       quantity: Number(row.quantity),
       unit: row.unit as ProductionProduct["recipe"][number]["unit"],
+      observation: (row as Record<string, unknown>).observation as string ?? "",
     });
     acc.set(key, current);
     return acc;
@@ -334,6 +335,9 @@ async function loadMasterDataSnapshot(
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
     saleLeadDays: Number(row.sale_lead_days ?? 1) > 0 ? Number(row.sale_lead_days ?? 1) : 1,
+    expeditionLeadDays: (row as Record<string, unknown>).expedition_lead_days != null
+      ? Number((row as Record<string, unknown>).expedition_lead_days)
+      : null,
     unitProfiles: {
       sales: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).sales),
       production: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).production),
