@@ -1302,7 +1302,9 @@ export async function cloneProduct(
       tenant_id: item.tenant_id,
     }));
     const insertRecipeResult = await supabase.from("product_recipe_items").insert(clonedRecipeItems);
-    assertSupabaseResult(insertRecipeResult, "Failed to clone recipe items");
+    if (insertRecipeResult.error) {
+      throw new Error(`Failed to clone recipe items: ${insertRecipeResult.error.message}`);
+    }
   }
 
   // Copy preparation steps
