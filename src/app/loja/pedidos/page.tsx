@@ -7,6 +7,7 @@ import { AlertCircle, Clock3, Package, Plus, ShoppingCart, Truck } from "lucide-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
@@ -789,7 +790,28 @@ export default function PedidosLojaPage() {
                 <div className="rounded-lg border border-border/80 bg-panel p-4">
                   <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
                     <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Loja</Label>
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs text-muted-foreground">Loja</Label>
+                        <InfoHint
+                          size="xs"
+                          content={
+                            <div className="space-y-2 text-xs text-muted-foreground">
+                              <p>
+                                Dias de pedido: <strong className="text-foreground">{orderingDaysLabel}</strong>. Domingo permitido:{" "}
+                                <strong className="text-foreground">
+                                  {selectedStore ? (getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não") : "-"}
+                                </strong>.
+                              </p>
+                              <p>
+                                Dias de recebimento: <strong className="text-foreground">{receivingDaysLabel}</strong>. Recebe domingo:{" "}
+                                <strong className="text-foreground">
+                                  {selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "-"}
+                                </strong>.
+                              </p>
+                            </div>
+                          }
+                        />
+                      </div>
                       {shouldUseSearchableStoreSelect ? (
                         <SearchableSelect
                           value={selectedStore?.id ?? ""}
@@ -854,16 +876,6 @@ export default function PedidosLojaPage() {
                       <Input value={selectedStore?.receiveWindow ?? "Nenhuma loja disponível"} disabled className="bg-muted" />
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
-                    <p>
-                      Dias de pedido: <strong>{orderingDaysLabel}</strong>. Domingo permitido:{" "}
-                      <strong>{selectedStore ? (getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não") : "-"}</strong>.
-                    </p>
-                    <p>
-                      Dias de recebimento: <strong>{receivingDaysLabel}</strong>. Recebe domingo:{" "}
-                      <strong>{selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "-"}</strong>.
-                    </p>
-                  </div>
                   {cutoffAppliedMessage ? (
                     <div className="mt-3 rounded-lg border border-warning/40 bg-warning/15 px-3 py-2 text-sm text-warning-foreground">
                       {cutoffAppliedMessage}
@@ -887,7 +899,24 @@ export default function PedidosLojaPage() {
                 <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
                   <div className="grid gap-3 lg:grid-cols-[2fr_1fr_auto]">
                     <div className="grid gap-1.5">
-                      <Label className="text-xs text-muted-foreground">Buscar Produto</Label>
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs text-muted-foreground">Buscar Produto</Label>
+                        <InfoHint
+                          size="xs"
+                          content={
+                            <div className="space-y-2 text-xs text-muted-foreground">
+                              <p>
+                                Coluna ativa do pedido (início das vendas):{" "}
+                                <strong className="text-foreground">{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
+                              </p>
+                              <p>
+                                A disponibilidade considera o cronograma ativo da linha de produção e os dias
+                                de fabricação da ficha do produto. Avisos de mínimo produtivo não bloqueiam o pedido.
+                              </p>
+                            </div>
+                          }
+                        />
+                      </div>
                       <Input
                         value={catalogSearchTerm}
                         onChange={(event) => setCatalogSearchTerm(event.target.value)}
@@ -919,13 +948,6 @@ export default function PedidosLojaPage() {
                   <p className="mt-2 text-xs text-muted-foreground">
                     {filteredOrderProducts.length} de {orderProducts.length} itens no catálogo. Elegíveis:{" "}
                     <strong>{availableCatalogCount}</strong>. Bloqueados nesta janela: <strong>{blockedCatalogCount}</strong>.
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Coluna ativa do pedido (início das vendas): <strong>{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    A disponibilidade considera o cronograma ativo da linha de produção e os dias
-                    de fabricação da ficha do produto. Avisos de mínimo produtivo não bloqueiam o pedido.
                   </p>
                 </div>
 
@@ -1110,11 +1132,12 @@ export default function PedidosLojaPage() {
                 </div>
 
                 <div className="rounded-lg border border-border/80 bg-card">
-                  <div className="border-b border-border/70 px-4 py-3">
+                  <div className="flex items-center gap-1.5 border-b border-border/70 px-4 py-3">
                     <p className="text-sm font-semibold text-foreground">Resumo do pedido</p>
-                    <p className="text-xs text-muted-foreground">
-                      Confira a lista completa abaixo para evitar divergencias antes da confirmacao.
-                    </p>
+                    <InfoHint
+                      size="sm"
+                      content="Confira a lista completa abaixo para evitar divergências antes da confirmação."
+                    />
                   </div>
                   <div className="max-h-[420px] overflow-auto">
                     <table className="w-full min-w-[760px] border-collapse">

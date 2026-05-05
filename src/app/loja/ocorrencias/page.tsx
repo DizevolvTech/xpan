@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, MessageSquarePlus, Plus, RotateCcw } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SearchableSelect } from "@/components/shared/searchable-select";
@@ -396,13 +397,14 @@ export default function OcorrenciasLojaPage() {
     >
       <Card className="border-border/80">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div>
+          <div className="flex items-center gap-1.5">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               Escopo da loja
             </p>
-            <p className="text-sm text-muted-foreground">
-              As ocorrências listadas e os pedidos elegíveis respeitam somente as lojas autorizadas do usuário.
-            </p>
+            <InfoHint
+              size="sm"
+              content="As ocorrências listadas e os pedidos elegíveis respeitam somente as lojas autorizadas do usuário."
+            />
           </div>
           {shouldShowStoreSelector ? (
             availableStores.length >= 8 ? (
@@ -465,7 +467,13 @@ export default function OcorrenciasLojaPage() {
 
               <div className="grid gap-4 py-2">
                 <div className="grid gap-2">
-                  <Label>Pedido Relacionado *</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>Pedido Relacionado *</Label>
+                    <InfoHint
+                      size="sm"
+                      content="Somente pedidos em rota, no destino ou já entregues podem abrir ocorrência."
+                    />
+                  </div>
                   {eligibleOrderSummaries.length >= 8 ? (
                     <SearchableSelect
                       value={effectiveOrderId}
@@ -491,9 +499,6 @@ export default function OcorrenciasLojaPage() {
                       </SelectContent>
                     </Select>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    Somente pedidos em rota, no destino ou já entregues podem abrir ocorrência.
-                  </p>
                 </div>
 
                 <div className="grid gap-2">

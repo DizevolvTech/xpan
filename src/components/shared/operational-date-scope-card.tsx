@@ -2,6 +2,7 @@
 
 import { CalendarRange } from "lucide-react";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -44,8 +45,10 @@ export function OperationalDateScopeCard({
             <CalendarRange className="size-4" />
             {title}
           </div>
-          <CardTitle className="text-base">Filtro temporal global</CardTitle>
-          <p className="text-sm text-muted-foreground">{description}</p>
+          <div className="flex items-center gap-1.5">
+            <CardTitle className="text-base">Filtro temporal global</CardTitle>
+            {description ? <InfoHint content={description} size="sm" /> : null}
+          </div>
           <p className="text-xs font-medium text-foreground">{summary}</p>
         </div>
 

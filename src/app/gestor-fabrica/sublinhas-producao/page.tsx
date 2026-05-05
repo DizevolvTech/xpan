@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
 import { PaginatedSection } from "@/components/shared/paginated-section";
@@ -24,7 +25,6 @@ import { PageLayout } from "@/components/shared/page-layout";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -853,14 +853,17 @@ export default function SublinhasProducaoPage() {
       >
         <DialogContent size="xl" className="space-y-4">
           <DialogHeader>
-            <DialogTitle>
-              {selectedLineVersions
-                ? `Versões da linha · ${selectedLineVersions.lineName}`
-                : "Versões da linha"}
+            <DialogTitle className="flex items-center gap-1.5">
+              <span>
+                {selectedLineVersions
+                  ? `Versões da linha · ${selectedLineVersions.lineName}`
+                  : "Versões da linha"}
+              </span>
+              <InfoHint
+                size="sm"
+                content="A tabela principal mostra apenas a versão principal da linha. Aqui ficam as demais revisões para consulta e auditoria."
+              />
             </DialogTitle>
-            <DialogDescription>
-              A tabela principal mostra apenas a versão principal da linha. Aqui ficam as demais revisões para consulta e auditoria.
-            </DialogDescription>
           </DialogHeader>
 
           {selectedLineVersions ? (
@@ -951,14 +954,17 @@ export default function SublinhasProducaoPage() {
       >
         <DialogContent size="full" className="space-y-4">
           <DialogHeader>
-            <DialogTitle>
-              {selectedSchedule
-                ? `Auditoria do cronograma · ${selectedSchedule.lineName} · ${selectedSchedule.code}`
-                : "Auditoria"}
+            <DialogTitle className="flex items-center gap-1.5">
+              <span>
+                {selectedSchedule
+                  ? `Auditoria do cronograma · ${selectedSchedule.lineName} · ${selectedSchedule.code}`
+                  : "Auditoria"}
+              </span>
+              <InfoHint
+                size="sm"
+                content="Revise a grade completa da versão selecionada, com os produtos aprovados e os dias planejados para fabricação."
+              />
             </DialogTitle>
-            <DialogDescription>
-              Revise a grade completa da versão selecionada, com os produtos aprovados e os dias planejados para fabricação.
-            </DialogDescription>
           </DialogHeader>
 
           {selectedSchedule && (
@@ -1074,23 +1080,41 @@ export default function SublinhasProducaoPage() {
               <div
                 className={
                   canEditDailyPriority
-                    ? "rounded-lg border border-primary/25 bg-primary/[0.05] px-4 py-3 text-sm text-foreground"
-                    : "rounded-lg border border-border/80 bg-panel/40 px-4 py-3 text-sm text-muted-foreground"
+                    ? "flex items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/[0.05] px-4 py-3 text-sm text-foreground"
+                    : "flex items-center gap-1.5 rounded-lg border border-border/80 bg-panel/40 px-4 py-3 text-sm text-muted-foreground"
                 }
               >
-                {canEditDailyPriority
-                  ? "Arraste os produtos dentro de cada dia para definir a prioridade da produção. Essa sequência será usada na leitura operacional da revisão."
-                  : "A prioridade diária só pode ser ajustada em revisões pendentes, antes da aprovação do cronograma."}
+                <span className="font-medium">
+                  {canEditDailyPriority
+                    ? "Prioridade diária da produção"
+                    : "Prioridade diária bloqueada"}
+                </span>
+                <InfoHint
+                  size="sm"
+                  content={
+                    canEditDailyPriority
+                      ? "Arraste os produtos dentro de cada dia para definir a prioridade da produção. Essa sequência será usada na leitura operacional da revisão."
+                      : "A prioridade diária só pode ser ajustada em revisões pendentes, antes da aprovação do cronograma."
+                  }
+                />
+                {selectedSchedule.status === "pendente" ? (
+                  <InfoHint
+                    size="sm"
+                    tone="warning"
+                    label="Aviso sobre reprovação"
+                    content={
+                      <div className="space-y-2 text-xs text-muted-foreground">
+                        <p className="font-semibold text-foreground">
+                          Se esta revisão for reprovada, ela volta para ajuste.
+                        </p>
+                        <p>
+                          A linha ficará indisponível para produção e pedidos até que uma nova revisão seja enviada e aprovada.
+                        </p>
+                      </div>
+                    }
+                  />
+                ) : null}
               </div>
-
-              {selectedSchedule.status === "pendente" ? (
-                <div className="rounded-lg border border-warning/35 bg-warning/15 px-4 py-3 text-sm text-warning-foreground">
-                  <p className="font-semibold">Se esta revisão for reprovada, ela volta para ajuste.</p>
-                  <p className="mt-1">
-                    A linha ficará indisponível para produção e pedidos até que uma nova revisão seja enviada e aprovada.
-                  </p>
-                </div>
-              ) : null}
 
               {hasPriorityChanges ? (
                 <div className="rounded-lg border border-warning/40 bg-warning/20 px-4 py-3 text-sm text-warning-foreground">
@@ -1189,11 +1213,19 @@ export default function SublinhasProducaoPage() {
               </div>
 
               <div className="grid gap-2">
-                <label className="text-sm font-medium text-foreground">
-                  {selectedSchedule.status === "pendente"
-                    ? "Observações da auditoria / pedido de ajuste"
-                    : "Observações"}
-                </label>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-sm font-medium text-foreground">
+                    {selectedSchedule.status === "pendente"
+                      ? "Observações da auditoria / pedido de ajuste"
+                      : "Observações"}
+                  </label>
+                  {selectedSchedule.status === "pendente" ? (
+                    <InfoHint
+                      size="sm"
+                      content="Ao solicitar ajuste, esse texto funciona como orientação objetiva do que a equipe deve refazer."
+                    />
+                  ) : null}
+                </div>
                 <Textarea
                   value={auditNotes}
                   onChange={(event) => setAuditNotes(event.target.value)}
@@ -1204,11 +1236,6 @@ export default function SublinhasProducaoPage() {
                   }
                   className="min-h-[110px]"
                 />
-                {selectedSchedule.status === "pendente" ? (
-                  <p className="text-xs text-muted-foreground">
-                    Ao solicitar ajuste, esse texto funciona como orientação objetiva do que a equipe deve refazer.
-                  </p>
-                ) : null}
               </div>
             </div>
           )}

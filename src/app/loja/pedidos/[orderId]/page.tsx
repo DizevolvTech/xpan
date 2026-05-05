@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -474,7 +475,13 @@ export default function PedidoLojaDetailsPage() {
             <div className="rounded-lg border border-border/70 bg-panel/30 p-4">
               <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                 <div className="grid gap-2">
-                  <Label>Adicionar item da mesma janela operacional</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>Adicionar item da mesma janela operacional</Label>
+                    <InfoHint
+                      size="sm"
+                      content="O catálogo usado aqui respeita a mesma data/hora original do pedido, sem recalcular a janela de entrega."
+                    />
+                  </div>
                   <Select value={selectedCatalogProductId} onValueChange={setSelectedCatalogProductId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione um produto para adicionar" />
@@ -487,9 +494,6 @@ export default function PedidoLojaDetailsPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    O catálogo usado aqui respeita a mesma data/hora original do pedido, sem recalcular a janela de entrega.
-                  </p>
                   {selectedCatalogProduct ? (
                     <p className="text-xs text-muted-foreground">
                       Mínimo produtivo: {formatKgLabel(selectedCatalogProduct.minimumProductionKg)}. Dias válidos: {selectedCatalogProduct.productionDays.join(" · ")}.

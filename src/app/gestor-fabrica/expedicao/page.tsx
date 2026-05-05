@@ -6,6 +6,7 @@ import { ArrowLeft, Factory, ListChecks, Package, ShoppingCart, Truck } from "lu
 
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
@@ -332,23 +333,6 @@ export default function ExpedicaoPage() {
         subtitle="A separação final deixou de depender de edição manual de status. Ela abre quando a produção conclui."
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Regras desta etapa</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm text-foreground">
-            Imprima o checklist por pedido diretamente na lista.
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm text-foreground">
-            O status aqui é por pedido: ele só vira pronto quando todas as OPs vinculadas chegarem a 100%.
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm text-foreground">
-            Não há roteirização nem nota de transferência nesta rodada.
-          </div>
-        </CardContent>
-      </Card>
-
       <OperationFiltersCard
         title="Filtros da Expedição"
         summary={`${filteredOrders.length} de ${orderRows.length} pedidos visíveis`}
@@ -408,7 +392,21 @@ export default function ExpedicaoPage() {
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">
-          <CardTitle>Fila de checklists</CardTitle>
+          <div className="flex items-center gap-1.5">
+            <CardTitle>Fila de checklists</CardTitle>
+            <InfoHint
+              size="sm"
+              content={
+                <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                  <li>Imprima o checklist por pedido diretamente na lista.</li>
+                  <li>
+                    O status aqui é por pedido: ele só vira pronto quando todas as OPs vinculadas chegarem a 100%.
+                  </li>
+                  <li>Não há roteirização nem nota de transferência nesta rodada.</li>
+                </ul>
+              }
+            />
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <DataTable

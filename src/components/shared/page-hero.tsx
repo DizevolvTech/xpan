@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { cn } from "@/lib/utils";
 
 export interface PageHeroProps {
@@ -53,8 +54,10 @@ export function PageHero({
               {badge}
             </span>
           )}
-          <h1 className="mt-3 text-2xl font-bold text-foreground sm:text-3xl">{title}</h1>
-          {description && <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{description}</p>}
+          <div className="mt-3 flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground sm:text-3xl">{title}</h1>
+            {description && <InfoHint content={description} size="md" />}
+          </div>
         </div>
 
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { cn } from "@/lib/utils";
 
 type OperationalSequenceTone = "neutral" | "info" | "warning" | "success";
@@ -15,7 +16,7 @@ export interface OperationalSequenceStep {
 interface OperationalSequenceCardProps {
   eyebrow?: string;
   title: string;
-  description: string;
+  description?: string;
   steps: OperationalSequenceStep[];
   footer?: string;
   className?: string;
@@ -51,8 +52,10 @@ export function OperationalSequenceCard({
         <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {eyebrow}
         </p>
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          {description ? <InfoHint content={description} size="sm" /> : null}
+        </div>
       </div>
 
       <div className={cn("mt-4 grid gap-3", gridColsClass)}>
@@ -71,11 +74,9 @@ export function OperationalSequenceCard({
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {step.label}
               </p>
+              {step.helper ? <InfoHint content={step.helper} size="xs" /> : null}
             </div>
             <p className="mt-2 text-sm font-semibold text-foreground">{step.value}</p>
-            {step.helper ? (
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{step.helper}</p>
-            ) : null}
           </div>
         ))}
       </div>

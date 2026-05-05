@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronRight, LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/shared/info-hint";
 
 interface PageHeaderProps {
   title: string;
@@ -37,9 +38,9 @@ export function PageHeader({ title, description, action, breadcrumbs }: PageHead
       )}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="flex items-center gap-2">
           <h1 className="font-heading text-2xl font-bold text-foreground">{title}</h1>
-          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+          {description && <InfoHint content={description} size="md" />}
         </div>
 
         {action && (

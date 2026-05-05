@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, Plus } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
+import { InfoHint } from "@/components/shared/info-hint";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { SearchFilter } from "@/components/shared/search-filter";
@@ -302,16 +303,19 @@ export default function LinhaProducaoDetailsPage() {
             </div>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Última atualização</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Última atualização</p>
+              <InfoHint
+                size="xs"
+                content="O cadastro da linha é atualizado no mesmo registro, sem gerar versão duplicada."
+              />
+            </div>
             <p className="mt-1 text-sm font-medium">
               {line?.updatedAt
                 ? formatDateBr(line.updatedAt)
                 : line?.createdAt
                   ? formatDateBr(line.createdAt)
                   : "-"}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              O cadastro da linha é atualizado no mesmo registro, sem gerar versão duplicada.
             </p>
           </div>
         </CardContent>
@@ -326,29 +330,25 @@ export default function LinhaProducaoDetailsPage() {
 
         <TabsContent value="operational" className="space-y-4">
           <Card>
-            <CardContent className="grid gap-3 p-4 md:grid-cols-2">
-              <div className="rounded-xl border border-border/70 bg-panel/20 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Linha de produção cadastral
-                </p>
-                <p className="mt-2 text-sm text-foreground">
-                  Produtos podem continuar cadastrados nesta linha de produção mesmo sem participar do cronograma ativo.
-                </p>
-              </div>
-              <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Status
-                </p>
-                <p className="mt-2 text-sm text-foreground">
-                  Só os produtos desta linha de produção podem entrar no cronograma ativo e no histórico de auditoria.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
             <CardHeader>
-              <CardTitle>Produtos atualmente no cronograma ativo</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Produtos atualmente no cronograma ativo</CardTitle>
+                <InfoHint
+                  size="sm"
+                  content={
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      <p>
+                        <span className="font-semibold text-foreground">Linha de produção cadastral:</span>{" "}
+                        produtos podem continuar cadastrados nesta linha de produção mesmo sem participar do cronograma ativo.
+                      </p>
+                      <p>
+                        <span className="font-semibold text-foreground">Status:</span>{" "}
+                        só os produtos desta linha de produção podem entrar no cronograma ativo e no histórico de auditoria.
+                      </p>
+                    </div>
+                  }
+                />
+              </div>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -478,12 +478,6 @@ export default function LinhaProducaoDetailsPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="space-y-4">
-          <div className="rounded-xl border border-info/35 bg-info/10 px-4 py-3 text-sm text-info-foreground">
-            A linha de produção permanece em registro único. Quando o cadastro é editado, o sistema
-            atualiza a mesma linha; o histórico auditável fica nas revisões do cronograma ativo
-            desta linha.
-          </div>
-
           <div className="grid gap-3 md:grid-cols-2">
             <Card>
               <CardHeader>
@@ -532,7 +526,13 @@ export default function LinhaProducaoDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Histórico operacional auditável</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Histórico operacional auditável</CardTitle>
+                <InfoHint
+                  size="sm"
+                  content="A linha de produção permanece em registro único. Quando o cadastro é editado, o sistema atualiza a mesma linha; o histórico auditável fica nas revisões do cronograma ativo desta linha."
+                />
+              </div>
             </CardHeader>
             <CardContent>
               <DataTable
@@ -665,7 +665,28 @@ export default function LinhaProducaoDetailsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Resumo operacional derivado</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Resumo operacional derivado</CardTitle>
+                <InfoHint
+                  size="sm"
+                  content={
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      <p>
+                        O cronograma acima lê apenas o{" "}
+                        <strong className="text-foreground">cronograma ativo</strong> desta linha de produção.
+                      </p>
+                      <p>
+                        A ficha cadastral do produto continua preservada no cadastro mestre, para manter histórico
+                        e margem de armazenamento de produtos fora do fluxo atual.
+                      </p>
+                      <p>
+                        Toda alteração na carteira recria a auditoria pendente desta linha de produção e suspende
+                        sua liberação para produção e pedidos até nova aprovação.
+                      </p>
+                    </div>
+                  }
+                />
+              </div>
             </CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-4">
               {productionWeekDays.map((day) => (
@@ -689,24 +710,6 @@ export default function LinhaProducaoDetailsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Leitura operacional</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>
-                O cronograma acima lê apenas o <strong>cronograma ativo</strong> desta linha de produção.
-              </p>
-              <p>
-                A ficha cadastral do produto continua preservada no cadastro mestre, para manter histórico e margem de
-                armazenamento de produtos fora do fluxo atual.
-              </p>
-              <p>
-                Toda alteração na carteira recria a auditoria pendente desta linha de produção e suspende sua
-                liberação para produção e pedidos até nova aprovação.
-              </p>
-            </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
     </PageLayout>

@@ -2,6 +2,7 @@
 
 import { Filter, Search } from "lucide-react";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -70,8 +71,8 @@ export function OperationFiltersCard({
         <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           <Filter className="size-3.5" />
           {title}
+          {summary ? <InfoHint content={summary} size="xs" /> : null}
         </div>
-        {summary ? <p className="text-xs text-muted-foreground">{summary}</p> : null}
       </div>
 
       <div className={cn("grid gap-3 md:grid-cols-2", gridClass)}>
@@ -113,7 +114,7 @@ export function OperationFiltersCard({
           <span className="rounded-full bg-background px-2.5 py-1 font-semibold text-foreground">
             {activeFiltersCount} filtro(s) ativo(s)
           </span>
-          <span className="text-muted-foreground">{helperText}</span>
+          {helperText ? <InfoHint content={helperText} size="xs" /> : null}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onClear} disabled={activeFiltersCount === 0}>
           {clearLabel}

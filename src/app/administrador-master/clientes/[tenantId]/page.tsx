@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { ClientUserManagementPanel } from "@/components/master/client-user-management-panel";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -303,12 +304,15 @@ function AdministradorMasterClienteDetalheClient({ tenantId }: { tenantId: strin
                     <div className="rounded-xl border border-border/70 bg-panel/20 p-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div className="space-y-1.5">
-                          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                            Canal cliente x sistema
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Esta conversa fica na aba de ocorrências e concentra bloqueios de acesso, gestão de usuários, ajustes cadastrais e tratativas com o administrador do cliente.
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                              Canal cliente x sistema
+                            </p>
+                            <InfoHint
+                              size="xs"
+                              content="Esta conversa fica na aba de ocorrências e concentra bloqueios de acesso, gestão de usuários, ajustes cadastrais e tratativas com o administrador do cliente."
+                            />
+                          </div>
                         </div>
                         <Button
                           type="button"
@@ -325,13 +329,15 @@ function AdministradorMasterClienteDetalheClient({ tenantId }: { tenantId: strin
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Entrar em modo leitura</CardTitle>
+                    <div className="flex items-center gap-1.5">
+                      <CardTitle>Entrar em modo leitura</CardTitle>
+                      <InfoHint
+                        size="sm"
+                        content="O cookie de contexto será configurado para este tenant e a navegação seguirá com bloqueio de escrita."
+                      />
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      O cookie de contexto será configurado para este tenant e a navegação seguirá com bloqueio de escrita.
-                    </p>
-
                     <div className="grid gap-3">
                       <Button type="button" onClick={() => void handleEnterTenant("/administrador")} disabled={isSubmitting}>
                         <Building2 className="size-4" />

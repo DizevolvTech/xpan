@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -1013,11 +1014,12 @@ export default function AdministradorUsuariosPage() {
             </div>
 
             <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
-              <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
                 <p className="text-sm font-semibold text-foreground">Preview do template do perfil-base</p>
-                <p className="text-xs text-muted-foreground">
-                  Esse preview mostra a rota inicial e os módulos liberados ao aplicar o perfil-base atual como padrão.
-                </p>
+                <InfoHint
+                  size="sm"
+                  content="Esse preview mostra a rota inicial e os módulos liberados ao aplicar o perfil-base atual como padrão."
+                />
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <div className="rounded-lg border border-border/70 bg-card px-3 py-3">
@@ -1053,10 +1055,13 @@ export default function AdministradorUsuariosPage() {
             {canSelectStores ? (
               <section className="space-y-3 rounded-xl border border-border/80 bg-panel/25 p-4">
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">Escopo operacional da loja</p>
-                  <p className="text-xs text-muted-foreground">
-                    Selecione lojas apenas quando quiser restringir o acesso. Sem seleção, o usuário permanece sem limitação por unidade e o escopo só entra em ação quando houver módulos da loja delegados.
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-foreground">Escopo operacional da loja</p>
+                    <InfoHint
+                      size="sm"
+                      content="Selecione lojas apenas quando quiser restringir o acesso. Sem seleção, o usuário permanece sem limitação por unidade e o escopo só entra em ação quando houver módulos da loja delegados."
+                    />
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {userForm.storeIds?.length
                       ? `${userForm.storeIds.length} loja${userForm.storeIds.length > 1 ? "s" : ""} selecionada${userForm.storeIds.length > 1 ? "s" : ""}.`
@@ -1155,11 +1160,9 @@ export default function AdministradorUsuariosPage() {
             <div className="space-y-4 py-1">
               <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
                 <section className="space-y-4 rounded-xl border border-border/80 bg-panel/20 p-4">
-                  <div>
+                  <div className="flex items-center gap-1.5">
                     <p className="text-sm font-semibold text-foreground">Foto e Contato</p>
-                    <p className="text-xs text-muted-foreground">
-                      Atualize a foto e o telefone principal.
-                    </p>
+                    <InfoHint size="sm" content="Atualize a foto e o telefone principal." />
                   </div>
 
                   <div className="flex items-center gap-4">
@@ -1215,11 +1218,12 @@ export default function AdministradorUsuariosPage() {
                 </section>
 
                 <section className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
-                  <div>
+                  <div className="flex items-center gap-1.5">
                     <p className="text-sm font-semibold text-foreground">Endereço</p>
-                    <p className="text-xs text-muted-foreground">
-                      Dados usados para identificação e contato administrativo.
-                    </p>
+                    <InfoHint
+                      size="sm"
+                      content="Dados usados para identificação e contato administrativo."
+                    />
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-3">
@@ -1324,11 +1328,17 @@ export default function AdministradorUsuariosPage() {
 
               <section className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                  <div className="flex items-center gap-1.5">
                     <p className="text-sm font-semibold text-foreground">Segurança</p>
-                    <p className="text-xs text-muted-foreground">
-                      Edite a senha quando necessário.
-                    </p>
+                    <InfoHint
+                      size="sm"
+                      content={
+                        <div className="space-y-2 text-xs text-muted-foreground">
+                          <p>Edite a senha quando necessário.</p>
+                          <p>Deixe os campos de senha em branco para manter a senha atual.</p>
+                        </div>
+                      }
+                    />
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Última alteração de senha: {profileUser.profile.passwordUpdatedAt}
@@ -1361,9 +1371,6 @@ export default function AdministradorUsuariosPage() {
                     />
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Deixe os campos de senha em branco para manter a senha atual.
-                </p>
               </section>
 
               {profileFormError && (
@@ -1423,14 +1430,14 @@ export default function AdministradorUsuariosPage() {
               {permissionNavigationPreview ? (
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Entrada inicial
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        Entrada inicial
+                      </p>
+                      <InfoHint size="xs" content="A primeira rota liberada por esta delegação." />
+                    </div>
                     <p className="mt-1 text-sm font-medium text-foreground">
                       {permissionNavigationPreview.landingPath}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      A primeira rota liberada por esta delegação.
                     </p>
                   </div>
                   <div className="rounded-xl border border-border/80 bg-panel/25 p-4">

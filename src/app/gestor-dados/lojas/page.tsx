@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
+import { InfoHint } from "@/components/shared/info-hint";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
@@ -301,9 +302,15 @@ export default function LojasPage() {
       </div>
 
       <Card className="border-info/25 bg-info/10">
-        <CardContent className="grid gap-3 p-4 md:grid-cols-3">
+        <CardContent className="grid gap-3 p-4 md:grid-cols-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Regra Global</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Regra Global</p>
+              <InfoHint
+                size="xs"
+                content="Os horários limite e a regra D+X agora pertencem ao sistema/fábrica. Na loja ficam somente os dias em que ela pede e recebe mercadoria."
+              />
+            </div>
             <p className="mt-1 text-lg font-semibold text-foreground">{snapshot.operationalSettings.orderCutoffTime}</p>
             <p className="text-sm text-muted-foreground">Horário limite do pedido</p>
           </div>
@@ -311,9 +318,6 @@ export default function LojasPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Regra Global</p>
             <p className="mt-1 text-lg font-semibold text-foreground">D+{snapshot.operationalSettings.expeditionLeadDays}</p>
             <p className="text-sm text-muted-foreground">Lead time padrão de expedição</p>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            Os horários limite e a regra D+X agora pertencem ao sistema/fábrica. Na loja ficam somente os dias em que ela pede e recebe mercadoria.
           </div>
         </CardContent>
       </Card>
@@ -423,7 +427,17 @@ export default function LojasPage() {
                   <Input value={formState.code} disabled className="bg-muted" />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Usuário Responsável</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label>Usuário Responsável</Label>
+                    <InfoHint
+                      size="sm"
+                      content={
+                        <p className="text-muted-foreground">
+                          Apenas usuários do perfil <strong>Loja</strong> aparecem nesta lista. Você pode deixar esse vínculo para depois e concluir o cadastro agora.
+                        </p>
+                      }
+                    />
+                  </div>
                   {storeUserOptions.length >= 8 ? (
                     <SearchableSelect
                       value={formState.responsibleProfileId ?? ""}
@@ -479,9 +493,6 @@ export default function LojasPage() {
                       </SelectContent>
                     </Select>
                   )}
-                  <p className="text-xs text-muted-foreground">
-                    Apenas usuários do perfil <strong>Loja</strong> aparecem nesta lista. Você pode deixar esse vínculo para depois e concluir o cadastro agora.
-                  </p>
                   {!isStoreUsersLoading && storeUserOptions.length === 0 ? (
                     <p className="text-xs text-warning-foreground">
                       Nenhum usuário do tipo loja está disponível no momento. A loja pode ser cadastrada agora e o vínculo pode ser feito depois em Usuários e Permissões.
@@ -550,11 +561,9 @@ export default function LojasPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <section className="space-y-3 rounded-xl border border-border/80 bg-panel/20 p-4">
-                <div>
+                <div className="flex items-center gap-1.5">
                   <h3 className="text-sm font-semibold text-foreground">Dias em que a loja pode fazer pedido</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Domingo marcado = a loja aceita pedidos no domingo.
-                  </p>
+                  <InfoHint size="sm" content="Domingo marcado = a loja aceita pedidos no domingo." />
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {productionWeekDays.map((day) => (
@@ -599,11 +608,9 @@ export default function LojasPage() {
               </section>
 
               <section className="space-y-3 rounded-xl border border-border/80 bg-panel/20 p-4">
-                <div>
+                <div className="flex items-center gap-1.5">
                   <h3 className="text-sm font-semibold text-foreground">Dias em que a loja recebe mercadoria</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Domingo marcado = a loja recebe mercadoria no domingo.
-                  </p>
+                  <InfoHint size="sm" content="Domingo marcado = a loja recebe mercadoria no domingo." />
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {productionWeekDays.map((day) => (

@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FactoryFlow } from "@/components/shared/factory-flow";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
@@ -253,31 +254,28 @@ export default function PedidosFabricaPage() {
         subtitle="Fluxo correto: pedido auditado -> liberar para produção -> acompanhar progresso por item -> expedir."
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Como funciona agora</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 1</p>
-            <p className="mt-1 font-medium text-foreground">Audite o pedido e expanda apenas o resumo operacional da linha.</p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 2</p>
-            <p className="mt-1 font-medium text-foreground">Use “Liberar para produção” para gerar as OPs consolidadas.</p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Passo 3</p>
-            <p className="mt-1 font-medium text-foreground">O status do pedido sobe automaticamente a partir do avanço dos produtos da OP.</p>
-          </div>
-        </CardContent>
-      </Card>
-
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <CardTitle>Pedidos Auditáveis</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Pedidos Auditáveis</CardTitle>
+                <InfoHint
+                  size="sm"
+                  content={
+                    <div className="space-y-2 text-muted-foreground">
+                      <p className="font-semibold text-foreground">Como funciona agora</p>
+                      <ol className="list-decimal space-y-1 pl-4">
+                        <li>Audite o pedido e expanda apenas o resumo operacional da linha.</li>
+                        <li>Use “Liberar para produção” para gerar as OPs consolidadas.</li>
+                        <li>
+                          O status do pedido sobe automaticamente a partir do avanço dos produtos da OP.
+                        </li>
+                      </ol>
+                    </div>
+                  }
+                />
+              </div>
               <p className="text-xs text-muted-foreground">
                 {filteredOrders.length} de {summaryRows.length} pedidos visíveis
               </p>
@@ -429,13 +427,14 @@ export default function PedidosFabricaPage() {
                           <td colSpan={8} className="border-t border-border/70 bg-panel/10 px-4 py-4">
                             <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 xl:grid-cols-[1.4fr_0.9fr]">
                               <div className="space-y-3">
-                                <div>
+                                <div className="flex items-center gap-1.5">
                                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                                     Resumo operacional do pedido
                                   </p>
-                                  <p className="mt-1 text-sm text-muted-foreground">
-                                    Abra os itens em modal para revisar com calma sem poluir a grade principal.
-                                  </p>
+                                  <InfoHint
+                                    size="xs"
+                                    content="Abra os itens em modal para revisar com calma sem poluir a grade principal."
+                                  />
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <span className="rounded-full border border-border/70 bg-panel px-2.5 py-1 text-[11px] font-semibold text-foreground">

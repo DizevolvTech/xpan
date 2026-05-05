@@ -8,6 +8,7 @@ import { ProductionOrderActionsMenu } from "@/components/production/production-o
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
@@ -380,16 +381,22 @@ export default function OrdensProducaoPage() {
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Pré-pesagem</p>
-            <p className="mt-1 text-foreground">Agrupa insumos por produto e destaca MPI/base compartilhada.</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Pré-pesagem</p>
+              <InfoHint size="xs" content="Agrupa insumos por produto e destaca MPI/base compartilhada." />
+            </div>
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Produção</p>
-            <p className="mt-1 text-foreground">Folha dedicada da linha executora com carga, pedidos e andamento atual.</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Produção</p>
+              <InfoHint size="xs" content="Folha dedicada da linha executora com carga, pedidos e andamento atual." />
+            </div>
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expedição</p>
-            <p className="mt-1 text-foreground">Checklist sai somente quando todos os produtos da OP estiverem concluídos.</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expedição</p>
+              <InfoHint size="xs" content="Checklist sai somente quando todos os produtos da OP estiverem concluídos." />
+            </div>
           </div>
         </CardContent>
       </Card>

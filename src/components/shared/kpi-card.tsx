@@ -1,6 +1,7 @@
 "use client";
 
 import { LucideIcon, TrendingDown, TrendingUp } from "lucide-react";
+import { InfoHint } from "@/components/shared/info-hint";
 import { cn } from "@/lib/utils";
 
 export type KpiTone = "neutral" | "info" | "success" | "warning" | "danger";
@@ -131,15 +132,17 @@ export function KPICard({
   return (
     <article className="rounded-xl border border-border/80 bg-card p-4 text-card-foreground shadow-[var(--shadow-soft)]">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
+            {resolvedSubtitle && <InfoHint content={resolvedSubtitle} size="xs" />}
+          </div>
           <p
             className="mt-2 text-[clamp(1.25rem,2.1vw,1.7rem)] font-bold leading-tight text-foreground tabular-nums"
             title={typeof displayValue === "string" ? displayValue : String(displayValue)}
           >
             {displayValue}
           </p>
-          {resolvedSubtitle && <p className="mt-2 text-xs text-muted-foreground">{resolvedSubtitle}</p>}
         </div>
 
         <div className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg", styles.badge)}>

@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
@@ -624,18 +625,18 @@ export default function AdministradorPage() {
 
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-lg border border-border/70 bg-card p-3 text-xs">
-                <div className="mb-2 flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <span className="size-2.5 rounded-full bg-info" />
                   <span className="font-medium text-foreground">Produção (Kg)</span>
+                  <InfoHint size="xs" content="Volume total planejado por dia." />
                 </div>
-                <p className="text-muted-foreground">Volume total planejado por dia.</p>
               </div>
               <div className="rounded-lg border border-border/70 bg-card p-3 text-xs">
-                <div className="mb-2 flex items-center gap-2">
+                <div className="flex items-center gap-2">
                   <span className="size-2.5 rounded-full bg-success" />
                   <span className="font-medium text-foreground">Expedição (Kg)</span>
+                  <InfoHint size="xs" content="Carga prevista para separação e entrega." />
                 </div>
-                <p className="text-muted-foreground">Carga prevista para separação e entrega.</p>
               </div>
             </div>
           </CardContent>
@@ -643,7 +644,10 @@ export default function AdministradorPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Composição Fabril e Entrega</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              Composição Fabril e Entrega
+              <InfoHint size="sm" content="Indicadores consolidados com fluxo fabril separado da execução de entrega." />
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="rounded-lg border border-border/70 bg-panel/45 p-3">
@@ -682,13 +686,20 @@ export default function AdministradorPage() {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Pronto para expedição
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Pronto para expedição
+                  </p>
+                  <InfoHint
+                    size="xs"
+                    content={
+                      <p className="text-muted-foreground">
+                        Considera somente pedidos em <strong>aguardando expedição</strong>.
+                      </p>
+                    }
+                  />
+                </div>
                 <p className="mt-1 text-lg font-semibold text-foreground">{readyForExpedition} pedidos</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Considera somente pedidos em <strong>aguardando expedição</strong>.
-                </p>
               </div>
               <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -720,9 +731,6 @@ export default function AdministradorPage() {
               </div>
             ))}
 
-            <div className="rounded-lg border border-border/70 bg-panel/35 p-3 text-xs text-muted-foreground">
-              Indicadores consolidados com fluxo fabril separado da execução de entrega.
-            </div>
           </CardContent>
         </Card>
       </motion.div>
@@ -788,11 +796,12 @@ export default function AdministradorPage() {
         className="space-y-5"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
+          <div className="flex items-center gap-1.5">
             <h2 className="text-lg font-semibold text-foreground">Acesso por Capacidade</h2>
-            <p className="text-sm text-muted-foreground">
-              A navegação global respeita módulos liberados por permissão, sem prender a experiência ao tipo de usuário.
-            </p>
+            <InfoHint
+              size="sm"
+              content="A navegação global respeita módulos liberados por permissão, sem prender a experiência ao tipo de usuário."
+            />
           </div>
         </div>
 
@@ -825,11 +834,9 @@ export default function AdministradorPage() {
 
         <Card>
           <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="flex items-center gap-1.5">
               <p className="text-sm font-semibold text-foreground">Delegação e segurança de acesso</p>
-              <p className="text-sm text-muted-foreground">
-                Defina quem pode acessar cada módulo e com qual nível de permissão.
-              </p>
+              <InfoHint size="sm" content="Defina quem pode acessar cada módulo e com qual nível de permissão." />
             </div>
             <Link
               href="/administrador/usuarios"

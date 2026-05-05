@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { InfoHint } from "@/components/shared/info-hint";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
@@ -303,10 +304,13 @@ export default function GestorFabricaPage() {
               <CalendarClock className="size-4" />
               Expedição
             </div>
-            <CardTitle className="text-base">Regras globais de pedido e expedição</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Ajuste o horário limite do pedido e o prazo D+X usado pela fábrica para prometer recebimento às lojas. A produção sempre é derivada para caber antes dessa entrega.
-            </p>
+            <CardTitle className="flex items-center gap-1.5 text-base">
+              Regras globais de pedido e expedição
+              <InfoHint
+                size="sm"
+                content="Ajuste o horário limite do pedido e o prazo D+X usado pela fábrica para prometer recebimento às lojas. A produção sempre é derivada para caber antes dessa entrega."
+              />
+            </CardTitle>
           </div>
           <div className="max-w-xl rounded-2xl border border-border/70 bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
             {settingsSummary}
@@ -397,9 +401,10 @@ export default function GestorFabricaPage() {
               >
                 {isSavingSettings ? "Salvando..." : "Salvar regras"}
               </Button>
-              <p className="text-xs text-muted-foreground">
-                Esse ajuste impacta o catálogo da loja, a promessa de recebimento e o planejamento da expedição.
-              </p>
+              <InfoHint
+                size="sm"
+                content="Esse ajuste impacta o catálogo da loja, a promessa de recebimento e o planejamento da expedição."
+              />
             </div>
           </div>
 

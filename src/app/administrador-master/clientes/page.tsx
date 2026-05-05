@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Building2, ShieldCheck, ShoppingCart, Store, Users } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
+import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { Button } from "@/components/ui/button";
@@ -428,12 +429,12 @@ export default function AdministradorMasterClientesPage() {
           </DialogHeader>
 
           <div className="grid gap-5 py-2">
-            <div className="rounded-xl border border-border/70 bg-panel/20 p-4">
+            <div className="flex items-center gap-1.5 rounded-xl border border-border/70 bg-panel/20 p-4">
               <p className="text-sm font-semibold text-foreground">Provisionamento seguro</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                O cliente só é criado quando o e-mail do administrador inicial estiver livre. Se
-                esse e-mail já existir, nada é salvo e você pode corrigir o cadastro na hora.
-              </p>
+              <InfoHint
+                size="sm"
+                content="O cliente só é criado quando o e-mail do administrador inicial estiver livre. Se esse e-mail já existir, nada é salvo e você pode corrigir o cadastro na hora."
+              />
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
