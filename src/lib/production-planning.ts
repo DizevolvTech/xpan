@@ -13,9 +13,7 @@ export type ProductPreparationStageKey =
   | "embalando";
 export type BreakStage =
   | "antes_divisao"
-  | "depois_divisao"
-  | "antes_forno"
-  | "depois_forno";
+  | "depois_divisao";
 export type ProductionWeekDay =
   | "segunda"
   | "terca"
@@ -88,6 +86,7 @@ export interface ProductionIngredient {
 export interface OperationalSettings {
   orderCutoffTime: string;
   expeditionLeadDays: number;
+  saleLeadDays: number;
 }
 
 export interface StoreMasterData {
@@ -150,8 +149,7 @@ export interface ProductionProduct {
   economicProductionKg: number;
   allowsStorage: boolean;
   productionDays: ProductionWeekDay[];
-  saleLeadDays?: number;
-  expeditionLeadDays?: number | null;
+  expeditionLeadDays: number;
   unitProfiles: {
     sales: ProductUnitProfile;
     production: ProductUnitProfile;
@@ -234,6 +232,7 @@ export const productPreparationStageLabels: Record<ProductPreparationStageKey, s
 export const operationalSettings: OperationalSettings = {
   orderCutoffTime: "18:00",
   expeditionLeadDays: 2,
+  saleLeadDays: 1,
 };
 
 export const productionSectors: ProductionSector[] = [
@@ -534,6 +533,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 0.05,
     expeditionUnit: "Pacote",
     expeditionToKgFactor: 0.5,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -582,7 +582,7 @@ export const productionProducts: ProductionProduct[] = [
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Misturar, cilindrar e assar em forma fechada.",
     breakPercent: 5,
-    breakStage: "antes_forno",
+    breakStage: "depois_divisao",
     breakComment: "Compensar perda antes do forno para manter peso final.",
     canBeIngredient: true,
     ingredientProfile: {
@@ -597,6 +597,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 0.45,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 5.4,
+    expeditionLeadDays: 1,
     isMpiIngredient: true,
   },
   {
@@ -663,6 +664,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 0.08,
     expeditionUnit: "Bandeja",
     expeditionToKgFactor: 0.96,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -728,6 +730,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 1,
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
+    expeditionLeadDays: 1,
     isMpiIngredient: true,
   },
   {
@@ -776,7 +779,7 @@ export const productionProducts: ProductionProduct[] = [
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Porcionar a base, finalizar com calda e assar em banho-maria.",
     breakPercent: 1.5,
-    breakStage: "depois_forno",
+    breakStage: "depois_divisao",
     breakComment: "Pequena perda após desenformar.",
     canBeIngredient: false,
     ingredientProfile: undefined,
@@ -786,6 +789,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 0.098,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 4.218,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -834,7 +838,7 @@ export const productionProducts: ProductionProduct[] = [
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Dosar a base, cobrir com calda e finalizar no forno.",
     breakPercent: 1.2,
-    breakStage: "depois_forno",
+    breakStage: "depois_divisao",
     breakComment: "Ajuste de rendimento após resfriamento.",
     canBeIngredient: false,
     ingredientProfile: undefined,
@@ -844,6 +848,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 0.311,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 8.698,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -892,7 +897,7 @@ export const productionProducts: ProductionProduct[] = [
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Montagem em forma grande com calda e cocção lenta.",
     breakPercent: 0.8,
-    breakStage: "depois_forno",
+    breakStage: "depois_divisao",
     breakComment: "Perda mínima após desenformar.",
     canBeIngredient: false,
     ingredientProfile: undefined,
@@ -902,6 +907,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 1.065,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 2.13,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -960,6 +966,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 1,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 2.4,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -1000,7 +1007,7 @@ export const productionProducts: ProductionProduct[] = [
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Temperar, assar e embalar em caixa térmica.",
     breakPercent: 3,
-    breakStage: "antes_forno",
+    breakStage: "depois_divisao",
     breakComment: "Ajuste de perda de cocção antes do forno.",
     canBeIngredient: false,
     ingredientProfile: undefined,
@@ -1010,6 +1017,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 1.6,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 8,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -1050,7 +1058,7 @@ export const productionProducts: ProductionProduct[] = [
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Montar em camadas, assar e resfriar antes da expedição.",
     breakPercent: 2.5,
-    breakStage: "depois_forno",
+    breakStage: "depois_divisao",
     breakComment: "Quebra após assar e resfriar.",
     canBeIngredient: false,
     ingredientProfile: undefined,
@@ -1060,6 +1068,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 3.8,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 7.6,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -1110,6 +1119,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 0.11,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 2.2,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
   {
@@ -1150,7 +1160,7 @@ export const productionProducts: ProductionProduct[] = [
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "Forrar, rechear e assar.",
     breakPercent: 2.8,
-    breakStage: "depois_forno",
+    breakStage: "depois_divisao",
     breakComment: "Pequenas perdas na saída do forno.",
     canBeIngredient: false,
     ingredientProfile: undefined,
@@ -1160,6 +1170,7 @@ export const productionProducts: ProductionProduct[] = [
     salesToKgFactor: 0.13,
     expeditionUnit: "Caixa",
     expeditionToKgFactor: 2.6,
+    expeditionLeadDays: 1,
     isMpiIngredient: false,
   },
 ];

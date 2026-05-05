@@ -35,7 +35,7 @@ export default function OrdemProducaoDetailsPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
-  const { planningData, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData, isLoading, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
   const { snapshot } = useMasterDataSnapshot();
 
   const op = useMemo(
@@ -72,8 +72,8 @@ export default function OrdemProducaoDetailsPage() {
   if (!op) {
     return (
       <PageLayout
-        title="OP não encontrada"
-        description="A OP solicitada não existe para a referência atual."
+        title={isLoading ? "Carregando OP…" : "OP não encontrada"}
+        description={isLoading ? "" : "A OP solicitada não existe para a referência atual."}
         badge="Fábrica"
         breadcrumbs={[
           { label: "Chão de Fábrica", href: "/chao-fabrica" },
@@ -91,7 +91,9 @@ export default function OrdemProducaoDetailsPage() {
       >
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Ajuste a data de referência na lista de OPs e tente novamente.
+            {isLoading
+              ? "Buscando dados da OP…"
+              : "Ajuste a data de referência na lista de OPs e tente novamente."}
           </CardContent>
         </Card>
       </PageLayout>

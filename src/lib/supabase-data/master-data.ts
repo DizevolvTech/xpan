@@ -334,10 +334,10 @@ async function loadMasterDataSnapshot(
     economicProductionKg: Number(row.economic_production_kg),
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
-    saleLeadDays: Number(row.sale_lead_days ?? 1) > 0 ? Number(row.sale_lead_days ?? 1) : 1,
-    expeditionLeadDays: (row as Record<string, unknown>).expedition_lead_days != null
-      ? Number((row as Record<string, unknown>).expedition_lead_days)
-      : null,
+    expeditionLeadDays:
+      Number.isFinite(Number(row.expedition_lead_days)) && Number(row.expedition_lead_days) >= 0
+        ? Number(row.expedition_lead_days)
+        : 1,
     unitProfiles: {
       sales: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).sales),
       production: coerceUnitProfile((row.unit_profiles as Record<string, unknown>).production),
@@ -409,6 +409,10 @@ async function loadMasterDataSnapshot(
     operationalSettings: {
       orderCutoffTime: String(settingsRow.order_cutoff_time).slice(0, 5),
       expeditionLeadDays: settingsRow.expedition_lead_days,
+      saleLeadDays:
+        (settingsRow as { sale_lead_days?: number | null }).sale_lead_days != null
+          ? Number((settingsRow as { sale_lead_days?: number | null }).sale_lead_days)
+          : 1,
     },
     sectors,
     lines,

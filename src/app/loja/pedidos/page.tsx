@@ -237,6 +237,12 @@ export default function PedidosLojaPage() {
     [effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
   );
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
+  const saleDate = useMemo(() => {
+    const date = new Date(`${deliveryDateKey}T00:00:00`);
+    const leadDays = Math.max(0, snapshot.operationalSettings.saleLeadDays ?? 1);
+    date.setDate(date.getDate() + leadDays);
+    return date;
+  }, [deliveryDateKey, snapshot.operationalSettings.saleLeadDays]);
 
   // Fetch aggregated order quantities from all stores for the delivery date
   useEffect(() => {
@@ -262,7 +268,7 @@ export default function PedidosLojaPage() {
     };
   }, [deliveryDateKey, selectedStore]);
 
-  const highlightedDay = useMemo(() => getDayFieldByDate(deliveryDate), [deliveryDate]);
+  const highlightedDay = useMemo(() => getDayFieldByDate(saleDate), [saleDate]);
 
   // Pre-fill the order grid when opening an existing order for editing
   useEffect(() => {
@@ -281,6 +287,7 @@ export default function PedidosLojaPage() {
 
   const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
   const deliveryDateLabel = useMemo(() => formatDateWithWeekday(deliveryDate), [deliveryDate]);
+  const saleDateLabel = useMemo(() => formatDateWithWeekday(saleDate), [saleDate]);
   const baseOperationalDateLabel = useMemo(
     () => formatDateKeyWithWeekday(effectiveBaseDateKey),
     [effectiveBaseDateKey],
@@ -827,7 +834,15 @@ export default function PedidosLojaPage() {
                       <Input
                         value={`${deliveryDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays})`}
                         disabled
-                        className="border-warning/40 bg-warning/20 font-semibold text-warning-foreground"
+                        className="bg-muted"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs text-muted-foreground">Início das vendas</Label>
+                      <Input
+                        value={`${saleDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays + (snapshot.operationalSettings.saleLeadDays ?? 1)})`}
+                        disabled
+                        className="border-success/40 bg-success/20 font-semibold text-success-foreground"
                       />
                     </div>
                     <div className="grid gap-2">
@@ -906,7 +921,7 @@ export default function PedidosLojaPage() {
                     <strong>{availableCatalogCount}</strong>. Bloqueados nesta janela: <strong>{blockedCatalogCount}</strong>.
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Coluna ativa do pedido: <strong>{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
+                    Coluna ativa do pedido (início das vendas): <strong>{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     A disponibilidade considera o cronograma ativo da linha de produção e os dias

@@ -148,10 +148,8 @@ export function getDeliveryDateByStoreRule(
   baseDate: string,
   store: StoreProfile,
   settings: OperationalSettings,
-  productExpeditionLeadDays?: number | null,
 ): string {
-  const leadDays = productExpeditionLeadDays ?? settings.expeditionLeadDays;
-  const calculatedDate = addDays(baseDate, leadDays);
+  const calculatedDate = addDays(baseDate, settings.expeditionLeadDays);
   return moveToNextAllowedWeekday(calculatedDate, getEnabledReceivingDays(store));
 }
 
@@ -211,6 +209,7 @@ export function resolveScheduledProductAvailability(
   settings: OperationalSettings,
   options: {
     productProductionDays: ProductionWeekDay[];
+    productExpeditionLeadDays: number;
     scheduleItem?: Pick<WeeklyScheduleItem, "id" | "productionDays"> | null;
   },
 ): OperationalAvailabilityResult {
@@ -250,7 +249,14 @@ export function resolveScheduledProductAvailability(
     };
   }
 
-  const productionWindow = resolveProductionDateInWindow(baseDate, deliveryDate, matchingDays);
+  const receivingDays = getEnabledReceivingDays(store);
+  const productionWindow = resolveProductionDateInWindow(
+    baseDate,
+    deliveryDate,
+    matchingDays,
+    options.productExpeditionLeadDays,
+    receivingDays,
+  );
 
   if (!productionWindow.date) {
     return {
@@ -260,7 +266,7 @@ export function resolveScheduledProductAvailability(
       productionDate: null,
       available: false,
       delayed: productionWindow.delayed,
-      blockedReason: "Janela operacional sem dia compatível para fabricar o produto.",
+      blockedReason: `Sem data de produção compatível: o produto exige ${options.productExpeditionLeadDays} dia(s) entre produção e entrega, mas nenhum dia da ficha resulta em entrega ${formatDateKeyBr(deliveryDate)}.`,
       matchingDays,
       scheduleItemId: options.scheduleItem.id,
     };
@@ -274,7 +280,7 @@ export function resolveScheduledProductAvailability(
       productionDate: productionWindow.date,
       available: false,
       delayed: true,
-      blockedReason: "Próximo dia produtivo cai após a entrega desta janela operacional.",
+      blockedReason: `Produção em ${formatDateKeyBr(productionWindow.date)} + ${options.productExpeditionLeadDays} dia(s) cai após a entrega prevista (${formatDateKeyBr(deliveryDate)}).`,
       matchingDays,
       scheduleItemId: options.scheduleItem.id,
     };
@@ -299,9 +305,11 @@ export function getOperationalTimeline(
   settings: OperationalSettings,
   productionDays: ProductionWeekDay[],
   saleLeadDays = 0,
+  productExpeditionLeadDays = 1,
 ) {
   const availability = resolveScheduledProductAvailability(orderedAt, store, settings, {
     productProductionDays: productionDays,
+    productExpeditionLeadDays,
     scheduleItem: {
       id: "virtual-schedule-item",
       productionDays,
@@ -321,21 +329,30 @@ export function resolveProductionDateInWindow(
   baseDate: string,
   deliveryDate: string,
   productionDays: ProductionWeekDay[],
+  productExpeditionLeadDays: number,
+  receivingDays: ProductionWeekDay[],
 ) {
   if (productionDays.length === 0) {
     return { date: null as string | null, delayed: false };
   }
 
+  // Busca regressiva: dia de produção tal que produção + gap (após ajuste de domingo) = entrega
   let cursor = deliveryDate;
   while (compareDateKeys(cursor, baseDate) >= 0) {
     if (productionDays.includes(getWeekDayKey(cursor))) {
-      return { date: cursor, delayed: false };
+      const candidateDelivery = receivingDays.length > 0
+        ? moveToNextAllowedWeekday(addDays(cursor, productExpeditionLeadDays), receivingDays)
+        : addDays(cursor, productExpeditionLeadDays);
+      if (candidateDelivery === deliveryDate) {
+        return { date: cursor, delayed: false };
+      }
     }
     cursor = addDays(cursor, -1);
   }
 
+  // Não encontrou — busca delayed no futuro até 14 dias
   let futureCursor = addDays(deliveryDate, 1);
-  for (let i = 0; i < 7; i += 1) {
+  for (let i = 0; i < 14; i += 1) {
     if (productionDays.includes(getWeekDayKey(futureCursor))) {
       return { date: futureCursor, delayed: true };
     }
@@ -352,8 +369,11 @@ function sanitizeFactor(value: number): number {
 function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<string, WeeklyProductionSchedule> {
   const map = new Map<string, WeeklyProductionSchedule>();
 
+  // Defensivo: se houver mais de um cronograma ativo por linha (não deveria, mas pode em race conditions),
+  // pega sempre o mais recente — mesmo critério de `buildLatestScheduleByLineId` em store-order-catalog.
   schedules
     .filter((schedule) => schedule.status === "ativo")
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .forEach((schedule) => {
       if (!map.has(schedule.lineId)) {
         map.set(schedule.lineId, schedule);
@@ -513,6 +533,7 @@ function buildPlannedItems(
           input.source.settings,
           {
             productProductionDays: product.productionDays,
+            productExpeditionLeadDays: product.expeditionLeadDays,
             scheduleItem,
           },
         );
@@ -550,7 +571,7 @@ function buildPlannedItems(
           orderedAt: formatDateTimeBr(order.orderedAt),
           baseDate: availability.baseDate,
           deliveryDate: availability.deliveryDate,
-          saleDate: addDays(availability.deliveryDate, normalizeSaleLeadDays(product.saleLeadDays)),
+          saleDate: addDays(availability.deliveryDate, normalizeSaleLeadDays(input.source.settings.saleLeadDays)),
           productionDate: availability.productionDate,
           delayed: availability.delayed,
           productId: product.id,

@@ -34,6 +34,7 @@ const baseStore: StoreProfile = {
 const settings: OperationalSettings = {
   orderCutoffTime: "18:00",
   expeditionLeadDays: 2,
+  saleLeadDays: 1,
 };
 
 test("operational order window respects cutoff and blocked weekdays", () => {
@@ -46,10 +47,14 @@ test("operational order window respects cutoff and blocked weekdays", () => {
 });
 
 test("production date resolves inside the base/delivery window when possible", () => {
-  const planning = resolveProductionDateInWindow("2026-03-19", "2026-03-21", [
-    "quinta",
-    "sabado",
-  ] satisfies ProductionWeekDay[]);
+  // produto com gap 0: pode produzir no mesmo dia da entrega
+  const planning = resolveProductionDateInWindow(
+    "2026-03-19",
+    "2026-03-21",
+    ["quinta", "sabado"] satisfies ProductionWeekDay[],
+    0,
+    ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"] satisfies ProductionWeekDay[],
+  );
 
   assert.deepEqual(planning, {
     date: "2026-03-21",
@@ -64,6 +69,7 @@ test("scheduled availability requires schedule item membership", () => {
     settings,
     {
       productProductionDays: ["quinta"],
+      productExpeditionLeadDays: 1,
       scheduleItem: null,
     },
   );
@@ -79,6 +85,7 @@ test("scheduled availability requires intersection between product and schedule 
     settings,
     {
       productProductionDays: ["quinta"],
+      productExpeditionLeadDays: 1,
       scheduleItem: {
         id: "schedule-item-1",
         productionDays: ["segunda"],
@@ -100,6 +107,7 @@ test("scheduled availability resolves an earlier production day inside the opera
     settings,
     {
       productProductionDays: ["terca"],
+      productExpeditionLeadDays: 1,
       scheduleItem: {
         id: "schedule-item-1",
         productionDays: ["terca"],
@@ -107,6 +115,7 @@ test("scheduled availability resolves an earlier production day inside the opera
     },
   );
 
+  // pedido segunda, base segunda, entrega quarta (D+2). Bolo gap=1: produção terça (terça+1=quarta) ✓
   assert.deepEqual(availability, {
     baseDate: "2026-03-09",
     deliveryDate: "2026-03-11",
@@ -121,12 +130,14 @@ test("scheduled availability resolves an earlier production day inside the opera
 });
 
 test("operational timeline derives sale day after delivery", () => {
+  // gap = 0 (produz e entrega no mesmo dia)
   const timeline = getOperationalTimeline(
     "2026-03-17T09:00:00",
     baseStore,
     settings,
     ["quinta"],
     1,
+    0,
   );
 
   assert.deepEqual(timeline, {
@@ -136,6 +147,112 @@ test("operational timeline derives sale day after delivery", () => {
     productionDate: "2026-03-19",
     delayed: false,
   });
+});
+
+// Cenário do cliente — pedido PD-260429-0001:
+// pedido em quarta (29/04), entrega sexta (01/05), 3 bolos com gap=1 individual.
+// Só Bolo 5 (produz quinta) deveria estar disponível.
+
+test("availability blocks product when production day + gap < deliveryDate (bolo 4 — produz quarta)", () => {
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["quarta"],
+      productExpeditionLeadDays: 1,
+      scheduleItem: { id: "schedule-bolo4", productionDays: ["quarta"] },
+    },
+  );
+  assert.equal(availability.available, false);
+  assert.equal(availability.deliveryDate, "2026-05-01");
+});
+
+test("availability allows product when production day + gap = deliveryDate (bolo 5 — produz quinta)", () => {
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["quinta"],
+      productExpeditionLeadDays: 1,
+      scheduleItem: { id: "schedule-bolo5", productionDays: ["quinta"] },
+    },
+  );
+  assert.equal(availability.available, true);
+  assert.equal(availability.productionDate, "2026-04-30");
+  assert.equal(availability.deliveryDate, "2026-05-01");
+});
+
+test("availability blocks product when production day + gap > deliveryDate (bolo 6 — produz sexta)", () => {
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["sexta"],
+      productExpeditionLeadDays: 1,
+      scheduleItem: { id: "schedule-bolo6", productionDays: ["sexta"] },
+    },
+  );
+  assert.equal(availability.available, false);
+  assert.equal(availability.deliveryDate, "2026-05-01");
+});
+
+test("availability allows fresh bread when gap = 0 (produz e entrega no mesmo dia)", () => {
+  const breadStore: StoreProfile = {
+    id: "store-bread",
+    code: "LJ-003",
+    name: "Loja Pão",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    breadStore,
+    settings,
+    {
+      productProductionDays: ["sexta"],
+      productExpeditionLeadDays: 0,
+      scheduleItem: { id: "schedule-pao", productionDays: ["sexta"] },
+    },
+  );
+  assert.equal(availability.available, true);
+  assert.equal(availability.productionDate, "2026-05-01");
+  assert.equal(availability.deliveryDate, "2026-05-01");
 });
 
 test("factory planning uses operational subcategory instead of cadastral subcategory", () => {
@@ -207,6 +324,7 @@ test("factory planning uses operational subcategory instead of cadastral subcate
       salesToKgFactor: 0.1,
       expeditionUnit: "Caixa",
       expeditionToKgFactor: 1,
+      expeditionLeadDays: 0,
       isMpiIngredient: false,
     },
   ];
@@ -320,6 +438,7 @@ test("production orders keep the daily schedule priority when listing products",
       salesToKgFactor: 0.1,
       expeditionUnit: "Caixa",
       expeditionToKgFactor: 1,
+      expeditionLeadDays: 0,
       isMpiIngredient: false,
     },
     {
@@ -358,6 +477,7 @@ test("production orders keep the daily schedule priority when listing products",
       salesToKgFactor: 0.1,
       expeditionUnit: "Caixa",
       expeditionToKgFactor: 1,
+      expeditionLeadDays: 0,
       isMpiIngredient: false,
     },
   ];
@@ -495,6 +615,7 @@ test("factory planning keeps non-scheduled products out of production and expedi
       salesToKgFactor: 0.1,
       expeditionUnit: "Caixa",
       expeditionToKgFactor: 1,
+      expeditionLeadDays: 0,
       isMpiIngredient: false,
     },
   ];
@@ -602,6 +723,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       salesToKgFactor: 0.1,
       expeditionUnit: "Caixa",
       expeditionToKgFactor: 1,
+      expeditionLeadDays: 1,
       isMpiIngredient: false,
     },
     {
@@ -640,6 +762,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       salesToKgFactor: 0.1,
       expeditionUnit: "Caixa",
       expeditionToKgFactor: 1,
+      expeditionLeadDays: 0,
       isMpiIngredient: false,
     },
   ];

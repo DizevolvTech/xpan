@@ -68,6 +68,7 @@ export type ProductInput = Omit<ProductionProduct, "id" | "code" | "createdAt" |
 export type OperationalSettingsInput = {
   orderCutoffTime: string;
   expeditionLeadDays: number;
+  saleLeadDays: number;
 };
 
 type MutationOptions = {
@@ -494,12 +495,19 @@ function normalizeOperationalSettingsPayload(input: OperationalSettingsInput) {
   const expeditionLeadDays = Number(input.expeditionLeadDays);
 
   if (!Number.isInteger(expeditionLeadDays) || expeditionLeadDays < 0 || expeditionLeadDays > 30) {
-    throw new Error("Informe um D+X inteiro entre 0 e 30 dias.");
+    throw new Error("Informe um D+X de expedição inteiro entre 0 e 30 dias.");
+  }
+
+  const saleLeadDays = Number(input.saleLeadDays);
+
+  if (!Number.isInteger(saleLeadDays) || saleLeadDays < 0 || saleLeadDays > 30) {
+    throw new Error("Informe um D+X de venda inteiro entre 0 e 30 dias.");
   }
 
   return {
     order_cutoff_time: `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
     expedition_lead_days: expeditionLeadDays,
+    sale_lead_days: saleLeadDays,
   };
 }
 
@@ -550,6 +558,7 @@ export async function updateOperationalSettings(
   return {
     orderCutoffTime: normalizedInput.order_cutoff_time,
     expeditionLeadDays: normalizedInput.expedition_lead_days,
+    saleLeadDays: normalizedInput.sale_lead_days,
   };
 }
 
@@ -803,14 +812,13 @@ function normalizeProductPayload(input: ProductInput) {
     economic_production_kg: input.economicProductionKg,
     allows_storage: input.allowsStorage,
     production_days: input.productionDays,
-    sale_lead_days:
-      Number.isFinite(input.saleLeadDays) && Number(input.saleLeadDays) > 0
-        ? Number(input.saleLeadDays)
-        : 1,
+    // sale_lead_days é deprecated por produto (atributo global em operational_settings).
+    // Mantemos default 1 pra satisfazer a constraint NOT NULL da coluna sem expor pro form.
+    sale_lead_days: 1,
     expedition_lead_days:
-      input.expeditionLeadDays != null && Number.isFinite(input.expeditionLeadDays) && Number(input.expeditionLeadDays) >= 0
+      Number.isFinite(input.expeditionLeadDays) && Number(input.expeditionLeadDays) >= 0
         ? Number(input.expeditionLeadDays)
-        : null,
+        : 1,
     unit_profiles: input.unitProfiles,
     packaging_profile: input.isSoldLoose ? null : input.packagingProfile ?? null,
     is_sold_loose: input.isSoldLoose,
@@ -1258,7 +1266,7 @@ export async function cloneProduct(
       allows_storage: row.allows_storage,
       production_days: row.production_days,
       sale_lead_days: row.sale_lead_days,
-      expedition_lead_days: (row as Record<string, unknown>).expedition_lead_days as number | null ?? null,
+      expedition_lead_days: Number(row.expedition_lead_days ?? 1),
       unit_profiles: row.unit_profiles,
       packaging_profile: row.packaging_profile,
       is_sold_loose: row.is_sold_loose,

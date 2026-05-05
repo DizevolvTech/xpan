@@ -34,7 +34,7 @@ export default function ExpedicaoDetailsPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isChecklistSaving, setIsChecklistSaving] = useState(false);
-  const { planningData } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData, isLoading } = useFactoryPlanningSnapshot(anchorDate);
   const deliveryExecutionState = useDeliveryExecution();
 
   const expedition = useMemo(
@@ -178,8 +178,8 @@ export default function ExpedicaoDetailsPage() {
   if (!expedition) {
     return (
       <PageLayout
-        title="Checklist não encontrado"
-        description="O pedido solicitado não existe para a referência atual."
+        title={isLoading ? "Carregando checklist…" : "Checklist não encontrado"}
+        description={isLoading ? "" : "O pedido solicitado não existe para a referência atual."}
         badge="Fábrica"
         breadcrumbs={[
           { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
@@ -197,7 +197,9 @@ export default function ExpedicaoDetailsPage() {
       >
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Ajuste a data de referência na fila de expedição e tente novamente.
+            {isLoading
+              ? "Buscando dados do checklist…"
+              : "Ajuste a data de referência na fila de expedição e tente novamente."}
           </CardContent>
         </Card>
       </PageLayout>

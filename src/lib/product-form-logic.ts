@@ -62,8 +62,10 @@ export function buildProductFormState(
       },
       packagingProfile: product.packagingProfile ? { ...product.packagingProfile } : undefined,
       productionDays: [...product.productionDays],
-      saleLeadDays: product.saleLeadDays && product.saleLeadDays > 0 ? product.saleLeadDays : 1,
-      expeditionLeadDays: product.expeditionLeadDays ?? null,
+      expeditionLeadDays:
+        Number.isFinite(product.expeditionLeadDays) && Number(product.expeditionLeadDays) >= 0
+          ? Number(product.expeditionLeadDays)
+          : 1,
       ingredientProfile: product.ingredientProfile
         ? {
             ...product.ingredientProfile,
@@ -93,8 +95,7 @@ export function buildProductFormState(
     economicProductionKg: 140,
     allowsStorage: false,
     productionDays: ["segunda", "quarta", "sexta"],
-    saleLeadDays: 1,
-    expeditionLeadDays: null,
+    expeditionLeadDays: 1,
     unitProfiles: {
       sales: createUnitProfile("Kg", "Unidade de venda", 1),
       production: createUnitProfile("Kg", "Unidade de produção", 1),

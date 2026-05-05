@@ -13,6 +13,7 @@ function buildSnapshot(
     operationalSettings: {
       orderCutoffTime: "18:00",
       expeditionLeadDays: 2,
+      saleLeadDays: 1,
     },
     stores: [
       {
@@ -94,6 +95,7 @@ function buildSnapshot(
         salesToKgFactor: 0.1,
         expeditionUnit: "Caixa",
         expeditionToKgFactor: 1,
+      expeditionLeadDays: 0,
         isMpiIngredient: false,
         createdAt: "2026-03-17T08:00:00Z",
         updatedAt: "2026-03-17T08:00:00Z",

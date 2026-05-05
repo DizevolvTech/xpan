@@ -41,7 +41,6 @@ const baseProduct: ProductionProduct = {
   economicProductionKg: 20,
   allowsStorage: false,
   productionDays: ["segunda"],
-  saleLeadDays: 1,
   unitProfiles: {
     sales: { unit: "Un", description: "Unidade", weightKg: 0.25 },
     production: { unit: "Kg", description: "Produção", weightKg: 1 },
@@ -72,6 +71,7 @@ const baseProduct: ProductionProduct = {
   salesToKgFactor: 0.25,
   expeditionUnit: "Caixa",
   expeditionToKgFactor: 1,
+      expeditionLeadDays: 1,
   isMpiIngredient: false,
 };
 

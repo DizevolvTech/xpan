@@ -22,9 +22,14 @@ export async function PATCH(request: Request) {
 
   const payload = (await request.json().catch(() => null)) as OperationalSettingsInput | null;
 
-  if (!payload || typeof payload.orderCutoffTime !== "string" || typeof payload.expeditionLeadDays !== "number") {
+  if (
+    !payload ||
+    typeof payload.orderCutoffTime !== "string" ||
+    typeof payload.expeditionLeadDays !== "number" ||
+    typeof payload.saleLeadDays !== "number"
+  ) {
     return NextResponse.json(
-      { message: "Informe o horário limite e o D+X da expedição." },
+      { message: "Informe o horário limite, o D+X de expedição e o D+X de venda." },
       { status: 400 },
     );
   }

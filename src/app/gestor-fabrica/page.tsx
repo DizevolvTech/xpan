@@ -40,6 +40,7 @@ export default function GestorFabricaPage() {
   const [settingsDraft, setSettingsDraft] = useState({
     orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
     expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
+    saleLeadDays: String(masterDataSnapshot.operationalSettings.saleLeadDays),
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsFeedback, setSettingsFeedback] = useState<{
@@ -51,21 +52,28 @@ export default function GestorFabricaPage() {
     setSettingsDraft({
       orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
       expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
+      saleLeadDays: String(masterDataSnapshot.operationalSettings.saleLeadDays),
     });
   }, [
     masterDataSnapshot.operationalSettings.expeditionLeadDays,
     masterDataSnapshot.operationalSettings.orderCutoffTime,
+    masterDataSnapshot.operationalSettings.saleLeadDays,
   ]);
 
   const isSettingsDirty =
     settingsDraft.orderCutoffTime !== masterDataSnapshot.operationalSettings.orderCutoffTime ||
-    settingsDraft.expeditionLeadDays !== String(masterDataSnapshot.operationalSettings.expeditionLeadDays);
+    settingsDraft.expeditionLeadDays !== String(masterDataSnapshot.operationalSettings.expeditionLeadDays) ||
+    settingsDraft.saleLeadDays !== String(masterDataSnapshot.operationalSettings.saleLeadDays);
   const expeditionLeadDaysValue = Number(settingsDraft.expeditionLeadDays);
+  const saleLeadDaysValue = Number(settingsDraft.saleLeadDays);
   const settingsFormIsValid =
     /^\d{2}:\d{2}$/.test(settingsDraft.orderCutoffTime) &&
     Number.isInteger(expeditionLeadDaysValue) &&
     expeditionLeadDaysValue >= 0 &&
-    expeditionLeadDaysValue <= 30;
+    expeditionLeadDaysValue <= 30 &&
+    Number.isInteger(saleLeadDaysValue) &&
+    saleLeadDaysValue >= 0 &&
+    saleLeadDaysValue <= 30;
 
   useUnsavedChangesGuard({
     isDirty: isSettingsDirty,
@@ -176,6 +184,7 @@ export default function GestorFabricaPage() {
         body: JSON.stringify({
           orderCutoffTime: settingsDraft.orderCutoffTime,
           expeditionLeadDays: expeditionLeadDaysValue,
+          saleLeadDays: saleLeadDaysValue,
         }),
       });
 
@@ -322,7 +331,7 @@ export default function GestorFabricaPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,240px)_minmax(0,220px)_1fr] xl:items-end">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,200px)_minmax(0,180px)_minmax(0,180px)_1fr] xl:items-end">
             <div className="space-y-2">
               <Label htmlFor="factory-order-cutoff-time">Horário limite do pedido</Label>
               <Input
@@ -353,6 +362,26 @@ export default function GestorFabricaPage() {
                   setSettingsDraft((current) => ({
                     ...current,
                     expeditionLeadDays: event.target.value,
+                  }));
+                  setSettingsFeedback(null);
+                }}
+                disabled={isSavingSettings}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="factory-sale-lead-days">Prazo de venda (após entrega)</Label>
+              <Input
+                id="factory-sale-lead-days"
+                type="number"
+                min={0}
+                max={30}
+                step={1}
+                value={settingsDraft.saleLeadDays}
+                onChange={(event) => {
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    saleLeadDays: event.target.value,
                   }));
                   setSettingsFeedback(null);
                 }}

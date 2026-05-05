@@ -100,6 +100,7 @@ export function buildStoreOrderCatalog(
           snapshot.operationalSettings,
           {
             productProductionDays: product.productionDays,
+            productExpeditionLeadDays: product.expeditionLeadDays,
             scheduleItem,
           },
         )
@@ -109,7 +110,8 @@ export function buildStoreOrderCatalog(
       store,
       snapshot.operationalSettings,
       product.productionDays,
-      product.saleLeadDays,
+      snapshot.operationalSettings.saleLeadDays,
+      product.expeditionLeadDays,
     );
 
     const key = `${schedule?.id ?? line.id}|${product.id}`;

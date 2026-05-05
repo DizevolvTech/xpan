@@ -18,6 +18,8 @@ const tenantOwnedTables = new Set([
   "products",
   "product_recipe_items",
   "product_preparation_steps",
+  "product_changelog",
+  "production_line_types",
   "store_orders",
   "store_order_items",
   "workflow_order_releases",

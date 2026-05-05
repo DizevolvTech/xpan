@@ -9,6 +9,7 @@ const emptySnapshot: MasterDataSnapshot = {
   operationalSettings: {
     orderCutoffTime: "18:00",
     expeditionLeadDays: 0,
+    saleLeadDays: 1,
   },
   sectors: [],
   lines: [],

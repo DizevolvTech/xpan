@@ -166,6 +166,7 @@ export type Database = {
           tenant_id: string;
           order_cutoff_time: string;
           expedition_lead_days: number;
+          sale_lead_days: number;
           created_at: string;
           updated_at: string;
         };
@@ -174,6 +175,7 @@ export type Database = {
           tenant_id: string;
           order_cutoff_time: string;
           expedition_lead_days: number;
+          sale_lead_days?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -430,6 +432,7 @@ export type Database = {
           allows_storage: boolean;
           production_days: string[];
           sale_lead_days: number;
+          expedition_lead_days: number;
           unit_profiles: Json;
           packaging_profile: Json | null;
           is_sold_loose: boolean;
@@ -468,6 +471,7 @@ export type Database = {
           allows_storage?: boolean;
           production_days?: string[];
           sale_lead_days?: number;
+          expedition_lead_days?: number;
           unit_profiles: Json;
           packaging_profile?: Json | null;
           is_sold_loose?: boolean;
@@ -540,6 +544,52 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["product_preparation_steps"]["Insert"]>;
+      };
+      product_changelog: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          product_id: string;
+          version_number: number;
+          change_description: string;
+          changed_by_profile_id: string | null;
+          changed_by_name: string;
+          snapshot_data: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          product_id: string;
+          version_number: number;
+          change_description: string;
+          changed_by_profile_id?: string | null;
+          changed_by_name?: string;
+          snapshot_data?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_changelog"]["Insert"]>;
+      };
+      production_line_types: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          name: string;
+          status: "ativo" | "inativo";
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          name: string;
+          status?: "ativo" | "inativo";
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["production_line_types"]["Insert"]>;
       };
       store_orders: {
         Row: {

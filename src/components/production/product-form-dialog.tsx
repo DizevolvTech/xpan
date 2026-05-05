@@ -89,8 +89,6 @@ type ProductFormDialogProps = {
 const breakStageLabels: Record<BreakStage, string> = {
   antes_divisao: "Antes da divisão",
   depois_divisao: "Depois da divisão",
-  antes_forno: "Antes do forno",
-  depois_forno: "Depois do forno",
 };
 
 function buildLineDraft(sectorId: string): LineDraftState {
@@ -558,7 +556,6 @@ export function ProductFormDialog({
         minimumFractionDigits: 3,
         maximumFractionDigits: 3,
       }),
-      saleLeadDays: formState.saleLeadDays && formState.saleLeadDays > 0 ? formState.saleLeadDays : 1,
       isMpiIngredient: formState.canBeIngredient,
       packagingProfile: normalizedPackagingProfile
         ? {
@@ -1751,25 +1748,23 @@ export function ProductFormDialog({
                     },
                     {
                       key: "production",
-                      label: "Produzir em",
-                      value: "Dias marcados abaixo",
-                      helper: "O produto só entra em produção se os dias do produto coincidirem com o cronograma ativo.",
+                      label: "Produzir",
+                      value: `${formState.expeditionLeadDays} dia(s) antes da entrega`,
+                      helper: "Antecedência necessária pra produção (esfriamento, descanso, etc.). Configurada por produto.",
                       tone: "info",
                     },
                     {
                       key: "delivery",
                       label: "Expedir / entregar",
-                      value: `D+${formState.expeditionLeadDays ?? snapshot.operationalSettings.expeditionLeadDays} da base${formState.expeditionLeadDays != null ? " (personalizado)" : ""}`,
-                      helper: formState.expeditionLeadDays != null
-                        ? "Este produto tem prazo de expedição personalizado."
-                        : "Usando o prazo global da fábrica. Altere abaixo para personalizar.",
+                      value: `D+${snapshot.operationalSettings.expeditionLeadDays} da base`,
+                      helper: "Regra global da fábrica (D+X). Configurada nas Regras de Pedido e Expedição.",
                       tone: "warning",
                     },
                     {
                       key: "sale",
                       label: "Vender a partir de",
-                      value: `Entrega + ${Math.max(1, formState.saleLeadDays || 1)} dia(s)`,
-                      helper: "A venda prevista começa depois da entrega, com base no lead do produto.",
+                      value: `Entrega + ${Math.max(1, snapshot.operationalSettings.saleLeadDays || 1)} dia(s)`,
+                      helper: "Configurado globalmente nas regras da fábrica (D+Y após entrega).",
                       tone: "success",
                     },
                   ]}
@@ -1800,48 +1795,31 @@ export function ProductFormDialog({
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="grid gap-2">
-                    <Label>Dias para expedição (D+X)</Label>
+                    <Label>Antecedência de produção (dias)</Label>
                     <Input
                       type="number"
                       min="0"
                       max="30"
-                      value={formState.expeditionLeadDays ?? ""}
-                      placeholder={`Padrão global: D+${snapshot.operationalSettings.expeditionLeadDays}`}
+                      value={formState.expeditionLeadDays}
                       disabled={isReadOnly}
                       onChange={(e) =>
                         setFormState((current) => ({
                           ...current,
-                          expeditionLeadDays: e.target.value === "" ? null : Number(e.target.value),
+                          expeditionLeadDays:
+                            e.target.value === "" || Number.isNaN(Number(e.target.value))
+                              ? 1
+                              : Math.max(0, Number(e.target.value)),
                         }))
                       }
                     />
                     <p className="text-xs text-muted-foreground">
-                      Quantos dias da base operacional até a entrega. Deixe vazio para usar o padrão global (D+{snapshot.operationalSettings.expeditionLeadDays}).
-                    </p>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Dias para venda após entrega</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="30"
-                      value={formState.saleLeadDays ?? 1}
-                      disabled={isReadOnly}
-                      onChange={(e) =>
-                        setFormState((current) => ({
-                          ...current,
-                          saleLeadDays: Number(e.target.value) || 1,
-                        }))
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Quantos dias após a entrega o produto pode ser vendido na loja.
+                      Quantos dias antes da expedição esse item precisa começar a ser produzido. Bolos: <strong>1</strong> (esfriar 1 dia). Pão fresco produzido no mesmo dia: <strong>0</strong>.
                     </p>
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-border/70 bg-panel/25 p-4 text-sm text-muted-foreground">
-                  Fluxo: pedido → produção no dia compatível → expedição em D+{formState.expeditionLeadDays ?? snapshot.operationalSettings.expeditionLeadDays} → venda {Math.max(1, formState.saleLeadDays || 1)} dia(s) após entrega.
+                  Fluxo: pedido → produção {formState.expeditionLeadDays} dia(s) antes da expedição → entrega → venda no dia seguinte (D+Y global em Configurações de fábrica).
                 </div>
               </section>
             </fieldset>

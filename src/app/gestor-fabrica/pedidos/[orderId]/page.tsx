@@ -26,7 +26,7 @@ export default function PedidoDetailsPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
-  const { planningData, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData, isLoading, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
 
   const order = useMemo(
     () => planningData.orders.find((item) => item.id === orderId) ?? null,
@@ -76,8 +76,8 @@ export default function PedidoDetailsPage() {
   if (!order) {
     return (
       <PageLayout
-        title="Pedido não encontrado"
-        description="O pedido solicitado não existe para a referência atual."
+        title={isLoading ? "Carregando pedido…" : "Pedido não encontrado"}
+        description={isLoading ? "" : "O pedido solicitado não existe para a referência atual."}
         badge="Fábrica"
         breadcrumbs={[
           { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
@@ -95,7 +95,9 @@ export default function PedidoDetailsPage() {
       >
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Ajuste a data de referência na lista de pedidos e tente novamente.
+            {isLoading
+              ? "Buscando dados do pedido…"
+              : "Ajuste a data de referência na lista de pedidos e tente novamente."}
           </CardContent>
         </Card>
       </PageLayout>

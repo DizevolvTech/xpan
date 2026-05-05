@@ -235,6 +235,7 @@ export async function createTenantWithAdmin(
       tenant_id: tenant.id,
       order_cutoff_time: "18:00",
       expedition_lead_days: 0,
+      sale_lead_days: 1,
     });
 
     if (settingsResult.error) {

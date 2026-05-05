@@ -36,7 +36,6 @@ function buildBaseProduct(): ProductionProduct {
     economicProductionKg: 140,
     allowsStorage: false,
     productionDays: ["segunda", "quarta", "sexta"],
-    saleLeadDays: 1,
     unitProfiles: {
       sales: { unit: "Kg", description: "Venda", weightKg: 1 },
       production: { unit: "Kg", description: "Produção", weightKg: 1 },
@@ -63,6 +62,7 @@ function buildBaseProduct(): ProductionProduct {
     salesToKgFactor: 1,
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
+      expeditionLeadDays: 1,
     isMpiIngredient: false,
   };
 }
@@ -71,7 +71,7 @@ test("new product form starts without a production line selected", () => {
   const formState = buildProductFormState(baseLines);
 
   assert.equal(formState.lineId, "");
-  assert.equal(formState.saleLeadDays, 1);
+  assert.equal(formState.expeditionLeadDays, 1);
   assert.equal(formState.shortName, "");
 });
 
