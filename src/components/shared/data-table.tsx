@@ -207,7 +207,7 @@ export function DataTable<T extends object>({
 
   if (isLoading) {
     return (
-      <div className="flex h-40 items-center justify-center rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
+      <div className="flex h-40 items-center justify-center rounded-xl border border-border/65 bg-card shadow-[var(--shadow-card)]">
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           <div className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           Carregando registros...
@@ -218,7 +218,7 @@ export function DataTable<T extends object>({
 
   if (data.length === 0) {
     return (
-      <div className="flex h-44 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-strong/35 bg-card px-6 text-center shadow-[var(--shadow-soft)]">
+      <div className="flex h-44 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-strong/35 bg-card px-6 text-center shadow-[var(--shadow-card)]">
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         {emptyStateAction && (
           <Button
@@ -239,7 +239,7 @@ export function DataTable<T extends object>({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
+      <div className="overflow-hidden rounded-xl border border-border/65 bg-card shadow-[var(--shadow-card)]">
         <div className="overflow-x-auto overscroll-x-contain">
         <table
           className={cn(
@@ -249,7 +249,7 @@ export function DataTable<T extends object>({
         >
           <thead
             className={cn(
-              "border-b border-border/70 bg-panel",
+              "border-b border-border bg-panel/70 backdrop-blur-sm",
               stickyHeader && "sticky top-0 z-10",
             )}
           >
@@ -265,7 +265,7 @@ export function DataTable<T extends object>({
                       : "none"
                   }
                   className={cn(
-                    "whitespace-nowrap px-4 text-left text-xs font-semibold text-muted-foreground/95",
+                    "whitespace-nowrap px-4 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
                     compact ? "py-2.5" : "py-3.5",
                   )}
                 >
@@ -297,7 +297,7 @@ export function DataTable<T extends object>({
               {actions && actions.length > 0 && (
                 <th
                   className={cn(
-                    "w-px whitespace-nowrap px-4 text-right text-xs font-semibold text-muted-foreground/95",
+                    "w-px whitespace-nowrap px-4 text-right text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
                     compact ? "py-2.5" : "py-3.5",
                   )}
                 >
@@ -319,7 +319,7 @@ export function DataTable<T extends object>({
                 <tr
                   key={rowKey}
                   className={cn(
-                    "transition-colors duration-200 hover:bg-panel/45",
+                    "group/row transition-colors duration-150 hover:bg-accent/[0.05]",
                     rowClickable && "cursor-pointer",
                     rowExpanded && "bg-primary/[0.04]",
                     rowClassName?.(item),
@@ -344,10 +344,10 @@ export function DataTable<T extends object>({
                   <td
                     key={column.key}
                     className={cn(
-                      "align-top border-t border-border/70 px-4 text-sm text-foreground",
+                      "align-top border-t border-border/55 px-4 text-sm text-foreground transition-colors duration-150",
                       rowExpanded
                         ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
-                        : "bg-card",
+                        : "bg-card group-hover/row:bg-transparent",
                       compact ? "py-2.5" : "py-3",
                     )}
                   >
@@ -360,10 +360,10 @@ export function DataTable<T extends object>({
                 {actions && actions.length > 0 && (
                   <td
                     className={cn(
-                      "align-top border-t border-border/70 px-4 text-right",
+                      "align-top border-t border-border/55 px-4 text-right transition-colors duration-150",
                       rowExpanded
                         ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
-                        : "bg-card",
+                        : "bg-card group-hover/row:bg-transparent",
                       compact ? "py-2.5" : "py-3",
                     )}
                   >

@@ -96,7 +96,7 @@ function SidebarNav({
   const activeItemId = getActiveItemId(pathname, navigationContext.sections);
   const activeProfile = pathname === navigationContext.currentUser.profilePath;
   const navItemBaseClass =
-    "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-[background-color,color,transform,box-shadow] duration-300 ease-out";
+    "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color,transform,box-shadow] duration-300 ease-out";
   const visibleModuleCount = navigationContext.sections.reduce(
     (total, section) => total + section.items.length,
     0,
@@ -203,13 +203,18 @@ function SidebarNav({
                   className={cn(
                     navItemBaseClass,
                     active
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[var(--shadow-soft)]"
-                      : "text-sidebar-foreground/90 hover:translate-x-0.5 hover:bg-sidebar-accent/85 hover:text-sidebar-accent-foreground",
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[var(--shadow-soft)] before:pointer-events-none before:absolute before:left-0 before:top-1/2 before:h-6 before:w-[3px] before:-translate-x-1 before:-translate-y-1/2 before:rounded-r-full before:bg-accent"
+                      : "text-sidebar-foreground/85 hover:translate-x-0.5 hover:bg-sidebar-accent/85 hover:text-sidebar-accent-foreground",
                     collapsed && "justify-center px-2",
                   )}
                   title={item.label}
                 >
-                  <Icon className="size-4 shrink-0 transition-transform duration-300 ease-out group-hover:scale-105" />
+                  <Icon
+                    className={cn(
+                      "size-4 shrink-0 transition-transform duration-300 ease-out group-hover:scale-105",
+                      active && "drop-shadow-[0_0_8px_color-mix(in_oklch,var(--accent)_40%,transparent)]",
+                    )}
+                  />
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
               );

@@ -1317,97 +1317,6 @@ export function ProductFormDialog({
                 </div>
               </section>
 
-              <section className="space-y-4 rounded-xl border border-border/80 p-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Engenharia e Produção</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Configure perdas, validade, bases de produção e rendimento líquido esperado.
-                  </p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-4">
-                  <div className="grid gap-2">
-                    <Label>Perda principal (%)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={formState.breakPercent}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          breakPercent: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Validade após produção (dias)</Label>
-                    <Input
-                      type="number"
-                      value={formState.validityDays}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          validityDays: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Base mínima de produção (Kg)</Label>
-                    <Input
-                      type="number"
-                      value={formState.minimumProductionKg}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          minimumProductionKg: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Base econômica de produção (Kg)</Label>
-                    <Input
-                      type="number"
-                      value={formState.economicProductionKg}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          economicProductionKg: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="flex items-end md:col-span-2">
-                    <div className="flex items-center gap-2 pb-2">
-                      <Checkbox
-                        id="storage"
-                        checked={formState.allowsStorage}
-                        onCheckedChange={(checked) =>
-                          setFormState((current) => ({
-                            ...current,
-                            allowsStorage: checked === true,
-                          }))
-                        }
-                      />
-                      <Label htmlFor="storage">Permite armazenar após produzir?</Label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                    Peso final / rendimento
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold text-emerald-900">
-                    {yieldPercent.toFixed(2)}%
-                  </p>
-                  <p className="mt-2 text-xs text-emerald-800">
-                    Percentual líquido estimado depois da perda principal informada.
-                  </p>
-                </div>
-              </section>
             </fieldset>
           </TabsContent>
 
@@ -1605,6 +1514,98 @@ export function ProductFormDialog({
                           )}
                         </tbody>
                       </table>
+                </div>
+              </section>
+
+              <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Parâmetros de Produção</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Configure perdas, validade, bases de produção e rendimento líquido esperado.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="grid gap-2">
+                    <Label>Perda principal (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={formState.breakPercent}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          breakPercent: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Validade após produção (dias)</Label>
+                    <Input
+                      type="number"
+                      value={formState.validityDays}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          validityDays: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Base mínima de produção (Kg)</Label>
+                    <Input
+                      type="number"
+                      value={formState.minimumProductionKg}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          minimumProductionKg: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Base econômica de produção (Kg)</Label>
+                    <Input
+                      type="number"
+                      value={formState.economicProductionKg}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          economicProductionKg: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-end md:col-span-2">
+                    <div className="flex items-center gap-2 pb-2">
+                      <Checkbox
+                        id="storage"
+                        checked={formState.allowsStorage}
+                        onCheckedChange={(checked) =>
+                          setFormState((current) => ({
+                            ...current,
+                            allowsStorage: checked === true,
+                          }))
+                        }
+                      />
+                      <Label htmlFor="storage">Permite armazenar após produzir?</Label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                    Peso final / rendimento
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold text-emerald-900">
+                    {yieldPercent.toFixed(2)}%
+                  </p>
+                  <p className="mt-2 text-xs text-emerald-800">
+                    Percentual líquido estimado depois da perda principal informada.
+                  </p>
                 </div>
               </section>
 

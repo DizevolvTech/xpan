@@ -20,26 +20,31 @@ interface KPICardProps {
   };
 }
 
-const toneStyles: Record<KpiTone, { badge: string; trend: string }> = {
+const toneStyles: Record<KpiTone, { badge: string; trend: string; rail: string }> = {
   neutral: {
     badge: "bg-secondary text-secondary-foreground",
     trend: "text-muted-foreground",
+    rail: "bg-border",
   },
   info: {
     badge: "bg-info text-info-foreground",
     trend: "text-[oklch(0.38_0.06_240)]",
+    rail: "bg-info",
   },
   success: {
     badge: "bg-success text-success-foreground",
     trend: "text-[oklch(0.35_0.07_160)]",
+    rail: "bg-success",
   },
   warning: {
     badge: "bg-warning text-warning-foreground",
     trend: "text-[oklch(0.4_0.08_85)]",
+    rail: "bg-warning",
   },
   danger: {
     badge: "bg-danger text-danger-foreground",
     trend: "text-[oklch(0.45_0.12_22)]",
+    rail: "bg-danger",
   },
 };
 
@@ -130,28 +135,40 @@ export function KPICard({
   const resolvedSubtitle = subtitle ?? compact?.full;
 
   return (
-    <article className="rounded-xl border border-border/80 bg-card p-4 text-card-foreground shadow-[var(--shadow-soft)]">
+    <article className="group relative overflow-hidden rounded-xl border border-border/70 bg-card p-5 pl-[calc(theme(spacing.5)+3px)] text-card-foreground shadow-[var(--shadow-card)] transition-[box-shadow,transform,border-color] duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-[var(--shadow-soft)]">
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-y-3 left-0 w-[3px] rounded-r-full opacity-80 transition-opacity duration-300 group-hover:opacity-100",
+          styles.rail,
+        )}
+        aria-hidden
+      />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
             {resolvedSubtitle && <InfoHint content={resolvedSubtitle} size="xs" />}
           </div>
           <p
-            className="mt-2 text-[clamp(1.25rem,2.1vw,1.7rem)] font-bold leading-tight text-foreground tabular-nums"
+            className="mt-2.5 font-heading text-[clamp(1.3rem,1.7vw,1.55rem)] font-bold leading-[1.1] tracking-[-0.022em] text-foreground tabular-nums"
             title={typeof displayValue === "string" ? displayValue : String(displayValue)}
           >
             {displayValue}
           </p>
         </div>
 
-        <div className={cn("flex size-10 shrink-0 items-center justify-center rounded-lg", styles.badge)}>
-          <Icon className="size-4 shrink-0" />
+        <div
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ring-border/60 shadow-[inset_0_1px_0_0_color-mix(in_oklch,white_45%,transparent)] transition-transform duration-300 group-hover:scale-[1.05]",
+            styles.badge,
+          )}
+        >
+          <Icon className="size-[1.05rem] shrink-0" />
         </div>
       </div>
 
       {trend && (
-        <div className={cn("mt-3 inline-flex items-center gap-1.5 text-xs font-semibold", styles.trend)}>
+        <div className={cn("mt-3.5 inline-flex items-center gap-1.5 text-xs font-semibold tabular-nums", styles.trend)}>
           {trend.direction === "up" && <TrendingUp className="size-3.5" />}
           {trend.direction === "down" && <TrendingDown className="size-3.5" />}
           <span>{trend.value}</span>

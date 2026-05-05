@@ -47,13 +47,16 @@ export function OperationalSequenceCard({
           : "xl:grid-cols-5";
 
   return (
-    <div className={cn("rounded-xl border border-border/80 bg-card p-4", className)}>
+    <div
+      className={cn(
+        "rounded-xl border border-border/70 bg-card p-5 shadow-[var(--shadow-card)]",
+        className,
+      )}
+    >
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          {eyebrow}
-        </p>
+        <p className="eyebrow">{eyebrow}</p>
         <div className="flex items-center gap-1.5">
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <h3 className="font-heading text-[0.95rem] font-semibold text-foreground">{title}</h3>
           {description ? <InfoHint content={description} size="sm" /> : null}
         </div>
       </div>
@@ -63,26 +66,28 @@ export function OperationalSequenceCard({
           <div
             key={step.key}
             className={cn(
-              "rounded-xl border p-4",
+              "relative rounded-xl border p-4 transition-colors duration-200 hover:border-border-strong/40",
               toneClassNames[step.tone ?? "neutral"],
             )}
           >
             <div className="flex items-center gap-2">
-              <span className="inline-flex size-5 items-center justify-center rounded-full bg-background/80 text-[10px] font-semibold text-foreground">
+              <span className="inline-flex size-5 items-center justify-center rounded-full bg-background text-[10px] font-bold text-foreground tabular-nums shadow-[0_1px_0_0_color-mix(in_oklch,var(--foreground)_8%,transparent),inset_0_0_0_1px_color-mix(in_oklch,var(--border-strong)_22%,transparent)]">
                 {index + 1}
               </span>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                 {step.label}
               </p>
               {step.helper ? <InfoHint content={step.helper} size="xs" /> : null}
             </div>
-            <p className="mt-2 text-sm font-semibold text-foreground">{step.value}</p>
+            <p className="mt-2.5 font-heading text-[0.95rem] font-semibold leading-tight text-foreground">
+              {step.value}
+            </p>
           </div>
         ))}
       </div>
 
       {footer ? (
-        <div className="mt-4 rounded-xl border border-border/70 bg-panel/25 px-4 py-3 text-sm text-muted-foreground">
+        <div className="mt-4 rounded-xl border border-dashed border-border/65 bg-panel/30 px-4 py-3 text-sm text-muted-foreground">
           {footer}
         </div>
       ) : null}

@@ -19,7 +19,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, action, breadcrumbs }: PageHeaderProps) {
   return (
-    <header className="rounded-xl border border-border/80 bg-surface px-5 py-5 shadow-[var(--shadow-soft)] sm:px-6">
+    <header className="relative overflow-hidden rounded-xl border border-border/70 bg-surface px-5 py-6 shadow-[var(--shadow-card)] sm:px-7 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:accent-rule">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           {breadcrumbs.map((crumb, index) => (
@@ -39,7 +39,9 @@ export function PageHeader({ title, description, action, breadcrumbs }: PageHead
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <h1 className="font-heading text-2xl font-bold text-foreground">{title}</h1>
+          <h1 className="font-heading text-balance text-[1.4rem] font-bold text-foreground sm:text-[1.55rem]">
+            {title}
+          </h1>
           {description && <InfoHint content={description} size="md" />}
         </div>
 

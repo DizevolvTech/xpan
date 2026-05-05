@@ -58,7 +58,9 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 10px);
 
+  --shadow-card: var(--shadow-card);
   --shadow-soft: var(--shadow-soft);
+  --shadow-popover: var(--shadow-popover);
   --shadow-elevated: var(--shadow-elevated);
 }
 
@@ -111,8 +113,21 @@
   --sidebar-border: oklch(0.84 0.013 88);
   --sidebar-ring: oklch(0.68 0.08 220);
 
-  --shadow-soft: 0 10px 30px -22px rgba(22, 26, 36, 0.35);
-  --shadow-elevated: 0 30px 80px -42px rgba(22, 26, 36, 0.5);
+  --shadow-card:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 4%, transparent),
+    0 1px 2px -1px color-mix(in oklch, var(--foreground) 6%, transparent),
+    0 8px 24px -18px color-mix(in oklch, var(--foreground) 22%, transparent);
+  --shadow-soft:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 5%, transparent),
+    0 10px 30px -22px color-mix(in oklch, var(--foreground) 30%, transparent);
+  --shadow-popover:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 6%, transparent),
+    0 12px 36px -16px color-mix(in oklch, var(--foreground) 28%, transparent),
+    0 24px 64px -36px color-mix(in oklch, var(--foreground) 38%, transparent);
+  --shadow-elevated:
+    0 1px 0 0 color-mix(in oklch, var(--foreground) 7%, transparent),
+    0 24px 56px -24px color-mix(in oklch, var(--foreground) 32%, transparent),
+    0 48px 96px -42px color-mix(in oklch, var(--foreground) 46%, transparent);
 }
 
 @layer base {
@@ -145,9 +160,14 @@
   body {
     @apply bg-canvas text-foreground font-sans;
     background-image:
-      radial-gradient(circle at 8% 10%, color-mix(in oklch, var(--accent) 20%, transparent) 0%, transparent 38%),
-      radial-gradient(circle at 95% 0%, color-mix(in oklch, var(--primary) 16%, transparent) 0%, transparent 34%);
+      radial-gradient(circle at 6% 8%, color-mix(in oklch, var(--accent) 24%, transparent) 0%, transparent 40%),
+      radial-gradient(circle at 96% -2%, color-mix(in oklch, var(--primary) 20%, transparent) 0%, transparent 36%);
     background-attachment: fixed;
+    line-height: 1.55;
+    font-feature-settings: "ss01", "cv11", "cv02";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   h1,
@@ -157,7 +177,25 @@
   h5,
   h6 {
     font-family: var(--font-heading), sans-serif;
-    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+
+  h1 {
+    letter-spacing: -0.028em;
+  }
+
+  h2 {
+    letter-spacing: -0.022em;
+  }
+
+  h3 {
+    letter-spacing: -0.018em;
+  }
+
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.014em;
   }
 
   ::selection {
@@ -169,6 +207,23 @@
 @layer utilities {
   .scroll-modern {
     scrollbar-gutter: stable both-edges;
+  }
+
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    font-size: 0.6875rem;
+    color: var(--muted-foreground);
+  }
+
+  .accent-rule {
+    background-image: linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--primary) 60%, transparent) 0%,
+      color-mix(in oklch, var(--accent) 70%, transparent) 50%,
+      color-mix(in oklch, var(--accent) 0%, transparent) 100%
+    );
   }
 }
 

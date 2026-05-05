@@ -32,53 +32,219 @@ type StatusType =
   | "no_destino"
   | "tentativa_falha";
 
-const statusConfig: Record<StatusType, { label: string; className: string }> = {
-  ativo: { label: "Ativo", className: "bg-success text-success-foreground" },
-  active: { label: "Ativo", className: "bg-success text-success-foreground" },
-  inativo: { label: "Inativo", className: "bg-secondary text-secondary-foreground" },
-  inactive: { label: "Inativo", className: "bg-secondary text-secondary-foreground" },
+type StatusTone = {
+  label: string;
+  bg: string;
+  text: string;
+  ring: string;
+  dot: string;
+};
+
+const statusConfig: Record<StatusType, StatusTone> = {
+  ativo: {
+    label: "Ativo",
+    bg: "bg-success/15",
+    text: "text-[oklch(0.34_0.07_162)]",
+    ring: "ring-success/35",
+    dot: "bg-[oklch(0.62_0.14_158)]",
+  },
+  active: {
+    label: "Ativo",
+    bg: "bg-success/15",
+    text: "text-[oklch(0.34_0.07_162)]",
+    ring: "ring-success/35",
+    dot: "bg-[oklch(0.62_0.14_158)]",
+  },
+  inativo: {
+    label: "Inativo",
+    bg: "bg-secondary/70",
+    text: "text-secondary-foreground",
+    ring: "ring-border",
+    dot: "bg-muted-foreground/65",
+  },
+  inactive: {
+    label: "Inativo",
+    bg: "bg-secondary/70",
+    text: "text-secondary-foreground",
+    ring: "ring-border",
+    dot: "bg-muted-foreground/65",
+  },
   nao_iniciado: {
     label: "Não iniciado",
-    className: "bg-[oklch(0.9_0.03_255)] text-[oklch(0.42_0.05_255)]",
+    bg: "bg-[oklch(0.94_0.018_255)]",
+    text: "text-[oklch(0.42_0.05_255)]",
+    ring: "ring-[oklch(0.86_0.03_255)]",
+    dot: "bg-[oklch(0.62_0.07_255)]",
   },
-  em_preparacao: { label: "Em Preparação", className: "bg-warning text-warning-foreground" },
-  agendado: { label: "Agendado", className: "bg-warning text-warning-foreground" },
-  em_producao: { label: "Em Produção", className: "bg-info text-info-foreground" },
+  em_preparacao: {
+    label: "Em Preparação",
+    bg: "bg-warning/22",
+    text: "text-[oklch(0.39_0.07_85)]",
+    ring: "ring-warning/35",
+    dot: "bg-[oklch(0.7_0.14_85)]",
+  },
+  agendado: {
+    label: "Agendado",
+    bg: "bg-warning/22",
+    text: "text-[oklch(0.39_0.07_85)]",
+    ring: "ring-warning/35",
+    dot: "bg-[oklch(0.7_0.14_85)]",
+  },
+  em_producao: {
+    label: "Em Produção",
+    bg: "bg-info/22",
+    text: "text-[oklch(0.34_0.05_240)]",
+    ring: "ring-info/35",
+    dot: "bg-[oklch(0.6_0.14_238)]",
+  },
   em_forno: {
     label: "Em Forno",
-    className: "bg-[oklch(0.8_0.14_55)] text-[oklch(0.3_0.09_45)]",
+    bg: "bg-[oklch(0.93_0.06_55)]",
+    text: "text-[oklch(0.3_0.09_45)]",
+    ring: "ring-[oklch(0.83_0.1_55)]",
+    dot: "bg-[oklch(0.62_0.16_45)]",
   },
   embalando: {
     label: "Embalando",
-    className: "bg-[oklch(0.84_0.08_165)] text-[oklch(0.33_0.08_165)]",
+    bg: "bg-[oklch(0.92_0.05_165)]",
+    text: "text-[oklch(0.33_0.08_165)]",
+    ring: "ring-[oklch(0.82_0.07_165)]",
+    dot: "bg-[oklch(0.55_0.12_165)]",
   },
-  concluido: { label: "Concluído", className: "bg-success text-success-foreground" },
+  concluido: {
+    label: "Concluído",
+    bg: "bg-success/15",
+    text: "text-[oklch(0.34_0.07_162)]",
+    ring: "ring-success/35",
+    dot: "bg-[oklch(0.62_0.14_158)]",
+  },
   em_espera: {
     label: "Em Espera",
-    className: "bg-[oklch(0.88_0.06_295)] text-[oklch(0.43_0.08_293)]",
+    bg: "bg-[oklch(0.94_0.04_295)]",
+    text: "text-[oklch(0.43_0.08_293)]",
+    ring: "ring-[oklch(0.85_0.05_295)]",
+    dot: "bg-[oklch(0.6_0.13_295)]",
   },
-  cancelado: { label: "Cancelado", className: "bg-danger text-danger-foreground" },
+  cancelado: {
+    label: "Cancelado",
+    bg: "bg-danger/18",
+    text: "text-[oklch(0.43_0.13_22)]",
+    ring: "ring-danger/35",
+    dot: "bg-[oklch(0.62_0.18_22)]",
+  },
   rota_entrega: {
     label: "Rota de Entrega",
-    className: "bg-[oklch(0.88_0.05_214)] text-[oklch(0.4_0.06_228)]",
+    bg: "bg-[oklch(0.93_0.04_214)]",
+    text: "text-[oklch(0.4_0.06_228)]",
+    ring: "ring-[oklch(0.83_0.05_214)]",
+    dot: "bg-[oklch(0.6_0.12_214)]",
   },
-  entregue: { label: "Entregue", className: "bg-success text-success-foreground" },
-  pendente: { label: "Pendente", className: "bg-warning text-warning-foreground" },
-  aprovado: { label: "Aprovado", className: "bg-success text-success-foreground" },
-  reprovado: { label: "Reprovado", className: "bg-danger text-danger-foreground" },
-  aberta: { label: "Aberta", className: "bg-danger text-danger-foreground" },
-  em_analise: { label: "Em Análise", className: "bg-warning text-warning-foreground" },
+  entregue: {
+    label: "Entregue",
+    bg: "bg-success/15",
+    text: "text-[oklch(0.34_0.07_162)]",
+    ring: "ring-success/35",
+    dot: "bg-[oklch(0.62_0.14_158)]",
+  },
+  pendente: {
+    label: "Pendente",
+    bg: "bg-warning/22",
+    text: "text-[oklch(0.39_0.07_85)]",
+    ring: "ring-warning/35",
+    dot: "bg-[oklch(0.7_0.14_85)]",
+  },
+  aprovado: {
+    label: "Aprovado",
+    bg: "bg-success/15",
+    text: "text-[oklch(0.34_0.07_162)]",
+    ring: "ring-success/35",
+    dot: "bg-[oklch(0.62_0.14_158)]",
+  },
+  reprovado: {
+    label: "Reprovado",
+    bg: "bg-danger/18",
+    text: "text-[oklch(0.43_0.13_22)]",
+    ring: "ring-danger/35",
+    dot: "bg-[oklch(0.62_0.18_22)]",
+  },
+  aberta: {
+    label: "Aberta",
+    bg: "bg-danger/18",
+    text: "text-[oklch(0.43_0.13_22)]",
+    ring: "ring-danger/35",
+    dot: "bg-[oklch(0.62_0.18_22)]",
+  },
+  em_analise: {
+    label: "Em Análise",
+    bg: "bg-warning/22",
+    text: "text-[oklch(0.39_0.07_85)]",
+    ring: "ring-warning/35",
+    dot: "bg-[oklch(0.7_0.14_85)]",
+  },
   aguardando_cliente: {
     label: "Aguardando Cliente",
-    className: "bg-[oklch(0.88_0.05_214)] text-[oklch(0.4_0.06_228)]",
+    bg: "bg-[oklch(0.93_0.04_214)]",
+    text: "text-[oklch(0.4_0.06_228)]",
+    ring: "ring-[oklch(0.83_0.05_214)]",
+    dot: "bg-[oklch(0.6_0.12_214)]",
   },
-  resolvida: { label: "Resolvida", className: "bg-info text-info-foreground" },
-  fechada: { label: "Fechada", className: "bg-secondary text-secondary-foreground" },
-  aguardando_expedicao: { label: "Aguardando Expedição", className: "bg-secondary text-secondary-foreground" },
-  pronto_coleta: { label: "Pronto p/ Coleta", className: "bg-warning text-warning-foreground" },
-  em_rota: { label: "Em Rota", className: "bg-info text-info-foreground" },
-  no_destino: { label: "No Destino", className: "bg-[oklch(0.88_0.05_214)] text-[oklch(0.4_0.06_228)]" },
-  tentativa_falha: { label: "Tentativa Falhou", className: "bg-danger text-danger-foreground" },
+  resolvida: {
+    label: "Resolvida",
+    bg: "bg-info/22",
+    text: "text-[oklch(0.34_0.05_240)]",
+    ring: "ring-info/35",
+    dot: "bg-[oklch(0.6_0.14_238)]",
+  },
+  fechada: {
+    label: "Fechada",
+    bg: "bg-secondary/70",
+    text: "text-secondary-foreground",
+    ring: "ring-border",
+    dot: "bg-muted-foreground/65",
+  },
+  aguardando_expedicao: {
+    label: "Aguardando Expedição",
+    bg: "bg-secondary/70",
+    text: "text-secondary-foreground",
+    ring: "ring-border",
+    dot: "bg-muted-foreground/65",
+  },
+  pronto_coleta: {
+    label: "Pronto p/ Coleta",
+    bg: "bg-warning/22",
+    text: "text-[oklch(0.39_0.07_85)]",
+    ring: "ring-warning/35",
+    dot: "bg-[oklch(0.7_0.14_85)]",
+  },
+  em_rota: {
+    label: "Em Rota",
+    bg: "bg-info/22",
+    text: "text-[oklch(0.34_0.05_240)]",
+    ring: "ring-info/35",
+    dot: "bg-[oklch(0.6_0.14_238)]",
+  },
+  no_destino: {
+    label: "No Destino",
+    bg: "bg-[oklch(0.93_0.04_214)]",
+    text: "text-[oklch(0.4_0.06_228)]",
+    ring: "ring-[oklch(0.83_0.05_214)]",
+    dot: "bg-[oklch(0.6_0.12_214)]",
+  },
+  tentativa_falha: {
+    label: "Tentativa Falhou",
+    bg: "bg-danger/18",
+    text: "text-[oklch(0.43_0.13_22)]",
+    ring: "ring-danger/35",
+    dot: "bg-[oklch(0.62_0.18_22)]",
+  },
+};
+
+const fallbackTone: StatusTone = {
+  label: "",
+  bg: "bg-secondary/70",
+  text: "text-secondary-foreground",
+  ring: "ring-border",
+  dot: "bg-muted-foreground/65",
 };
 
 interface StatusBadgeProps {
@@ -87,20 +253,20 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const config = statusConfig[status] || {
-    label: status,
-    className: "bg-secondary text-secondary-foreground",
-  };
+  const tone = statusConfig[status] ?? { ...fallbackTone, label: status };
 
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em]",
-        config.className,
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[10.5px] font-semibold uppercase tracking-[0.08em] ring-1 ring-inset",
+        tone.bg,
+        tone.text,
+        tone.ring,
         className,
       )}
     >
-      {config.label}
+      <span className={cn("size-1.5 rounded-full", tone.dot)} aria-hidden />
+      {tone.label}
     </span>
   );
 }
