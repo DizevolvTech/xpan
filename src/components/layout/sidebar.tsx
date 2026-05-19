@@ -20,9 +20,17 @@ import {
   Truck,
   UserRound,
   Users,
+  X,
 } from "lucide-react";
 
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { brand } from "@/lib/brand";
 import {
@@ -96,7 +104,7 @@ function SidebarNav({
   const activeItemId = getActiveItemId(pathname, navigationContext.sections);
   const activeProfile = pathname === navigationContext.currentUser.profilePath;
   const navItemBaseClass =
-    "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color,transform,box-shadow] duration-300 ease-out";
+    "group relative flex min-h-11 lg:min-h-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color,transform,box-shadow] duration-300 ease-out";
   const visibleModuleCount = navigationContext.sections.reduce(
     (total, section) => total + section.items.length,
     0,
@@ -261,7 +269,7 @@ function SidebarNav({
             size="sm"
             onClick={handleLogout}
             disabled={loggingOut}
-            className="mt-2 w-full justify-start text-muted-foreground hover:text-foreground"
+            className="mt-2 h-11 w-full justify-start text-muted-foreground hover:text-foreground lg:h-8"
           >
             <LogOut className="size-4" />
             {loggingOut ? "Saindo..." : "Sair"}
@@ -345,6 +353,13 @@ export function Sidebar({ navigationContext, mobileOpen, onMobileClose, classNam
             <SheetTitle>Navegação</SheetTitle>
             <SheetDescription>Selecione um módulo disponível para o seu usuário.</SheetDescription>
           </SheetHeader>
+          {/* UX-0010: alvo de fechar touch ≥44px — só mobile (Sheet só existe <lg) */}
+          <SheetClose
+            aria-label="Fechar navegação"
+            className="absolute right-3 top-3 z-10 inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-ring/45 focus-visible:ring-[3px]"
+          >
+            <X className="size-5" />
+          </SheetClose>
           <SidebarNav navigationContext={navigationContext} collapsed={false} onNavigate={onMobileClose} />
         </SheetContent>
       </Sheet>

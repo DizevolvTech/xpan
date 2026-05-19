@@ -55,7 +55,7 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
         <Button
           type="button"
           variant="outline"
-          size="icon-sm"
+          size="icon-lg"
           className="fixed top-4 left-4 z-30 lg:hidden"
           onClick={() => setMobileOpen(true)}
           aria-label="Abrir navegação"
@@ -80,6 +80,7 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
                 size="sm"
                 disabled={isLeavingReadOnly}
                 onClick={handleLeaveReadOnly}
+                className="h-11 lg:h-8"
               >
                 Voltar ao painel master
               </Button>

@@ -131,6 +131,7 @@
 - **Escopo:** só espaçamento/hit-target por breakpoint; **não** mexer em navegação nem
   `permission-modules`. Ganho concentrado em loja/chão.
 - **RICE:** R4 · I1 · C0.75 · E0.8.
+- **Status:** ✅ Concluído em 2026-05-19 (app-shell.tsx +3/-1, sidebar.tsx +21/-4; 6 controles do shell → ≥44×44px mobile via base touch + `lg:`/`sm:` reafirmando desktop byte-a-byte; zero primitivo/token novo; nav/permission/colapso/rota intactos; e2e 26 PASS/0 FAIL desktop; lint/tsc/test verdes). ⚠️ Smoke responsivo loja/chão 360/768 no Gate 1. Ver spec §7.
 
 ### Tela — Onda 2 (piloto; consomem a fundação)
 
