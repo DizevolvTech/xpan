@@ -25,7 +25,7 @@
 ---
 
 ### AJ-0014 — Cálculo correto de dias de cobertura (quadradinhos verdes)
-**Concluído em:** 2026-05-19 (a commitar) — Onda 3 · regra confirmada com Giuseppe
+**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3 · regra confirmada com Giuseppe
 **Origem:** Call 2026-05-13 (Bloco 14) · **Status:** Concluído · **Categoria:** Regra
 
 > **Regra adotada (confirmada):** `coberturaDias = max(1, round(7 / nº de dias de produção do produto na semana))`. 1x/sem→7, 3x/sem→~2, todo dia→1. Helper `getCoverageDays` em `loja/pedidos/page.tsx`. Os N primeiros quadradinhos da grade ficam verdes por produto (informativo — não muda o modelo de dados do pedido; a "soma = semana completa quando a fábrica abre vários dias" continua dependendo do AJ-0009/Onda 4). **Limitação conhecida:** o caso "cardápio sáb-only → 1" não é distinguível de "1x/sem → 7" sem um tipo de produto dedicado — documentado, refinar com cliente se necessário.
@@ -47,7 +47,7 @@
 ---
 
 ### AJ-0011 — Sincronia de status entre OP / Expedição / Entrega
-**Concluído em:** 2026-05-19 (a commitar) — Onda 3 · sem migração
+**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3 · sem migração
 **Origem:** Call 2026-05-13 (Bloco 11) + Dívida [[Dívida Técnica#D05]] · **Status:** Concluído · **Categoria:** Bug
 
 > **Feito:** em `appendOrderEventsForProductionItem` (`workflow.ts`), quando a produção do pedido fecha 100% (status derivado via `applyFactoryWorkflowState` = `aguardando_expedicao`), o sistema agora: (1) persiste um **checkpoint** em `delivery_executions` (`upsert` mínimo, `onConflict: order_id, ignoreDuplicates` — não sobrescreve entrega já avançada, sem migração pois `status` default já é `aguardando_expedicao`); (2) emite **um** evento `producao_finalizada` em `store_order_events` (idempotente: só se ainda não há row de execução). `event_type` é `text` livre (sem CHECK) → sem migração.
@@ -87,7 +87,7 @@
 ## 🟡 Importante (UX/Bug operacional)
 
 ### AJ-0001 — Visualização Kanban read-only (acompanhamento)
-**Concluído em:** 2026-05-19 (a commitar) — Onda 3
+**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3
 **Origem:** Call 2026-05-13 (Bloco 1) · **Status:** Concluído · **Categoria:** UX
 
 > **Feito:** seção "Acompanhamento" no dashboard `gestor-fabrica/page.tsx` — 4 colunas (Aberto / Em produção / Aguardando expedição / Em rota·entregue) a partir de `planningData.orders`. Read-only; cada card navega para `/gestor-fabrica/pedidos?status=<status>` (reaproveita o deep-link do AJ-0002). Não manipula status. Card→lista filtrada (decisão Giuseppe); deep-link ao modal de detalhe fica como possível refino futuro.
@@ -205,7 +205,7 @@
 ---
 
 ### AJ-0016 — Mostrar data no quadradinho de cobertura
-**Concluído em:** 2026-05-19 (a commitar) — Onda 3 (junto do AJ-0014)
+**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3 (junto do AJ-0014)
 **Origem:** Call 2026-05-13 (Adriano, Bloco 14) · **Status:** Concluído · **Categoria:** UX
 
 > **Feito:** cabeçalho da grade mostra `SÁB 17` (dia da semana + data real) por coluna, via `formatCoverageColumnLabel(saleDate, index)`.
