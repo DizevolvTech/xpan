@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { AlertCircle, ArrowUpDown, ArrowUpRight, ChevronDown, ChevronUp, Eye, LucideIcon, Pencil, Plus, Printer, Trash2, UserRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { DataTableSkeleton } from "@/components/shared/skeleton";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { paginateArray } from "@/lib/pagination";
 import {
@@ -207,12 +208,11 @@ export function DataTable<T extends object>({
 
   if (isLoading) {
     return (
-      <div className="flex h-40 items-center justify-center rounded-xl border border-border/65 bg-card shadow-[var(--shadow-card)]">
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <div className="size-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          Carregando registros...
-        </div>
-      </div>
+      <DataTableSkeleton
+        columns={columns.length}
+        hasActions={Boolean(actions && actions.length > 0)}
+        compact={compact}
+      />
     );
   }
 

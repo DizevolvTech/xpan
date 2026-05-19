@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { LucideIcon, TrendingDown, TrendingUp } from "lucide-react";
 import { InfoHint } from "@/components/shared/info-hint";
+import { Skeleton } from "@/components/shared/skeleton";
 import { cn } from "@/lib/utils";
 
 export type KpiTone = "neutral" | "info" | "success" | "warning" | "danger";
@@ -15,6 +16,8 @@ interface KPICardProps {
   subtitle?: string;
   compactValue?: boolean;
   compactThreshold?: number;
+  /** UX-0003: quando true, o slot do valor exibe um Skeleton (mesma caixa, sem CLS). */
+  isLoading?: boolean;
   trend?: {
     value: string;
     direction: "up" | "down" | "flat";
@@ -132,6 +135,7 @@ export function KPICard({
   compactThreshold = 1000,
   trend,
   href,
+  isLoading = false,
 }: KPICardProps) {
   const styles = toneStyles[tone];
   const compact = compactValue ? formatCompactKpiValue(value, compactThreshold) : null;
@@ -158,12 +162,20 @@ export function KPICard({
             <p className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
             {resolvedSubtitle && <InfoHint content={resolvedSubtitle} size="xs" />}
           </div>
-          <p
-            className="mt-2.5 font-heading text-[clamp(1.3rem,1.7vw,1.55rem)] font-bold leading-[1.1] tracking-[-0.022em] text-foreground tabular-nums"
-            title={typeof displayValue === "string" ? displayValue : String(displayValue)}
-          >
-            {displayValue}
-          </p>
+          {isLoading ? (
+            <Skeleton
+              variant="block"
+              label="Carregando indicador"
+              className="mt-2.5 h-[1.705rem] w-20"
+            />
+          ) : (
+            <p
+              className="mt-2.5 font-heading text-[clamp(1.3rem,1.7vw,1.55rem)] font-bold leading-[1.1] tracking-[-0.022em] text-foreground tabular-nums"
+              title={typeof displayValue === "string" ? displayValue : String(displayValue)}
+            >
+              {displayValue}
+            </p>
+          )}
         </div>
 
         <div

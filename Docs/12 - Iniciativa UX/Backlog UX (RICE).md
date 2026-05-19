@@ -78,6 +78,7 @@
 - **Arquivos:** novo `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/components/shared/skeleton.tsx`; adoção em `src/components/shared/data-table.tsx:208-217` e KPI.
 - **Escopo:** placeholder de forma que elimina CLS; sem mudar tempo de carga (só percebido).
 - **RICE:** R10 · I2 · C0.95 · E1.2.
+- **Status:** ✅ Concluído em 2026-05-19 (skeleton.tsx Skeleton+DataTableSkeleton via cva, zero dep nova; adotado em data-table.tsx + kpi-card.tsx + 5 callers gestor-fabrica/page.tsx; alturas CLS-matched; ~41 sítios de tela adiados p/ UX-0009/Onda 2-3; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). Ver spec §7.
 
 #### `UX-0004` — Convenção "botão enviando" · 🟡 Estado · Score 16.2
 - **Problema:** [[UX Audit — Sistema#F-5]]. `button.tsx:11-71` sem `isLoading`.

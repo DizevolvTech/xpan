@@ -457,7 +457,8 @@ export default function GestorFabricaPage() {
       >
         <KPICard
           title="Pedidos no dia"
-          value={isLoading ? "..." : metrics.totalOrders}
+          isLoading={isLoading}
+          value={metrics.totalOrders}
           tone="info"
           icon={ShoppingCart}
           compactValue
@@ -465,7 +466,8 @@ export default function GestorFabricaPage() {
         />
         <KPICard
           title="Aguardando liberação"
-          value={isLoading ? "..." : metrics.awaitingRelease}
+          isLoading={isLoading}
+          value={metrics.awaitingRelease}
           tone="warning"
           icon={Clock}
           compactValue
@@ -473,7 +475,8 @@ export default function GestorFabricaPage() {
         />
         <KPICard
           title="Em produção"
-          value={isLoading ? "..." : metrics.inProduction}
+          isLoading={isLoading}
+          value={metrics.inProduction}
           tone="info"
           icon={Factory}
           compactValue
@@ -481,7 +484,8 @@ export default function GestorFabricaPage() {
         />
         <KPICard
           title="Checklist pendente"
-          value={isLoading ? "..." : metrics.checklistPending}
+          isLoading={isLoading}
+          value={metrics.checklistPending}
           tone="success"
           icon={ListChecks}
           compactValue
@@ -489,7 +493,8 @@ export default function GestorFabricaPage() {
         />
         <KPICard
           title="Entregas em campo"
-          value={isLoading ? "..." : metrics.deliveriesInField}
+          isLoading={isLoading}
+          value={metrics.deliveriesInField}
           tone="neutral"
           icon={Truck}
           compactValue
