@@ -123,6 +123,7 @@
 - **Arquivos:** `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/components/shared/{page-header,page-hero,page-layout,kpi-card,status-badge,module-card,profile-page}.tsx` + `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/components/layout/{app-shell,sidebar,area-shell-layout,page-container}.tsx`.
 - **Depende de:** `UX-0005` (consome a nova escala). `profile-page.tsx` cobre 6 perfis.
 - **RICE:** R10 · I1 · C0.8 · E1.2.
+- **Status:** ✅ Concluído em 2026-05-19 (~75 opacidades ad-hoc → tokens `--opacity-*` via de-para UX-0005 §7.4, Estratégia A, em 8 arquivos; 28 tokens de cor novos em globals.css — 5 famílias `--status-*` + 4 `--kpi-trend-*` + 2 `--module-*` com valores OKLCH AA-validados UX-0006; 1 convergência de raio page-header; sidebar /45/85/90 → input UX-0005; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). ⚠️ **Smoke visual Gate 1**: 5 pontos Δ=5pp (maior: /70→0.65 cascateia em todas as telas) + raio page-header. Ver spec §7.
 
 #### `UX-0010` — Densidade responsiva no shell · 🟢 Responsivo · Score 3.8
 - **Problema:** [[UX Audit — Sistema#F-8]].

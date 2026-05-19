@@ -63,7 +63,7 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
           <Menu className="size-5" />
         </Button>
         {navigationContext.accessMode === "read-only-tenant" && navigationContext.selectedTenant ? (
-          <div className="border-b border-border/70 bg-amber-50/90 px-4 py-3 text-amber-950 backdrop-blur-sm lg:px-6">
+          <div className="border-b border-border/[var(--opacity-strong)] bg-amber-50/90 px-4 py-3 text-amber-950 backdrop-blur-sm lg:px-6">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-1">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-800">
@@ -85,7 +85,7 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
               </Button>
             </div>
             {leaveReadOnlyError ? (
-              <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
+              <div className="mt-3 rounded-lg border border-danger/[var(--opacity-border)] bg-danger/[var(--opacity-faint)] px-3 py-2 text-sm text-danger-foreground">
                 {leaveReadOnlyError}
               </div>
             ) : null}

@@ -34,22 +34,22 @@ const toneStyles: Record<KpiTone, { badge: string; trend: string; rail: string }
   },
   info: {
     badge: "bg-info text-info-foreground",
-    trend: "text-[oklch(0.38_0.06_240)]",
+    trend: "text-[var(--kpi-trend-info)]",
     rail: "bg-info",
   },
   success: {
     badge: "bg-success text-success-foreground",
-    trend: "text-[oklch(0.35_0.07_160)]",
+    trend: "text-[var(--kpi-trend-success)]",
     rail: "bg-success",
   },
   warning: {
     badge: "bg-warning text-warning-foreground",
-    trend: "text-[oklch(0.4_0.08_85)]",
+    trend: "text-[var(--kpi-trend-warning)]",
     rail: "bg-warning",
   },
   danger: {
     badge: "bg-danger text-danger-foreground",
-    trend: "text-[oklch(0.45_0.12_22)]",
+    trend: "text-[var(--kpi-trend-danger)]",
     rail: "bg-danger",
   },
 };
@@ -145,8 +145,8 @@ export function KPICard({
   const card = (
     <article
       className={cn(
-        "group relative overflow-hidden rounded-xl border border-border/70 bg-card p-5 pl-[calc(theme(spacing.5)+3px)] text-card-foreground shadow-[var(--shadow-card)] transition-[box-shadow,transform,border-color] duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-[var(--shadow-soft)]",
-        href && "cursor-pointer hover:border-primary/50",
+        "group relative overflow-hidden rounded-xl border border-border/[var(--opacity-strong)] bg-card p-5 pl-[calc(theme(spacing.5)+3px)] text-card-foreground shadow-[var(--shadow-card)] transition-[box-shadow,transform,border-color] duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-[var(--shadow-soft)]",
+        href && "cursor-pointer hover:border-primary/[var(--opacity-divider)]",
       )}
     >
       <span
@@ -180,7 +180,7 @@ export function KPICard({
 
         <div
           className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ring-border/60 shadow-[inset_0_1px_0_0_color-mix(in_oklch,white_45%,transparent)] transition-transform duration-300 group-hover:scale-[1.05]",
+            "flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ring-border/[var(--opacity-strong)] shadow-[inset_0_1px_0_0_color-mix(in_oklch,white_45%,transparent)] transition-transform duration-300 group-hover:scale-[1.05]",
             styles.badge,
           )}
         >

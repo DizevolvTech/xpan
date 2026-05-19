@@ -19,7 +19,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, action, breadcrumbs }: PageHeaderProps) {
   return (
-    <header className="relative overflow-hidden rounded-xl border border-border/70 bg-surface px-5 py-6 shadow-[var(--shadow-card)] sm:px-7 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:accent-rule">
+    <header className="relative overflow-hidden rounded-2xl border border-border/[var(--opacity-strong)] bg-surface px-5 py-6 shadow-[var(--shadow-card)] sm:px-7 before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:accent-rule">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="mb-3 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
           {breadcrumbs.map((crumb, index) => (

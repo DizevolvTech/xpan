@@ -13,13 +13,13 @@ export type ModuleTone =
   | "slate";
 
 const toneStyles: Record<ModuleTone, { icon: string; marker: string }> = {
-  blue: { icon: "bg-info text-info-foreground", marker: "bg-info-foreground/20" },
-  emerald: { icon: "bg-success text-success-foreground", marker: "bg-success-foreground/20" },
-  violet: { icon: "bg-[oklch(0.88_0.06_295)] text-[oklch(0.43_0.08_293)]", marker: "bg-[oklch(0.43_0.08_293)]/25" },
-  amber: { icon: "bg-warning text-warning-foreground", marker: "bg-warning-foreground/25" },
-  rose: { icon: "bg-danger text-danger-foreground", marker: "bg-danger-foreground/25" },
-  cyan: { icon: "bg-[oklch(0.88_0.05_214)] text-[oklch(0.4_0.06_228)]", marker: "bg-[oklch(0.4_0.06_228)]/25" },
-  slate: { icon: "bg-secondary text-secondary-foreground", marker: "bg-muted-foreground/25" },
+  blue: { icon: "bg-info text-info-foreground", marker: "bg-info-foreground/[var(--opacity-soft)]" },
+  emerald: { icon: "bg-success text-success-foreground", marker: "bg-success-foreground/[var(--opacity-soft)]" },
+  violet: { icon: "bg-[var(--module-violet)] text-[var(--module-violet-foreground)]", marker: "bg-[var(--module-violet-foreground)]/[var(--opacity-muted)]" },
+  amber: { icon: "bg-warning text-warning-foreground", marker: "bg-warning-foreground/[var(--opacity-muted)]" },
+  rose: { icon: "bg-danger text-danger-foreground", marker: "bg-danger-foreground/[var(--opacity-muted)]" },
+  cyan: { icon: "bg-[var(--module-cyan)] text-[var(--module-cyan-foreground)]", marker: "bg-[var(--module-cyan-foreground)]/[var(--opacity-muted)]" },
+  slate: { icon: "bg-secondary text-secondary-foreground", marker: "bg-muted-foreground/[var(--opacity-muted)]" },
 };
 
 interface ModuleCardProps {
@@ -48,7 +48,7 @@ export function ModuleCard({
   return (
     <Link
       href={href}
-      className="group flex h-full flex-col rounded-xl border border-border/80 bg-surface p-5 shadow-[var(--shadow-soft)] transition duration-200 hover:-translate-y-1 hover:border-border-strong/35"
+      className="group flex h-full flex-col rounded-xl border border-border/[var(--opacity-prominent)] bg-surface p-5 shadow-[var(--shadow-soft)] transition duration-200 hover:-translate-y-1 hover:border-border-strong/[var(--opacity-border)]"
     >
       <div className="flex items-start gap-3">
         <div className={cn("mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-xl", styles.icon)}>

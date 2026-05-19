@@ -26,7 +26,7 @@ export function PageHero({
   return (
     <section
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-border/70 bg-surface px-5 py-7 shadow-[var(--shadow-card)] sm:px-7 lg:px-9 lg:py-8",
+        "relative overflow-hidden rounded-2xl border border-border/[var(--opacity-strong)] bg-surface px-5 py-7 shadow-[var(--shadow-card)] sm:px-7 lg:px-9 lg:py-8",
         "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:accent-rule",
         "after:pointer-events-none after:absolute after:-right-24 after:-top-24 after:size-64 after:rounded-full after:bg-[radial-gradient(circle,color-mix(in_oklch,var(--accent)_18%,transparent)_0%,transparent_70%)]",
         className,
@@ -52,7 +52,7 @@ export function PageHero({
       <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           {badge && (
-            <span className="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-accent-foreground backdrop-blur-sm">
+            <span className="inline-flex items-center gap-2 rounded-full border border-accent/[var(--opacity-border)] bg-accent/[var(--opacity-faint)] px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-accent-foreground backdrop-blur-sm">
               <span className="relative flex size-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
                 <span className="relative inline-flex size-2 rounded-full bg-accent" />

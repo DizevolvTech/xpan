@@ -343,9 +343,9 @@ export function ProfilePage({
           <CardTitle>Conta e Contato</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          <div className="rounded-lg border border-border/75 bg-panel/35 p-4">
+          <div className="rounded-lg border border-border/[var(--opacity-prominent)] bg-panel/[var(--opacity-border)] p-4">
             <div className="flex flex-col items-center gap-3">
-              <Avatar className="size-20 border border-border/70">
+              <Avatar className="size-20 border border-border/[var(--opacity-strong)]">
                 {form.avatarUrl ? <AvatarImage src={form.avatarUrl} alt={`Foto de ${form.name}`} /> : null}
                 <AvatarFallback className="text-base font-semibold">
                   {getInitials(form.name)}
@@ -353,7 +353,7 @@ export function ProfilePage({
               </Avatar>
               <Label
                 htmlFor="profile-photo"
-                className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border/80 bg-card px-3 py-2 text-xs font-semibold text-foreground"
+                className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border/[var(--opacity-prominent)] bg-card px-3 py-2 text-xs font-semibold text-foreground"
               >
                 <Camera className="size-4" />
                 Trocar foto
@@ -552,13 +552,13 @@ export function ProfilePage({
       </Card>
 
       {errorMessage ? (
-        <div className="rounded-lg border border-danger/40 bg-danger/25 px-3 py-2 text-sm text-danger-foreground">
+        <div className="rounded-lg border border-danger/[var(--opacity-border)] bg-danger/[var(--opacity-muted)] px-3 py-2 text-sm text-danger-foreground">
           {errorMessage}
         </div>
       ) : null}
 
       {successMessage ? (
-        <div className="rounded-lg border border-success/40 bg-success/25 px-3 py-2 text-sm text-success-foreground">
+        <div className="rounded-lg border border-success/[var(--opacity-border)] bg-success/[var(--opacity-muted)] px-3 py-2 text-sm text-success-foreground">
           {successMessage}
         </div>
       ) : null}

@@ -138,6 +138,48 @@
   --sidebar-border: oklch(0.84 0.013 88);
   --sidebar-ring: oklch(0.68 0.08 220);
 
+  /* UX-0009 — Tokens de cor de estado/marca delegados pela UX-0006 §2.4.
+     Valor = OKLCH inline atual, byte-a-byte (UX-0006 §1.5 mediu AA: 6.91-11.04:1).
+     Normalizacao, NAO correcao de contraste — nenhum pixel muda. Padrao semantico
+     da casa (espelha --success/--success-foreground). Reuso-primeiro: nenhum token
+     existente tem o valor exato (L/C divergem de --info/--success/etc.). */
+  --status-neutral: oklch(0.94 0.018 255);
+  --status-neutral-foreground: oklch(0.42 0.05 255);
+  --status-neutral-ring: oklch(0.86 0.03 255);
+  --status-neutral-dot: oklch(0.62 0.07 255);
+
+  --status-bake: oklch(0.93 0.06 55);
+  --status-bake-foreground: oklch(0.3 0.09 45);
+  --status-bake-ring: oklch(0.83 0.1 55);
+  --status-bake-dot: oklch(0.62 0.16 45);
+
+  --status-pack: oklch(0.92 0.05 165);
+  --status-pack-foreground: oklch(0.33 0.08 165);
+  --status-pack-ring: oklch(0.82 0.07 165);
+  --status-pack-dot: oklch(0.55 0.12 165);
+
+  --status-hold: oklch(0.94 0.04 295);
+  --status-hold-foreground: oklch(0.43 0.08 293);
+  --status-hold-ring: oklch(0.85 0.05 295);
+  --status-hold-dot: oklch(0.6 0.13 295);
+
+  --status-transit: oklch(0.93 0.04 214);
+  --status-transit-foreground: oklch(0.4 0.06 228);
+  --status-transit-ring: oklch(0.83 0.05 214);
+  --status-transit-dot: oklch(0.6 0.12 214);
+
+  /* kpi-card trends (UX-0006 §1.5: 7.87-10.87:1 ✅) — valor preservado. */
+  --kpi-trend-info: oklch(0.38 0.06 240);
+  --kpi-trend-success: oklch(0.35 0.07 160);
+  --kpi-trend-warning: oklch(0.4 0.08 85);
+  --kpi-trend-danger: oklch(0.45 0.12 22);
+
+  /* module-card violet/cyan (UX-0006 §1.5: 5.73:1 / 6.41:1 ✅) — valor preservado. */
+  --module-violet: oklch(0.88 0.06 295);
+  --module-violet-foreground: oklch(0.43 0.08 293);
+  --module-cyan: oklch(0.88 0.05 214);
+  --module-cyan-foreground: oklch(0.4 0.06 228);
+
   --shadow-card:
     0 1px 0 0 color-mix(in oklch, var(--foreground) 4%, transparent),
     0 1px 2px -1px color-mix(in oklch, var(--foreground) 6%, transparent),
