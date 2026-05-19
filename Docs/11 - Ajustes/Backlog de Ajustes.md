@@ -2,7 +2,7 @@
 
 > Lista única, numerada, com status. Atualizar conforme cada ajuste é trabalhado.
 
-**Última revisão:** 2026-05-14
+**Última revisão:** 2026-05-19
 
 ---
 
@@ -93,7 +93,8 @@
 ---
 
 ### AJ-0003 — Auditoria do cronograma: coluna `expedition_lead_days`
-**Origem:** Call 2026-05-13 (Bloco 3) · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Origem:** Call 2026-05-13 (Bloco 3) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/gestor-fabrica/sublinhas-producao/page.tsx` · [[Regra — Lead Days]]
 
 **O quê:** Adicionar coluna na tabela de auditoria que mostra `expedition_lead_days` por produto. Hoje o dado só existe no cadastro do produto.
@@ -101,7 +102,8 @@
 ---
 
 ### AJ-0004 — Decimais em receita: 1 + 3 (X,XXX)
-**Origem:** Call 2026-05-13 (Bloco 5) · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Origem:** Call 2026-05-13 (Bloco 5) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/gestor-dados/produtos/...` (cadastro de receita)
 
 **O quê:** Mostrar rendimento e cálculos derivados com 3 casas decimais (ex: 9,123 em vez de 9). Importante para o cliente copiar para Excel.
@@ -109,7 +111,8 @@
 ---
 
 ### AJ-0005 — Pedido da Loja: indisponíveis no fim da lista
-**Origem:** Call 2026-05-13 (Bloco 6) · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Origem:** Call 2026-05-13 (Bloco 6) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/loja/pedidos/[orderId]/page.tsx` (ou onde lista produtos)
 
 **O quê:** Itens com `available_for_ordering=false` OU com regra de calendário bloqueada **vão para o fim da lista** (ou ficam ocultos com toggle "ver indisponíveis").
@@ -117,7 +120,8 @@
 ---
 
 ### AJ-0006 — Remover legenda "abaixo do mínimo produtivo" do lado loja
-**Origem:** Call 2026-05-13 (Bloco 7) · **Status:** A-fazer · **Categoria:** UX/Regra
+**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Origem:** Call 2026-05-13 (Bloco 7) · **Status:** Concluído · **Categoria:** UX/Regra
 **Área:** `src/app/loja/pedidos/...` · [[Regra — Lote Mínimo e Múltiplos]] · [[Dívida Técnica#D09]]
 
 **O quê:** Loja não deve ver "abaixo do mínimo". A fábrica soma pedidos de todas as lojas. Lote mínimo é problema da fábrica.
@@ -139,7 +143,8 @@
 ---
 
 ### AJ-0010 — Impressão compacta (folhas de produção / OP / expedição / pedido)
-**Origem:** Call 2026-05-13 (Bloco 10) + Trello · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Origem:** Call 2026-05-13 (Bloco 10) + Trello · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/impressao/*`
 
 **O quê:** Reduzir espaçamento. Estilo planilha do Google. Mais conteúdo por folha.
@@ -185,7 +190,8 @@
 ---
 
 ### AJ-0018 — Tooltips (`?` / balão) substituindo texto inline na tela do pedido
-**Origem:** Call 2026-05-13 (Daniel + Giuseppe, ~45:00) e commit `c730591` · **Status:** Em-andamento · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Origem:** Call 2026-05-13 (Daniel + Giuseppe, ~45:00) e commit `c730591` · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/loja/pedidos/...` · `src/components/ui/...`
 
 **O quê:** Replicar padrão já criado para reduzir poluição visual na tabela de pedido. Calendário/legenda viram tooltip ao hover.
@@ -207,10 +213,26 @@
 ## 🟢 Polimento
 
 ### AJ-0020 — Legenda/tooltip diferenciando "ingrediente" e "produto MPI"
-**Origem:** Call 2026-05-13 (Adriano, Bloco 4) · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Origem:** Call 2026-05-13 (Adriano, Bloco 4) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/gestor-dados/ingredientes` + `src/app/gestor-dados/produtos`
 
 **O quê:** Adicionar texto explicativo no cadastro: "Ingrediente puro = compra direta. Ingrediente misturado = receita interna. Produto MPI = item que pode ser vendido E usado em outra receita."
+
+---
+
+### AJ-0023 — Dead code descoberto durante a Onda 1
+**Origem:** Implementação Onda 1 (2026-05-19, Giuseppe) · **Status:** A-fazer · **Categoria:** Dívida Técnica
+**Área:** `src/app/loja/pedidos/[orderId]/page.tsx` · `src/app/loja/pedidos/page.tsx` · `src/components/production/product-form-dialog.tsx`
+
+**O quê:** Três pontos de código morto detectados pelo lint (pré-existentes, não introduzidos pela Onda 1):
+- `startEditing` definido e nunca usado em `loja/pedidos/[orderId]/page.tsx`.
+- `selectedProductionSummary` calculado e nunca usado em `loja/pedidos/page.tsx`.
+- diretiva `eslint-disable` desnecessária (`react-hooks/exhaustive-deps`) em `product-form-dialog.tsx`.
+
+**Por quê:** Não bloqueia build (warnings), mas confunde manutenção e mascara warnings reais. Não removido na Onda 1 por estar fora do escopo dos AJs e da regra "não remover funcionalidade sem confirmar".
+
+**Aditivo:** a rota `src/app/api/store-orders/aggregated-quantities/route.ts` ficou sem consumidores após AJ-0006. **Não deletar** — o AJ-0006 prevê que a fábrica consolide os pedidos de todas as lojas; a rota deve ser reusada nessa onda (provável Onda 2/4). Marcar para reavaliação se a consolidação da fábrica seguir outro caminho.
 
 ---
 
@@ -234,7 +256,21 @@
 
 ## Histórico de resoluções
 
-(vazio — atualizar conforme cada AJ for concluído, mover para cá com data)
+### 2026-05-19 — Onda 1 (quick wins UX) — fechada (7 AJs)
+
+Lote entregue por Giuseppe na data-alvo da Onda 1. Sem mudança de regra de negócio. `tsc --noEmit` limpo, `eslint` sem erros novos, 110/110 testes passando.
+
+| ID | Resumo | Arquivos principais |
+|---|---|---|
+| AJ-0005 | Indisponíveis vão para o fim da lista + toggle "Ocultar indisponíveis" | `src/app/loja/pedidos/page.tsx` |
+| AJ-0006 | Removida toda exposição de "mínimo produtivo" do lado loja (alertas, `window.confirm`, coluna "Min.", fetch agregado) | `src/app/loja/pedidos/page.tsx` · `src/app/loja/pedidos/[orderId]/page.tsx` |
+| AJ-0003 | Coluna "Lead expedição" (`expedition_lead_days`) na grade auditável | `src/app/gestor-fabrica/sublinhas-producao/page.tsx` |
+| AJ-0004 | Rendimento e quantidades derivadas da receita com 3 casas decimais pt-BR (precisas, sem arredondar para unidade discreta na exibição) | `src/components/production/product-form-dialog.tsx` |
+| AJ-0020 | Legenda explicativa puro / misturado / Produto MPI nos dois cadastros | `ingredient-form-dialog.tsx` · `product-form-dialog.tsx` |
+| AJ-0010 | Impressão compacta centralizada no `PrintDocument` (margem `@page`, paddings, densidade de tabela, ritmo vertical) — atinge as 4 folhas | `src/components/printing/print-document.tsx` |
+| AJ-0018 | Calendário/legenda da tabela de pedido movidos para `InfoHint` (padrão `c730591`); ícone fica vermelho quando bloqueado | `src/app/loja/pedidos/page.tsx` |
+
+> **Onda 1 fechada**, exceto AJ-0019 (limpar banco) — deixado fora a pedido do Giuseppe (dev-ops, não código). Pendências de doc: preencher hash de commit. Observação de segurança: AJ-0010 não altera a guarda de `/impressao` — [[Dívida Técnica#D17]] segue aberta (páginas de impressão sem `isProtectedAppPath`).
 
 ---
 

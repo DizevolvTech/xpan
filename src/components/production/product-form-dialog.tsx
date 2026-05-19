@@ -56,7 +56,7 @@ import {
 import { type MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
-import { cn, formatKgLabel } from "@/lib/utils";
+import { cn, formatKgLabel, formatLocaleNumber } from "@/lib/utils";
 
 export type ProductDialogMode = "view" | "edit";
 
@@ -307,9 +307,18 @@ export function ProductFormDialog({
     [formState.recipe],
   );
   const yieldPercent = useMemo(
-    () => Math.max(0, Number((100 - formState.breakPercent).toFixed(2))),
+    () => Math.max(0, Number((100 - formState.breakPercent).toFixed(3))),
     [formState.breakPercent],
   );
+  // AJ-0004: quantidade final precisa (sem arredondamento de unidade discreta),
+  // para o cliente conferir/copiar com 3 casas decimais (ex.: 9,123 em vez de 9).
+  const recipeFinalQuantityPrecise = useMemo(() => {
+    const unitWeightKg = recipeTotals.fractionUnitWeightKg;
+    if (!Number.isFinite(unitWeightKg) || unitWeightKg <= 0) {
+      return 0;
+    }
+    return recipeTotals.outputAfterBreakKg / unitWeightKg;
+  }, [recipeTotals.fractionUnitWeightKg, recipeTotals.outputAfterBreakKg]);
   const recipeSourceOptionsForSearch = useMemo(
     () =>
       recipeSourceOptions.map((option) => ({
@@ -1601,7 +1610,11 @@ export function ProductFormDialog({
                     Peso final / rendimento
                   </p>
                   <p className="mt-2 text-3xl font-semibold text-emerald-900">
-                    {yieldPercent.toFixed(2)}%
+                    {formatLocaleNumber(yieldPercent, {
+                      minimumFractionDigits: 3,
+                      maximumFractionDigits: 3,
+                    })}
+                    %
                   </p>
                   <p className="mt-2 text-xs text-emerald-800">
                     Percentual líquido estimado depois da perda principal informada.
@@ -1631,7 +1644,11 @@ export function ProductFormDialog({
                   <p className="mt-1 text-sm text-muted-foreground">
                     Quantidade final prevista:{" "}
                     <strong>
-                      {recipeTotals.finalOutputQuantity} {recipeTotals.finalOutputUnit}
+                      {formatLocaleNumber(recipeFinalQuantityPrecise, {
+                        minimumFractionDigits: 3,
+                        maximumFractionDigits: 3,
+                      })}{" "}
+                      {recipeTotals.finalOutputUnit}
                     </strong>
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -1645,7 +1662,12 @@ export function ProductFormDialog({
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Frações finais estimadas:{" "}
-                    <strong>{recipeTotals.finalFractionsQuantity}</strong>
+                    <strong>
+                      {formatLocaleNumber(recipeFinalQuantityPrecise, {
+                        minimumFractionDigits: 3,
+                        maximumFractionDigits: 3,
+                      })}
+                    </strong>
                   </p>
                 </div>
                 <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
@@ -1848,6 +1870,14 @@ export function ProductFormDialog({
                     <p className="text-sm text-muted-foreground">
                       Quando ativado, o produto aparece como insumo disponível nas receitas de
                       outros produtos.
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      <strong className="text-foreground">Produto MPI</strong> = item que pode
+                      ser <em>vendido</em> e também <em>reutilizado</em> em outra receita. É
+                      diferente do <strong className="text-foreground">ingrediente puro</strong>{" "}
+                      (comprado direto do fornecedor) e do{" "}
+                      <strong className="text-foreground">ingrediente misturado</strong>{" "}
+                      (receita interna que não é vendida), cadastrados em Ingredientes.
                     </p>
                   </div>
                 </div>

@@ -101,13 +101,41 @@ export function PrintDocument({
       <style jsx global>{`
         @page {
           size: auto;
-          margin: 12mm 10mm;
+          margin: 7mm 7mm;
         }
 
         @media print {
           html,
           body {
             background: white !important;
+          }
+
+          /* AJ-0010: densidade "estilo planilha" — mais conteúdo por folha,
+             mantendo legibilidade. Escopo restrito ao documento de impressão. */
+          .print-doc {
+            font-size: 10.5px;
+            line-height: 1.2;
+          }
+          .print-doc h1 {
+            font-size: 17px !important;
+            margin: 0 !important;
+          }
+          .print-doc table th,
+          .print-doc table td {
+            padding: 2px 6px !important;
+          }
+          .print-doc table {
+            font-size: 10.5px;
+          }
+          /* Comprime o ritmo vertical interno das páginas (espelha o seletor
+             do Tailwind space-y, restrito à impressão). */
+          .print-doc .space-y-6 > :not([hidden]) ~ :not([hidden]),
+          .print-doc .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+            margin-top: 6px !important;
+          }
+          .print-doc .space-y-3 > :not([hidden]) ~ :not([hidden]),
+          .print-doc .space-y-2 > :not([hidden]) ~ :not([hidden]) {
+            margin-top: 3px !important;
           }
         }
       `}</style>
@@ -116,8 +144,8 @@ export function PrintDocument({
         ref={rootRef}
         className={
           industrial
-            ? "min-h-screen bg-stone-200 px-3 py-4 print:bg-white print:px-[6mm] print:py-[5mm]"
-            : "min-h-screen bg-stone-100 px-4 py-5 print:bg-white print:px-[6mm] print:py-[5mm]"
+            ? "print-doc min-h-screen bg-stone-200 px-3 py-4 print:bg-white print:px-[4mm] print:py-[3mm]"
+            : "print-doc min-h-screen bg-stone-100 px-4 py-5 print:bg-white print:px-[4mm] print:py-[3mm]"
         }
       >
       <div
@@ -127,7 +155,7 @@ export function PrintDocument({
             : "mx-auto max-w-5xl rounded-2xl border border-stone-200 bg-white shadow-sm print:max-w-none print:rounded-none print:border-0 print:shadow-none"
         }
       >
-        <header className={industrial ? "border-b border-stone-300 px-6 py-4 print:px-8" : "border-b border-stone-200 px-6 py-5 print:px-8"}>
+        <header className={industrial ? "border-b border-stone-300 px-6 py-4 print:px-6 print:py-2" : "border-b border-stone-200 px-6 py-5 print:px-6 print:py-3"}>
           <div className="flex flex-col gap-4 print:block">
             <div className="flex items-start justify-between gap-4 print:block">
               <div className={industrial ? "flex-1 text-center" : undefined}>
@@ -144,7 +172,7 @@ export function PrintDocument({
                     {brand.name}
                   </p>
                 </div>
-                <h1 className={industrial ? "mt-1 text-[28px] font-bold uppercase leading-tight text-stone-900" : "mt-1 text-2xl font-semibold text-stone-900"}>
+                <h1 className={industrial ? "mt-1 text-[28px] font-bold uppercase leading-tight text-stone-900 print:text-[20px]" : "mt-1 text-2xl font-semibold text-stone-900 print:text-lg"}>
                   {title}
                 </h1>
                 {subtitle ? (
@@ -165,11 +193,11 @@ export function PrintDocument({
               </div>
             </div>
 
-            {meta ? <div className={industrial ? "grid gap-2 md:grid-cols-3" : "grid gap-3 md:grid-cols-3"}>{meta}</div> : null}
+            {meta ? <div className={industrial ? "grid gap-2 md:grid-cols-3 print:gap-1.5" : "grid gap-3 md:grid-cols-3 print:gap-1.5"}>{meta}</div> : null}
           </div>
         </header>
 
-        <div className={industrial ? "space-y-4 px-6 py-4 print:px-8 print:py-5" : "space-y-6 px-6 py-5 print:px-8 print:py-6"}>
+        <div className={industrial ? "space-y-4 px-6 py-4 print:space-y-2 print:px-6 print:py-3" : "space-y-6 px-6 py-5 print:space-y-3 print:px-6 print:py-3"}>
           {children}
         </div>
       </div>

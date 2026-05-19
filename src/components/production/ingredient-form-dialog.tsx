@@ -477,6 +477,15 @@ export function IngredientFormDialog({
                     <SelectItem value="misturado">Misturado (MPI)</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  <strong className="text-foreground">Puro</strong> = comprado direto do
+                  fornecedor.{" "}
+                  <strong className="text-foreground">Misturado</strong> = preparado
+                  internamente a partir de uma receita (composição abaixo).{" "}
+                  <strong className="text-foreground">Produto MPI</strong> é diferente: é um
+                  item que pode ser vendido <em>e</em> reutilizado em outra receita —
+                  cadastra-se em Produtos, não aqui.
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label>Unidade de Consumo *</Label>

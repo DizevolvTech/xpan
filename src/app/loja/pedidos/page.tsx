@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Clock3, Package, Plus, ShoppingCart, Truck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/shared/info-hint";
@@ -36,7 +37,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { summarizeOperationalDates } from "@/lib/operational-sequence";
-import { cn, formatKgLabel } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import {
   getBaseDateByCutoff,
@@ -66,7 +67,6 @@ type SelectedOrderItemSummary = {
   quantity: number;
   unit: StoreOrderCatalogProduct["unit"];
   unitKind: StoreOrderCatalogProduct["unitKind"];
-  minimumProductionAlert: string | null;
   productionDate: string | null;
   deliveryDate: string;
   saleDate: string;
@@ -115,30 +115,6 @@ function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
 
-function getMinimumProductionAlert(
-  product: StoreOrderCatalogProduct,
-  quantity: number,
-  aggregatedKgAllStores?: number,
-) {
-  if (!Number.isFinite(quantity) || quantity <= 0) {
-    return null;
-  }
-
-  const thisStoreKg = Number((quantity * product.salesToKgFactor).toFixed(3));
-  const consolidatedKg = (aggregatedKgAllStores ?? 0) + thisStoreKg;
-
-  if (consolidatedKg >= product.minimumProductionKg) {
-    return null;
-  }
-
-  const consolidatedNote =
-    aggregatedKgAllStores != null && aggregatedKgAllStores > 0
-      ? ` (consolidado todas as lojas: ${formatKgLabel(consolidatedKg)})`
-      : "";
-
-  return `Abaixo do mínimo produtivo: ${formatKgLabel(thisStoreKg)} informados para mínimo de ${formatKgLabel(product.minimumProductionKg)}${consolidatedNote}.`;
-}
-
 function buildOrderPrintPath(orderId: string, referenceDate: string) {
   return `/impressao/pedido-loja/${orderId}?ref=${referenceDate}`;
 }
@@ -172,7 +148,7 @@ export default function PedidosLojaPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [orderNote, setOrderNote] = useState("");
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
-  const [aggregatedKgByProduct, setAggregatedKgByProduct] = useState<Map<string, number>>(new Map());
+  const [hideUnavailable, setHideUnavailable] = useState(false);
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
@@ -244,30 +220,6 @@ export default function PedidosLojaPage() {
     date.setDate(date.getDate() + leadDays);
     return date;
   }, [deliveryDateKey, snapshot.operationalSettings.saleLeadDays]);
-
-  // Fetch aggregated order quantities from all stores for the delivery date
-  useEffect(() => {
-    if (!deliveryDateKey || !selectedStore) {
-      setAggregatedKgByProduct(new Map());
-      return;
-    }
-
-    let cancelled = false;
-
-    fetch(`/api/store-orders/aggregated-quantities?deliveryDate=${deliveryDateKey}`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((rows: Array<{ productId: string; totalKg: number }>) => {
-        if (cancelled) return;
-        setAggregatedKgByProduct(new Map(rows.map((r) => [r.productId, r.totalKg])));
-      })
-      .catch(() => {
-        if (!cancelled) setAggregatedKgByProduct(new Map());
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [deliveryDateKey, selectedStore]);
 
   const highlightedDay = useMemo(() => getDayFieldByDate(saleDate), [saleDate]);
 
@@ -388,7 +340,7 @@ export default function PedidosLojaPage() {
   const filteredOrderProducts = useMemo(() => {
     const term = catalogSearchTerm.trim().toLowerCase();
 
-    return orderProducts.filter((item) => {
+    const matched = orderProducts.filter((item) => {
       const matchesSearch =
         term.length === 0 ||
         item.code.toLowerCase().includes(term) ||
@@ -398,7 +350,21 @@ export default function PedidosLojaPage() {
 
       return matchesSearch && matchesCategory;
     });
-  }, [catalogSearchTerm, categoryFilter, orderProducts]);
+
+    const scoped = hideUnavailable ? matched.filter((item) => item.available) : matched;
+
+    // AJ-0005: itens indisponíveis vão para o fim da lista, preservando a
+    // ordem original do catálogo dentro de cada grupo (disponível / bloqueado).
+    return scoped
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        if (a.item.available !== b.item.available) {
+          return a.item.available ? -1 : 1;
+        }
+        return a.index - b.index;
+      })
+      .map((entry) => entry.item);
+  }, [catalogSearchTerm, categoryFilter, hideUnavailable, orderProducts]);
   const selectedOrderItems = useMemo<SelectedOrderItemSummary[]>(
     () =>
       orderProducts
@@ -411,17 +377,12 @@ export default function PedidosLojaPage() {
           quantity: product[highlightedDay],
           unit: product.unit,
           unitKind: product.unitKind,
-          minimumProductionAlert: getMinimumProductionAlert(
-            product,
-            product[highlightedDay],
-            aggregatedKgByProduct.get(product.productId),
-          ),
           productionDate: product.productionDate,
           deliveryDate: product.deliveryDate,
           saleDate: product.saleDate,
         }))
         .sort((left, right) => left.name.localeCompare(right.name)),
-    [aggregatedKgByProduct, highlightedDay, orderProducts],
+    [highlightedDay, orderProducts],
   );
   const selectedProductionSummary = useMemo(
     () =>
@@ -627,19 +588,6 @@ export default function PedidosLojaPage() {
         if (!proceed) {
           return;
         }
-      }
-    }
-
-    // Warn about items below minimum production lot
-    const itemsBelowMinimum = selectedOrderItems.filter((item) => item.minimumProductionAlert);
-    if (itemsBelowMinimum.length > 0) {
-      const names = itemsBelowMinimum.map((item) => `• ${item.code} — ${item.name}`).join("\n");
-      const proceed = window.confirm(
-        `Os seguintes itens estão abaixo do lote mínimo de produção:\n\n${names}\n\nA fábrica pode não produzir itens abaixo do mínimo. Deseja continuar mesmo assim?`,
-      );
-
-      if (!proceed) {
-        return;
       }
     }
 
@@ -911,7 +859,7 @@ export default function PedidosLojaPage() {
                               </p>
                               <p>
                                 A disponibilidade considera o cronograma ativo da linha de produção e os dias
-                                de fabricação da ficha do produto. Avisos de mínimo produtivo não bloqueiam o pedido.
+                                de fabricação da ficha do produto.
                               </p>
                             </div>
                           }
@@ -945,10 +893,19 @@ export default function PedidosLojaPage() {
                       </Button>
                     </div>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {filteredOrderProducts.length} de {orderProducts.length} itens no catálogo. Elegíveis:{" "}
-                    <strong>{availableCatalogCount}</strong>. Bloqueados nesta janela: <strong>{blockedCatalogCount}</strong>.
-                  </p>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      {filteredOrderProducts.length} de {orderProducts.length} itens no catálogo. Elegíveis:{" "}
+                      <strong>{availableCatalogCount}</strong>. Bloqueados nesta janela: <strong>{blockedCatalogCount}</strong>.
+                    </p>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={hideUnavailable}
+                        onCheckedChange={(checked) => setHideUnavailable(checked === true)}
+                      />
+                      Ocultar indisponíveis
+                    </label>
+                  </div>
                 </div>
 
                 <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
@@ -993,36 +950,44 @@ export default function PedidosLojaPage() {
                               >
                                 <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
                                 <td className="px-2 py-2 text-sm">
-                                  <div className="font-medium text-foreground">{product.name}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {product.scheduleName}
-                                    {product.productionDays.length > 0
-                                      ? ` · Produz em ${formatOperationalDays(product.productionDays)}`
-                                      : ""}
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-medium text-foreground">{product.name}</span>
+                                    <InfoHint
+                                      size="xs"
+                                      tone={!product.available ? "danger" : "muted"}
+                                      label="Cronograma e calendário do produto"
+                                      content={
+                                        <div className="space-y-2.5 text-xs">
+                                          <p className="text-muted-foreground">
+                                            {product.scheduleName}
+                                            {product.productionDays.length > 0
+                                              ? ` · Produz em ${formatOperationalDays(product.productionDays)}`
+                                              : ""}
+                                          </p>
+                                          <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                            <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
+                                              Pedido: {orderDateLabel}
+                                            </span>
+                                            <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
+                                              Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
+                                            </span>
+                                            <span className="rounded-full border border-success/35 bg-success/10 px-2 py-1 text-success-foreground">
+                                              Vender: {formatDateKeyWithWeekday(product.saleDate)}
+                                            </span>
+                                          </div>
+                                          {!product.available && product.blockedReason ? (
+                                            <p className="font-medium text-danger-foreground">
+                                              Indisponível: {product.blockedReason}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      }
+                                    />
                                   </div>
-                                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-                                    <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
-                                      Pedido: {orderDateLabel}
-                                    </span>
-                                    <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
-                                      Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
-                                    </span>
-                                    <span className="rounded-full border border-success/35 bg-success/10 px-2 py-1 text-success-foreground">
-                                      Vender: {formatDateKeyWithWeekday(product.saleDate)}
-                                    </span>
-                                  </div>
-                                  {!product.available && product.blockedReason ? (
-                                    <div className="mt-1 text-xs font-medium text-danger-foreground">
-                                      Indisponível: {product.blockedReason}
-                                    </div>
-                                  ) : null}
                                 </td>
                                 <td className="px-2 py-2 text-sm">{product.category}</td>
                                 <td className="px-2 py-2 text-sm">
                                   <div>{product.unit}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    Min. {formatKgLabel(product.minimumProductionKg)}
-                                  </div>
                                 </td>
                                 {dayColumns.map((dayField, index) => {
                                   const isActiveColumn = index === 0;
@@ -1055,11 +1020,6 @@ export default function PedidosLojaPage() {
                                       Bloqueado nesta janela
                                     </div>
                                   )}
-                                  {product.available && getMinimumProductionAlert(product, product[highlightedDay], aggregatedKgByProduct.get(product.productId)) ? (
-                                    <div className="mt-1 text-xs font-normal text-warning-foreground">
-                                      {getMinimumProductionAlert(product, product[highlightedDay], aggregatedKgByProduct.get(product.productId))}
-                                    </div>
-                                  ) : null}
                                 </td>
                               </tr>
                             ))
@@ -1163,11 +1123,6 @@ export default function PedidosLojaPage() {
                             <td className="px-4 py-3 font-mono text-sm text-foreground">{item.code}</td>
                             <td className="px-4 py-3 text-sm">
                               <div className="font-medium text-foreground">{item.name}</div>
-                              {item.minimumProductionAlert ? (
-                                <div className="mt-1 text-xs text-warning-foreground">
-                                  {item.minimumProductionAlert}
-                                </div>
-                              ) : null}
                             </td>
                             <td className="px-4 py-3 text-sm text-muted-foreground">{item.category}</td>
                             <td className="px-4 py-3 text-right text-sm font-semibold text-foreground">

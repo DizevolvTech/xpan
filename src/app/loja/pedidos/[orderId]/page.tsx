@@ -29,8 +29,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import { getTodayDateKey } from "@/lib/order-planning";
-import type { StoreOrderCatalogProduct } from "@/lib/store-order-types";
-import { formatKgLabel } from "@/lib/utils";
 import {
   useCancelStoreOrder,
   useStoreOrderCatalog,
@@ -47,8 +45,6 @@ type DraftAddedOrderItem = {
   unit: UnitCode;
   operationalUnit: UnitCode;
   quantity: number;
-  minimumProductionKg: number;
-  salesToKgFactor: number;
 };
 
 function sanitizeDateKey(raw: string | null) {
@@ -75,19 +71,6 @@ function parseBrDate(dateLabel: string): Date | null {
 
   const parsed = new Date(year, month - 1, day);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function getMinimumProductionHint(product: Pick<StoreOrderCatalogProduct, "minimumProductionKg" | "salesToKgFactor">, quantity: number) {
-  if (!Number.isFinite(quantity) || quantity <= 0) {
-    return null;
-  }
-
-  const requestedKg = Number((quantity * product.salesToKgFactor).toFixed(3));
-  if (requestedKg >= product.minimumProductionKg) {
-    return null;
-  }
-
-  return `Abaixo do mínimo produtivo: ${formatKgLabel(requestedKg)} para mínimo de ${formatKgLabel(product.minimumProductionKg)}.`;
 }
 
 export default function PedidoLojaDetailsPage() {
@@ -195,35 +178,6 @@ export default function PedidoLojaDetailsPage() {
       return;
     }
 
-    // Check minimum production lot for each item
-    const itemsBelowMinimum: string[] = [];
-
-    items.forEach((item) => {
-      const catalogEntry = catalog.find((c) => c.productId === item.productId);
-      const draftItem = draftAddedItems.find((d) => d.productId === item.productId);
-
-      if (!catalogEntry) return;
-
-      const factor = catalogEntry.salesToKgFactor;
-      const minKg = catalogEntry.minimumProductionKg;
-      const requestedKg = Number((item.quantity * factor).toFixed(3));
-
-      if (minKg > 0 && requestedKg < minKg) {
-        const label = catalogEntry.name ?? draftItem?.name ?? item.productId;
-        itemsBelowMinimum.push(`• ${label}: ${formatKgLabel(requestedKg)} (mín. ${formatKgLabel(minKg)})`);
-      }
-    });
-
-    if (itemsBelowMinimum.length > 0) {
-      const proceed = window.confirm(
-        `Os seguintes itens estão abaixo do lote mínimo de produção:\n\n${itemsBelowMinimum.join("\n")}\n\nA fábrica pode não produzir itens abaixo do mínimo. Deseja salvar mesmo assim?`,
-      );
-
-      if (!proceed) {
-        return;
-      }
-    }
-
     await updateOrder(order.id, {
       note: draftNote,
       items,
@@ -248,8 +202,6 @@ export default function PedidoLojaDetailsPage() {
         unit: product.unit,
         operationalUnit: product.unit,
         quantity: product.unitKind === "discrete" ? 1 : 0.1,
-        minimumProductionKg: product.minimumProductionKg,
-        salesToKgFactor: product.salesToKgFactor,
       },
     ]);
     setSelectedCatalogProductId("");
@@ -496,7 +448,7 @@ export default function PedidoLojaDetailsPage() {
                   </Select>
                   {selectedCatalogProduct ? (
                     <p className="text-xs text-muted-foreground">
-                      Mínimo produtivo: {formatKgLabel(selectedCatalogProduct.minimumProductionKg)}. Dias válidos: {selectedCatalogProduct.productionDays.join(" · ")}.
+                      Dias válidos: {selectedCatalogProduct.productionDays.join(" · ")}.
                     </p>
                   ) : null}
                 </div>
@@ -534,9 +486,6 @@ export default function PedidoLojaDetailsPage() {
                   <tbody>
                     {paginatedItems.map((item) => {
                       const isAddedItem = item.id.startsWith("draft-");
-                      const addedItem = isAddedItem
-                        ? draftAddedItems.find((entry) => entry.id === item.id) ?? null
-                        : null;
 
                       return (
                       <tr key={item.id}>
@@ -570,11 +519,6 @@ export default function PedidoLojaDetailsPage() {
                                   }));
                                 }}
                               />
-                              {addedItem && getMinimumProductionHint(addedItem, addedItem.quantity) ? (
-                                <p className="text-xs font-normal text-warning-foreground">
-                                  {getMinimumProductionHint(addedItem, addedItem.quantity)}
-                                </p>
-                              ) : null}
                             </div>
                           ) : (
                             item.quantity

@@ -50,6 +50,7 @@ type AuditableScheduleProduct = {
   code: string;
   name: string;
   minimumProduction: number;
+  expeditionLeadDays: number;
   productionDays: ProductionProduct["productionDays"];
   dayPriorities: WeeklyProductionSchedule["items"][number]["dayPriorities"];
   masterLineName: string;
@@ -113,6 +114,7 @@ function buildScheduleSnapshotProducts(
         code: product?.code ?? item.productId,
         name: product?.name ?? "Produto não encontrado",
         minimumProduction: item.minimumProduction,
+        expeditionLeadDays: product?.expeditionLeadDays ?? 0,
         productionDays: item.productionDays,
         dayPriorities: item.dayPriorities,
         masterLineName: product ? lineNameById.get(product.masterLineId ?? product.lineId) ?? "-" : "-",
@@ -1009,7 +1011,7 @@ export default function SublinhasProducaoPage() {
                   >
                     {(items) => (
                       <div className="overflow-x-auto overscroll-x-contain">
-                        <table className="w-full min-w-[980px] border-collapse rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
+                        <table className="w-full min-w-[1100px] border-collapse rounded-xl border border-border/80 bg-card shadow-[var(--shadow-soft)]">
                           <thead className="bg-panel">
                             <tr>
                               <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground/95">
@@ -1020,6 +1022,15 @@ export default function SublinhasProducaoPage() {
                               </th>
                               <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground/95">
                                 Base (Kg)
+                              </th>
+                              <th className="px-4 py-3 text-center text-xs font-semibold text-muted-foreground/95">
+                                <span className="inline-flex items-center gap-1.5">
+                                  Lead expedição
+                                  <InfoHint
+                                    size="xs"
+                                    content="Dias entre a produção e a entrega deste produto (products.expedition_lead_days). Ex.: bolo = 1 (esfria 1 dia), pão = 0 (entrega no mesmo dia)."
+                                  />
+                                </span>
                               </th>
                               {productionWeekDays.map((day) => (
                                 <th
@@ -1046,6 +1057,9 @@ export default function SublinhasProducaoPage() {
                                 </td>
                                 <td className="border-t border-border/70 bg-card px-4 py-3 text-right align-top text-sm text-foreground">
                                   {formatKgLabel(product.minimumProduction)}
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-4 py-3 text-center align-top text-sm text-foreground">
+                                  {product.expeditionLeadDays} {product.expeditionLeadDays === 1 ? "dia" : "dias"}
                                 </td>
                                 {productionWeekDays.map((day) => {
                                   const isPlannedOnDay = product.productionDays.includes(day.key);
