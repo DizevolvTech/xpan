@@ -71,6 +71,7 @@
   `window.confirm`). Não muda **o que** a ação faz, só **como** comunica.
 - **Dedupe:** complementa [[Backlog de Ajustes#AJ-0006]] (já tirou 1 confirm) e [[Backlog de Ajustes#AJ-0007]] (aviso duplicidade).
 - **RICE:** R10 · I3 (sem isso, loja re-submete → duplicidade) · C0.95 · E1.7.
+- **Status:** ✅ Concluído em 2026-05-19 (toast.tsx + confirm-dialog.tsx via radix-ui, zero dep nova; provider em layout.tsx; 17/17 sítios trocados §2.5; confirm→await preservando semântica §2.4; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). Ver spec §7.
 
 #### `UX-0003` — `skeleton.tsx` + adoção · 🔴 Estado · Score 15.8
 - **Problema:** [[UX Audit — Sistema#F-2]]. 26 telas "Carregando..."; KPI "..." (`gestor-fabrica/page.tsx:460-492`).

@@ -18,6 +18,8 @@ import { SearchableSelect } from "@/components/shared/searchable-select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
+import { useToast } from "@/components/shared/toast";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -159,6 +161,8 @@ function formatRequestedQuantity(quantity: number, unitKind: StoreOrderCatalogPr
 export default function PedidosLojaPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
+  const confirm = useConfirm();
   const { profile } = useCurrentProfile();
   const { snapshot } = useMasterDataSnapshot();
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
@@ -603,13 +607,13 @@ export default function PedidosLojaPage() {
     }
   }
 
-  function handleOpenOrderConfirmation() {
+  async function handleOpenOrderConfirmation() {
     if (!selectedStore) {
       return;
     }
 
     if (selectedOrderItems.length === 0) {
-      window.alert("Selecione ao menos um item disponível com quantidade positiva.");
+      toast.warning("Selecione ao menos um item disponível com quantidade positiva.");
       return;
     }
 
@@ -620,9 +624,13 @@ export default function PedidosLojaPage() {
       const emptyCategories = [...allCategories].filter((cat) => !filledCategories.has(cat));
 
       if (emptyCategories.length > 0) {
-        const proceed = window.confirm(
-          `Você está com filtro ativo. As seguintes categorias não possuem itens no pedido:\n\n• ${emptyCategories.join("\n• ")}\n\nDeseja finalizar assim mesmo?`,
-        );
+        const proceed = await confirm({
+          title: "Filtro ativo",
+          description: `As seguintes categorias não possuem itens no pedido:\n\n• ${emptyCategories.join("\n• ")}\n\nDeseja finalizar assim mesmo?`,
+          tone: "default",
+          confirmLabel: "Finalizar assim mesmo",
+          cancelLabel: "Voltar e revisar",
+        });
 
         if (!proceed) {
           return;
@@ -640,7 +648,7 @@ export default function PedidosLojaPage() {
 
     if (selectedOrderItems.length === 0) {
       setIsOrderConfirmationOpen(false);
-      window.alert("Selecione ao menos um item disponível com quantidade positiva.");
+      toast.warning("Selecione ao menos um item disponível com quantidade positiva.");
       return;
     }
 
@@ -670,7 +678,7 @@ export default function PedidosLojaPage() {
       setOrderNote("");
     } catch (submitError) {
       setIsOrderConfirmationOpen(false);
-      window.alert(
+      toast.error(
         submitError instanceof Error
           ? submitError.message
           : editingOrderId ? "Falha ao atualizar pedido." : "Falha ao criar pedido. Tente novamente.",

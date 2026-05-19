@@ -12,6 +12,7 @@ import { DataTable } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
+import { useToast } from "@/components/shared/toast";
 import {
   Dialog,
   DialogContent,
@@ -65,6 +66,7 @@ function buildFormState(
 export default function LinhasProducaoPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -579,7 +581,7 @@ export default function LinhasProducaoPage() {
 
                   setIsCategoryDialogOpen(false);
                 } catch (err) {
-                  window.alert(
+                  toast.error(
                     err instanceof Error ? err.message : "Falha ao criar categoria",
                   );
                 } finally {
@@ -639,7 +641,7 @@ export default function LinhasProducaoPage() {
                   setFormState((current) => ({ ...current, type: created.name as ProductionLine["type"] }));
                   setIsTypeDialogOpen(false);
                 } catch (err) {
-                  window.alert(err instanceof Error ? err.message : "Falha ao criar tipo");
+                  toast.error(err instanceof Error ? err.message : "Falha ao criar tipo");
                 } finally {
                   setIsCreatingType(false);
                 }

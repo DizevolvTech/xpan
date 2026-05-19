@@ -21,6 +21,8 @@ import { InfoHint } from "@/components/shared/info-hint";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useToast } from "@/components/shared/toast";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -77,6 +79,8 @@ export default function PedidoLojaDetailsPage() {
   const params = useParams<{ orderId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const toast = useToast();
+  const confirm = useConfirm();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
   const { order, isLoading: isLoadingOrder, refresh } = useStoreOrderDetail(orderId, referenceDate);
@@ -174,7 +178,7 @@ export default function PedidoLojaDetailsPage() {
       .filter((item) => Number.isFinite(item.quantity) && item.quantity > 0);
 
     if (items.length === 0) {
-      window.alert("O pedido precisa manter pelo menos um item com quantidade positiva.");
+      toast.warning("O pedido precisa manter pelo menos um item com quantidade positiva.");
       return;
     }
 
@@ -232,7 +236,12 @@ export default function PedidoLojaDetailsPage() {
       return;
     }
 
-    const confirmed = window.confirm(`Cancelar o pedido ${order.code}?`);
+    const confirmed = await confirm({
+      title: `Cancelar o pedido ${order.code}?`,
+      tone: "destructive",
+      confirmLabel: "Cancelar pedido",
+      cancelLabel: "Voltar",
+    });
     if (!confirmed) {
       return;
     }

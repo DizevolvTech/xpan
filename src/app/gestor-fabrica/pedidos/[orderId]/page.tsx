@@ -10,6 +10,7 @@ import { OperationalDateScopeCard } from "@/components/shared/operational-date-s
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
@@ -25,6 +26,7 @@ function openPrintPage(pathname: string) {
 export default function PedidoDetailsPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
+  const confirm = useConfirm();
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const { planningData, isLoading, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
 
@@ -199,8 +201,15 @@ export default function PedidoDetailsPage() {
                 type="button"
                 variant="outline"
                 className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
-                onClick={() => {
-                  if (window.confirm(`Reabrir o pedido ${order.code}?`)) {
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: `Reabrir o pedido ${order.code}?`,
+                      tone: "default",
+                      confirmLabel: "Reabrir",
+                      cancelLabel: "Voltar",
+                    })
+                  ) {
                     void reopenOrder(order.id);
                   }
                 }}
@@ -213,11 +222,15 @@ export default function PedidoDetailsPage() {
                 variant="outline"
                 className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
                 disabled={!canCancelOrder}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
-                      `Cancelar o pedido ${order.code}? Ele sairá do fluxo operacional até ser reaberto.`,
-                    )
+                    await confirm({
+                      title: `Cancelar o pedido ${order.code}?`,
+                      description: "Ele sairá do fluxo operacional até ser reaberto.",
+                      tone: "destructive",
+                      confirmLabel: "Cancelar pedido",
+                      cancelLabel: "Voltar",
+                    })
                   ) {
                     void cancelOrder(order.id);
                   }

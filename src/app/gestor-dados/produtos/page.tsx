@@ -9,6 +9,8 @@ import { KPICard } from "@/components/shared/kpi-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useToast } from "@/components/shared/toast";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -30,6 +32,8 @@ type ProductRow = ProductionProduct & {
 
 export default function ProdutosPage() {
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null);
@@ -159,7 +163,15 @@ export default function ProdutosPage() {
   }
 
   async function handleCloneProduct(item: ProductRow) {
-    if (!window.confirm(`Deseja clonar o produto "${item.name}"? Uma cópia inativa será criada.`)) {
+    if (
+      !(await confirm({
+        title: `Clonar o produto "${item.name}"?`,
+        description: "Uma cópia inativa será criada.",
+        tone: "default",
+        confirmLabel: "Clonar",
+        cancelLabel: "Cancelar",
+      }))
+    ) {
       return;
     }
 
@@ -168,14 +180,14 @@ export default function ProdutosPage() {
       const payload = (await response.json().catch(() => null)) as { code?: string; message?: string } | null;
 
       if (!response.ok) {
-        window.alert(payload?.message ?? "Falha ao clonar produto.");
+        toast.error(payload?.message ?? "Falha ao clonar produto.");
         return;
       }
 
       await refresh(true);
-      window.alert(`Produto clonado com sucesso! Código: ${payload?.code}`);
+      toast.success(`Produto clonado com sucesso! Código: ${payload?.code}`);
     } catch {
-      window.alert("Erro inesperado ao clonar produto.");
+      toast.error("Erro inesperado ao clonar produto.");
     }
   }
 

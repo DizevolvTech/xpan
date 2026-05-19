@@ -22,6 +22,8 @@ import { OperationFiltersCard } from "@/components/shared/operation-filters-card
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
+import { useToast } from "@/components/shared/toast";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
@@ -47,6 +49,8 @@ function openPrintPage(pathname: string) {
 export default function PedidosFabricaPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const searchParams = useSearchParams();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState("");
   // AJ-0002: filtro inicial vindo do deep-link dos cards do dashboard.
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") ?? "all");
@@ -198,25 +202,33 @@ export default function PedidosFabricaPage() {
     setDetailModal({ orderId, view });
   }
 
-  function handleCancelOrder(order: OrderSummaryRow) {
+  async function handleCancelOrder(order: OrderSummaryRow) {
     if (order.releasedToProduction) {
-      window.alert("Pedidos já liberados para produção precisam ser tratados pelo fluxo operacional, não por cancelamento.");
+      toast.warning("Pedidos já liberados para produção precisam ser tratados pelo fluxo operacional, não por cancelamento.");
       return;
     }
 
-    const confirmed = window.confirm(
-      `Cancelar o pedido ${order.code} da loja ${order.storeName}? Ele sairá da fila operacional até ser reaberto.`,
-    );
+    const confirmed = await confirm({
+      title: `Cancelar o pedido ${order.code} da loja ${order.storeName}?`,
+      description: "Ele sairá da fila operacional até ser reaberto.",
+      tone: "destructive",
+      confirmLabel: "Cancelar pedido",
+      cancelLabel: "Voltar",
+    });
 
     if (confirmed) {
       void cancelOrder(order.id);
     }
   }
 
-  function handleReopenOrder(order: OrderSummaryRow) {
-    const confirmed = window.confirm(
-      `Reabrir o pedido ${order.code}? Ele volta a poder ser liberado para produção.`,
-    );
+  async function handleReopenOrder(order: OrderSummaryRow) {
+    const confirmed = await confirm({
+      title: `Reabrir o pedido ${order.code}?`,
+      description: "Ele volta a poder ser liberado para produção.",
+      tone: "default",
+      confirmLabel: "Reabrir",
+      cancelLabel: "Voltar",
+    });
 
     if (confirmed) {
       void reopenOrder(order.id);
