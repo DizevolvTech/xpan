@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Loader2 } from "lucide-react";
 import { Slot } from "radix-ui";
 
 import { readClientAccessContext } from "@/lib/client-access-context";
@@ -42,17 +43,51 @@ const buttonVariants = cva(
   },
 );
 
+/*
+ * UX-0004 — Convenção "botão enviando".
+ * `isLoading`/`loadingText` são puramente apresentacionais: somam o estado de
+ * envio (spinner + texto opcional + `disabled` + `aria-busy`) e previnem o
+ * re-submit em voo (mitiga D03 na origem da UI). NÃO alteram regra, dado, fetch
+ * nem navegação. Ausente/false ⇒ render byte-idêntico ao anterior (requisito-
+ * âncora). Regras duras: `isLoading` é SOMADO ao `disabled` (read-only/
+ * `props.disabled` preservados, precedência intacta); `asChild` ⇒ Slot exige 1
+ * filho, então só atributos (sem injetar spinner/texto, sem quebrar
+ * React.Children.only); `size="icon*"` ⇒ spinner substitui o ícone, sem texto.
+ * Spinner = `Loader2` (lucide, já dep) + `animate-spin` Tailwind nativo —
+ * idioma já provado em `login-form.tsx:131`, zero dependência nova.
+ */
+type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>["size"]>;
+const ICON_SIZES = new Set<ButtonSize>(["icon", "icon-xs", "icon-sm", "icon-lg"]);
+
 function Button({
   className,
   variant = "default",
   size = "default",
   asChild = false,
   allowInReadOnly = false,
+  isLoading = false,
+  loadingText,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
     allowInReadOnly?: boolean;
+    /**
+     * UX-0004: quando true, o botão entra em estado "enviando":
+     * - desabilita (somado ao `disabled` atual — read-only/`disabled` intactos);
+     * - prefixa um `<Loader2 animate-spin aria-hidden>` antes do conteúdo;
+     * - troca o texto por `loadingText` quando informado;
+     * - expõe `aria-busy` e `data-loading`.
+     * Ausente/false ⇒ comportamento byte-idêntico ao anterior. Default: false.
+     */
+    isLoading?: boolean;
+    /**
+     * UX-0004: rótulo de progresso opcional. Quando ausente e `isLoading`,
+     * mantém o `children` original (só prefixa o spinner — não inventa texto,
+     * zero reflow). Ignorado em `size="icon*"` (sem espaço p/ texto) e em
+     * `asChild` (Slot 1-filho). Use ≈ o comprimento do label para evitar CLS.
+     */
+    loadingText?: React.ReactNode;
   }) {
   const Comp = asChild ? Slot.Root : "button";
   const isReadOnlyTenantView = readClientAccessContext().accessMode === "read-only-tenant";
@@ -60,7 +95,27 @@ function Button({
     !allowInReadOnly &&
     !asChild &&
     (variant === "default" || variant === "destructive" || props.type === "submit");
-  const disabled = props.disabled || (isReadOnlyTenantView && blocksInReadOnly);
+  const disabled =
+    props.disabled || (isReadOnlyTenantView && blocksInReadOnly) || isLoading;
+
+  // `asChild`: Slot.Root exige 1 único filho — NÃO injetar spinner/texto; só atributos.
+  const showSpinnerAndText = isLoading && !asChild;
+  const isIcon = ICON_SIZES.has(size ?? "default");
+  const { children, ...rest } = props;
+  const content = showSpinnerAndText ? (
+    <>
+      <Loader2
+        className={cn(
+          isIcon || size === "xs" || size === "sm" ? "size-3" : "size-4",
+          "animate-spin motion-reduce:animate-none",
+        )}
+        aria-hidden="true"
+      />
+      {isIcon ? null : (loadingText ?? children)}
+    </>
+  ) : (
+    children
+  );
 
   return (
     <Comp
@@ -68,10 +123,18 @@ function Button({
       data-variant={variant}
       data-size={size}
       data-read-only-disabled={disabled && isReadOnlyTenantView ? "true" : "false"}
-      className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
+      data-loading={isLoading ? "true" : "false"}
+      aria-busy={isLoading || undefined}
+      aria-disabled={asChild && isLoading ? true : undefined}
+      className={cn(
+        buttonVariants({ variant, size, className }),
+        asChild && isLoading && "pointer-events-none",
+      )}
+      {...rest}
       disabled={disabled}
-    />
+    >
+      {asChild ? children : content}
+    </Comp>
   );
 }
 

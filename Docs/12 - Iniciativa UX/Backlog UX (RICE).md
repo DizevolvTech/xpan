@@ -86,6 +86,7 @@
 - **Escopo:** prop opcional `isLoading` (spinner + disabled + texto), retrocompatível.
   Previne duplo-clique (mitiga [[Dívida Técnica#D03]] na origem da UI).
 - **RICE:** R9 · I2 · C0.9 · E1.0.
+- **Status:** ✅ Concluído em 2026-05-19 (button.tsx +67/-4: props opcionais isLoading/loadingText, Loader2 reusado zero dep nova, read-only/asChild/disabled preservados byte-idêntico; adoção 100% adiada p/ UX-0009/Onda 2; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). Ver spec §7.
 
 #### `UX-0007` — `empty-state.tsx` · 🟡 Estado · Score 11.6
 - **Problema:** [[UX Audit — Sistema#F-5]]. `data-table.tsx:219-238` texto cinza só.
