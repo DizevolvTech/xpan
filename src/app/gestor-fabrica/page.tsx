@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   CalendarClock,
@@ -23,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import type { OrderStatus } from "@/lib/order-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -107,6 +109,35 @@ export default function GestorFabricaPage() {
       expeditionRows: planningData.expedition.length,
     };
   }, [deliveryExecution, planningData.expedition, planningData.orders, planningData.productionOrders.length]);
+
+  // AJ-0001: Kanban read-only de acompanhamento. Só visualização + navegação
+  // (deep-link p/ a lista filtrada — reaproveita o ?status do AJ-0002).
+  // Não manipula status.
+  const kanbanColumns = useMemo(() => {
+    const columns: Array<{
+      key: string;
+      title: string;
+      accent: string;
+      statuses: OrderStatus[];
+    }> = [
+      { key: "aberto", title: "Aberto", accent: "border-info/50 bg-info/5", statuses: ["em_espera", "agendado"] },
+      { key: "producao", title: "Em produção", accent: "border-warning/50 bg-warning/5", statuses: ["em_producao"] },
+      {
+        key: "expedicao",
+        title: "Aguardando expedição",
+        accent: "border-primary/50 bg-primary/5",
+        statuses: ["aguardando_expedicao"],
+      },
+      { key: "rota", title: "Em rota / entregue", accent: "border-success/50 bg-success/5", statuses: ["rota_entrega"] },
+    ];
+
+    return columns.map((column) => ({
+      ...column,
+      orders: planningData.orders
+        .filter((order) => column.statuses.includes(order.status))
+        .sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code)),
+    }));
+  }, [planningData.orders]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -465,6 +496,56 @@ export default function GestorFabricaPage() {
           href="/chao-fabrica/entregas?status=em_rota"
         />
       </motion.div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-1.5">
+          <CardTitle>Acompanhamento</CardTitle>
+          <InfoHint
+            size="sm"
+            content="Visão read-only dos pedidos por etapa. Clique em um card para abrir a lista de pedidos já filtrada pela etapa. O status não é alterado por aqui."
+          />
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {kanbanColumns.map((column) => (
+              <div
+                key={column.key}
+                className={`flex flex-col gap-2 rounded-xl border p-3 ${column.accent}`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground">
+                    {column.title}
+                  </p>
+                  <span className="rounded-full bg-background/70 px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                    {column.orders.length}
+                  </span>
+                </div>
+                <div className="flex max-h-[360px] flex-col gap-2 overflow-auto">
+                  {column.orders.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-border/60 px-2 py-3 text-center text-xs text-muted-foreground">
+                      Nenhum pedido nesta etapa.
+                    </p>
+                  ) : (
+                    column.orders.map((order) => (
+                      <Link
+                        key={order.id}
+                        href={`/gestor-fabrica/pedidos?status=${order.status}`}
+                        className="rounded-lg border border-border/70 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/50 hover:bg-panel/50"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-xs font-semibold text-foreground">{order.code}</span>
+                          <span className="text-xs text-muted-foreground">{order.deliveryDateLabel}</span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">{order.storeName}</p>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <motion.div
         initial={{ opacity: 0 }}

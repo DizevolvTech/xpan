@@ -11,7 +11,7 @@
 - **Lead day (expedition)** — Dias de antecedência por produto na expedição. Persiste em `products.expedition_lead_days`. Ver [[Regra — Lead Days]].
 - **Drift retroativo** — Quando um produto muda de linha/categoria após snapshots já gerados, o sistema reaplica o vínculo histórico via `product_changelog`. Ver [[Regra — Drift Retroativo]].
 - **Dia fechado** — Domingo ou feriado da fábrica. D+X "pula" esses dias na contagem. Ver [[Regra — Domingo e Feriados]].
-- **Dias de cobertura** — Termo do cliente (Adriano, call 2026-05-13): número de dias que um pedido cobre, dependente do ciclo de produção do produto. Produto produzido 1x/semana → cobre 7 dias; produto 3x/semana → cobre ~2 dias. Visualmente: número de quadradinhos verdes no UI de pedido. Ver [[Backlog de Ajustes#AJ-0014]].
+- **Dias de cobertura** — Termo do cliente (Adriano, call 2026-05-13): número de dias que um pedido cobre, dependente do ciclo de produção do produto. **Fórmula implementada (Onda 3, AJ-0014):** `max(1, round(7 / nº de dias de produção do produto na semana))` → 1x/semana = 7, 3x/semana ≈ 2, todo dia = 1. Visualmente: número de quadradinhos verdes na grade de pedido, cada um com a data real (AJ-0016). Limitação: "cardápio sáb-only = 1" não é distinguível de "1x/sem = 7" sem tipo de produto dedicado. Ver [[Backlog de Ajustes#AJ-0014 — Cálculo correto de dias de cobertura (quadradinhos verdes)|AJ-0014]].
 
 ## Produção
 

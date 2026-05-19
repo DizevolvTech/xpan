@@ -2,6 +2,7 @@ import "server-only";
 
 import type { ProductionItemStatus } from "@/lib/order-planning";
 import { buildFactoryPlanningData } from "@/lib/order-planning";
+import { applyFactoryWorkflowState } from "@/lib/factory-workflow-logic";
 import {
   canTransitionProductionItemStatus,
   getProductionStatusProgress,
@@ -103,6 +104,89 @@ async function appendOrderEventsForProductionItem(
         supabase,
       ),
     ),
+  );
+
+  // AJ-0011 / D05: quando a produção do pedido fecha 100% (status derivado =
+  // aguardando_expedicao), persistir um checkpoint em delivery_executions e
+  // emitir UM evento de "produção finalizada". Antes a transição era só
+  // derivada em runtime (cache 10s) e a loja nunca recebia o aviso.
+  //
+  // `planning` é o motor puro (não reflete o status persistido de produção).
+  // Para saber se o pedido realmente fechou 100%, aplicar o workflow state
+  // persistido — que já inclui o upsert recém-feito por updateProductionItemStatus.
+  const workflowState = await getPersistedWorkflowState(supabase);
+  const appliedPlanning = applyFactoryWorkflowState(planning, {
+    isReleased: (id) => workflowState.releasedOrders.includes(id),
+    isCancelled: (id) => workflowState.cancelledOrders.includes(id),
+    resolveProductionItemStatus: (itemKey) =>
+      itemKey ? workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado" : null,
+  });
+
+  const ordersReadyForExpedition = uniqueOrders.filter((orderId) => {
+    const orderRow = appliedPlanning.orders.find((order) => order.id === orderId);
+    return orderRow?.status === "aguardando_expedicao";
+  });
+
+  await Promise.all(
+    ordersReadyForExpedition.map(async (orderId) => {
+      const idQuery = supabase.from("store_orders").select("id");
+      const idResult = await (isUuid(orderId)
+        ? idQuery.eq("id", orderId)
+        : idQuery.eq("legacy_id", orderId)
+      ).maybeSingle();
+      const orderDatabaseId = idResult.data?.id;
+      if (!orderDatabaseId) {
+        return;
+      }
+
+      // Idempotência: se já existe row de execução, o checkpoint e o evento já
+      // foram emitidos (ou a entrega até já avançou) — não repetir nem sobrescrever.
+      const existingExecution = await supabase
+        .from("delivery_executions")
+        .select("order_id")
+        .eq("order_id", orderDatabaseId)
+        .maybeSingle();
+
+      if (
+        existingExecution.error &&
+        isSupabaseMissingSchemaError(existingExecution.error, ["delivery_executions"])
+      ) {
+        return;
+      }
+      if (existingExecution.data) {
+        return;
+      }
+
+      const seedResult = await supabase.from("delivery_executions").upsert(
+        {
+          order_id: orderDatabaseId,
+          status: "aguardando_expedicao",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "order_id", ignoreDuplicates: true },
+      );
+
+      if (
+        seedResult.error &&
+        !isSupabaseMissingSchemaError(seedResult.error, ["delivery_executions"])
+      ) {
+        // Não falhar o fluxo de produção por causa do checkpoint de expedição.
+        console.error("AJ-0011: falha ao semear delivery_executions", seedResult.error);
+        return;
+      }
+
+      await appendStoreOrderEvent(
+        {
+          orderId,
+          type: "producao_finalizada",
+          title: "Produção concluída",
+          description: "Todas as ordens de produção do pedido foram concluídas. Pedido liberado para expedição.",
+          createdByProfileId: updatedByProfileId ?? null,
+          metadata: { productionItemKey },
+        },
+        supabase,
+      );
+    }),
   );
 }
 

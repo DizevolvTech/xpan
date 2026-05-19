@@ -115,6 +115,28 @@ function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
 
+// AJ-0014: "dias de cobertura" — quantos dias um único pedido cobre, derivado
+// da cadência de produção do produto na semana. Ex.: 1x/sem → 7; 3x/sem → ~2;
+// 7x/sem → 1. Mínimo 1. Fórmula: round(7 / nº de dias produzidos na semana).
+function getCoverageDays(productionDays: ProductionWeekDay[]): number {
+  const cadence = productionDays.length;
+  if (cadence <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.round(7 / cadence));
+}
+
+// AJ-0016: rótulo curto do quadradinho com a data real (ex.: "SÁB 17").
+function formatCoverageColumnLabel(base: Date, offsetDays: number): string {
+  const date = new Date(base);
+  date.setDate(date.getDate() + offsetDays);
+  const weekday = new Intl.DateTimeFormat("pt-BR", { weekday: "short" })
+    .format(date)
+    .replace(".", "")
+    .toUpperCase();
+  return `${weekday} ${date.getDate()}`;
+}
+
 function buildOrderPrintPath(orderId: string, referenceDate: string) {
   return `/impressao/pedido-loja/${orderId}?ref=${referenceDate}`;
 }
@@ -898,6 +920,12 @@ export default function PedidosLojaPage() {
                                 A disponibilidade considera o cronograma ativo da linha de produção e os dias
                                 de fabricação da ficha do produto.
                               </p>
+                              <p>
+                                <strong className="text-foreground">Dias de cobertura:</strong> os
+                                quadradinhos verdes indicam quantos dias este pedido cobre, conforme a
+                                cadência de produção do produto (produz 1x/semana → cobre ~7 dias;
+                                3x/semana → ~2; todo dia → 1). Cada coluna mostra a data real.
+                              </p>
                             </div>
                           }
                         />
@@ -963,7 +991,7 @@ export default function PedidosLojaPage() {
                                   index === 0 && "bg-success/40",
                                 )}
                               >
-                                {WEEK_LABEL[dayField]}
+                                {formatCoverageColumnLabel(saleDate, index)}
                               </th>
                             ))}
                             <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Total</th>
@@ -1026,14 +1054,21 @@ export default function PedidosLojaPage() {
                                 <td className="px-2 py-2 text-sm">
                                   <div>{product.unit}</div>
                                 </td>
-                                {dayColumns.map((dayField, index) => {
+                                {(() => {
+                                  const coverageDays = getCoverageDays(product.productionDays);
+                                  return dayColumns.map((dayField, index) => {
                                   const isActiveColumn = index === 0;
                                   const canEdit = isActiveColumn;
+                                  const isCovered = product.available && index < coverageDays;
 
                                   return (
                                     <td
                                       key={`${product.id}-${dayField}`}
-                                      className={cn("px-1 py-1", isActiveColumn && "bg-success/25")}
+                                      className={cn(
+                                        "px-1 py-1",
+                                        isCovered && "bg-success/25",
+                                        isActiveColumn && isCovered && "bg-success/40",
+                                      )}
                                     >
                                       <Input
                                         type="number"
@@ -1046,7 +1081,8 @@ export default function PedidosLojaPage() {
                                       />
                                     </td>
                                   );
-                                })}
+                                  });
+                                })()}
                                 <td className="px-2 py-2 text-sm font-semibold">
                                   {product.available ? (
                                     <div>
