@@ -92,6 +92,7 @@
 - **Problema:** [[UX Audit — Sistema#F-5]]. `data-table.tsx:219-238` texto cinza só.
 - **Arquivo:** novo `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/components/shared/empty-state.tsx`; integra ao DataTable (já tem `emptyStateAction`).
 - **RICE:** R9 · I1 · C0.9 · E0.7.
+- **Status:** ✅ Concluído em 2026-05-19 (empty-state.tsx ícone+título+desc+CTA, sem cva, zero dep nova; integrado no data-table.tsx preservando emptyMessage/emptyStateAction 1:1 e trava read-only explícita; 8+ molduras ad-hoc adiadas p/ UX-0009/Onda 2-3; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). Ver spec §7.
 
 #### `UX-0005` — Escala de espaçamento + opacidade canônica · 🟡 Token · Score 10.6
 - **Problema:** [[UX Audit — Sistema#F-4]]. `globals.css:67-131` sem escala; `status-badge.tsx:43-248` opacidades ad-hoc.

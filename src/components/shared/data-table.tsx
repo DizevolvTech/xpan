@@ -5,6 +5,7 @@ import { AlertCircle, ArrowUpDown, ArrowUpRight, ChevronDown, ChevronUp, Eye, Lu
 
 import { Button } from "@/components/ui/button";
 import { DataTableSkeleton } from "@/components/shared/skeleton";
+import { EmptyState } from "@/components/shared/empty-state";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { paginateArray } from "@/lib/pagination";
 import {
@@ -218,22 +219,26 @@ export function DataTable<T extends object>({
 
   if (data.length === 0) {
     return (
-      <div className="flex h-44 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-strong/35 bg-card px-6 text-center shadow-[var(--shadow-card)]">
-        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-        {emptyStateAction && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={emptyStateAction.onClick}
-            disabled={isReadOnlyTenantView && !emptyStateAction.allowInReadOnly}
-            allowInReadOnly={emptyStateAction.allowInReadOnly}
-          >
-            {emptyStateAction.icon && <emptyStateAction.icon className="mr-1.5 size-4" />}
-            {emptyStateAction.label}
-          </Button>
-        )}
-      </div>
+      <EmptyState
+        description={emptyMessage}
+        action={
+          emptyStateAction
+            ? {
+                label: emptyStateAction.label,
+                onClick: emptyStateAction.onClick,
+                icon: emptyStateAction.icon,
+                allowInReadOnly: emptyStateAction.allowInReadOnly,
+                // Read-only paridade EXATA: reproduz bit-a-bit o `disabled` do
+                // bloco anterior (`isReadOnlyTenantView && !allowInReadOnly`).
+                // O <Button> outline NÃO auto-bloqueia (UX-0004 só trava
+                // default/destructive/submit) → a trava efetiva continua aqui,
+                // no consumidor que conhece o contexto de acesso. Afordância
+                // desabilitada, NÃO removida (guard-rail R3).
+                disabled: isReadOnlyTenantView && !emptyStateAction.allowInReadOnly,
+              }
+            : undefined
+        }
+      />
     );
   }
 
