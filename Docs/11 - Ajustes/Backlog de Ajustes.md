@@ -90,7 +90,7 @@
 ---
 
 ### AJ-0002 — Dashboard com cards clicáveis
-**Concluído em:** 2026-05-19 (a commitar) — Onda 2 · gestor-fábrica (ver nota)
+**Concluído em:** 2026-05-19 (commit 9cbd6ab) — Onda 2 · gestor-fábrica (ver nota)
 **Origem:** Call 2026-05-13 (Bloco 2) · **Status:** Concluído (gestor-fábrica) · **Categoria:** UX
 
 > **Feito:** `KPICard` ganhou prop opcional `href` (retrocompatível, vira `<Link>`). Os 5 cards do dashboard do gestor-fábrica agora navegam com filtro aplicado; `pedidos`, `ordens-producao` e `entregas` passaram a ler `?status` para o filtro inicial (padrão `useSearchParams` já usado no repo).
@@ -142,7 +142,7 @@
 ---
 
 ### AJ-0007 — Bloquear duplicidade antes de abrir o pedido
-**Concluído em:** 2026-05-19 (a commitar) — Onda 2 · **só a parte UX** (ver nota)
+**Concluído em:** 2026-05-19 (commit 9cbd6ab) — Onda 2 · **só a parte UX** (ver nota)
 **Origem:** Call 2026-05-13 (Bloco 8) · **Status:** Concluído (UX) / Bonus DB adiado · **Categoria:** Bug/UX
 
 > **Feito:** banner proativo no diálogo "Novo Pedido" (loja) avisando, **antes de digitar**, que já existe pedido ativo para a mesma loja + data de entrega, com atalho "Abrir pedido existente" (entra no fluxo de edição). O server (`store-orders.ts:373`) já fazia o hard-block no submit; agora há aviso antecipado.
@@ -169,7 +169,7 @@
 ---
 
 ### AJ-0012 — Log de auditoria com diff visível
-**Concluído em:** 2026-05-19 (a commitar) — Onda 2
+**Concluído em:** 2026-05-19 (commit 9cbd6ab) — Onda 2
 **Origem:** Call 2026-05-13 (Bloco 12) · **Status:** Concluído · **Categoria:** UX
 
 > **Feito:** diff por produto na seção "Revisões pendentes" comparando a revisão pendente com a versão anterior (via `revisionOfId`), usando só snapshots já no client — **não depende de `product_changelog`** (contorna [[Dívida Técnica#D20]]). Mostra produtos adicionados/removidos/alterados e, por campo, valor antigo → novo (carga base, dias de produção, lead expedição, prioridade diária).
@@ -182,7 +182,7 @@
 ---
 
 ### AJ-0013 — Visibilidade de pedido liberado para produção
-**Concluído em:** 2026-05-19 (a commitar) — Onda 2
+**Concluído em:** 2026-05-19 (commit 9cbd6ab) — Onda 2
 **Origem:** Call 2026-05-13 (Bloco 13) · **Status:** Concluído · **Categoria:** Bug/UX
 
 > **Investigado:** não era bug — OPs com `productionDate` futura recebem `status="agendado"` (engine.ts:745) e somem da fila do dia. **Feito:** KPI "Agendadas (próximos dias)" + painel dedicado em `ordens-producao` listando cada OP agendada com a data prevista e link direto para a OP.
@@ -203,7 +203,7 @@
 ---
 
 ### AJ-0017 — Entregas: card "aguardando produção" navegável para OP
-**Concluído em:** 2026-05-19 (a commitar) — Onda 2
+**Concluído em:** 2026-05-19 (commit 9cbd6ab) — Onda 2
 **Origem:** Call 2026-05-13 (Daniel, 43:00) · **Status:** Concluído · **Categoria:** UX
 
 > **Feito:** mapa `orderId → opId` computado em runtime na tela de entregas (sem mexer no motor). Quando a entrega está "aguardando produção" (`aguardando_expedicao` + `!expeditionReady`), aparece botão **"Ver OP"** que abre `/chao-fabrica/ordens-producao/{opId}` — desktop e mobile.
