@@ -94,6 +94,7 @@
 - **Problema:** [[UX Audit — Sistema#F-4]]. `globals.css:67-131` sem escala; `status-badge.tsx:43-248` opacidades ad-hoc.
 - **Arquivo:** `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/app/globals.css`. Só token/tema, **zero comportamento**. Pré-requisito de `UX-0009`.
 - **RICE:** R10 · I1 · C0.85 · E0.8.
+- **Status:** ✅ Concluído em 2026-05-19 (Estratégia A 8 degraus; namespace `--spacing-rhythm-*` por R5; aditivo +25 linhas; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). Ver spec §7 autorreview.
 
 #### `UX-0006` — Auditoria de contraste WCAG AA · 🔴 A11y · Score 9.3
 - **Problema:** [[UX Audit — Sistema#F-4]] / risco WCAG 1.4.3. Pares OKLCH nunca medidos.

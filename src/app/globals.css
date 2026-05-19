@@ -62,10 +62,35 @@
   --shadow-soft: var(--shadow-soft);
   --shadow-popover: var(--shadow-popover);
   --shadow-elevated: var(--shadow-elevated);
+
+  /* UX-0005 — Escala de espaçamento canônica (ritmo 4/8px) — aditiva; UX-0009 consome.
+     Namespace `rhythm` (Risco R5): nao colide com a escala numerica default do
+     Tailwind 4 (p-2/gap-4 intactos). Mesma arquitetura ancora-derivada de --radius. */
+  --spacing-rhythm-3xs: calc(var(--space-unit) * 1);   /*  4px — hairline / gap intra-icone */
+  --spacing-rhythm-2xs: calc(var(--space-unit) * 2);   /*  8px — gap rotulo/valor; chip pequeno */
+  --spacing-rhythm-xs:  calc(var(--space-unit) * 3);   /* 12px — padding compacto; form denso */
+  --spacing-rhythm-sm:  calc(var(--space-unit) * 4);   /* 16px — padding de celula/controle */
+  --spacing-rhythm-md:  calc(var(--space-unit) * 6);   /* 24px — padding de card/secao */
+  --spacing-rhythm-lg:  calc(var(--space-unit) * 8);   /* 32px — separacao entre blocos */
+  --spacing-rhythm-xl:  calc(var(--space-unit) * 12);  /* 48px — separacao entre grandes secoes */
+  --spacing-rhythm-2xl: calc(var(--space-unit) * 16);  /* 64px — respiro de topo de pagina */
+
+  /* UX-0005 — Degraus canonicos de opacidade (Estrategia A: 8 degraus).
+     Substituem /10 /15 /18 /20 /22 /25 /30 /35 /40 /50 /55 /60 /65 /70 /75 /80 ad-hoc
+     via tabela de-para (UX-0009 aplica; UX-0005 so define). Nomes por papel, nao numericos. */
+  --opacity-faint:     0.10;  /* wash de fundo tonal minimo */
+  --opacity-subtle:    0.16;  /* fundo de badge/tag tonal */
+  --opacity-soft:      0.22;  /* fundo tonal de destaque medio */
+  --opacity-muted:     0.25;  /* wash de bloco informativo */
+  --opacity-border:    0.35;  /* anel/realce sutil */
+  --opacity-divider:   0.55;  /* divisor/borda de baixo contraste */
+  --opacity-strong:    0.65;  /* borda/divisor padrao de card e tabela */
+  --opacity-prominent: 0.78;  /* borda/texto secundario evidente */
 }
 
 :root {
   --radius: 0.9rem;
+  --space-unit: 0.25rem; /* UX-0005 — 4px, ancora do ritmo (nao usar direto; via --spacing-rhythm-*) */
 
   --canvas: oklch(0.975 0.008 85);
   --surface: oklch(0.995 0.002 95);
