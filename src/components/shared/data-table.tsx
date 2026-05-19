@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { AlertCircle, ArrowUpDown, ArrowUpRight, ChevronDown, ChevronUp, Eye, LucideIcon, Pencil, Plus, Printer, Trash2, UserRound } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { DataTableSkeleton } from "@/components/shared/skeleton";
+import { DataTableSkeleton, Skeleton } from "@/components/shared/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { paginateArray } from "@/lib/pagination";
@@ -95,6 +95,21 @@ function isPrimitiveSortValue(value: unknown) {
   );
 }
 
+/* -------------------------------------------------------------------------------------------------
+ * UX-0001 — DataTable responsivo (abordagem C, breakpoint `sm`/640px nativo do Tailwind).
+ * ≥ sm: o <table><thead><th> de hoje, BYTE-EQUIVALENTE (recorte 1:1 só envolvido por
+ * `hidden sm:block`). < sm: uma lista de cards IRMÃ (`sm:hidden`), gerada do MESMO
+ * `visibleData`/`columns`/`actions` — cada coluna vira um par <dt>(header)/<dd>(render),
+ * ações no rodapé do card (ícone + label, hit-target ≥44px), sort em chips no topo, expand
+ * dentro do card. Alternância 100% CSS (hidden/sm:hidden) — zero matchMedia, zero useState de
+ * viewport → sem mismatch SSR/CSR, sem flash. Custo aceito: DOM duplicado de ≤pageSize linhas
+ * em <sm (o ramo `hidden` não pinta). Loading (UX-0003) e empty (UX-0007) já no arquivo —
+ * loading vira 2 ramos (skeleton tabular ≥sm + skeleton de cards <sm, reusando `Skeleton`);
+ * empty é intocado (EmptyState já é não-tabular/responsivo). Cor só token + --opacity-*,
+ * espaçamento via *-rhythm-*. Ajuste fino da matriz densa `administrador/usuarios`
+ * (min-w internos em column.render) é delegado a UX-0016 (Onda 2) — UX-0001 entrega só o
+ * comportamento-base. Espelha a gramática de shared/skeleton.tsx / shared/empty-state.tsx.
+ * -----------------------------------------------------------------------------------------------*/
 export function DataTable<T extends object>({
   data,
   columns,
@@ -208,12 +223,55 @@ export function DataTable<T extends object>({
   const visibleData = pagination ? paginated.items : sortedData;
 
   if (isLoading) {
+    const hasActions = Boolean(actions && actions.length > 0);
     return (
-      <DataTableSkeleton
-        columns={columns.length}
-        hasActions={Boolean(actions && actions.length > 0)}
-        compact={compact}
-      />
+      <>
+        {/* ≥ sm — skeleton tabular (UX-0003), byte-equivalente: só envolvido pelo wrapper. */}
+        <div className="hidden sm:block">
+          <DataTableSkeleton
+            columns={columns.length}
+            hasActions={hasActions}
+            compact={compact}
+          />
+        </div>
+
+        {/* < sm — skeleton de cards (UX-0001), reusa o primitivo Skeleton (UX-0003), sem primitivo novo. */}
+        <div
+          role="status"
+          aria-busy
+          aria-label="Carregando registros"
+          className="space-y-rhythm-sm sm:hidden"
+        >
+          <span className="sr-only">Carregando registros</span>
+          {Array.from({ length: 3 }).map((_, cardIndex) => (
+            <div
+              key={cardIndex}
+              data-slot="data-card-skeleton"
+              aria-hidden
+              className="rounded-lg border border-border/[var(--opacity-strong)] bg-card p-rhythm-sm shadow-[var(--shadow-card)]"
+            >
+              <div className="space-y-rhythm-2xs">
+                {Array.from({ length: Math.min(columns.length, 4) }).map(
+                  (__, lineIndex) => (
+                    <Skeleton key={lineIndex} variant="text" className="h-4" />
+                  ),
+                )}
+              </div>
+              {hasActions ? (
+                <div className="mt-rhythm-sm flex flex-wrap gap-rhythm-2xs border-t border-border/[var(--opacity-divider)] pt-rhythm-sm">
+                  {Array.from({ length: 2 }).map((__, btnIndex) => (
+                    <Skeleton
+                      key={btnIndex}
+                      className="h-11 w-24"
+                      rounded="md"
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </>
     );
   }
 
@@ -244,6 +302,10 @@ export function DataTable<T extends object>({
 
   return (
     <div className="space-y-3">
+      {/* ≥ sm — DESKTOP, BYTE-EQUIVALENTE: recorte 1:1 do bloco atual, apenas
+          envolvido por `hidden sm:block` (UX-0001, abordagem C). Zero classe/
+          atributo/lógica alterada dentro do <table>/<thead>/<tbody>. */}
+      <div className="hidden sm:block">
       <div className="overflow-hidden rounded-xl border border-border/65 bg-card shadow-[var(--shadow-card)]">
         <div className="overflow-x-auto overscroll-x-contain">
         <table
@@ -427,6 +489,185 @@ export function DataTable<T extends object>({
           </tbody>
         </table>
         </div>
+      </div>
+      </div>
+
+      {/* < sm — CARD empilhado, ADITIVO: mesma fonte (visibleData/columns/
+          actions), mesma lógica de sort/ações/expand/read-only. Alternância
+          100% CSS (sm:hidden), zero JS de viewport (UX-0001, abordagem C). */}
+      <div className="sm:hidden">
+        {sortableColumns.size > 0 ? (
+          <div
+            className="mb-rhythm-sm -mx-1 flex items-center gap-rhythm-2xs overflow-x-auto px-1 pb-1"
+            role="group"
+            aria-label="Ordenar registros"
+          >
+            <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              Ordenar
+            </span>
+            {columns
+              .filter((column) => sortableColumns.has(column.key))
+              .map((column) => {
+                const isActive = columnSort?.key === column.key;
+                return (
+                  <button
+                    key={column.key}
+                    type="button"
+                    aria-pressed={isActive}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-150 outline-none focus-visible:border-ring focus-visible:ring-ring/45 focus-visible:ring-[3px]",
+                      isActive
+                        ? "border-primary/[var(--opacity-strong)] bg-primary/[var(--opacity-faint)] text-foreground"
+                        : "border-border/[var(--opacity-strong)] bg-card text-muted-foreground hover:text-foreground",
+                    )}
+                    onClick={() => {
+                      setColumnSort((current) => toggleColumnSort(current, column.key));
+                      setPage(1);
+                    }}
+                  >
+                    <span>{column.header}</span>
+                    {isActive ? (
+                      columnSort?.direction === "asc" ? (
+                        <ChevronUp className="size-3.5" />
+                      ) : (
+                        <ChevronDown className="size-3.5" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="size-3.5 opacity-60" />
+                    )}
+                  </button>
+                );
+              })}
+          </div>
+        ) : null}
+
+        <ul
+          role="list"
+          className="space-y-rhythm-sm"
+          aria-label={paginationLabel}
+        >
+          {visibleData.map((item) => {
+            const rowClickable = onRowClick ? (isRowClickable?.(item) ?? true) : false;
+            const rowExpanded = isRowExpanded?.(item) ?? false;
+            const rowKey = String(item[keyField]);
+            const handleCardActivate = () => {
+              onRowClick?.(item);
+            };
+            const isInteractiveTarget = (target: EventTarget | null) =>
+              Boolean(
+                (target as HTMLElement | null)?.closest(
+                  "button, a, input, select, textarea, [role='button'], [data-stop-row-click='true']",
+                ),
+              );
+
+            return (
+              <li key={rowKey}>
+                <article
+                  data-slot="data-card"
+                  className={cn(
+                    "rounded-lg border border-border/[var(--opacity-strong)] bg-card p-rhythm-sm shadow-[var(--shadow-card)] transition-colors duration-150",
+                    rowExpanded &&
+                      "border-l-2 border-l-primary bg-primary/[var(--opacity-faint)]",
+                    rowClickable &&
+                      "cursor-pointer outline-none focus-visible:border-ring focus-visible:ring-ring/45 focus-visible:ring-[3px]",
+                    rowClassName?.(item),
+                  )}
+                  onClick={
+                    rowClickable
+                      ? (event) => {
+                          if (isInteractiveTarget(event.target)) {
+                            return;
+                          }
+                          handleCardActivate();
+                        }
+                      : undefined
+                  }
+                  {...(rowClickable
+                    ? {
+                        role: "button",
+                        tabIndex: 0,
+                        onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+                          if (event.key !== "Enter" && event.key !== " ") {
+                            return;
+                          }
+                          if (isInteractiveTarget(event.target)) {
+                            return;
+                          }
+                          event.preventDefault();
+                          handleCardActivate();
+                        },
+                      }
+                    : {})}
+                >
+                  <dl className="grid grid-cols-[minmax(0,9rem)_1fr] gap-x-rhythm-sm gap-y-rhythm-2xs">
+                    {columns.map((column) => (
+                      <Fragment key={column.key}>
+                        <dt className="self-start text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                          {column.header}
+                        </dt>
+                        <dd className="min-w-0 break-words text-sm text-foreground">
+                          {column.render
+                            ? column.render(item)
+                            : formatDefaultCellValue(
+                                column.key,
+                                (item as Record<string, unknown>)[column.key],
+                              )}
+                        </dd>
+                      </Fragment>
+                    ))}
+                  </dl>
+
+                  {actions && actions.length > 0 ? (
+                    <div className="mt-rhythm-sm flex flex-wrap items-center gap-rhythm-2xs border-t border-border/[var(--opacity-divider)] pt-rhythm-sm">
+                      {actions.map((action, actionIndex) => {
+                        const Icon = actionIcons[action.icon];
+                        const isDestructive = action.variant === "destructive";
+                        const isBlockedInReadOnly =
+                          isReadOnlyTenantView &&
+                          !action.allowInReadOnly &&
+                          blocksReadOnlyAction(action.label);
+                        return (
+                          <Button
+                            key={actionIndex}
+                            type="button"
+                            variant={isDestructive ? "ghost" : action.variant || "ghost"}
+                            size="lg"
+                            className={cn(
+                              "transition-colors duration-200",
+                              isDestructive
+                                ? "text-danger-foreground/80 hover:bg-danger/40 hover:text-danger-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                            disabled={isBlockedInReadOnly}
+                            allowInReadOnly={action.allowInReadOnly}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (isBlockedInReadOnly) {
+                                return;
+                              }
+                              action.onClick(item);
+                            }}
+                            title={action.label}
+                            aria-label={action.label}
+                          >
+                            <Icon className="size-4" />
+                            <span>{action.label}</span>
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  {rowExpanded && renderExpandedRow ? (
+                    <div className="mt-rhythm-sm border-t border-border/[var(--opacity-divider)] pt-rhythm-sm">
+                      {renderExpandedRow(item)}
+                    </div>
+                  ) : null}
+                </article>
+              </li>
+            );
+          })}
+        </ul>
       </div>
 
       {showFooterControls && (pagination || (canSortByDate && !columnSort)) ? (

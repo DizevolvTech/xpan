@@ -63,6 +63,7 @@
 - **Escopo:** estratégia card/empilhado < 640px; preservar 100% das colunas/ações/sort/
   paginação/expand/read-only. Sem mudar dados. Maior alavancagem (15+ telas + OPs + matriz).
 - **RICE:** R10 (todas as tabelas, ~5 personas) · I3 (loja inutilizável hoje) · C0.9 · E1.5.
+- **Status:** ✅ Concluído em 2026-05-19 (Abordagem C aprovada no checkpoint: tabela desktop byte-equivalente ≥sm + lista de cards irmã <640px, 100% CSS, zero JS de viewport; data-table.tsx +248/-7 wrap-only no ramo desktop; sort/ações/expand/paginação/loading/empty/read-only preservados no card; e2e 26 PASS/0 FAIL desktop; lint/tsc/test verdes). Ajuste fino matriz densa → UX-0016, ordens-producao → UX-0012 (Onda 2). Ver spec §7.
 
 #### `UX-0002` — Sistema de toast/feedback · 🔴 Estado · Score 16.8
 - **Problema:** [[UX Audit — Sistema#F-1]]. **17 `alert/confirm`** mapeados.
