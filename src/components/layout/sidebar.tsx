@@ -124,11 +124,11 @@ function SidebarNav({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-sidebar-border/[var(--opacity-prominent)] border-b px-4 py-4">
+      <div className="px-4 py-4">
         <Link
           href={navigationContext.landingPath}
           className={cn(
-            "block rounded-xl border border-sidebar-border/[var(--opacity-strong)] bg-sidebar-accent/45 px-3.5 py-3 transition-[border-color,background-color] duration-300 ease-out hover:border-sidebar-border hover:bg-sidebar-accent/[var(--opacity-strong)]",
+            "block rounded-xl px-3.5 py-3 transition-[background-color] duration-300 ease-out hover:bg-sidebar-accent/[var(--opacity-soft)]",
             collapsed && "flex items-center justify-center px-0",
           )}
           onClick={onNavigate}
@@ -163,7 +163,7 @@ function SidebarNav({
       </div>
 
       {!collapsed && navigationContext.selectedTenant ? (
-        <div className="border-b border-sidebar-border/[var(--opacity-prominent)] px-4 py-3">
+        <div className="px-4 pb-2 pt-1">
           <div className="flex items-center gap-2.5">
             {navigationContext.selectedTenant.logoUrl ? (
               <img
@@ -190,7 +190,7 @@ function SidebarNav({
             className={cn(
               "space-y-1",
               sectionIndex > 0 &&
-                (collapsed ? "mt-2" : "mt-3 border-t border-sidebar-border/[var(--opacity-strong)] pt-3"),
+                (collapsed ? "mt-2" : "mt-4 border-t border-sidebar-border/[var(--opacity-faint)] pt-4"),
             )}
           >
             {!collapsed && (
@@ -232,7 +232,7 @@ function SidebarNav({
       </nav>
 
       {!collapsed ? (
-        <div className="border-sidebar-border/[var(--opacity-prominent)] border-t p-4">
+        <div className="border-sidebar-border/[var(--opacity-faint)] border-t p-4">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               {profileGroupMeta.badge}
@@ -253,7 +253,7 @@ function SidebarNav({
             onClick={onNavigate}
             className={cn(
               navItemBaseClass,
-              "mt-3 border border-sidebar-border/[var(--opacity-strong)]",
+              "mt-3",
               activeProfile
                 ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[var(--shadow-soft)]"
                 : "text-sidebar-foreground/90 hover:bg-sidebar-accent/85 hover:text-sidebar-accent-foreground",
@@ -276,7 +276,7 @@ function SidebarNav({
           </Button>
         </div>
       ) : (
-        <div className="border-sidebar-border/[var(--opacity-prominent)] border-t p-3">
+        <div className="border-sidebar-border/[var(--opacity-faint)] border-t p-3">
           <div className="flex flex-col gap-2">
             <Link
               href={navigationContext.currentUser.profilePath}
@@ -316,12 +316,12 @@ export function Sidebar({ navigationContext, mobileOpen, onMobileClose, classNam
     () => (
       <aside
         className={cn(
-          "border-sidebar-border/[var(--opacity-prominent)] bg-sidebar text-sidebar-foreground sticky top-0 hidden h-screen flex-col border-r transition-[width] duration-300 ease-out lg:flex",
+          "border-sidebar-border/[var(--opacity-faint)] bg-sidebar text-sidebar-foreground sticky top-0 hidden h-screen flex-col border-r transition-[width] duration-300 ease-out lg:flex",
           collapsed ? "w-20" : "w-72",
           className,
         )}
       >
-        <div className="flex justify-end border-b border-sidebar-border/[var(--opacity-strong)] px-3 py-2">
+        <div className="flex justify-end px-3 py-2">
           <Button
             type="button"
             variant="ghost"

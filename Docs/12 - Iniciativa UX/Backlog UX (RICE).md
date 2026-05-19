@@ -99,7 +99,7 @@
 - **Problema:** [[UX Audit — Sistema#F-4]]. `globals.css:67-131` sem escala; `status-badge.tsx:43-248` opacidades ad-hoc.
 - **Arquivo:** `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/app/globals.css`. Só token/tema, **zero comportamento**. Pré-requisito de `UX-0009`.
 - **RICE:** R10 · I1 · C0.85 · E0.8.
-- **Status:** ✅ Concluído em 2026-05-19 (Estratégia A 8 degraus; namespace `--spacing-rhythm-*` por R5; aditivo +25 linhas; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). Ver spec §7 autorreview.
+- **Status:** ✅ Concluído em 2026-05-19 (Estratégia A 8 degraus; namespace `--spacing-rhythm-*` por R5; aditivo +25 linhas; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). Ver spec §7 autorreview. **⚠️ DEFEITO-RAIZ corrigido depois (commit 32ecbe2):** os `--opacity-*` foram definidos como números crus (`0.10`), mas são usados como amount de `color-mix()` → CSS inválido → borda caía p/ currentColor escuro em todo o app. Corrigido p/ `%`. Lição: e2e é cego a CSS inválido.
 
 #### `UX-0006` — Auditoria de contraste WCAG AA · 🔴 A11y · Score 9.3
 - **Problema:** [[UX Audit — Sistema#F-4]] / risco WCAG 1.4.3. Pares OKLCH nunca medidos.
@@ -123,7 +123,7 @@
 - **Arquivos:** `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/components/shared/{page-header,page-hero,page-layout,kpi-card,status-badge,module-card,profile-page}.tsx` + `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/components/layout/{app-shell,sidebar,area-shell-layout,page-container}.tsx`.
 - **Depende de:** `UX-0005` (consome a nova escala). `profile-page.tsx` cobre 6 perfis.
 - **RICE:** R10 · I1 · C0.8 · E1.2.
-- **Status:** ✅ Concluído em 2026-05-19 (~75 opacidades ad-hoc → tokens `--opacity-*` via de-para UX-0005 §7.4, Estratégia A, em 8 arquivos; 28 tokens de cor novos em globals.css — 5 famílias `--status-*` + 4 `--kpi-trend-*` + 2 `--module-*` com valores OKLCH AA-validados UX-0006; 1 convergência de raio page-header; sidebar /45/85/90 → input UX-0005; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). ⚠️ **Smoke visual Gate 1**: 5 pontos Δ=5pp (maior: /70→0.65 cascateia em todas as telas) + raio page-header. Ver spec §7.
+- **Status:** ✅ Concluído em 2026-05-19 (~75 opacidades ad-hoc → tokens `--opacity-*` via de-para UX-0005 §7.4, Estratégia A, em 8 arquivos; 28 tokens de cor novos em globals.css — 5 famílias `--status-*` + 4 `--kpi-trend-*` + 2 `--module-*` com valores OKLCH AA-validados UX-0006; 1 convergência de raio page-header; sidebar /45/85/90 → input UX-0005; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). ⚠️ **Smoke visual Gate 1**: 5 pontos Δ=5pp (maior: /70→0.65 cascateia em todas as telas) + raio page-header. Ver spec §7. **⚠️ Espalhou o padrão quebrado `cor/[var(--opacity-*)]` (103 usos) — só renderizou correto após o fix-raiz dos tokens p/ `%` (commit 32ecbe2). Specs §7 diziam "provado no build"; build ≠ render válido.**
 
 #### `UX-0010` — Densidade responsiva no shell · 🟢 Responsivo · Score 3.8
 - **Problema:** [[UX Audit — Sistema#F-8]].

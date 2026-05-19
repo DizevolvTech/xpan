@@ -48,7 +48,7 @@ export function ModuleCard({
   return (
     <Link
       href={href}
-      className="group flex h-full flex-col rounded-xl border border-border/[var(--opacity-prominent)] bg-surface p-5 shadow-[var(--shadow-soft)] transition duration-200 hover:-translate-y-1 hover:border-border-strong/[var(--opacity-border)]"
+      className="group flex h-full flex-col rounded-2xl bg-card p-5 shadow-[var(--shadow-card)] transition duration-200 hover:-translate-y-1 hover:shadow-[var(--shadow-soft)]"
     >
       <div className="flex items-start gap-3">
         <div className={cn("mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-xl", styles.icon)}>

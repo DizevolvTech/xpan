@@ -1,23 +1,32 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Clock3, Package, Plus, ShoppingCart, Truck } from "lucide-react";
+import { motion } from "framer-motion";
+import {
+  AlertCircle,
+  CalendarRange,
+  ChevronRight,
+  Clock3,
+  Package,
+  Plus,
+  ShoppingCart,
+  Truck,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageContainer } from "@/components/layout/page-container";
 import { InfoHint } from "@/components/shared/info-hint";
-import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
-import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
-import { PageLayout } from "@/components/shared/page-layout";
 import { useToast } from "@/components/shared/toast";
 import { useConfirm } from "@/components/shared/confirm-dialog";
 import {
@@ -145,6 +154,60 @@ function buildOrderPrintPath(orderId: string, referenceDate: string) {
 
 function buildOrderDetailPath(orderId: string, referenceDate: string) {
   return `/loja/pedidos/${orderId}?ref=${referenceDate}`;
+}
+
+// Refino visual local (escopo só desta tela): KPI "flat" — sem borda dura,
+// hierarquia por superfície sutil + sombra suave + número protagonista.
+// Não altera o KPICard compartilhado (preserva as demais telas).
+type FlatKpiTone = "neutral" | "info" | "success" | "warning" | "danger";
+const flatKpiToneStyles: Record<FlatKpiTone, { rail: string; icon: string }> = {
+  neutral: { rail: "bg-border-strong", icon: "bg-secondary text-secondary-foreground" },
+  info: { rail: "bg-info", icon: "bg-info/[var(--opacity-subtle)] text-info" },
+  success: { rail: "bg-success", icon: "bg-success/[var(--opacity-subtle)] text-success" },
+  warning: { rail: "bg-warning", icon: "bg-warning/[var(--opacity-subtle)] text-warning" },
+  danger: { rail: "bg-danger", icon: "bg-danger/[var(--opacity-subtle)] text-danger" },
+};
+
+function FlatKpi({
+  title,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  title: string;
+  value: number;
+  icon: LucideIcon;
+  tone: FlatKpiTone;
+}) {
+  const styles = flatKpiToneStyles[tone];
+  return (
+    <article className="group relative flex items-center gap-3.5 overflow-hidden rounded-lg bg-card/60 px-4 py-3.5 transition-colors duration-200 hover:bg-card">
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-y-2.5 left-0 w-[3px] rounded-r-full opacity-70 transition-opacity duration-200 group-hover:opacity-100",
+          styles.rail,
+        )}
+        aria-hidden
+      />
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-[1.04]",
+          styles.icon,
+        )}
+        aria-hidden
+      >
+        <Icon className="size-[1.05rem]" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">
+          {title}
+        </p>
+        <p className="mt-0.5 font-heading text-[1.45rem] font-bold leading-none tracking-[-0.022em] text-foreground tabular-nums">
+          {value}
+        </p>
+      </div>
+    </article>
+  );
 }
 
 function formatRequestedQuantity(quantity: number, unitKind: StoreOrderCatalogProduct["unitKind"]) {
@@ -687,458 +750,554 @@ export default function PedidosLojaPage() {
   }
 
   return (
-    <PageLayout
-      title="Meus Pedidos"
-      description="Gerencie seus pedidos"
-      badge="Loja"
-      breadcrumbs={[{ label: "Loja", href: "/loja" }, { label: "Pedidos" }]}
-    >
-      <OperationalDateScopeCard
-        scope={scope}
-        summary={summary}
-        setMode={setMode}
-        setDate={setDate}
-        setStartDate={setStartDate}
-        setEndDate={setEndDate}
-        title="Janela da loja"
-        description="Pedidos e catálogo respeitam as lojas autorizadas e o mesmo recorte temporal do restante da operação."
-        extraControls={
-          shouldShowStoreSelector ? (
-            <div className="min-w-[260px] space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Loja</p>
-              {shouldUseSearchableStoreSelect ? (
-                <SearchableSelect
-                  value={selectedStoreId}
-                  onValueChange={setSelectedStoreId}
-                  options={storeOptions}
-                  placeholder="Filtrar por loja"
-                  searchPlaceholder="Buscar loja..."
-                  emptyMessage="Nenhuma loja encontrada."
-                  title="Filtrar por loja"
-                  description="Selecione a loja para atualizar a janela operacional e o catálogo."
-                  className="w-[260px] bg-background/80"
-                />
-              ) : (
-                <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
-                  <SelectTrigger className="w-[260px] bg-background/80">
-                    <SelectValue placeholder="Filtrar por loja" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableStores.map((store) => (
-                      <SelectItem key={store.id} value={store.id}>
-                        {store.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          ) : selectedStore ? (
-            <div className="min-w-[260px] space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Loja</p>
-              <span className="flex min-h-10 items-center rounded-md border border-border/70 bg-panel px-3 text-sm text-foreground">
-                {selectedStore.name}
-              </span>
-            </div>
-          ) : null
-        }
-      />
+    <PageContainer>
+      {/* Cabeçalho enxuto (refino local): título forte + breadcrumb + badge LOJA
+          + ação primária, sem o hero-box pesado. PageHero/PageLayout não são
+          tocados — outras telas seguem usando o shared. */}
+      <motion.header
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="flex flex-col gap-4 border-b border-border/[var(--opacity-divider)] pb-5 sm:flex-row sm:items-end sm:justify-between"
+      >
+        <div className="min-w-0">
+          <nav className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <Link href="/loja" className="transition hover:text-foreground">
+              Loja
+            </Link>
+            <ChevronRight className="size-3" />
+            <span className="text-foreground/80">Pedidos</span>
+          </nav>
+          <div className="mt-2.5 flex items-center gap-2.5">
+            <h1 className="font-heading text-balance text-[1.6rem] font-bold leading-[1.1] tracking-[-0.02em] text-foreground sm:text-[1.85rem]">
+              Meus Pedidos
+            </h1>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/[var(--opacity-subtle)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent-foreground">
+              <span className="size-1.5 rounded-full bg-accent" />
+              Loja
+            </span>
+            <InfoHint content="Gerencie seus pedidos" size="md" />
+          </div>
+        </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KPICard title="Total de Pedidos" value={orderKpis.total} icon={ShoppingCart} tone="info" />
-        <KPICard title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
-        <KPICard title="Em Produção" value={orderKpis.emProducao} icon={Package} tone="neutral" />
-        <KPICard title="Entregas" value={orderKpis.entregas} icon={Truck} tone="success" />
-        <KPICard title="Ocorrências" value={orderKpis.ocorrenciasAbertas} icon={AlertCircle} tone="danger" />
-      </div>
+        <Dialog open={isNewOrderOpen} onOpenChange={handleNewOrderDialogChange}>
+          <DialogTrigger asChild>
+            <Button type="button" className="shrink-0">
+              <Plus className="size-4" />
+              Novo Pedido
+            </Button>
+          </DialogTrigger>
+          <DialogContent size="full">
+            <DialogHeader>
+              <DialogTitle>{editingOrderId ? "Editar Pedido" : "Pedido Diário"}</DialogTitle>
+              <DialogDescription>Faça seu pedido de produtos</DialogDescription>
+            </DialogHeader>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Pedidos</CardTitle>
-          <Dialog open={isNewOrderOpen} onOpenChange={handleNewOrderDialogChange}>
-            <DialogTrigger asChild>
-              <Button type="button">
-                <Plus className="size-4" />
-                Novo Pedido
-              </Button>
-            </DialogTrigger>
-            <DialogContent size="full">
-              <DialogHeader>
-                <DialogTitle>{editingOrderId ? "Editar Pedido" : "Pedido Diário"}</DialogTitle>
-                <DialogDescription>Faça seu pedido de produtos</DialogDescription>
-              </DialogHeader>
-
-              {isEditOrderLoading ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-20">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-foreground" />
-                  <p className="text-sm text-muted-foreground">Carregando dados do pedido…</p>
+            {isEditOrderLoading ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-20">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-border border-t-foreground" />
+                <p className="text-sm text-muted-foreground">Carregando dados do pedido…</p>
+              </div>
+            ) : (
+            <>
+            <div className="space-y-6 py-2">
+              {availableStores.length === 0 ? (
+                <div className="rounded-lg border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
+                  Nenhuma loja ativa está vinculada ao seu perfil. Revise os vínculos de loja antes de criar pedidos.
                 </div>
-              ) : (
-              <>
-              <div className="space-y-6 py-2">
-                {availableStores.length === 0 ? (
-                  <div className="rounded-lg border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
-                    Nenhuma loja ativa está vinculada ao seu perfil. Revise os vínculos de loja antes de criar pedidos.
-                  </div>
-                ) : null}
+              ) : null}
 
-                {duplicateActiveOrder ? (
-                  <div className="flex flex-col gap-3 rounded-lg border border-warning/45 bg-warning/15 px-4 py-3 text-sm text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
-                    <p>
-                      Já existe um pedido ativo (
-                      <strong className="font-semibold">{duplicateActiveOrder.code}</strong>) para{" "}
-                      <strong className="font-semibold">{selectedStore?.name}</strong> na entrega de{" "}
-                      <strong className="font-semibold">{deliveryDateLabel}</strong>. Para não duplicar,
-                      edite o pedido existente.
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="shrink-0"
-                      onClick={() => setEditingOrderId(duplicateActiveOrder.id)}
-                    >
-                      Abrir pedido existente
-                    </Button>
-                  </div>
-                ) : null}
-
-                <div className="rounded-lg border border-border/80 bg-panel p-4">
-                  <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-                    <div className="grid gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <Label className="text-xs text-muted-foreground">Loja</Label>
-                        <InfoHint
-                          size="xs"
-                          content={
-                            <div className="space-y-2 text-xs text-muted-foreground">
-                              <p>
-                                Dias de pedido: <strong className="text-foreground">{orderingDaysLabel}</strong>. Domingo permitido:{" "}
-                                <strong className="text-foreground">
-                                  {selectedStore ? (getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não") : "-"}
-                                </strong>.
-                              </p>
-                              <p>
-                                Dias de recebimento: <strong className="text-foreground">{receivingDaysLabel}</strong>. Recebe domingo:{" "}
-                                <strong className="text-foreground">
-                                  {selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "-"}
-                                </strong>.
-                              </p>
-                            </div>
-                          }
-                        />
-                      </div>
-                      {shouldUseSearchableStoreSelect ? (
-                        <SearchableSelect
-                          value={selectedStore?.id ?? ""}
-                          onValueChange={setSelectedStoreId}
-                          options={storeOptions}
-                          placeholder="Selecione uma loja"
-                          searchPlaceholder="Buscar loja..."
-                          emptyMessage="Nenhuma loja encontrada."
-                          title="Selecionar loja"
-                          description="A loja define a janela operacional e as regras de entrega."
-                          disabled={availableStores.length === 0}
-                        />
-                      ) : (
-                        <Select
-                          value={selectedStore?.id ?? ""}
-                          onValueChange={setSelectedStoreId}
-                          disabled={availableStores.length === 0}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione uma loja" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableStores.map((store) => (
-                              <SelectItem key={store.id} value={store.id}>
-                                {store.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Pedido lançado em</Label>
-                      <Input value={orderDateLabel} disabled className="bg-muted" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Base operacional</Label>
-                      <Input value={baseOperationalDateLabel} disabled className="bg-muted" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Recebimento previsto da loja</Label>
-                      <Input
-                        value={`${deliveryDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays})`}
-                        disabled
-                        className="bg-muted"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Início das vendas</Label>
-                      <Input
-                        value={`${saleDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays + (snapshot.operationalSettings.saleLeadDays ?? 1)})`}
-                        disabled
-                        className="border-success/40 bg-success/20 font-semibold text-success-foreground"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Horário Limite Global</Label>
-                      <Input value={snapshot.operationalSettings.orderCutoffTime} disabled className="bg-muted" />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label className="text-xs text-muted-foreground">Janela de Recebimento</Label>
-                      <Input value={selectedStore?.receiveWindow ?? "Nenhuma loja disponível"} disabled className="bg-muted" />
-                    </div>
-                  </div>
-                  {cutoffAppliedMessage ? (
-                    <div className="mt-3 rounded-lg border border-warning/40 bg-warning/15 px-3 py-2 text-sm text-warning-foreground">
-                      {cutoffAppliedMessage}
-                    </div>
-                  ) : null}
-                  {orderingWindowAdjustmentMessage ? (
-                    <div className="mt-3 rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
-                      {orderingWindowAdjustmentMessage}
-                    </div>
-                  ) : null}
-                  <OperationalSequenceCard
-                    className="mt-4"
-                    eyebrow="Leitura simples do cronograma"
-                    title="O sistema liga pedido, entrega e previsão de venda"
-                    description="Acompanhe a sequência abaixo para saber quando os produtos chegarão na loja e quando poderão ser vendidos."
-                    steps={orderSequenceSteps}
-                    footer="Se não existir disponibilidade na janela de entrega, o item fica bloqueado no catálogo."
-                  />
+              {duplicateActiveOrder ? (
+                <div className="flex flex-col gap-3 rounded-lg border border-warning/45 bg-warning/15 px-4 py-3 text-sm text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
+                  <p>
+                    Já existe um pedido ativo (
+                    <strong className="font-semibold">{duplicateActiveOrder.code}</strong>) para{" "}
+                    <strong className="font-semibold">{selectedStore?.name}</strong> na entrega de{" "}
+                    <strong className="font-semibold">{deliveryDateLabel}</strong>. Para não duplicar,
+                    edite o pedido existente.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    onClick={() => setEditingOrderId(duplicateActiveOrder.id)}
+                  >
+                    Abrir pedido existente
+                  </Button>
                 </div>
+              ) : null}
 
-                <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
-                  <div className="grid gap-3 lg:grid-cols-[2fr_1fr_auto]">
-                    <div className="grid gap-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <Label className="text-xs text-muted-foreground">Buscar Produto</Label>
-                        <InfoHint
-                          size="xs"
-                          content={
-                            <div className="space-y-2 text-xs text-muted-foreground">
-                              <p>
-                                Coluna ativa do pedido (início das vendas):{" "}
-                                <strong className="text-foreground">{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
-                              </p>
-                              <p>
-                                A disponibilidade considera o cronograma ativo da linha de produção e os dias
-                                de fabricação da ficha do produto.
-                              </p>
-                              <p>
-                                <strong className="text-foreground">Dias de cobertura:</strong> os
-                                quadradinhos verdes indicam quantos dias este pedido cobre, conforme a
-                                cadência de produção do produto (produz 1x/semana → cobre ~7 dias;
-                                3x/semana → ~2; todo dia → 1). Cada coluna mostra a data real.
-                              </p>
-                            </div>
-                          }
-                        />
-                      </div>
-                      <Input
-                        value={catalogSearchTerm}
-                        onChange={(event) => setCatalogSearchTerm(event.target.value)}
-                        placeholder="Código, nome ou categoria..."
+              <div className="rounded-lg border border-border/80 bg-panel p-4">
+                <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+                  <div className="grid gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Loja</Label>
+                      <InfoHint
+                        size="xs"
+                        content={
+                          <div className="space-y-2 text-xs text-muted-foreground">
+                            <p>
+                              Dias de pedido: <strong className="text-foreground">{orderingDaysLabel}</strong>. Domingo permitido:{" "}
+                              <strong className="text-foreground">
+                                {selectedStore ? (getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não") : "-"}
+                              </strong>.
+                            </p>
+                            <p>
+                              Dias de recebimento: <strong className="text-foreground">{receivingDaysLabel}</strong>. Recebe domingo:{" "}
+                              <strong className="text-foreground">
+                                {selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "-"}
+                              </strong>.
+                            </p>
+                          </div>
+                        }
                       />
                     </div>
-                    <div className="grid gap-1.5">
-                      <Label className="text-xs text-muted-foreground">Categoria</Label>
-                      <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    {shouldUseSearchableStoreSelect ? (
+                      <SearchableSelect
+                        value={selectedStore?.id ?? ""}
+                        onValueChange={setSelectedStoreId}
+                        options={storeOptions}
+                        placeholder="Selecione uma loja"
+                        searchPlaceholder="Buscar loja..."
+                        emptyMessage="Nenhuma loja encontrada."
+                        title="Selecionar loja"
+                        description="A loja define a janela operacional e as regras de entrega."
+                        disabled={availableStores.length === 0}
+                      />
+                    ) : (
+                      <Select
+                        value={selectedStore?.id ?? ""}
+                        onValueChange={setSelectedStoreId}
+                        disabled={availableStores.length === 0}
+                      >
                         <SelectTrigger>
-                          <SelectValue placeholder="Todos" />
+                          <SelectValue placeholder="Selecione uma loja" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          {categoryOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
+                          {availableStores.map((store) => (
+                            <SelectItem key={store.id} value={store.id}>
+                              {store.name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="flex items-end">
-                      <Button type="button" variant="ghost" onClick={clearCatalogFilters}>
-                        Limpar
-                      </Button>
-                    </div>
+                    )}
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                    <p className="text-xs text-muted-foreground">
-                      {filteredOrderProducts.length} de {orderProducts.length} itens no catálogo. Elegíveis:{" "}
-                      <strong>{availableCatalogCount}</strong>. Bloqueados nesta janela: <strong>{blockedCatalogCount}</strong>.
-                    </p>
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                      <Checkbox
-                        checked={hideUnavailable}
-                        onCheckedChange={(checked) => setHideUnavailable(checked === true)}
-                      />
-                      Ocultar indisponíveis
-                    </label>
+                  <div className="grid gap-2">
+                    <Label className="text-xs text-muted-foreground">Pedido lançado em</Label>
+                    <Input value={orderDateLabel} disabled className="bg-muted" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-xs text-muted-foreground">Base operacional</Label>
+                    <Input value={baseOperationalDateLabel} disabled className="bg-muted" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-xs text-muted-foreground">Recebimento previsto da loja</Label>
+                    <Input
+                      value={`${deliveryDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays})`}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-xs text-muted-foreground">Início das vendas</Label>
+                    <Input
+                      value={`${saleDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays + (snapshot.operationalSettings.saleLeadDays ?? 1)})`}
+                      disabled
+                      className="border-success/40 bg-success/20 font-semibold text-success-foreground"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-xs text-muted-foreground">Horário Limite Global</Label>
+                    <Input value={snapshot.operationalSettings.orderCutoffTime} disabled className="bg-muted" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label className="text-xs text-muted-foreground">Janela de Recebimento</Label>
+                    <Input value={selectedStore?.receiveWindow ?? "Nenhuma loja disponível"} disabled className="bg-muted" />
                   </div>
                 </div>
+                {cutoffAppliedMessage ? (
+                  <div className="mt-3 rounded-lg border border-warning/40 bg-warning/15 px-3 py-2 text-sm text-warning-foreground">
+                    {cutoffAppliedMessage}
+                  </div>
+                ) : null}
+                {orderingWindowAdjustmentMessage ? (
+                  <div className="mt-3 rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
+                    {orderingWindowAdjustmentMessage}
+                  </div>
+                ) : null}
+                <OperationalSequenceCard
+                  className="mt-4"
+                  eyebrow="Leitura simples do cronograma"
+                  title="O sistema liga pedido, entrega e previsão de venda"
+                  description="Acompanhe a sequência abaixo para saber quando os produtos chegarão na loja e quando poderão ser vendidos."
+                  steps={orderSequenceSteps}
+                  footer="Se não existir disponibilidade na janela de entrega, o item fica bloqueado no catálogo."
+                />
+              </div>
 
-                <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
-                  {(paginatedProducts) => (
-                    <div className="max-h-[640px] overflow-auto rounded-lg border border-border/80">
-                      <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
-                        <thead className="sticky top-0 z-10">
-                          <tr className="bg-secondary/85">
-                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Código</th>
-                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
-                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Categoria</th>
-                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Un.</th>
-                            {dayColumns.map((dayField, index) => (
-                              <th
-                                key={dayField}
-                                className={cn(
-                                  "px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.08em]",
-                                  index === 0 && "bg-success/40",
-                                )}
-                              >
-                                {formatCoverageColumnLabel(saleDate, index)}
-                              </th>
-                            ))}
-                            <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredOrderProducts.length === 0 ? (
-                            <tr>
-                              <td colSpan={12} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                                Nenhum produto encontrado para os filtros selecionados.
-                              </td>
-                            </tr>
-                          ) : (
-                            paginatedProducts.map((product) => (
-                              <tr
-                                key={product.id}
-                                className={cn(
-                                  "border-t border-border/70",
-                                  !product.available && "bg-muted/30 text-muted-foreground",
-                                )}
-                              >
-                                <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
-                                <td className="px-2 py-2 text-sm">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-medium text-foreground">{product.name}</span>
-                                    <InfoHint
-                                      size="xs"
-                                      tone={!product.available ? "danger" : "muted"}
-                                      label="Cronograma e calendário do produto"
-                                      content={
-                                        <div className="space-y-2.5 text-xs">
-                                          <p className="text-muted-foreground">
-                                            {product.scheduleName}
-                                            {product.productionDays.length > 0
-                                              ? ` · Produz em ${formatOperationalDays(product.productionDays)}`
-                                              : ""}
-                                          </p>
-                                          <div className="flex flex-wrap gap-1.5 text-[11px]">
-                                            <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
-                                              Pedido: {orderDateLabel}
-                                            </span>
-                                            <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
-                                              Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
-                                            </span>
-                                            <span className="rounded-full border border-success/35 bg-success/10 px-2 py-1 text-success-foreground">
-                                              Vender: {formatDateKeyWithWeekday(product.saleDate)}
-                                            </span>
-                                          </div>
-                                          {!product.available && product.blockedReason ? (
-                                            <p className="font-medium text-danger-foreground">
-                                              Indisponível: {product.blockedReason}
-                                            </p>
-                                          ) : null}
-                                        </div>
-                                      }
-                                    />
-                                  </div>
-                                </td>
-                                <td className="px-2 py-2 text-sm">{product.category}</td>
-                                <td className="px-2 py-2 text-sm">
-                                  <div>{product.unit}</div>
-                                </td>
-                                {(() => {
-                                  const coverageDays = getCoverageDays(product.productionDays);
-                                  return dayColumns.map((dayField, index) => {
-                                  const isActiveColumn = index === 0;
-                                  const canEdit = isActiveColumn;
-                                  const isCovered = product.available && index < coverageDays;
-
-                                  return (
-                                    <td
-                                      key={`${product.id}-${dayField}`}
-                                      className={cn(
-                                        "px-1 py-1",
-                                        isCovered && "bg-success/25",
-                                        isActiveColumn && isCovered && "bg-success/40",
-                                      )}
-                                    >
-                                      <Input
-                                        type="number"
-                                        className="h-8 w-16 text-center"
-                                        min="0"
-                                        step={product.unitKind === "discrete" ? "1" : "0.1"}
-                                        value={product[dayField]}
-                                        onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
-                                        disabled={!canEdit || !product.available}
-                                      />
-                                    </td>
-                                  );
-                                  });
-                                })()}
-                                <td className="px-2 py-2 text-sm font-semibold">
-                                  {product.available ? (
-                                    <div>
-                                      {product[highlightedDay]} {product.unit}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs font-semibold text-danger-foreground">
-                                      Bloqueado nesta janela
-                                    </div>
-                                  )}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
+              <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
+                <div className="grid gap-3 lg:grid-cols-[2fr_1fr_auto]">
+                  <div className="grid gap-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Buscar Produto</Label>
+                      <InfoHint
+                        size="xs"
+                        content={
+                          <div className="space-y-2 text-xs text-muted-foreground">
+                            <p>
+                              Coluna ativa do pedido (início das vendas):{" "}
+                              <strong className="text-foreground">{WEEK_LABEL[highlightedDay]}</strong> (sempre na primeira posição).
+                            </p>
+                            <p>
+                              A disponibilidade considera o cronograma ativo da linha de produção e os dias
+                              de fabricação da ficha do produto.
+                            </p>
+                            <p>
+                              <strong className="text-foreground">Dias de cobertura:</strong> os
+                              quadradinhos verdes indicam quantos dias este pedido cobre, conforme a
+                              cadência de produção do produto (produz 1x/semana → cobre ~7 dias;
+                              3x/semana → ~2; todo dia → 1). Cada coluna mostra a data real.
+                            </p>
+                          </div>
+                        }
+                      />
                     </div>
-                  )}
-                </PaginatedSection>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="order-note" className="text-xs text-muted-foreground">Observações do Pedido</Label>
-                  <Textarea
-                    id="order-note"
-                    value={orderNote}
-                    onChange={(event) => setOrderNote(event.target.value)}
-                    placeholder="Inclua observações operacionais para produção, expedição ou recebimento da loja."
-                    className="min-h-[110px]"
-                  />
+                    <Input
+                      value={catalogSearchTerm}
+                      onChange={(event) => setCatalogSearchTerm(event.target.value)}
+                      placeholder="Código, nome ou categoria..."
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs text-muted-foreground">Categoria</Label>
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {categoryOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button type="button" variant="ghost" onClick={clearCatalogFilters}>
+                      Limpar
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {filteredOrderProducts.length} de {orderProducts.length} itens no catálogo. Elegíveis:{" "}
+                    <strong>{availableCatalogCount}</strong>. Bloqueados nesta janela: <strong>{blockedCatalogCount}</strong>.
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={hideUnavailable}
+                      onCheckedChange={(checked) => setHideUnavailable(checked === true)}
+                    />
+                    Ocultar indisponíveis
+                  </label>
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => handleNewOrderDialogChange(false)}>
-                  Cancelar
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleOpenOrderConfirmation}
-                  disabled={isSubmitting || !selectedStore}
-                >
-                  Revisar Pedido
-                </Button>
-              </DialogFooter>
+              <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
+                {(paginatedProducts) => (
+                  <div className="max-h-[640px] overflow-auto rounded-lg border border-border/80">
+                    <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-secondary/85">
+                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Código</th>
+                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
+                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Categoria</th>
+                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Un.</th>
+                          {dayColumns.map((dayField, index) => (
+                            <th
+                              key={dayField}
+                              className={cn(
+                                "px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.08em]",
+                                index === 0 && "bg-success/40",
+                              )}
+                            >
+                              {formatCoverageColumnLabel(saleDate, index)}
+                            </th>
+                          ))}
+                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredOrderProducts.length === 0 ? (
+                          <tr>
+                            <td colSpan={12} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                              Nenhum produto encontrado para os filtros selecionados.
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedProducts.map((product) => (
+                            <tr
+                              key={product.id}
+                              className={cn(
+                                "border-t border-border/70",
+                                !product.available && "bg-muted/30 text-muted-foreground",
+                              )}
+                            >
+                              <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
+                              <td className="px-2 py-2 text-sm">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-medium text-foreground">{product.name}</span>
+                                  <InfoHint
+                                    size="xs"
+                                    tone={!product.available ? "danger" : "muted"}
+                                    label="Cronograma e calendário do produto"
+                                    content={
+                                      <div className="space-y-2.5 text-xs">
+                                        <p className="text-muted-foreground">
+                                          {product.scheduleName}
+                                          {product.productionDays.length > 0
+                                            ? ` · Produz em ${formatOperationalDays(product.productionDays)}`
+                                            : ""}
+                                        </p>
+                                        <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                          <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
+                                            Pedido: {orderDateLabel}
+                                          </span>
+                                          <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
+                                            Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
+                                          </span>
+                                          <span className="rounded-full border border-success/35 bg-success/10 px-2 py-1 text-success-foreground">
+                                            Vender: {formatDateKeyWithWeekday(product.saleDate)}
+                                          </span>
+                                        </div>
+                                        {!product.available && product.blockedReason ? (
+                                          <p className="font-medium text-danger-foreground">
+                                            Indisponível: {product.blockedReason}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    }
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-2 py-2 text-sm">{product.category}</td>
+                              <td className="px-2 py-2 text-sm">
+                                <div>{product.unit}</div>
+                              </td>
+                              {(() => {
+                                const coverageDays = getCoverageDays(product.productionDays);
+                                return dayColumns.map((dayField, index) => {
+                                const isActiveColumn = index === 0;
+                                const canEdit = isActiveColumn;
+                                const isCovered = product.available && index < coverageDays;
+
+                                return (
+                                  <td
+                                    key={`${product.id}-${dayField}`}
+                                    className={cn(
+                                      "px-1 py-1",
+                                      isCovered && "bg-success/25",
+                                      isActiveColumn && isCovered && "bg-success/40",
+                                    )}
+                                  >
+                                    <Input
+                                      type="number"
+                                      className="h-8 w-16 text-center"
+                                      min="0"
+                                      step={product.unitKind === "discrete" ? "1" : "0.1"}
+                                      value={product[dayField]}
+                                      onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
+                                      disabled={!canEdit || !product.available}
+                                    />
+                                  </td>
+                                );
+                                });
+                              })()}
+                              <td className="px-2 py-2 text-sm font-semibold">
+                                {product.available ? (
+                                  <div>
+                                    {product[highlightedDay]} {product.unit}
+                                  </div>
+                                ) : (
+                                  <div className="text-xs font-semibold text-danger-foreground">
+                                    Bloqueado nesta janela
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </PaginatedSection>
+
+              <div className="grid gap-2">
+                <Label htmlFor="order-note" className="text-xs text-muted-foreground">Observações do Pedido</Label>
+                <Textarea
+                  id="order-note"
+                  value={orderNote}
+                  onChange={(event) => setOrderNote(event.target.value)}
+                  placeholder="Inclua observações operacionais para produção, expedição ou recebimento da loja."
+                  className="min-h-[110px]"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => handleNewOrderDialogChange(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={handleOpenOrderConfirmation}
+                disabled={isSubmitting || !selectedStore}
+              >
+                Revisar Pedido
+              </Button>
+            </DialogFooter>
+            </>
+            )}
+          </DialogContent>
+        </Dialog>
+      </motion.header>
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, delay: 0.08, ease: "easeOut" }}
+        className="mt-6 space-y-7"
+      >
+        {/* Filtro: barra leve (sem cartão pesado). Mesmos controles e callbacks
+            do OperationalDateScopeCard, replicados localmente — o componente
+            shared permanece inalterado para as demais telas. */}
+        <section
+          aria-label="Janela da loja"
+          className="flex flex-col gap-x-6 gap-y-4 rounded-xl bg-panel/40 px-4 py-4 sm:px-5 xl:flex-row xl:items-end xl:justify-between"
+        >
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <CalendarRange className="size-4" />
+              Janela da loja
+            </div>
+            <div className="flex items-center gap-1.5">
+              <p className="font-heading text-[1.05rem] font-semibold leading-tight tracking-[-0.012em] text-foreground">
+                Filtro temporal global
+              </p>
+              <InfoHint
+                content="Pedidos e catálogo respeitam as lojas autorizadas e o mesmo recorte temporal do restante da operação."
+                size="sm"
+              />
+            </div>
+            <p className="text-xs font-medium text-foreground">{summary}</p>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-2">
+            {shouldShowStoreSelector ? (
+              <div className="min-w-[260px] space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Loja</p>
+                {shouldUseSearchableStoreSelect ? (
+                  <SearchableSelect
+                    value={selectedStoreId}
+                    onValueChange={setSelectedStoreId}
+                    options={storeOptions}
+                    placeholder="Filtrar por loja"
+                    searchPlaceholder="Buscar loja..."
+                    emptyMessage="Nenhuma loja encontrada."
+                    title="Filtrar por loja"
+                    description="Selecione a loja para atualizar a janela operacional e o catálogo."
+                    className="w-[260px] bg-background/80"
+                  />
+                ) : (
+                  <Select value={selectedStoreId} onValueChange={setSelectedStoreId}>
+                    <SelectTrigger className="w-[260px] bg-background/80">
+                      <SelectValue placeholder="Filtrar por loja" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableStores.map((store) => (
+                        <SelectItem key={store.id} value={store.id}>
+                          {store.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            ) : selectedStore ? (
+              <div className="min-w-[260px] space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Loja</p>
+                <span className="flex min-h-10 items-center rounded-md bg-card px-3 text-sm text-foreground shadow-[var(--shadow-card)]">
+                  {selectedStore.name}
+                </span>
+              </div>
+            ) : null}
+
+            <div className="min-w-[180px] space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Modo</p>
+              <Select value={scope.mode} onValueChange={(value) => setMode(value as typeof scope.mode)}>
+                <SelectTrigger className="bg-background/80">
+                  <SelectValue placeholder="Selecionar modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo o período</SelectItem>
+                  <SelectItem value="day">Data específica</SelectItem>
+                  <SelectItem value="range">Período fechado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {scope.mode === "day" ? (
+              <div className="min-w-[180px] space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Data</p>
+                <Input type="date" value={scope.date} onChange={(event) => setDate(event.target.value)} />
+              </div>
+            ) : null}
+
+            {scope.mode === "range" ? (
+              <>
+                <div className="min-w-[180px] space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">De</p>
+                  <Input
+                    type="date"
+                    value={scope.startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                  />
+                </div>
+                <div className="min-w-[180px] space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Até</p>
+                  <Input
+                    type="date"
+                    value={scope.endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                  />
+                </div>
               </>
-              )}
-            </DialogContent>
-          </Dialog>
+            ) : null}
+          </div>
+        </section>
+
+        {/* KPIs: fita de métricas flat — número protagonista, ícone discreto,
+            sem moldura concêntrica. */}
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
+          <FlatKpi title="Total de Pedidos" value={orderKpis.total} icon={ShoppingCart} tone="info" />
+          <FlatKpi title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
+          <FlatKpi title="Em Produção" value={orderKpis.emProducao} icon={Package} tone="neutral" />
+          <FlatKpi title="Entregas" value={orderKpis.entregas} icon={Truck} tone="success" />
+          <FlatKpi title="Ocorrências" value={orderKpis.ocorrenciasAbertas} icon={AlertCircle} tone="danger" />
+        </div>
+
+        {/* Lista: sem moldura dura. Hierarquia por título + espaço; a tabela
+            (responsiva UX-0001, skeleton UX-0003, empty UX-0007) é a protagonista. */}
+        <section className="space-y-4">
+          <div className="flex flex-col gap-1 border-b border-border/[var(--opacity-divider)] pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-heading text-[1.15rem] font-semibold leading-tight tracking-[-0.012em] text-foreground">
+              Lista de Pedidos
+            </h2>
+          </div>
           <Dialog open={isOrderConfirmationOpen} onOpenChange={setIsOrderConfirmationOpen}>
             <DialogContent size="3xl">
               <DialogHeader>
@@ -1245,9 +1404,7 @@ export default function PedidosLojaPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </CardHeader>
 
-        <CardContent className="space-y-4">
           <SearchFilter
             searchPlaceholder="Buscar por código ou loja..."
             onSearch={setSearchTerm}
@@ -1264,8 +1421,8 @@ export default function PedidosLojaPage() {
             emptyMessage={isLoadingOrders ? "Carregando pedidos…" : "Nenhum pedido encontrado"}
             stickyHeader
           />
-        </CardContent>
-      </Card>
-    </PageLayout>
+        </section>
+      </motion.div>
+    </PageContainer>
   );
 }

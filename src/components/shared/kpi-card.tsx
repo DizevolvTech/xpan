@@ -145,8 +145,8 @@ export function KPICard({
   const card = (
     <article
       className={cn(
-        "group relative overflow-hidden rounded-xl border border-border/[var(--opacity-strong)] bg-card p-5 pl-[calc(theme(spacing.5)+3px)] text-card-foreground shadow-[var(--shadow-card)] transition-[box-shadow,transform,border-color] duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-[var(--shadow-soft)]",
-        href && "cursor-pointer hover:border-primary/[var(--opacity-divider)]",
+        "group relative overflow-hidden rounded-2xl bg-card p-5 pl-[calc(theme(spacing.5)+3px)] text-card-foreground shadow-[var(--shadow-card)] transition-[box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-soft)]",
+        href && "cursor-pointer",
       )}
     >
       <span

@@ -26,9 +26,7 @@ export function PageHero({
   return (
     <section
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-border/[var(--opacity-strong)] bg-surface px-5 py-7 shadow-[var(--shadow-card)] sm:px-7 lg:px-9 lg:py-8",
-        "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:accent-rule",
-        "after:pointer-events-none after:absolute after:-right-24 after:-top-24 after:size-64 after:rounded-full after:bg-[radial-gradient(circle,color-mix(in_oklch,var(--accent)_18%,transparent)_0%,transparent_70%)]",
+        "relative px-1 pb-1 pt-0.5 sm:px-1",
         className,
       )}
     >
