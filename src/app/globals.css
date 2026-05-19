@@ -78,14 +78,16 @@
   /* UX-0005 — Degraus canonicos de opacidade (Estrategia A: 8 degraus).
      Substituem /10 /15 /18 /20 /22 /25 /30 /35 /40 /50 /55 /60 /65 /70 /75 /80 ad-hoc
      via tabela de-para (UX-0009 aplica; UX-0005 so define). Nomes por papel, nao numericos. */
-  --opacity-faint:     0.10;  /* wash de fundo tonal minimo */
-  --opacity-subtle:    0.16;  /* fundo de badge/tag tonal */
-  --opacity-soft:      0.22;  /* fundo tonal de destaque medio */
-  --opacity-muted:     0.25;  /* wash de bloco informativo */
-  --opacity-border:    0.35;  /* anel/realce sutil */
-  --opacity-divider:   0.55;  /* divisor/borda de baixo contraste */
-  --opacity-strong:    0.65;  /* borda/divisor padrao de card e tabela */
-  --opacity-prominent: 0.78;  /* borda/texto secundario evidente */
+  /* PRECISA ser % — usado como amount em color-mix() via modifier /[var(--opacity-*)].
+     Número cru (.10) torna o color-mix inválido → borda cai p/ currentColor (escuro). */
+  --opacity-faint:     10%;  /* wash de fundo tonal minimo */
+  --opacity-subtle:    16%;  /* fundo de badge/tag tonal */
+  --opacity-soft:      22%;  /* fundo tonal de destaque medio */
+  --opacity-muted:     25%;  /* wash de bloco informativo */
+  --opacity-border:    35%;  /* anel/realce sutil */
+  --opacity-divider:   55%;  /* divisor/borda de baixo contraste */
+  --opacity-strong:    65%;  /* borda/divisor padrao de card e tabela */
+  --opacity-prominent: 78%;  /* borda/texto secundario evidente */
 }
 
 :root {
@@ -124,7 +126,7 @@
   --danger: oklch(0.9 0.07 20);
   --danger-foreground: oklch(0.43 0.13 22);
 
-  --border: oklch(0.9 0.012 88);
+  --border: oklch(0.95 0.006 88);
   --border-strong: oklch(0.78 0.02 246);
   --input: oklch(0.96 0.006 84);
   --ring: oklch(0.68 0.08 220);
