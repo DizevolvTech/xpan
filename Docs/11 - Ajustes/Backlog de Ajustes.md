@@ -9,7 +9,10 @@
 ## 🔴 Crítico (estrutural ou bloqueante)
 
 ### AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche
-**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** A-fazer · **Categoria:** Modelo
+**Onda 4 preparada em:** 2026-05-19 — ADR escrito, **aguardando decisão do cliente** (sem código)
+**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** Aguardando decisão (ADR) · **Categoria:** Modelo
+
+> 📄 **Documento de decisão:** [[decisoes/ADR_modelo_fabrica_abre_pedido]] — opções de modelo (A: `order_windows`; B: estado em `store_orders`; **C: híbrido faseado — recomendada**), trade-offs, mapa de impacto (DB/API/UI/docs/migração) e **8 perguntas abertas** a levar para Daniel + Adriano + Leonora antes de codar. Conforme o plano: "Não fazer no calor da hora."
 **Área:** [[Jornada — Pedido da Loja]] · [[Regra — Pedido da Loja]] · `src/lib/supabase-data/store-orders.ts` · `src/app/loja/pedidos/page.tsx`
 
 **O quê:** Loja não cria pedido — fábrica abre pedidos (1 ou mais dias) e loja vê lista de "pedidos disponíveis para preencher".
