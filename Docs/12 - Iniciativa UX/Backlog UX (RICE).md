@@ -116,6 +116,7 @@
 - **Escopo:** só o **texto exibido**. Renomear rota/slug = estrutural → **fora** (fica em
   [[Dívida Técnica#D26]]). **Termo canônico (Gate 0): "Categorias".**
 - **RICE:** R3 (só gestor-dados/admin) · I1 · C0.95 · E0.3.
+- **Status:** ✅ Concluído em 2026-05-19 — **no-op de código** (Δ=∅). Verificação constatou que a UI já diz "Categorias" em 100% dos sítios renderizados (F-6 obsoleto). 16 famílias estruturais (slug/rota/permission/tipo/campos) preservadas e delegadas a [[Dívida Técnica#D26]]. `permission-modules.ts:257` label display-only já canônico. Ver spec §7.
 
 #### `UX-0009` — Normalizar shared + layout · 🟡 Visual · Score 6.7
 - **Problema:** [[UX Audit — Sistema#F-7]].
