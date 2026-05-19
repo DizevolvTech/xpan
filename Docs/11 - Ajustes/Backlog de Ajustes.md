@@ -93,7 +93,7 @@
 ---
 
 ### AJ-0003 — Auditoria do cronograma: coluna `expedition_lead_days`
-**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Concluído em:** 2026-05-19 (commit 06f8458) — Onda 1
 **Origem:** Call 2026-05-13 (Bloco 3) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/gestor-fabrica/sublinhas-producao/page.tsx` · [[Regra — Lead Days]]
 
@@ -102,7 +102,7 @@
 ---
 
 ### AJ-0004 — Decimais em receita: 1 + 3 (X,XXX)
-**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Concluído em:** 2026-05-19 (commit 06f8458) — Onda 1
 **Origem:** Call 2026-05-13 (Bloco 5) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/gestor-dados/produtos/...` (cadastro de receita)
 
@@ -111,7 +111,7 @@
 ---
 
 ### AJ-0005 — Pedido da Loja: indisponíveis no fim da lista
-**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Concluído em:** 2026-05-19 (commit 06f8458) — Onda 1
 **Origem:** Call 2026-05-13 (Bloco 6) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/loja/pedidos/[orderId]/page.tsx` (ou onde lista produtos)
 
@@ -120,7 +120,7 @@
 ---
 
 ### AJ-0006 — Remover legenda "abaixo do mínimo produtivo" do lado loja
-**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Concluído em:** 2026-05-19 (commit 06f8458) — Onda 1
 **Origem:** Call 2026-05-13 (Bloco 7) · **Status:** Concluído · **Categoria:** UX/Regra
 **Área:** `src/app/loja/pedidos/...` · [[Regra — Lote Mínimo e Múltiplos]] · [[Dívida Técnica#D09]]
 
@@ -143,7 +143,7 @@
 ---
 
 ### AJ-0010 — Impressão compacta (folhas de produção / OP / expedição / pedido)
-**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Concluído em:** 2026-05-19 (commit 06f8458) — Onda 1
 **Origem:** Call 2026-05-13 (Bloco 10) + Trello · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/impressao/*`
 
@@ -190,7 +190,7 @@
 ---
 
 ### AJ-0018 — Tooltips (`?` / balão) substituindo texto inline na tela do pedido
-**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Concluído em:** 2026-05-19 (commit 06f8458) — Onda 1
 **Origem:** Call 2026-05-13 (Daniel + Giuseppe, ~45:00) e commit `c730591` · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/loja/pedidos/...` · `src/components/ui/...`
 
@@ -213,7 +213,7 @@
 ## 🟢 Polimento
 
 ### AJ-0020 — Legenda/tooltip diferenciando "ingrediente" e "produto MPI"
-**Concluído em:** 2026-05-19 (a commitar) — Onda 1
+**Concluído em:** 2026-05-19 (commit 06f8458) — Onda 1
 **Origem:** Call 2026-05-13 (Adriano, Bloco 4) · **Status:** Concluído · **Categoria:** UX
 **Área:** `src/app/gestor-dados/ingredientes` + `src/app/gestor-dados/produtos`
 
@@ -270,7 +270,7 @@ Lote entregue por Giuseppe na data-alvo da Onda 1. Sem mudança de regra de neg�
 | AJ-0010 | Impressão compacta centralizada no `PrintDocument` (margem `@page`, paddings, densidade de tabela, ritmo vertical) — atinge as 4 folhas | `src/components/printing/print-document.tsx` |
 | AJ-0018 | Calendário/legenda da tabela de pedido movidos para `InfoHint` (padrão `c730591`); ícone fica vermelho quando bloqueado | `src/app/loja/pedidos/page.tsx` |
 
-> **Onda 1 fechada**, exceto AJ-0019 (limpar banco) — deixado fora a pedido do Giuseppe (dev-ops, não código). Pendências de doc: preencher hash de commit. Observação de segurança: AJ-0010 não altera a guarda de `/impressao` — [[Dívida Técnica#D17]] segue aberta (páginas de impressão sem `isProtectedAppPath`).
+> **Onda 1 fechada** (commit `06f8458`), exceto AJ-0019 (limpar banco) — deixado fora a pedido do Giuseppe (dev-ops, não código). Observação de segurança: AJ-0010 não altera a guarda de `/impressao` — [[Dívida Técnica#D17]] segue aberta (páginas de impressão sem `isProtectedAppPath`).
 
 ---
 
