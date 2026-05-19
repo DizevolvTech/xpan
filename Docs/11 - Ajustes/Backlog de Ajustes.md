@@ -56,7 +56,14 @@
 ---
 
 ### AJ-0008 — MPI / Ingrediente misturado deve gerar OP separada
-**Origem:** Call 2026-05-13 (Bloco 4) · **Status:** A-investigar · **Categoria:** Bug/Regra
+**Investigado em:** 2026-05-19 (Giuseppe) — **decisão de produto pendente**
+**Origem:** Call 2026-05-13 (Bloco 4) · **Status:** Investigado / A-decidir · **Categoria:** Bug/Regra
+
+> **Achado:** `engine.ts` → `buildProductionOrdersFromPlannedItems` (`src/lib/factory-planning/engine.ts:611`) gera OP **apenas** dos produtos finais pedidos pela loja, agrupados por planning key. **Não há nenhuma referência a `recipe`, `canBeIngredient`, `isMpiIngredient` ou `misturado` em todo o `engine.ts`.** Conclusão: o motor **nunca** gera OP separada para ingrediente `misturado`/MPI — a sub-receita só é expandida adiante na folha de produção / pré-pesagem (`printing-documents.ts`), não vira OP.
+>
+> Não é um bug pontual: é uma **lacuna estrutural** (explosão de receita / grafo de dependência de produção). O Aditivo do Adriano já apontava "manter o modelo MPI-como-produto + legenda" — a legenda foi feita em [[#AJ-0020 — Legenda/tooltip diferenciando "ingrediente" e "produto MPI"|AJ-0020]].
+>
+> **Recomendação:** tratar como feature de fase 2, decidir junto de [[#AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche|AJ-0009]] e [[#AJ-0021 — Armazenamento / produção sob estoque (shelf life)|AJ-0021]]. Levar a Daniel + Adriano: (a) manter modelo atual (MPI só vira OP se for pedido) — só legenda, **ou** (b) implementar geração automática de OP para sub-receita (estrutural, alto impacto no motor e nos 110 testes).
 **Área:** [[Engine — Visão Geral]] · [[Catálogo de Tabelas#ingredients]] · `src/lib/factory-planning/engine.ts`
 
 **O quê:** Quando uma receita consome um ingrediente do tipo `misturado` (com sub-receita), o sistema **deveria gerar OP separada** para esse ingrediente. Daniel cadastrou e não viu.
@@ -83,7 +90,11 @@
 ---
 
 ### AJ-0002 — Dashboard com cards clicáveis
-**Origem:** Call 2026-05-13 (Bloco 2) · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 2 · gestor-fábrica (ver nota)
+**Origem:** Call 2026-05-13 (Bloco 2) · **Status:** Concluído (gestor-fábrica) · **Categoria:** UX
+
+> **Feito:** `KPICard` ganhou prop opcional `href` (retrocompatível, vira `<Link>`). Os 5 cards do dashboard do gestor-fábrica agora navegam com filtro aplicado; `pedidos`, `ordens-producao` e `entregas` passaram a ler `?status` para o filtro inicial (padrão `useSearchParams` já usado no repo).
+> **Escopo:** feito o dashboard primário (gestor-fábrica). "Outros dashboards de persona" (chão-de-fábrica, gestor-dados) ficam como extensão trivial agora que o `KPICard` suporta `href` — não feito nesta onda para conter escopo/risco.
 **Área:** `src/app/gestor-fabrica/page.tsx` · outros dashboards de persona
 
 **O quê:** Os cards de "Pedidos do dia / Aguardando liberação / Entregas" devem ser **clicáveis** → vão para a tela correspondente com filtro aplicado.
@@ -131,7 +142,11 @@
 ---
 
 ### AJ-0007 — Bloquear duplicidade antes de abrir o pedido
-**Origem:** Call 2026-05-13 (Bloco 8) · **Status:** A-fazer · **Categoria:** Bug/UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 2 · **só a parte UX** (ver nota)
+**Origem:** Call 2026-05-13 (Bloco 8) · **Status:** Concluído (UX) / Bonus DB adiado · **Categoria:** Bug/UX
+
+> **Feito:** banner proativo no diálogo "Novo Pedido" (loja) avisando, **antes de digitar**, que já existe pedido ativo para a mesma loja + data de entrega, com atalho "Abrir pedido existente" (entra no fluxo de edição). O server (`store-orders.ts:373`) já fazia o hard-block no submit; agora há aviso antecipado.
+> **Adiado de propósito:** o `UNIQUE` parcial no banco (defesa contra race / D03). Ele se entrelaça com a mudança de modelo do AJ-0009 (Onda 4) — adicionar a constraint agora pode conflitar com a migração do modelo fábrica-abre-pedido. Decidir junto do AJ-0009.
 **Área:** `src/app/loja/pedidos/...` · `src/lib/supabase-data/store-orders.ts:365` · [[Dívida Técnica#D03]]
 
 **O quê:** Ao tentar abrir/criar pedido (mesma loja + mesma `delivery_date` ativos), mostrar **antes** de o usuário digitar:
@@ -154,7 +169,10 @@
 ---
 
 ### AJ-0012 — Log de auditoria com diff visível
-**Origem:** Call 2026-05-13 (Bloco 12) · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 2
+**Origem:** Call 2026-05-13 (Bloco 12) · **Status:** Concluído · **Categoria:** UX
+
+> **Feito:** diff por produto na seção "Revisões pendentes" comparando a revisão pendente com a versão anterior (via `revisionOfId`), usando só snapshots já no client — **não depende de `product_changelog`** (contorna [[Dívida Técnica#D20]]). Mostra produtos adicionados/removidos/alterados e, por campo, valor antigo → novo (carga base, dias de produção, lead expedição, prioridade diária).
 **Área:** `src/app/gestor-fabrica/sublinhas-producao/page.tsx`
 
 **O quê:** Na lista de "auditorias pendentes", mostrar o que foi alterado (campo + valor antigo / novo) ou destacar a linha alterada. Hoje só mostra que há 1 alteração pendente.
@@ -164,7 +182,10 @@
 ---
 
 ### AJ-0013 — Visibilidade de pedido liberado para produção
-**Origem:** Call 2026-05-13 (Bloco 13) · **Status:** A-investigar · **Categoria:** Bug/UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 2
+**Origem:** Call 2026-05-13 (Bloco 13) · **Status:** Concluído · **Categoria:** Bug/UX
+
+> **Investigado:** não era bug — OPs com `productionDate` futura recebem `status="agendado"` (engine.ts:745) e somem da fila do dia. **Feito:** KPI "Agendadas (próximos dias)" + painel dedicado em `ordens-producao` listando cada OP agendada com a data prevista e link direto para a OP.
 **Área:** `src/app/gestor-fabrica/ordens-producao/page.tsx`
 
 **Sintoma:** Daniel liberou pedido para produção e não viu aparecer na fila. Pode estar agendado para data futura (lead days).
@@ -182,7 +203,10 @@
 ---
 
 ### AJ-0017 — Entregas: card "aguardando produção" navegável para OP
-**Origem:** Call 2026-05-13 (Daniel, 43:00) · **Status:** A-fazer · **Categoria:** UX
+**Concluído em:** 2026-05-19 (a commitar) — Onda 2
+**Origem:** Call 2026-05-13 (Daniel, 43:00) · **Status:** Concluído · **Categoria:** UX
+
+> **Feito:** mapa `orderId → opId` computado em runtime na tela de entregas (sem mexer no motor). Quando a entrega está "aguardando produção" (`aguardando_expedicao` + `!expeditionReady`), aparece botão **"Ver OP"** que abre `/chao-fabrica/ordens-producao/{opId}` — desktop e mobile.
 **Área:** `src/app/chao-fabrica/entregas/page.tsx`
 
 **O quê:** Quando uma entrega está "aguardando produção", o card deve permitir clicar e ir para a OP correspondente — hoje o usuário tem que copiar código e procurar manualmente.
@@ -255,6 +279,21 @@
 ---
 
 ## Histórico de resoluções
+
+### 2026-05-19 — Onda 2 (bug fixes operacionais) — 5 feitos + 1 investigado
+
+Sem mudança de regra de negócio. `tsc --noEmit` limpo, `eslint` 0 erros (segue só o warning pré-existente [[#AJ-0023 — Dead code descoberto durante a Onda 1|AJ-0023]]), 110/110 testes.
+
+| ID | Resultado | Arquivos principais |
+|---|---|---|
+| AJ-0007 | Aviso proativo de pedido duplicado (UX). Bonus DB UNIQUE adiado p/ AJ-0009 | `src/app/loja/pedidos/page.tsx` |
+| AJ-0017 | "Ver OP" na entrega aguardando produção (mapa orderId→opId em runtime) | `src/app/chao-fabrica/entregas/page.tsx` |
+| AJ-0013 | KPI + painel de OPs agendadas para próximos dias | `src/app/gestor-fabrica/ordens-producao/page.tsx` |
+| AJ-0012 | Diff por produto na auditoria (compara revisões, sem product_changelog) | `src/app/gestor-fabrica/sublinhas-producao/page.tsx` |
+| AJ-0002 | `KPICard` com `href` + 5 cards do dashboard navegáveis + `?status` em 3 telas | `src/components/shared/kpi-card.tsx` · `gestor-fabrica/page.tsx` · `pedidos` · `ordens-producao` · `entregas` |
+| AJ-0008 | **Investigado** — motor não gera sub-OP por design; decisão de produto pendente | (sem código — ver bloco AJ-0008) |
+
+> **Decisões pendentes p/ levar ao cliente:** (1) AJ-0008 — manter modelo MPI-como-produto (só legenda) vs implementar OP automática de sub-receita (estrutural). (2) AJ-0007 — quando adicionar o `UNIQUE` no banco (amarrado ao AJ-0009/Onda 4). Onda 2 não fez `next build` aqui (validação por `tsc`/`eslint`/testes); `useSearchParams` segue padrão já commitado no repo.
 
 ### 2026-05-19 — Onda 1 (quick wins UX) — fechada (7 AJs)
 

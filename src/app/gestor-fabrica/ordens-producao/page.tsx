@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowLeft, ClipboardList, Factory, Layers, PackageCheck, ShoppingCart, Truck } from "lucide-react";
+import { ArrowLeft, CalendarClock, ClipboardList, Factory, Layers, PackageCheck, ShoppingCart, Truck } from "lucide-react";
 
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
@@ -64,8 +65,10 @@ function openPrintPage(pathname: string) {
 
 export default function OrdensProducaoPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const searchParams = useSearchParams();
   const [productionDateFilter, setProductionDateFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // AJ-0002: filtro inicial vindo do deep-link dos cards do dashboard.
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") ?? "all");
   const [sectorFilter, setSectorFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -218,6 +221,17 @@ export default function OrdensProducaoPage() {
     [opRows, selectedOpId],
   );
 
+  // AJ-0013: OPs já liberadas mas agendadas para data futura (lead days) somem
+  // da fila do dia e pareciam "sumidas". Tornar explícitas com a data prevista.
+  const scheduledOps = useMemo(
+    () =>
+      opRows
+        .filter((item) => item.status === "agendado")
+        .sort((a, b) => a.productionDate.localeCompare(b.productionDate)),
+    [opRows],
+  );
+  const nextScheduledLabel = scheduledOps[0]?.productionDateLabel ?? "—";
+
   const flowSteps = [
     {
       key: "pedidos",
@@ -351,11 +365,19 @@ export default function OrdensProducaoPage() {
         </Button>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KPICard title="OPs liberadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" compactValue />
         <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={Factory} tone="success" compactValue />
         <KPICard title="% conclusão média" value={`${kpis.avgCompletion}%`} icon={PackageCheck} tone="info" compactValue />
         <KPICard title="Linhas ativas" value={kpis.activeSubcategories} icon={Layers} tone="warning" compactValue />
+        <KPICard
+          title="Agendadas (próximos dias)"
+          value={scheduledOps.length}
+          subtitle={scheduledOps.length > 0 ? `Próxima: ${nextScheduledLabel}` : "Nada agendado à frente"}
+          icon={CalendarClock}
+          tone="info"
+          compactValue
+        />
       </div>
 
       <OperationalDateScopeCard
@@ -457,6 +479,47 @@ export default function OrdensProducaoPage() {
           },
         ]}
       />
+
+      {scheduledOps.length > 0 ? (
+        <Card className="border-info/40 bg-info/5">
+          <CardHeader className="flex flex-row items-center gap-1.5">
+            <CalendarClock className="size-4 text-info" />
+            <CardTitle className="text-base">
+              {scheduledOps.length} OP{scheduledOps.length === 1 ? "" : "s"} agendada
+              {scheduledOps.length === 1 ? "" : "s"} para os próximos dias
+            </CardTitle>
+            <InfoHint
+              size="xs"
+              content="Pedidos já liberados, mas cuja produção cai numa data futura por causa dos lead days. Não aparecem na fila do dia — clique para abrir a OP."
+            />
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {scheduledOps.slice(0, 12).map((op) => (
+              <Link
+                key={op.id}
+                href={`/gestor-fabrica/ordens-producao/${op.id}?ref=${anchorDate}`}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2 text-sm transition-colors hover:bg-panel/50"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-semibold text-foreground">{op.code}</span>
+                  <span className="text-muted-foreground">{op.lineName}</span>
+                </span>
+                <span className="flex items-center gap-3">
+                  <span className="text-muted-foreground">{formatKgLabel(op.totalKg, { maximumFractionDigits: 2 })}</span>
+                  <span className="rounded-md bg-info/15 px-2 py-1 text-xs font-semibold text-info">
+                    Produz {op.productionDateLabel}
+                  </span>
+                </span>
+              </Link>
+            ))}
+            {scheduledOps.length > 12 ? (
+              <p className="text-xs text-muted-foreground">
+                + {scheduledOps.length - 12} outras agendadas. Use o filtro de status “Agendado” na fila abaixo.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">

@@ -430,6 +430,7 @@ export default function GestorFabricaPage() {
           tone="info"
           icon={ShoppingCart}
           compactValue
+          href="/gestor-fabrica/pedidos"
         />
         <KPICard
           title="Aguardando liberação"
@@ -437,6 +438,7 @@ export default function GestorFabricaPage() {
           tone="warning"
           icon={Clock}
           compactValue
+          href="/gestor-fabrica/pedidos?status=em_espera"
         />
         <KPICard
           title="Em produção"
@@ -444,6 +446,7 @@ export default function GestorFabricaPage() {
           tone="info"
           icon={Factory}
           compactValue
+          href="/gestor-fabrica/ordens-producao?status=em_producao"
         />
         <KPICard
           title="Checklist pendente"
@@ -451,6 +454,7 @@ export default function GestorFabricaPage() {
           tone="success"
           icon={ListChecks}
           compactValue
+          href="/gestor-fabrica/expedicao"
         />
         <KPICard
           title="Entregas em campo"
@@ -458,6 +462,7 @@ export default function GestorFabricaPage() {
           tone="neutral"
           icon={Truck}
           compactValue
+          href="/chao-fabrica/entregas?status=em_rota"
         />
       </motion.div>
 

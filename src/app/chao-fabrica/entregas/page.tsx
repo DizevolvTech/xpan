@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, MapPinned, Navigation, Package, Truck, XCircle } from "lucide-react";
 
@@ -92,9 +93,13 @@ function getMainActionMeta(status: DeliveryExecutionStatus) {
 
 export default function EntregasPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState("");
   const [deliveryDateFilter, setDeliveryDateFilter] = useState("all");
-  const [executionStatusFilter, setExecutionStatusFilter] = useState("all");
+  // AJ-0002: filtro inicial vindo do deep-link dos cards do dashboard.
+  const [executionStatusFilter, setExecutionStatusFilter] = useState(
+    () => searchParams.get("status") ?? "all",
+  );
   const [zoneFilter, setZoneFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [page, setPage] = useState(1);
@@ -106,6 +111,20 @@ export default function EntregasPage() {
     [planningSnapshot, scope],
   );
   const deliveryExecutionState = useDeliveryExecution();
+
+  // AJ-0017: mapa pedido → OP (primeira OP encontrada) para deep-link da
+  // entrega que ainda está "aguardando produção" direto na ordem de produção.
+  const opIdByOrderId = useMemo(() => {
+    const map = new Map<string, string>();
+    planningData.productionOrders.forEach((op) => {
+      op.sourceItems.forEach((source) => {
+        if (!map.has(source.orderId)) {
+          map.set(source.orderId, op.id);
+        }
+      });
+    });
+    return map;
+  }, [planningData.productionOrders]);
 
   const deliveryRows = useMemo<DeliveryRow[]>(
     () =>
@@ -247,20 +266,34 @@ export default function EntregasPage() {
         const canMarkFailure = canRegisterDeliveryFailure(item.executionStatus);
 
         if (item.executionStatus === "aguardando_expedicao") {
+          const opId = opIdByOrderId.get(item.orderId);
           return (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              title={
-                item.expeditionReady
-                  ? "Conclua o checklist da expedição antes de iniciar a entrega."
-                  : "Pedido ainda não liberado para expedição."
-              }
-            >
-              {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled
+                title={
+                  item.expeditionReady
+                    ? "Conclua o checklist da expedição antes de iniciar a entrega."
+                    : "Pedido ainda não liberado para expedição."
+                }
+              >
+                {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
+              </Button>
+              {!item.expeditionReady && opId ? (
+                <Button asChild type="button" variant="ghost" size="sm">
+                  <Link
+                    href={`/chao-fabrica/ordens-producao/${opId}?ref=${anchorDate}`}
+                    title="Abrir a ordem de produção deste pedido"
+                  >
+                    <Package className="size-4" />
+                    Ver OP
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
           );
         }
 
@@ -454,19 +487,31 @@ export default function EntregasPage() {
 
                   <div className="mt-3 grid gap-2">
                     {item.executionStatus === "aguardando_expedicao" ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled
-                        title={
-                          item.expeditionReady
-                            ? "Conclua o checklist da expedição antes de iniciar a entrega."
-                            : "Pedido ainda não liberado para expedição."
-                        }
-                      >
-                        {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
-                      </Button>
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled
+                          title={
+                            item.expeditionReady
+                              ? "Conclua o checklist da expedição antes de iniciar a entrega."
+                              : "Pedido ainda não liberado para expedição."
+                          }
+                        >
+                          {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
+                        </Button>
+                        {!item.expeditionReady && opIdByOrderId.get(item.orderId) ? (
+                          <Button asChild type="button" variant="ghost" size="sm">
+                            <Link
+                              href={`/chao-fabrica/ordens-producao/${opIdByOrderId.get(item.orderId)}?ref=${anchorDate}`}
+                            >
+                              <Package className="size-4" />
+                              Ver OP em produção
+                            </Link>
+                          </Button>
+                        ) : null}
+                      </>
                     ) : item.executionStatus === "entregue" ? (
                       <Button type="button" variant="outline" size="sm" disabled>
                         Entrega concluída

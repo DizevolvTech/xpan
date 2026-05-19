@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
 import { ArrowDown, ArrowRight, Factory, ListChecks, ShoppingCart, Truck } from "lucide-react";
 
@@ -45,8 +46,10 @@ function openPrintPage(pathname: string) {
 
 export default function PedidosFabricaPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const searchParams = useSearchParams();
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // AJ-0002: filtro inicial vindo do deep-link dos cards do dashboard.
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") ?? "all");
   const [storeFilter, setStoreFilter] = useState("all");
   const [deliveryFilter, setDeliveryFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");

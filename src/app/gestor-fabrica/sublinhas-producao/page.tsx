@@ -22,6 +22,7 @@ import { PaginatedSection } from "@/components/shared/paginated-section";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -126,6 +127,79 @@ function buildScheduleSnapshotProducts(
       };
     })
     .sort((left, right) => `${left.code} ${left.name}`.localeCompare(`${right.code} ${right.name}`, "pt-BR"));
+}
+
+// AJ-0012: diff visível entre a revisão pendente e a versão anterior, usando
+// só os snapshots já disponíveis no client (não depende de product_changelog).
+type ScheduleProductChange = {
+  productId: string;
+  code: string;
+  name: string;
+  kind: "adicionado" | "removido" | "alterado";
+  fields: { label: string; from: string; to: string }[];
+};
+
+function describeProductionDays(days: AuditableScheduleProduct["productionDays"]): string {
+  return days.length > 0 ? [...days].join(" · ") : "—";
+}
+
+function buildScheduleProductDiff(
+  previous: AuditableScheduleProduct[] | null,
+  current: AuditableScheduleProduct[],
+): ScheduleProductChange[] {
+  if (!previous) {
+    return [];
+  }
+
+  const previousById = new Map(previous.map((product) => [product.productId, product]));
+  const currentById = new Map(current.map((product) => [product.productId, product]));
+  const changes: ScheduleProductChange[] = [];
+
+  current.forEach((curr) => {
+    const prev = previousById.get(curr.productId);
+    if (!prev) {
+      changes.push({ productId: curr.productId, code: curr.code, name: curr.name, kind: "adicionado", fields: [] });
+      return;
+    }
+
+    const fields: ScheduleProductChange["fields"] = [];
+    if (prev.minimumProduction !== curr.minimumProduction) {
+      fields.push({
+        label: "Carga base (Kg)",
+        from: String(prev.minimumProduction),
+        to: String(curr.minimumProduction),
+      });
+    }
+    if (describeProductionDays(prev.productionDays) !== describeProductionDays(curr.productionDays)) {
+      fields.push({
+        label: "Dias de produção",
+        from: describeProductionDays(prev.productionDays),
+        to: describeProductionDays(curr.productionDays),
+      });
+    }
+    if (prev.expeditionLeadDays !== curr.expeditionLeadDays) {
+      fields.push({
+        label: "Lead expedição (dias)",
+        from: String(prev.expeditionLeadDays),
+        to: String(curr.expeditionLeadDays),
+      });
+    }
+    if (JSON.stringify(prev.dayPriorities) !== JSON.stringify(curr.dayPriorities)) {
+      fields.push({ label: "Prioridade diária", from: "configuração anterior", to: "ajustada" });
+    }
+
+    if (fields.length > 0) {
+      changes.push({ productId: curr.productId, code: curr.code, name: curr.name, kind: "alterado", fields });
+    }
+  });
+
+  previous.forEach((prev) => {
+    if (!currentById.has(prev.productId)) {
+      changes.push({ productId: prev.productId, code: prev.code, name: prev.name, kind: "removido", fields: [] });
+    }
+  });
+
+  return changes;
 }
 
 function buildScheduleDaySummariesFromSnapshotProducts(products: AuditableScheduleProduct[]) {
@@ -359,6 +433,10 @@ export default function SublinhasProducaoPage() {
   );
   const scheduleNameById = useMemo(
     () => new Map(scheduleRows.map((schedule) => [schedule.id, schedule.name])),
+    [scheduleRows],
+  );
+  const scheduleRowById = useMemo(
+    () => new Map(scheduleRows.map((schedule) => [schedule.id, schedule])),
     [scheduleRows],
   );
 
@@ -766,7 +844,16 @@ export default function SublinhasProducaoPage() {
             <CardTitle>Revisões pendentes do cronograma</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 xl:grid-cols-2">
-            {pendingAuditRows.map((schedule) => (
+            {pendingAuditRows.map((schedule) => {
+              const previousVersion = schedule.revisionOfId
+                ? scheduleRowById.get(schedule.revisionOfId) ?? null
+                : null;
+              const diff = buildScheduleProductDiff(
+                previousVersion?.snapshotProducts ?? null,
+                schedule.snapshotProducts,
+              );
+
+              return (
               <article
                 key={`pending-audit-${schedule.id}`}
                 className="rounded-2xl border border-warning/30 bg-warning/10 p-4"
@@ -791,8 +878,69 @@ export default function SublinhasProducaoPage() {
                     Auditar cronograma
                   </Button>
                 </div>
+
+                <div className="mt-3 rounded-xl border border-warning/30 bg-card/70 p-3">
+                  {!schedule.revisionOfId ? (
+                    <p className="text-xs text-muted-foreground">
+                      Cronograma novo — não há versão anterior para comparar.
+                    </p>
+                  ) : !previousVersion ? (
+                    <p className="text-xs text-muted-foreground">
+                      Versão anterior (
+                      {scheduleNameById.get(schedule.revisionOfId) ?? schedule.revisionOfId}) não está
+                      carregada para gerar o comparativo.
+                    </p>
+                  ) : diff.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Sem mudanças de produto detectadas — a revisão altera apenas metadados ou observações.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-warning-foreground">
+                        {diff.length} alteração{diff.length === 1 ? "" : "ões"} vs.{" "}
+                        {scheduleNameById.get(schedule.revisionOfId) ?? "versão anterior"}
+                      </p>
+                      <ul className="space-y-1.5">
+                        {diff.map((change) => (
+                          <li
+                            key={`${schedule.id}-${change.productId}`}
+                            className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs"
+                          >
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={cn(
+                                  "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em]",
+                                  change.kind === "adicionado" && "bg-success/20 text-success-foreground",
+                                  change.kind === "removido" && "bg-danger/20 text-danger-foreground",
+                                  change.kind === "alterado" && "bg-warning/25 text-warning-foreground",
+                                )}
+                              >
+                                {change.kind}
+                              </span>
+                              <span className="font-mono font-semibold text-foreground">{change.code}</span>
+                              <span className="text-muted-foreground">{change.name}</span>
+                            </div>
+                            {change.fields.length > 0 ? (
+                              <ul className="mt-1 space-y-0.5 pl-1">
+                                {change.fields.map((field) => (
+                                  <li key={`${change.productId}-${field.label}`} className="text-muted-foreground">
+                                    {field.label}:{" "}
+                                    <span className="text-danger-foreground line-through">{field.from}</span>
+                                    {" → "}
+                                    <span className="font-semibold text-foreground">{field.to}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </article>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       ) : null}

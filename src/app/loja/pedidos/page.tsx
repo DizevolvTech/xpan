@@ -240,6 +240,23 @@ export default function PedidosLojaPage() {
 
   const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
   const deliveryDateLabel = useMemo(() => formatDateWithWeekday(deliveryDate), [deliveryDate]);
+  // AJ-0007: avisa ANTES de digitar se já existe pedido ativo para a mesma
+  // loja + mesma data de entrega. O server (store-orders.ts) ainda bloqueia no
+  // submit; aqui é só o aviso proativo + atalho para editar o existente.
+  const duplicateActiveOrder = useMemo(() => {
+    if (editingOrderId || !selectedStoreId) {
+      return null;
+    }
+
+    return (
+      storeOrderSummaries.find(
+        (order) =>
+          order.storeId === selectedStoreId &&
+          order.deliveryDateKey === deliveryDateKey &&
+          order.status !== "cancelado",
+      ) ?? null
+    );
+  }, [editingOrderId, selectedStoreId, storeOrderSummaries, deliveryDateKey]);
   const saleDateLabel = useMemo(() => formatDateWithWeekday(saleDate), [saleDate]);
   const baseOperationalDateLabel = useMemo(
     () => formatDateKeyWithWeekday(effectiveBaseDateKey),
@@ -732,6 +749,26 @@ export default function PedidosLojaPage() {
                 {availableStores.length === 0 ? (
                   <div className="rounded-lg border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
                     Nenhuma loja ativa está vinculada ao seu perfil. Revise os vínculos de loja antes de criar pedidos.
+                  </div>
+                ) : null}
+
+                {duplicateActiveOrder ? (
+                  <div className="flex flex-col gap-3 rounded-lg border border-warning/45 bg-warning/15 px-4 py-3 text-sm text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
+                    <p>
+                      Já existe um pedido ativo (
+                      <strong className="font-semibold">{duplicateActiveOrder.code}</strong>) para{" "}
+                      <strong className="font-semibold">{selectedStore?.name}</strong> na entrega de{" "}
+                      <strong className="font-semibold">{deliveryDateLabel}</strong>. Para não duplicar,
+                      edite o pedido existente.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => setEditingOrderId(duplicateActiveOrder.id)}
+                    >
+                      Abrir pedido existente
+                    </Button>
                   </div>
                 ) : null}
 

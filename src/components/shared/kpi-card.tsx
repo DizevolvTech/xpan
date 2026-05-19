@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { LucideIcon, TrendingDown, TrendingUp } from "lucide-react";
 import { InfoHint } from "@/components/shared/info-hint";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,8 @@ interface KPICardProps {
     value: string;
     direction: "up" | "down" | "flat";
   };
+  /** AJ-0002: quando definido, o card vira um link navegável para a tela com filtro. */
+  href?: string;
 }
 
 const toneStyles: Record<KpiTone, { badge: string; trend: string; rail: string }> = {
@@ -128,14 +131,20 @@ export function KPICard({
   compactValue = false,
   compactThreshold = 1000,
   trend,
+  href,
 }: KPICardProps) {
   const styles = toneStyles[tone];
   const compact = compactValue ? formatCompactKpiValue(value, compactThreshold) : null;
   const displayValue = compact?.display ?? value;
   const resolvedSubtitle = subtitle ?? compact?.full;
 
-  return (
-    <article className="group relative overflow-hidden rounded-xl border border-border/70 bg-card p-5 pl-[calc(theme(spacing.5)+3px)] text-card-foreground shadow-[var(--shadow-card)] transition-[box-shadow,transform,border-color] duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-[var(--shadow-soft)]">
+  const card = (
+    <article
+      className={cn(
+        "group relative overflow-hidden rounded-xl border border-border/70 bg-card p-5 pl-[calc(theme(spacing.5)+3px)] text-card-foreground shadow-[var(--shadow-card)] transition-[box-shadow,transform,border-color] duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-[var(--shadow-soft)]",
+        href && "cursor-pointer hover:border-primary/50",
+      )}
+    >
       <span
         className={cn(
           "pointer-events-none absolute inset-y-3 left-0 w-[3px] rounded-r-full opacity-80 transition-opacity duration-300 group-hover:opacity-100",
@@ -176,4 +185,18 @@ export function KPICard({
       )}
     </article>
   );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        aria-label={`${title} — abrir detalhes`}
+        className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        {card}
+      </Link>
+    );
+  }
+
+  return card;
 }
