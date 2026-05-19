@@ -30,7 +30,7 @@
 [[Regra — D+2 e D+3]] · [[Regra — Lead Days]] · [[Regra — Drift Retroativo]] · [[Regra — Lote Mínimo e Múltiplos]] · [[Regra — Disponibilidade de Produto]] · [[Regra — Domingo e Feriados]] · [[Regra — Drop antes e depois do forno]] · [[Regra — Pedido da Loja]]
 
 ### Permissões e Segurança
-[[Modelo 4 Níveis × 27 Módulos]] · [[Autenticação e Sessão]] · [[Autorização de API]] · [[RLS Policies]] · [[Riscos de Segurança]]
+[[Modelo 4 Níveis × 27 Módulos]] · [[Autenticação e Sessão]] · [[Autorização de API]] · [[RLS Policies]] · [[Riscos de Segurança]] · [[Credenciais de Desenvolvimento]]
 
 ### Banco
 [[Schema ER (Mermaid)]] · [[Catálogo de Tabelas]] · [[ENUMs]] · [[Funções e Triggers]] · [[Migrations (cronologia)]]

@@ -58,6 +58,7 @@ Este cofre é a **fonte única de verdade** sobre o Xpan. Quando algo no código
 - [[Autorização de API]] — `authorizeApiRequest`, contratos
 - [[RLS Policies]] — políticas por tabela
 - [[Riscos de Segurança]]
+- [[Credenciais de Desenvolvimento]] — logins das 6 personas (dev local)
 
 ### 07 — Banco de Dados
 - [[Banco — Visão Geral]]

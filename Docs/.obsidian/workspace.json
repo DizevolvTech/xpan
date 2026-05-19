@@ -183,8 +183,9 @@
       "bases:Criar nova base": false
     }
   },
-  "active": "49bd97b02c870cd6",
+  "active": "03cec7e971c1c275",
   "lastOpenFiles": [
+    "06 - Permissões e Segurança/Credenciais de Desenvolvimento.md",
     "decisoes/ADR_modelo_fabrica_abre_pedido.md",
     "decisoes/ADR_navegacao_orientada_por_permissoes.md",
     "README.md"
