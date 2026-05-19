@@ -124,10 +124,10 @@
   --danger: oklch(0.9 0.07 20);
   --danger-foreground: oklch(0.43 0.13 22);
 
-  --border: oklch(0.65 0.012 88);
-  --border-strong: oklch(0.65 0.02 246);
+  --border: oklch(0.9 0.012 88);
+  --border-strong: oklch(0.78 0.02 246);
   --input: oklch(0.96 0.006 84);
-  --ring: oklch(0.64 0.08 220);
+  --ring: oklch(0.68 0.08 220);
 
   --sidebar: oklch(0.94 0.01 88);
   --sidebar-foreground: oklch(0.3 0.02 245);

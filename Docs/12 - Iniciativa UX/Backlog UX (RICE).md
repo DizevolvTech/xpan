@@ -108,7 +108,7 @@
   reprovar AA (4.5:1 texto / 3:1 UI). Sem mudar semântica de cor. C0.7 (depende de
   medição na spec — PM sinaliza, não quantifica).
 - **RICE:** R10 · I2 · C0.7 · E1.5.
-- **Status:** ✅ Concluído em 2026-05-19 (~40 pares medidos OKLCH→sRGB; 0 par de TEXTO reprova AA — marca/texto inalterados; só 3 tokens não-texto ajustados em globals.css: --border 0.90→0.65, --border-strong 0.78→0.65, --ring 0.68→0.64, todos →≥3:1, H/C preservados; OKLCH inline → UX-0009; e2e 26 PASS/0 FAIL; lint/tsc/test verdes). ⚠️ Requer **revisão visual de marca no Gate 1** (Gate 0 D-2): borda escureceu; flags --sidebar-border e --border sobre input/secondary/muted (2.71–2.88:1). Ver spec §7.
+- **Status:** ↩️ **REVERTIDO em 2026-05-19 por feedback do usuário no Gate 1.** O escurecimento `--border` 0.90→0.65 deixou as bordas feias ("ruim demais"). Valores restaurados ao original (`--border` 0.90, `--border-strong` 0.78, `--ring` 0.68). **Lição:** WCAG 1.4.11 **não** exige 3:1 em borda decorativa/estrutural — só em fronteira que é único meio de identificar componente/estado acionável. Aplicação foi ampla demais. Se reabrir: só anel de foco + bordas com significado, ajuste sutil, validação visual ANTES de commitar. Não reabrir sem pedido explícito.
 
 #### `UX-0008` — Unificar label "Setores"→"Categorias" · 🟡 Terminologia · Score 9.5
 - **Problema:** [[UX Audit — Sistema#F-6]] / [[Dívida Técnica#D26]].
