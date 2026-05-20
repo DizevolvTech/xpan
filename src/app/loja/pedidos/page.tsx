@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Clock3,
   Package,
+  Pencil,
   Plus,
   Truck,
   type LucideIcon,
@@ -347,6 +348,31 @@ export default function PedidosLojaPage() {
       ) ?? null
     );
   }, [editingOrderId, selectedStoreId, storeOrderSummaries, deliveryDateKey]);
+  // Pedido em andamento na loja ativa: status entre lançamento e entrega
+  // (exclui cancelado/entregue/tentativa_falha). Usado para esconder o botão
+  // "Novo Pedido" — ajustes vão pelo fluxo "Editar pedido". Se houver mais de
+  // um (raro), pega o de entrega mais próxima.
+  const activeOrderInScope = useMemo(() => {
+    if (!selectedStoreId) {
+      return null;
+    }
+    const inProgressStatuses = new Set([
+      "em_espera",
+      "agendado",
+      "em_producao",
+      "aguardando_expedicao",
+      "pronto_coleta",
+      "em_rota",
+      "no_destino",
+    ]);
+    return (
+      storeOrderSummaries
+        .filter(
+          (order) => order.storeId === selectedStoreId && inProgressStatuses.has(order.status),
+        )
+        .sort((a, b) => a.deliveryDateKey.localeCompare(b.deliveryDateKey))[0] ?? null
+    );
+  }, [selectedStoreId, storeOrderSummaries]);
   const saleDateLabel = useMemo(() => formatDateWithWeekday(saleDate), [saleDate]);
   const baseOperationalDateLabel = useMemo(
     () => formatDateKeyWithWeekday(effectiveBaseDateKey),
@@ -782,12 +808,34 @@ export default function PedidosLojaPage() {
         </div>
 
         <Dialog open={isNewOrderOpen} onOpenChange={handleNewOrderDialogChange}>
-          <DialogTrigger asChild>
-            <Button type="button" className="shrink-0">
-              <Plus className="size-4" />
-              Novo Pedido
-            </Button>
-          </DialogTrigger>
+          {activeOrderInScope ? (
+            // Pedido em andamento existe: esconde "Novo Pedido" e oferece "Editar".
+            // Ajustes (incluir/remover itens) acontecem no fluxo de edição.
+            <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
+              <p className="text-xs text-muted-foreground">
+                Pedido em andamento:{" "}
+                <strong className="font-semibold text-foreground">
+                  {activeOrderInScope.code}
+                </strong>
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => handleOpenEditOrder(activeOrderInScope)}
+              >
+                <Pencil className="size-4" />
+                Editar pedido
+              </Button>
+            </div>
+          ) : (
+            <DialogTrigger asChild>
+              <Button type="button" className="shrink-0">
+                <Plus className="size-4" />
+                Novo Pedido
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent size="3xl">
             <DialogHeader>
               <DialogTitle>{editingOrderId ? "Editar Pedido" : "Novo Pedido"}</DialogTitle>
