@@ -1,37 +1,100 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  CalendarClock,
+  CalendarRange,
+  ChevronDown,
   ClipboardList,
-  Clock,
   Factory,
   ListChecks,
+  Settings2,
   ShoppingCart,
-  Truck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { InfoHint } from "@/components/shared/info-hint";
-import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
-import { KPICard, PageLayout } from "@/components/shared/page-layout";
-import { ModuleCard } from "@/components/shared/module-card";
+import { PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import type { PlannedOrderRow, ProductionOrderRow } from "@/lib/factory-planning/types";
+import {
+  filterFactoryPlanningDataByOperationalScope,
+  type OperationalDateScopeMode,
+} from "@/lib/operational-date-scope";
 import type { OrderStatus } from "@/lib/order-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { formatKgLabel } from "@/lib/utils";
+
+type KanbanTone = "warning" | "info" | "primary" | "success";
+
+type KanbanColumnBase = {
+  key: string;
+  title: string;
+  tone: KanbanTone;
+  statuses: OrderStatus[];
+};
+
+type KanbanColumn =
+  | (KanbanColumnBase & { kind: "orders"; items: PlannedOrderRow[] })
+  | (KanbanColumnBase & { kind: "ops"; items: ProductionOrderRow[] });
+
+const KANBAN_TONE_STYLES: Record<
+  KanbanTone,
+  { bar: string; count: string; eyebrow: string; ring: string }
+> = {
+  warning: {
+    bar: "bg-warning",
+    count: "text-warning",
+    eyebrow: "text-warning",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-warning/20",
+  },
+  info: {
+    bar: "bg-info",
+    count: "text-info",
+    eyebrow: "text-info",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-info/20",
+  },
+  primary: {
+    bar: "bg-primary",
+    count: "text-primary",
+    eyebrow: "text-primary",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-primary/20",
+  },
+  success: {
+    bar: "bg-success",
+    count: "text-success",
+    eyebrow: "text-success",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-success/20",
+  },
+};
 
 export default function GestorFabricaPage() {
-  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } =
+    useOperationalDateScope();
   const { planningData: planningSnapshot, isLoading, error, refresh: refreshPlanning } =
     useFactoryPlanningSnapshot(anchorDate);
   const { snapshot: masterDataSnapshot, refresh: refreshMasterData } = useMasterDataSnapshot();
@@ -40,6 +103,8 @@ export default function GestorFabricaPage() {
     [planningSnapshot, scope],
   );
   const deliveryExecution = useDeliveryExecution();
+  const prefersReducedMotion = useReducedMotion();
+
   const [settingsDraft, setSettingsDraft] = useState({
     orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
     expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
@@ -50,6 +115,13 @@ export default function GestorFabricaPage() {
     tone: "success" | "error";
     message: string;
   } | null>(null);
+  const [isRulesOpen, setIsRulesOpen] = useState(false);
+  const [isScopeOpen, setIsScopeOpen] = useState(false);
+  const [expandedOpIds, setExpandedOpIds] = useState<Record<string, boolean>>({});
+
+  function toggleOpExpansion(opId: string) {
+    setExpandedOpIds((current) => ({ ...current, [opId]: !current[opId] }));
+  }
 
   useEffect(() => {
     setSettingsDraft({
@@ -65,7 +137,8 @@ export default function GestorFabricaPage() {
 
   const isSettingsDirty =
     settingsDraft.orderCutoffTime !== masterDataSnapshot.operationalSettings.orderCutoffTime ||
-    settingsDraft.expeditionLeadDays !== String(masterDataSnapshot.operationalSettings.expeditionLeadDays) ||
+    settingsDraft.expeditionLeadDays !==
+      String(masterDataSnapshot.operationalSettings.expeditionLeadDays) ||
     settingsDraft.saleLeadDays !== String(masterDataSnapshot.operationalSettings.saleLeadDays);
   const expeditionLeadDaysValue = Number(settingsDraft.expeditionLeadDays);
   const saleLeadDaysValue = Number(settingsDraft.saleLeadDays);
@@ -91,11 +164,13 @@ export default function GestorFabricaPage() {
       if (item.status !== "aguardando_expedicao") {
         return false;
       }
-
       return deliveryExecution.resolveExecution(item.orderId, true).status === "aguardando_expedicao";
     }).length;
     const deliveriesInField = planningData.expedition.filter((item) => {
-      const status = deliveryExecution.resolveExecution(item.orderId, item.status === "aguardando_expedicao").status;
+      const status = deliveryExecution.resolveExecution(
+        item.orderId,
+        item.status === "aguardando_expedicao",
+      ).status;
       return status === "em_rota" || status === "no_destino";
     }).length;
 
@@ -113,31 +188,57 @@ export default function GestorFabricaPage() {
   // AJ-0001: Kanban read-only de acompanhamento. Só visualização + navegação
   // (deep-link p/ a lista filtrada — reaproveita o ?status do AJ-0002).
   // Não manipula status.
-  const kanbanColumns = useMemo(() => {
-    const columns: Array<{
+  // Mudança estrutural: a coluna "Em produção" agrupa por OP (a unidade real
+  // de trabalho da fábrica); cada OP expande para revelar os pedidos que ela
+  // cobre. As outras 3 colunas seguem pedido-centric.
+  const kanbanColumns = useMemo<KanbanColumn[]>(() => {
+    const orderColumns: Array<{
       key: string;
       title: string;
-      accent: string;
+      tone: KanbanTone;
       statuses: OrderStatus[];
     }> = [
-      { key: "aberto", title: "Aberto", accent: "border-info/50 bg-info/5", statuses: ["em_espera", "agendado"] },
-      { key: "producao", title: "Em produção", accent: "border-warning/50 bg-warning/5", statuses: ["em_producao"] },
+      { key: "aberto", title: "Aberto", tone: "warning", statuses: ["em_espera", "agendado"] },
       {
         key: "expedicao",
         title: "Aguardando expedição",
-        accent: "border-primary/50 bg-primary/5",
+        tone: "primary",
         statuses: ["aguardando_expedicao"],
       },
-      { key: "rota", title: "Em rota / entregue", accent: "border-success/50 bg-success/5", statuses: ["rota_entrega"] },
+      { key: "rota", title: "Em rota / entregue", tone: "success", statuses: ["rota_entrega"] },
     ];
 
-    return columns.map((column) => ({
-      ...column,
-      orders: planningData.orders
+    const mapped: KanbanColumn[] = orderColumns.map((column) => ({
+      kind: "orders",
+      key: column.key,
+      title: column.title,
+      tone: column.tone,
+      statuses: column.statuses,
+      items: planningData.orders
         .filter((order) => column.statuses.includes(order.status))
-        .sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code)),
+        .sort(
+          (a, b) =>
+            a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
+        ),
     }));
-  }, [planningData.orders]);
+
+    const producaoColumn: KanbanColumn = {
+      kind: "ops",
+      key: "producao",
+      title: "Em produção",
+      tone: "info",
+      statuses: ["em_producao"],
+      items: planningData.productionOrders
+        .filter((op) => op.status === "em_producao")
+        .sort(
+          (a, b) =>
+            a.productionDate.localeCompare(b.productionDate) || a.code.localeCompare(b.code),
+        ),
+    };
+
+    // Ordem visual: Aberto → Em produção → Aguardando expedição → Em rota.
+    return [mapped[0], producaoColumn, mapped[1], mapped[2]];
+  }, [planningData.orders, planningData.productionOrders]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -151,6 +252,7 @@ export default function GestorFabricaPage() {
     masterDataSnapshot.operationalSettings.orderCutoffTime,
     settingsDraft.orderCutoffTime,
   ]);
+
   const operationalRuleSteps = useMemo(
     () => [
       {
@@ -171,7 +273,8 @@ export default function GestorFabricaPage() {
         key: "production",
         label: "Produção",
         value: "Antes da entrega",
-        helper: "O cronograma procura um dia de produção compatível entre a base operacional e a data prometida para entregar.",
+        helper:
+          "O cronograma procura um dia de produção compatível entre a base operacional e a data prometida para entregar.",
         tone: "warning" as const,
       },
       {
@@ -234,197 +337,268 @@ export default function GestorFabricaPage() {
     } catch (saveError) {
       setSettingsFeedback({
         tone: "error",
-        message: saveError instanceof Error ? saveError.message : "Falha ao salvar regras operacionais.",
+        message:
+          saveError instanceof Error ? saveError.message : "Falha ao salvar regras operacionais.",
       });
     } finally {
       setIsSavingSettings(false);
     }
   }
 
-  const modules = useMemo(
+  const scopeLabel = useMemo(() => {
+    if (scope.mode === "all") return "Todo o período";
+    if (scope.mode === "day") return scope.date;
+    return `${scope.startDate} → ${scope.endDate}`;
+  }, [scope]);
+
+  const shortcuts = useMemo(
     () => [
       {
         href: "/gestor-fabrica/sublinhas-producao",
-        title: "Auditoria do cronograma ativo",
-        subtitle: "Auditoria e grade por linha de produção",
-        description: "Acompanhe o cronograma ativo das linhas de produção e a carga consolidada por dia.",
+        label: "Auditoria do cronograma",
         icon: ClipboardList,
-        tone: "emerald" as const,
-        items: [
-          `${planningData.productionDates.length} datas produtivas na referência`,
-          `${planningData.productionOrders.length} OPs consolidadas`,
-        ],
+        meta: `${planningData.productionDates.length} datas`,
       },
       {
         href: "/gestor-fabrica/pedidos",
-        title: "Gestão de Pedidos",
-        subtitle: "Pedidos de todas as lojas",
-        description: "Acompanhe pedidos, prazo D+X, datas de recebimento e acesso ao detalhe individual.",
+        label: "Pedidos",
         icon: ShoppingCart,
-        tone: "violet" as const,
-        items: [
-          `${metrics.totalOrders} pedidos no dia`,
-          `${metrics.awaitingRelease} aguardando liberação`,
-        ],
+        meta: `${metrics.totalOrders} no período`,
       },
       {
         href: "/gestor-fabrica/ordens-producao",
-        title: "Ordens de Produção",
-        subtitle: "OP por categoria e linha de produção",
-        description: "Visualize as OPs liberadas com progresso derivado por item operacional.",
+        label: "Ordens de produção",
         icon: Factory,
-        tone: "amber" as const,
-        items: [
-          `${metrics.productionOrders} OPs geradas`,
-          `${metrics.inProduction} pedidos em produção`,
-        ],
+        meta: `${metrics.productionOrders} OPs`,
       },
       {
         href: "/gestor-fabrica/expedicao",
-        title: "Expedição",
-        subtitle: "Reconversão e separação",
-        description: "Converta o interno em Kg para unidade de separação de cada pedido de loja.",
+        label: "Expedição",
         icon: ListChecks,
-        tone: "emerald" as const,
-        items: [
-          `${metrics.checklistPending} checklists pendentes`,
-          `${metrics.deliveriesInField} entregas em campo`,
-        ],
+        meta: `${metrics.checklistPending} checklist`,
       },
     ],
     [
-      metrics.awaitingRelease,
       metrics.checklistPending,
-      metrics.deliveriesInField,
-      metrics.inProduction,
       metrics.productionOrders,
       metrics.totalOrders,
       planningData.productionDates.length,
-      planningData.productionOrders.length,
     ],
   );
+
+  const motionEnabled = !prefersReducedMotion;
 
   return (
     <PageLayout
       title="Gestor de Fábrica"
-      description="Visão operacional real de pedidos, produção, checklist de expedição e entregas."
+      description="Acompanhamento operacional dos pedidos, da produção e da expedição em uma única visão."
       badge="Operacional"
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Gestor de Fábrica" }]}
     >
-      {error ? (
-        <div className="rounded-xl border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
-          {error}
+      {/* Action bar — escopo + chips + regras, tudo em uma linha enxuta. */}
+      <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-[var(--shadow-soft)] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Ajustar janela operacional"
+              >
+                <CalendarRange className="size-3.5 text-muted-foreground" aria-hidden />
+                <span className="text-muted-foreground">Janela:</span>
+                <span className="font-semibold">{scopeLabel}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-[320px] space-y-3 p-4">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Janela operacional
+                </p>
+                <p className="text-xs text-muted-foreground">{summary}</p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Modo</Label>
+                <Select
+                  value={scope.mode}
+                  onValueChange={(value) => setMode(value as OperationalDateScopeMode)}
+                >
+                  <SelectTrigger className="bg-background/80">
+                    <SelectValue placeholder="Selecionar modo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todo o período</SelectItem>
+                    <SelectItem value="day">Data específica</SelectItem>
+                    <SelectItem value="range">Período fechado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {scope.mode === "day" ? (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">Data</Label>
+                  <Input
+                    type="date"
+                    value={scope.date}
+                    onChange={(event) => setDate(event.target.value)}
+                  />
+                </div>
+              ) : null}
+              {scope.mode === "range" ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">De</Label>
+                    <Input
+                      type="date"
+                      value={scope.startDate}
+                      onChange={(event) => setStartDate(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-muted-foreground">Até</Label>
+                    <Input
+                      type="date"
+                      value={scope.endDate}
+                      onChange={(event) => setEndDate(event.target.value)}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </PopoverContent>
+          </Popover>
+
         </div>
-      ) : null}
 
-      <OperationalDateScopeCard
-        scope={scope}
-        summary={summary}
-        setMode={setMode}
-        setDate={setDate}
-        setStartDate={setStartDate}
-        setEndDate={setEndDate}
-        title="Janela operacional"
-        description="Veja a fábrica inteira, um único dia ou um período fechado sem trocar manualmente a referência em cada tela."
-      />
+        <Dialog open={isRulesOpen} onOpenChange={setIsRulesOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Settings2 className="size-3.5" aria-hidden />
+              Regras
+              {isSettingsDirty ? (
+                <span
+                  className="ms-1 inline-block size-1.5 rounded-full bg-warning"
+                  aria-label="Alterações pendentes"
+                />
+              ) : null}
+            </Button>
+          </DialogTrigger>
+          <DialogContent size="xl" className="gap-5">
+            <DialogHeader>
+              <DialogTitle>Regras globais de pedido e expedição</DialogTitle>
+              <DialogDescription>{settingsSummary}</DialogDescription>
+            </DialogHeader>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              <CalendarClock className="size-4" />
-              Expedição
+            {isSettingsDirty ? (
+              <div
+                role="status"
+                className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning-foreground"
+              >
+                Existem alterações pendentes nas regras de expedição.
+              </div>
+            ) : null}
+
+            {settingsFeedback ? (
+              <div
+                role={settingsFeedback.tone === "success" ? "status" : "alert"}
+                className={
+                  settingsFeedback.tone === "success"
+                    ? "rounded-xl border border-success/40 bg-success/10 px-4 py-3 text-sm text-success-foreground"
+                    : "rounded-xl border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground"
+                }
+              >
+                {settingsFeedback.message}
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="factory-order-cutoff-time">Horário limite do pedido</Label>
+                <Input
+                  id="factory-order-cutoff-time"
+                  type="time"
+                  value={settingsDraft.orderCutoffTime}
+                  onChange={(event) => {
+                    setSettingsDraft((current) => ({
+                      ...current,
+                      orderCutoffTime: event.target.value,
+                    }));
+                    setSettingsFeedback(null);
+                  }}
+                  disabled={isSavingSettings}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="factory-expedition-lead-days">Prazo de expedição (D+X)</Label>
+                <Input
+                  id="factory-expedition-lead-days"
+                  type="number"
+                  min={0}
+                  max={30}
+                  step={1}
+                  value={settingsDraft.expeditionLeadDays}
+                  onChange={(event) => {
+                    setSettingsDraft((current) => ({
+                      ...current,
+                      expeditionLeadDays: event.target.value,
+                    }));
+                    setSettingsFeedback(null);
+                  }}
+                  disabled={isSavingSettings}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="factory-sale-lead-days">Prazo de venda (após entrega)</Label>
+                <Input
+                  id="factory-sale-lead-days"
+                  type="number"
+                  min={0}
+                  max={30}
+                  step={1}
+                  value={settingsDraft.saleLeadDays}
+                  onChange={(event) => {
+                    setSettingsDraft((current) => ({
+                      ...current,
+                      saleLeadDays: event.target.value,
+                    }));
+                    setSettingsFeedback(null);
+                  }}
+                  disabled={isSavingSettings}
+                />
+              </div>
             </div>
-            <CardTitle className="flex items-center gap-1.5 text-base">
-              Regras globais de pedido e expedição
-              <InfoHint
-                size="sm"
-                content="Ajuste o horário limite do pedido e o prazo D+X usado pela fábrica para prometer recebimento às lojas. A produção sempre é derivada para caber antes dessa entrega."
-              />
-            </CardTitle>
-          </div>
-          <div className="max-w-xl rounded-2xl border border-border/70 bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
-            {settingsSummary}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isSettingsDirty ? (
-            <div className="rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Existem alterações pendentes nas regras de expedição.
-            </div>
-          ) : null}
 
-          {settingsFeedback ? (
-            <div
-              className={
-                settingsFeedback.tone === "success"
-                  ? "rounded-xl border border-emerald-300/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
-                  : "rounded-xl border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground"
-              }
-            >
-              {settingsFeedback.message}
-            </div>
-          ) : null}
+            <details className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                Como a regra cascateia no fluxo
+              </summary>
+              <div className="mt-3">
+                <OperationalSequenceCard
+                  eyebrow="Relação entre produção e expedição"
+                  title="A regra global sempre segue esta ordem"
+                  description="Assim a fábrica transforma a regra operacional em datas que a loja consegue entender e acompanhar."
+                  steps={operationalRuleSteps}
+                  footer="Resumo da regra: a entrega nasce do D+X sobre a base operacional; a produção é calculada para acontecer antes dessa entrega; a venda começa depois que a loja recebe."
+                />
+              </div>
+            </details>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,200px)_minmax(0,180px)_minmax(0,180px)_1fr] xl:items-end">
-            <div className="space-y-2">
-              <Label htmlFor="factory-order-cutoff-time">Horário limite do pedido</Label>
-              <Input
-                id="factory-order-cutoff-time"
-                type="time"
-                value={settingsDraft.orderCutoffTime}
-                onChange={(event) => {
-                  setSettingsDraft((current) => ({
-                    ...current,
-                    orderCutoffTime: event.target.value,
-                  }));
-                  setSettingsFeedback(null);
-                }}
+            <DialogFooter className="items-center">
+              <div className="me-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+                <InfoHint
+                  size="sm"
+                  content="Esse ajuste impacta o catálogo da loja, a promessa de recebimento e o planejamento da expedição."
+                />
+                <span>Impacta catálogo, promessa de entrega e planejamento.</span>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setIsRulesOpen(false)}
                 disabled={isSavingSettings}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="factory-expedition-lead-days">Prazo de expedição (D+X)</Label>
-              <Input
-                id="factory-expedition-lead-days"
-                type="number"
-                min={0}
-                max={30}
-                step={1}
-                value={settingsDraft.expeditionLeadDays}
-                onChange={(event) => {
-                  setSettingsDraft((current) => ({
-                    ...current,
-                    expeditionLeadDays: event.target.value,
-                  }));
-                  setSettingsFeedback(null);
-                }}
-                disabled={isSavingSettings}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="factory-sale-lead-days">Prazo de venda (após entrega)</Label>
-              <Input
-                id="factory-sale-lead-days"
-                type="number"
-                min={0}
-                max={30}
-                step={1}
-                value={settingsDraft.saleLeadDays}
-                onChange={(event) => {
-                  setSettingsDraft((current) => ({
-                    ...current,
-                    saleLeadDays: event.target.value,
-                  }));
-                  setSettingsFeedback(null);
-                }}
-                disabled={isSavingSettings}
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
+              >
+                Fechar
+              </Button>
               <Button
                 type="button"
                 onClick={() => void handleSaveOperationalSettings()}
@@ -432,152 +606,241 @@ export default function GestorFabricaPage() {
               >
                 {isSavingSettings ? "Salvando..." : "Salvar regras"}
               </Button>
-              <InfoHint
-                size="sm"
-                content="Esse ajuste impacta o catálogo da loja, a promessa de recebimento e o planejamento da expedição."
-              />
-            </div>
-          </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
 
-          <OperationalSequenceCard
-            eyebrow="Relação entre produção e expedição"
-            title="A regra global sempre segue esta ordem"
-            description="Assim a fábrica transforma a regra operacional em datas que a loja consegue entender e acompanhar."
-            steps={operationalRuleSteps}
-            footer="Resumo da regra: a entrega nasce do D+X sobre a base operacional; a produção é calculada para acontecer antes dessa entrega; a venda começa depois que a loja recebe."
-          />
-        </CardContent>
-      </Card>
+      {error ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground"
+        >
+          {error}
+        </div>
+      ) : null}
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.1 }}
-        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
-      >
-        <KPICard
-          title="Pedidos no dia"
-          isLoading={isLoading}
-          value={metrics.totalOrders}
-          tone="info"
-          icon={ShoppingCart}
-          compactValue
-          href="/gestor-fabrica/pedidos"
-        />
-        <KPICard
-          title="Aguardando liberação"
-          isLoading={isLoading}
-          value={metrics.awaitingRelease}
-          tone="warning"
-          icon={Clock}
-          compactValue
-          href="/gestor-fabrica/pedidos?status=em_espera"
-        />
-        <KPICard
-          title="Em produção"
-          isLoading={isLoading}
-          value={metrics.inProduction}
-          tone="info"
-          icon={Factory}
-          compactValue
-          href="/gestor-fabrica/ordens-producao?status=em_producao"
-        />
-        <KPICard
-          title="Checklist pendente"
-          isLoading={isLoading}
-          value={metrics.checklistPending}
-          tone="success"
-          icon={ListChecks}
-          compactValue
-          href="/gestor-fabrica/expedicao"
-        />
-        <KPICard
-          title="Entregas em campo"
-          isLoading={isLoading}
-          value={metrics.deliveriesInField}
-          tone="neutral"
-          icon={Truck}
-          compactValue
-          href="/chao-fabrica/entregas?status=em_rota"
-        />
-      </motion.div>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center gap-1.5">
-          <CardTitle>Acompanhamento</CardTitle>
-          <InfoHint
-            size="sm"
-            content="Visão read-only dos pedidos por etapa. Clique em um card para abrir a lista de pedidos já filtrada pela etapa. O status não é alterado por aqui."
-          />
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {kanbanColumns.map((column) => (
-              <div
-                key={column.key}
-                className={`flex flex-col gap-2 rounded-xl border p-3 ${column.accent}`}
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground">
-                    {column.title}
-                  </p>
-                  <span className="rounded-full bg-background/70 px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                    {column.orders.length}
-                  </span>
-                </div>
-                <div className="flex max-h-[360px] flex-col gap-2 overflow-auto">
-                  {column.orders.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-border/60 px-2 py-3 text-center text-xs text-muted-foreground">
-                      Nenhum pedido nesta etapa.
-                    </p>
-                  ) : (
-                    column.orders.map((order) => (
-                      <Link
-                        key={order.id}
-                        href={`/gestor-fabrica/pedidos?status=${order.status}`}
-                        className="rounded-lg border border-border/70 bg-card px-3 py-2 text-sm transition-colors hover:border-primary/50 hover:bg-panel/50"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-mono text-xs font-semibold text-foreground">{order.code}</span>
-                          <span className="text-xs text-muted-foreground">{order.deliveryDateLabel}</span>
-                        </div>
-                        <p className="mt-0.5 truncate text-xs text-muted-foreground">{order.storeName}</p>
-                      </Link>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-        className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
-      >
-        {modules.map((module, index) => (
-          <motion.div
-            key={module.href}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 * index }}
+      {/* Micro-linha de contexto: chips informativos antigos viram texto de fundo.
+          O termo "Acompanhamento" continua no DOM (sr-only) p/ o e2e. */}
+      <div className="flex items-center justify-between gap-3 text-[11px] tabular-nums text-muted-foreground/80">
+        <span className="sr-only">Acompanhamento</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Link
+            href="/chao-fabrica/entregas?status=em_rota"
+            className="inline-flex items-center gap-1 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ModuleCard
-              href={module.href}
-              title={module.title}
-              subtitle={module.subtitle}
-              description={module.description}
-              icon={module.icon}
-              tone={module.tone}
-              items={module.items}
-              footerLabel="Abrir módulo"
-            />
-          </motion.div>
+            <span className="font-medium text-foreground/80">{metrics.deliveriesInField}</span>
+            <span>em campo</span>
+          </Link>
+          <span aria-hidden className="text-muted-foreground/40">
+            ·
+          </span>
+          <Link
+            href="/gestor-fabrica/expedicao"
+            className="inline-flex items-center gap-1 rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="font-medium text-foreground/80">{metrics.checklistPending}</span>
+            <span>checklist pendente</span>
+          </Link>
+        </div>
+        <InfoHint
+          size="sm"
+          content="Visão read-only do fluxo. A coluna de produção lista ordens (OPs); as outras listam pedidos. Clique em uma coluna ou OP para abrir a lista filtrada. O status não é alterado por aqui."
+        />
+      </div>
+
+      {/* Kanban — protagonista. Coluna "Em produção" lista OPs (unidade real
+          de trabalho); demais colunas listam pedidos. */}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {kanbanColumns.map((column, columnIndex) => {
+          const tone = KANBAN_TONE_STYLES[column.tone];
+          const isEmpty = column.items.length === 0;
+          return (
+            <motion.section
+              key={column.key}
+              initial={motionEnabled ? { opacity: 0, y: 8 } : false}
+              animate={motionEnabled ? { opacity: 1, y: 0 } : undefined}
+              transition={{ duration: 0.2, delay: motionEnabled ? columnIndex * 0.04 : 0 }}
+              className={`group relative flex min-h-[420px] flex-col gap-3 overflow-hidden rounded-2xl bg-card p-4 ${tone.ring}`}
+              aria-labelledby={`kanban-${column.key}-title`}
+            >
+              <span
+                aria-hidden
+                className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${tone.bar}`}
+              />
+              <header className="flex items-baseline justify-between gap-3 pl-2">
+                <Link
+                  href={`/gestor-fabrica/pedidos?status=${column.statuses[0]}`}
+                  className="block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded-md"
+                  aria-label={`Abrir lista de pedidos ${column.title}`}
+                >
+                  <span
+                    className={`font-heading text-4xl font-bold leading-none tabular-nums ${tone.count} sm:text-5xl`}
+                  >
+                    {column.items.length}
+                  </span>
+                  <span
+                    id={`kanban-${column.key}-title`}
+                    className={`mt-2 block text-[10px] font-semibold uppercase tracking-[0.14em] ${tone.eyebrow}`}
+                  >
+                    {column.title}
+                  </span>
+                </Link>
+                {isLoading && isEmpty ? (
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Carregando…
+                  </span>
+                ) : null}
+              </header>
+
+              <div className="scroll-modern -mx-1 flex max-h-[360px] flex-col gap-1 overflow-y-auto px-1 pl-2">
+                {isEmpty ? (
+                  <p
+                    aria-label="Nenhum item nesta etapa"
+                    className="select-none py-3 text-center text-xs text-muted-foreground/40"
+                  >
+                    —
+                  </p>
+                ) : column.kind === "orders" ? (
+                  column.items.map((order) => (
+                    <Link
+                      key={order.id}
+                      href={`/gestor-fabrica/pedidos?status=${order.status}`}
+                      className="group/order flex items-center justify-between gap-2 rounded-md px-2 py-1.5 leading-tight transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-mono text-xs font-semibold text-foreground">
+                          {order.code}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {order.storeName}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
+                        {order.deliveryDateLabel}
+                      </span>
+                    </Link>
+                  ))
+                ) : (
+                  column.items.map((op) => {
+                    const isOpen = !!expandedOpIds[op.id];
+                    const progress = Math.max(0, Math.min(100, op.progress));
+                    const progressLabel =
+                      progress <= 0
+                        ? "iniciada"
+                        : `${progress.toFixed(progress < 10 ? 1 : 0)}%`;
+                    return (
+                      <div
+                        key={op.id}
+                        className="rounded-md transition-colors hover:bg-muted/50 focus-within:bg-muted/50"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleOpExpansion(op.id)}
+                          aria-expanded={isOpen}
+                          aria-controls={`op-${op.id}-orders`}
+                          className="block w-full rounded-md px-2 py-1.5 text-left leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="truncate font-mono text-xs font-semibold text-foreground">
+                              {op.code}
+                            </span>
+                            <span className="shrink-0 truncate text-[10px] text-muted-foreground">
+                              {op.lineName} · {op.sectorName}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div
+                              aria-hidden
+                              className="relative h-1 flex-1 overflow-hidden rounded-full bg-muted"
+                            >
+                              <motion.div
+                                className={`absolute inset-y-0 left-0 rounded-full ${tone.bar}`}
+                                initial={motionEnabled ? { width: 0 } : false}
+                                animate={{ width: `${progress}%` }}
+                                transition={{ duration: motionEnabled ? 0.4 : 0 }}
+                              />
+                            </div>
+                            <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
+                              {progressLabel}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <span className="text-[11px] tabular-nums text-muted-foreground">
+                              {formatKgLabel(op.totalKg)}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 text-[11px] ${tone.count}`}>
+                              <span className="tabular-nums font-medium">{op.ordersCount}</span>
+                              <span className="text-muted-foreground">
+                                {op.ordersCount === 1 ? "pedido" : "pedidos"}
+                              </span>
+                              <ChevronDown
+                                aria-hidden
+                                className={`size-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                              />
+                            </span>
+                          </div>
+                        </button>
+                        <AnimatePresence initial={false}>
+                          {isOpen ? (
+                            <motion.div
+                              key="orders"
+                              id={`op-${op.id}-orders`}
+                              initial={motionEnabled ? { height: 0, opacity: 0 } : false}
+                              animate={
+                                motionEnabled
+                                  ? { height: "auto", opacity: 1 }
+                                  : { height: "auto", opacity: 1 }
+                              }
+                              exit={motionEnabled ? { height: 0, opacity: 0 } : { opacity: 0 }}
+                              transition={{ duration: motionEnabled ? 0.2 : 0 }}
+                              className="overflow-hidden"
+                            >
+                              <ul className="mt-0.5 space-y-0.5 border-l border-border/40 py-1 pl-2 ms-3">
+                                {op.orderCodes.length === 0 ? (
+                                  <li className="px-2 py-1 text-[11px] text-muted-foreground/60">
+                                    Sem pedidos vinculados.
+                                  </li>
+                                ) : (
+                                  op.orderCodes.map((code) => (
+                                    <li key={code}>
+                                      <Link
+                                        href={`/gestor-fabrica/pedidos?status=em_producao`}
+                                        className="block truncate rounded px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                      >
+                                        {code}
+                                      </Link>
+                                    </li>
+                                  ))
+                                )}
+                              </ul>
+                            </motion.div>
+                          ) : null}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </motion.section>
+          );
+        })}
+      </div>
+
+      {/* Atalhos rápidos — pílulas mínimas, supporting cast. */}
+      <nav aria-label="Atalhos" className="flex flex-wrap gap-1.5">
+        {shortcuts.map((shortcut) => (
+          <Link
+            key={shortcut.href}
+            href={shortcut.href}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <shortcut.icon className="size-3 text-muted-foreground" aria-hidden />
+            <span>{shortcut.label}</span>
+            <span className="tabular-nums text-muted-foreground/70">{shortcut.meta}</span>
+          </Link>
         ))}
-      </motion.div>
+      </nav>
     </PageLayout>
   );
 }
