@@ -205,7 +205,6 @@ export default function EntregasPage() {
 
   const kpis = useMemo(
     () => ({
-      total: deliveryRows.length,
       prontas: deliveryRows.filter((item) => item.executionStatus === "pronto_coleta").length,
       emRota: deliveryRows.filter((item) => item.executionStatus === "em_rota" || item.executionStatus === "no_destino").length,
       entregues: deliveryRows.filter((item) => item.executionStatus === "entregue").length,
@@ -354,10 +353,9 @@ export default function EntregasPage() {
         </Button>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KPICard title="Pedidos para entrega" value={kpis.total} tone="info" icon={Truck} compactValue />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KPICard title="Prontos para sair" value={kpis.prontas} tone="warning" icon={Package} compactValue />
-        <KPICard title="Em rota" value={kpis.emRota} tone="success" icon={Navigation} compactValue />
+        <KPICard title="Em rota" value={kpis.emRota} tone="info" icon={Navigation} compactValue />
         <KPICard title="Entregues" value={kpis.entregues} tone="success" icon={CheckCircle2} compactValue />
         <KPICard title="Falhas de tentativa" value={kpis.falhas} tone="danger" icon={XCircle} compactValue />
       </div>

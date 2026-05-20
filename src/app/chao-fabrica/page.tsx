@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
-import { Factory, ListChecks, Truck } from "lucide-react";
+import { ArrowRight, Factory, ListChecks, Truck } from "lucide-react";
 import { useMemo } from "react";
 
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
-import { ModuleCard } from "@/components/shared/module-card";
+import { Button } from "@/components/ui/button";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
@@ -27,37 +28,17 @@ export default function ChaoFabricaPage() {
   const awaitingRelease = planningData.orders.filter((item) => !item.releasedToProduction).length;
   const expeditionKg = Number(planningData.expedition.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));
 
-  const modules = [
-    {
-      href: "/chao-fabrica/ordens-producao",
-      title: "Produção",
-      subtitle: "O que produzir agora",
-      description: "Lista operacional de OPs por categoria, linha de produção e linha executora, pronta para execução.",
-      icon: Factory,
-      tone: "amber" as const,
-    },
-    {
-      href: "/chao-fabrica/expedicao",
-      title: "Expedição",
-      subtitle: "O que separar e enviar",
-      description: "Separação por pedido com impressão de apoio para o time de expedição.",
-      icon: ListChecks,
-      tone: "emerald" as const,
-    },
-    {
-      href: "/chao-fabrica/entregas",
-      title: "Entregas",
-      subtitle: "Execução em campo",
-      description: "Use o fluxo mobile para sair com os pedidos, registrar rota e confirmar entrega.",
-      icon: Truck,
-      tone: "cyan" as const,
-    },
+  // Stats secundárias: dados que importam, mas não competem com os 3 KPIs primários.
+  const secondaryStats = [
+    { label: "Carga de produção", value: formatKgLabel(productionKg, { maximumFractionDigits: 2 }) },
+    { label: "Pedidos liberados", value: releasedOrders },
+    { label: "Carga total de expedição", value: formatKgLabel(expeditionKg, { maximumFractionDigits: 2 }) },
   ];
 
   return (
     <PageLayout
       title="Chão de Fábrica"
-      description="Somente visualização operacional do que produzir e do que expedir."
+      description="Visão operacional do que produzir e expedir hoje."
       badge="Operacional"
       breadcrumbs={[{ label: "Início", href: "/" }, { label: "Chão de Fábrica" }]}
     >
@@ -69,67 +50,84 @@ export default function ChaoFabricaPage() {
         setStartDate={setStartDate}
         setEndDate={setEndDate}
         title="Janela operacional"
-        description="Navegue por todo o backlog, foque em um dia ou feche um período sem trocar a referência manual em cada módulo."
+        description=""
       />
 
+      {/* 3 KPIs primários — os números que o operário lê de longe. */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.1 }}
-        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
       >
         <KPICard title="OPs para produzir" value={opsCount} tone="info" icon={Factory} compactValue />
         <KPICard
-          title="Carga de produção"
-          value={formatKgLabel(productionKg, { maximumFractionDigits: 2 })}
+          title="Pedidos prontos p/ expedir"
+          value={expeditionReady}
           tone="success"
-          icon={Factory}
-          compactValue
-        />
-        <KPICard title="Pedidos liberados" value={releasedOrders} tone="info" icon={ListChecks} compactValue />
-        <KPICard title="Pedidos prontos p/ expedir" value={expeditionReady} tone="success" icon={Truck} compactValue />
-        <KPICard
-          title="Pedidos aguardando liberação"
-          value={awaitingRelease}
-          tone="warning"
           icon={Truck}
           compactValue
         />
         <KPICard
-          title="Carga total de expedição"
-          value={formatKgLabel(expeditionKg, { maximumFractionDigits: 2 })}
-          tone="neutral"
+          title="Pedidos aguardando liberação"
+          value={awaitingRelease}
+          tone="warning"
           icon={ListChecks}
           compactValue
         />
       </motion.div>
 
+      {/* Stats secundárias: linha enxuta de apoio, sem mini-cards aninhados. */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.15 }}
+        className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-xs text-muted-foreground"
+      >
+        {secondaryStats.map((stat, index) => (
+          <span key={stat.label} className="inline-flex items-center gap-1.5">
+            {index > 0 && <span aria-hidden className="text-border">·</span>}
+            <span>{stat.label}:</span>
+            <span className="font-semibold text-foreground tabular-nums">{stat.value}</span>
+          </span>
+        ))}
+      </motion.div>
+
+      {/* Atalhos primários do chão. Navegação completa está na sidebar; aqui só os 2 destinos do dia. */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.2 }}
-        className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        className="grid gap-3 sm:grid-cols-2"
       >
-        {modules.map((module, index) => (
-          <motion.div
-            key={module.href}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 * index }}
-          >
-            <ModuleCard
-              href={module.href}
-              title={module.title}
-              subtitle={module.subtitle}
-              description={module.description}
-              icon={module.icon}
-              tone={module.tone}
-              footerLabel="Abrir módulo"
-            />
-          </motion.div>
-        ))}
+        <Button
+          asChild
+          size="lg"
+          className="h-14 justify-between text-base"
+        >
+          <Link href="/chao-fabrica/ordens-producao">
+            <span className="inline-flex items-center gap-2">
+              <Factory className="size-5" aria-hidden />
+              Abrir Produção
+            </span>
+            <ArrowRight className="size-5" aria-hidden />
+          </Link>
+        </Button>
+        <Button
+          asChild
+          variant="outline"
+          size="lg"
+          className="h-14 justify-between text-base"
+        >
+          <Link href="/chao-fabrica/expedicao">
+            <span className="inline-flex items-center gap-2">
+              <ListChecks className="size-5" aria-hidden />
+              Abrir Expedição
+            </span>
+            <ArrowRight className="size-5" aria-hidden />
+          </Link>
+        </Button>
       </motion.div>
     </PageLayout>
   );
 }
-
