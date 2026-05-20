@@ -5,7 +5,7 @@ import type {
 } from "@/lib/production-planning";
 import type { ProductionOrderRow } from "@/lib/order-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
-import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import { round3, scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
 
 type PrintIngredientKind = "ingrediente" | "ingrediente_misturado" | "produto_mpi";
 type PrintIngredientSectionKind = "base" | "additional";
@@ -54,10 +54,6 @@ export type ProductionSheetProductSection = {
   unitWeightKg: number;
   items: PrintIngredientRow[];
 };
-
-function round3(value: number) {
-  return Number(value.toFixed(3));
-}
 
 function getOperationalUnitWeight(product: ProductionProduct | undefined) {
   if (!product) {
@@ -148,27 +144,6 @@ function isAdditionalIngredient(
     "final",
     "acabamento",
   ].some((keyword) => combinedText.includes(keyword));
-}
-
-function scaleRecipeQuantity(
-  outputKg: number,
-  product: ProductionProduct | undefined,
-  ingredients: ProductionIngredient[],
-  products: ProductionProduct[],
-  quantity: number,
-) {
-  if (!product) {
-    return round3(quantity);
-  }
-
-  const totals = getProductRecipeTotalsFromData(product, ingredients, products);
-  const baseOutputKg = totals.outputAfterBreakKg > 0 ? totals.outputAfterBreakKg : totals.totalIngredientsKg;
-
-  if (baseOutputKg <= 0) {
-    return round3(quantity);
-  }
-
-  return round3((outputKg / baseOutputKg) * quantity);
 }
 
 function buildScaledRecipeRowsForProduct(
