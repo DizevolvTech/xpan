@@ -845,3 +845,229 @@ test("workflow recognizes orders as ready for expedition when items finish on di
   assert.equal(result.orders[0]?.status, "aguardando_expedicao");
   assert.equal(result.expedition[0]?.status, "aguardando_expedicao");
 });
+
+// ---------------------------------------------------------------------------
+// AJ-0008 / ADR_expansao_mpi_em_op — integração: motor expande MPI em OP
+// separada apenas com EXPAND_MPI_INTO_OPS=true. Cobre o cenário canônico
+// da Call 2026-05-13 (Bloco 4): "loja pede pizza → sistema gera OP da
+// pizza E uma OP separada da massa de pizza".
+// ---------------------------------------------------------------------------
+
+function withMpiExpansion<T>(fn: () => T): T {
+  const previous = process.env.EXPAND_MPI_INTO_OPS;
+  process.env.EXPAND_MPI_INTO_OPS = "true";
+  try {
+    return fn();
+  } finally {
+    if (previous === undefined) delete process.env.EXPAND_MPI_INTO_OPS;
+    else process.env.EXPAND_MPI_INTO_OPS = previous;
+  }
+}
+
+function buildPizzaScenario() {
+  const sectors: ProductionSector[] = [
+    { id: "sector-1", code: "SE-001", name: "Salgados", responsible: "Ana", status: "ativo" },
+  ];
+  const lines: ProductionLine[] = [
+    {
+      id: "line-1",
+      code: "LP-001",
+      name: "Linha Forno",
+      sectorId: "sector-1",
+      type: "Seco",
+      operatingHours: "05:00 - 14:00",
+      capacityPerDayKg: 1000,
+      status: "ativo",
+    },
+  ];
+  const massa: ProductionProduct = {
+    id: "mpi-massa",
+    code: "MPI-001",
+    name: "Massa de Pizza",
+    description: "",
+    lineId: "line-1",
+    masterLineId: "line-1",
+    operationalLineId: "line-1",
+    active: true,
+    availableForOrdering: false,
+    validityDays: 1,
+    minimumProductionKg: 0,
+    economicProductionKg: 0,
+    allowsStorage: false,
+    productionDays: ["quinta"],
+    expeditionLeadDays: 0,
+    unitProfiles: {
+      sales: { unit: "Kg", description: "kg", weightKg: 1 },
+      production: { unit: "Kg", description: "kg", weightKg: 1 },
+      expedition: { unit: "Kg", description: "kg", weightKg: 1 },
+    },
+    isSoldLoose: false,
+    recipe: [],
+    preparationStages: [...defaultProductPreparationStages],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "",
+    canBeIngredient: true,
+    weight: "",
+    productionUnit: "Kg",
+    salesUnit: "Kg",
+    salesToKgFactor: 1,
+    expeditionUnit: "Kg",
+    expeditionToKgFactor: 1,
+    isMpiIngredient: true,
+  };
+  const pizza: ProductionProduct = {
+    id: "pizza",
+    code: "PZ-001",
+    name: "Pizza Margherita",
+    description: "",
+    lineId: "line-1",
+    masterLineId: "line-1",
+    operationalLineId: "line-1",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 1,
+    minimumProductionKg: 0,
+    economicProductionKg: 0,
+    allowsStorage: false,
+    productionDays: ["quinta"],
+    expeditionLeadDays: 0,
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.25 },
+      production: { unit: "Kg", description: "kg", weightKg: 1 },
+      expedition: { unit: "Kg", description: "kg", weightKg: 1 },
+    },
+    isSoldLoose: false,
+    recipe: [
+      { id: "r1", sourceType: "ingrediente", sourceId: "farinha", label: "Farinha", quantity: 0.6, unit: "Kg" },
+      { id: "r2", sourceType: "produto", sourceId: "mpi-massa", label: "Massa", quantity: 0.4, unit: "Kg" },
+    ],
+    preparationStages: [...defaultProductPreparationStages],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "",
+    canBeIngredient: false,
+    weight: "",
+    productionUnit: "Kg",
+    salesUnit: "Un",
+    salesToKgFactor: 0.25,
+    expeditionUnit: "Kg",
+    expeditionToKgFactor: 1,
+    isMpiIngredient: false,
+  };
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Cronograma Forno",
+      lineId: "line-1",
+      status: "ativo",
+      createdAt: "2026-03-17T10:00:00.000Z",
+      createdBy: "Ana",
+      items: [
+        { id: "si-pizza", productId: "pizza", productionDays: ["quinta"], minimumProduction: 1 },
+        { id: "si-massa", productId: "mpi-massa", productionDays: ["quinta"], minimumProduction: 1 },
+      ],
+    },
+  ];
+
+  return { sectors, lines, products: [pizza, massa], schedules };
+}
+
+test("buildFactoryPlanningData expande MPI quando flag ligada — pedido de pizza gera OP da massa", () => {
+  withMpiExpansion(() => {
+    const { sectors, lines, products, schedules } = buildPizzaScenario();
+    const planning = buildFactoryPlanningData("2026-03-19", {
+      stores: [baseStore],
+      storeOrders: [
+        {
+          id: "order-1",
+          code: "PD-0001",
+          storeId: "store-1",
+          orderedAt: "2026-03-17T09:00:00.000Z",
+          items: [{ id: "item-1", productId: "pizza", quantity: 8, unit: "Un" }],
+        },
+      ],
+      settings,
+      sectors,
+      lines,
+      products,
+      schedules,
+    });
+
+    const opsByProduct = new Map(planning.productionOrders.flatMap((op) => op.items.map((item) => [item.productId, item])));
+    assert.ok(opsByProduct.has("pizza"), "OP da pizza presente");
+    assert.ok(opsByProduct.has("mpi-massa"), "OP da massa (MPI) também presente — comportamento que o cliente pediu");
+    // 8 pizzas × 0.25kg/un = 2kg de pizza. Receita base 1kg → 0.4kg de massa por kg → 0.8kg de massa.
+    assert.equal(opsByProduct.get("mpi-massa")?.totalKg, 0.8);
+  });
+});
+
+test("buildFactoryPlanningData soma demanda de MPI em uma única OP quando flag ligada", () => {
+  withMpiExpansion(() => {
+    const { sectors, lines, products, schedules } = buildPizzaScenario();
+    // Dois pedidos da mesma pizza, mesmo dia → motor deve gerar UMA OP de pizza
+    // (já agrupa por design) E UMA OP de massa somada (graças à mesma planning key).
+    const planning = buildFactoryPlanningData("2026-03-19", {
+      stores: [baseStore],
+      storeOrders: [
+        {
+          id: "order-1",
+          code: "PD-0001",
+          storeId: "store-1",
+          orderedAt: "2026-03-17T09:00:00.000Z",
+          items: [{ id: "item-1", productId: "pizza", quantity: 8, unit: "Un" }],
+        },
+        {
+          id: "order-2",
+          code: "PD-0002",
+          storeId: "store-1",
+          orderedAt: "2026-03-17T10:00:00.000Z",
+          items: [{ id: "item-2", productId: "pizza", quantity: 4, unit: "Un" }],
+        },
+      ],
+      settings,
+      sectors,
+      lines,
+      products,
+      schedules,
+    });
+
+    const massaOps = planning.productionOrders.flatMap((op) =>
+      op.items.filter((item) => item.productId === "mpi-massa"),
+    );
+    assert.equal(massaOps.length, 1, "demanda de massa de 2 pedidos vira UMA OP");
+    // Pizza total: 12un × 0.25kg = 3kg. Massa = 0.4kg/kg × 3kg = 1.2kg.
+    assert.equal(massaOps[0]?.totalKg, 1.2);
+    assert.equal(massaOps[0]?.sourceItemsCount, 2, "duas fontes (uma por pedido) contam para o agrupamento");
+  });
+});
+
+test("buildFactoryPlanningData NÃO expande MPI quando flag desligada — comportamento legado preservado", () => {
+  // Sem withMpiExpansion: garantimos que o default (flag off) mantém o sistema atual.
+  delete process.env.EXPAND_MPI_INTO_OPS;
+  const { sectors, lines, products, schedules } = buildPizzaScenario();
+  const planning = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "pizza", quantity: 8, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products,
+    schedules,
+  });
+
+  const productIds = new Set(planning.productionOrders.flatMap((op) => op.items.map((item) => item.productId)));
+  assert.ok(productIds.has("pizza"), "pizza presente");
+  assert.equal(productIds.has("mpi-massa"), false, "massa NÃO deve aparecer com flag desligada (comportamento atual)");
+});

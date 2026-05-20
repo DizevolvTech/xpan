@@ -66,24 +66,27 @@
 ---
 
 ### AJ-0008 — MPI / Ingrediente misturado deve gerar OP separada
-**Investigado em:** 2026-05-19 (Giuseppe) — **decisão de produto pendente**
-**Origem:** Call 2026-05-13 (Bloco 4) · **Status:** Investigado / A-decidir · **Categoria:** Bug/Regra
+**Investigado em:** 2026-05-19 (Giuseppe) · **Auditado E2E em:** 2026-05-20 (Giuseppe) · **Implementado atrás de flag em:** 2026-05-20 (branch `feat/mpi-expansion-spike`, 3 commits)
+**Origem:** Call 2026-05-13 (Bloco 4) · **Status:** Implementado / atrás de feature flag `EXPAND_MPI_INTO_OPS` · **Categoria:** Bug/Regra
 
-> **Achado:** `engine.ts` → `buildProductionOrdersFromPlannedItems` (`src/lib/factory-planning/engine.ts:611`) gera OP **apenas** dos produtos finais pedidos pela loja, agrupados por planning key. **Não há nenhuma referência a `recipe`, `canBeIngredient`, `isMpiIngredient` ou `misturado` em todo o `engine.ts`.** Conclusão: o motor **nunca** gera OP separada para ingrediente `misturado`/MPI — a sub-receita só é expandida adiante na folha de produção / pré-pesagem (`printing-documents.ts`), não vira OP.
+> **Resolução (2026-05-20):** ADR aprovado em [[decisoes/ADR_expansao_mpi_em_op]]; expansão automática de produto-MPI em OP separada implementada em `src/lib/factory-planning/recipe-expansion.ts` e plugada em `engine.ts:buildFactoryPlanningData` atrás da flag `EXPAND_MPI_INTO_OPS` (default off). Cobertura: 5 testes unitários da função pura + 3 testes de integração no motor (cenário canônico "pedido de pizza gera OP da massa" + agrupamento de demanda de 2 pedidos + legacy preservado com flag off). Ativação em produção depende de Daniel validar em ambiente dev.
 >
-> Não é um bug pontual: é uma **lacuna estrutural** (explosão de receita / grafo de dependência de produção). O Aditivo do Adriano já apontava "manter o modelo MPI-como-produto + legenda" — a legenda foi feita em [[#AJ-0020 — Legenda/tooltip diferenciando "ingrediente" e "produto MPI"|AJ-0020]].
+> Caminho B (ingrediente `type='misturado'`) **continua sem virar OP** — fica como composição interna na folha de pré-pesagem. Decisão documentada no ADR.
 >
-> **Recomendação:** tratar como feature de fase 2, decidir junto de [[#AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche|AJ-0009]] e [[#AJ-0021 — Armazenamento / produção sob estoque (shelf life)|AJ-0021]]. Levar a Daniel + Adriano: (a) manter modelo atual (MPI só vira OP se for pedido) — só legenda, **ou** (b) implementar geração automática de OP para sub-receita (estrutural, alto impacto no motor e nos 110 testes).
-**Área:** [[Engine — Visão Geral]] · [[Catálogo de Tabelas#ingredients]] · `src/lib/factory-planning/engine.ts`
+> **Auditoria E2E completa** disponível na conversa Claude do dia 2026-05-20 — confirmou que: zero edge functions / triggers / functions SQL envolvidos; toda a derivação de OP é runtime em TS; nenhuma migração de schema foi necessária. O número "110 testes" do achado original era estimativa — auditoria identificou 14 testes no engine (114 no projeto), risco de regressão muito menor.
+
+> **Achado original (2026-05-19):** `engine.ts` → `buildProductionOrdersFromPlannedItems` (`src/lib/factory-planning/engine.ts:611`) gera OP **apenas** dos produtos finais pedidos pela loja, agrupados por planning key. **Não há nenhuma referência a `recipe`, `canBeIngredient`, `isMpiIngredient` ou `misturado` em todo o `engine.ts`.** Conclusão: o motor **nunca** gera OP separada para ingrediente `misturado`/MPI — a sub-receita só é expandida adiante na folha de produção / pré-pesagem (`printing-documents.ts`), não vira OP.
+**Área:** `src/lib/factory-planning/engine.ts` · `src/lib/factory-planning/recipe-expansion.ts` (novo) · [[decisoes/ADR_expansao_mpi_em_op]] · [[Catálogo de Tabelas#ingredients]]
 
 **O quê:** Quando uma receita consome um ingrediente do tipo `misturado` (com sub-receita), o sistema **deveria gerar OP separada** para esse ingrediente. Daniel cadastrou e não viu.
 
-**Investigação necessária:**
-- [ ] O motor enxerga `ingredient_type='misturado'` e `is_mpi_ingredient`?
-- [ ] Ou só `products.can_be_ingredient` é considerado?
-- [ ] Diferença entre `ingredients` (com `type='misturado'`) e `products` com `is_mpi_ingredient=true` — qual o caminho correto?
+**Decisões fechadas no ADR (2026-05-20):**
+- ✅ Caminho canônico: produto-MPI (`is_mpi_ingredient=true` + `can_be_ingredient=true`).
+- ✅ Lead time da MPI: 0 dias (mesmo dia do produto-pai) — refinamento na onda 2.
+- ✅ Agrupamento: uma OP de MPI por planning key, somando demanda de todos os produtos-pai.
+- ✅ Liberação: pedido pai libera implicitamente OPs derivadas (sem novo endpoint).
 
-**Aditivo (Adriano):** manter o modelo atual de "MPI como produto" (`is_mpi_ingredient`), mas adicionar **legenda/tooltip** para reduzir confusão entre "ingrediente" e "produto MPI".
+**Aditivo (Adriano):** manter o modelo atual de "MPI como produto" (`is_mpi_ingredient`), com legenda/tooltip já entregue em [[#AJ-0020 — Legenda/tooltip diferenciando "ingrediente" e "produto MPI"|AJ-0020]].
 
 ---
 
@@ -343,9 +346,9 @@ Sem mudança de regra de negócio. `tsc --noEmit` limpo, `eslint` 0 erros (segue
 | AJ-0013 | KPI + painel de OPs agendadas para próximos dias | `src/app/gestor-fabrica/ordens-producao/page.tsx` |
 | AJ-0012 | Diff por produto na auditoria (compara revisões, sem product_changelog) | `src/app/gestor-fabrica/sublinhas-producao/page.tsx` |
 | AJ-0002 | `KPICard` com `href` + 5 cards do dashboard navegáveis + `?status` em 3 telas | `src/components/shared/kpi-card.tsx` · `gestor-fabrica/page.tsx` · `pedidos` · `ordens-producao` · `entregas` |
-| AJ-0008 | **Investigado** — motor não gera sub-OP por design; decisão de produto pendente | (sem código — ver bloco AJ-0008) |
+| AJ-0008 | **Implementado atrás de flag** — `EXPAND_MPI_INTO_OPS` off por padrão; ativar após validação de Daniel em dev | `src/lib/factory-planning/recipe-expansion.ts`, `engine.ts`, `engine.test.ts`, [[decisoes/ADR_expansao_mpi_em_op]] (branch `feat/mpi-expansion-spike`) |
 
-> **Decisões pendentes p/ levar ao cliente:** (1) AJ-0008 — manter modelo MPI-como-produto (só legenda) vs implementar OP automática de sub-receita (estrutural). (2) AJ-0007 — quando adicionar o `UNIQUE` no banco (amarrado ao AJ-0009/Onda 4). Onda 2 não fez `next build` aqui (validação por `tsc`/`eslint`/testes); `useSearchParams` segue padrão já commitado no repo.
+> **Decisões pendentes p/ levar ao cliente:** ~~(1) AJ-0008 — manter modelo MPI-como-produto (só legenda) vs implementar OP automática de sub-receita (estrutural).~~ **Resolvido 2026-05-20**: ADR aprovado, expansão atrás de flag entregue na branch `feat/mpi-expansion-spike`, ativação em produção condicionada à validação de Daniel em dev. (2) AJ-0007 — quando adicionar o `UNIQUE` no banco (amarrado ao AJ-0009/Onda 4). Onda 2 não fez `next build` aqui (validação por `tsc`/`eslint`/testes); `useSearchParams` segue padrão já commitado no repo.
 
 ### 2026-05-19 — Onda 1 (quick wins UX) — fechada (7 AJs)
 

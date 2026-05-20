@@ -4,6 +4,7 @@ import {
   getEnabledOrderingDays,
   getEnabledReceivingDays,
   type OperationalSettings,
+  type ProductionIngredient,
   type ProductionLine,
   type ProductionProduct,
   type ProductionSector,
@@ -29,6 +30,7 @@ import type {
 import { getScheduleItemDayPriority } from "@/lib/production-data-utils";
 import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { getProductionStatusProgress, normalizeProductPreparationStages } from "@/lib/production-workflow";
+import { expandRecipeIntoItems } from "@/lib/factory-planning/recipe-expansion";
 
 export interface FactoryPlanningInput {
   stores: StoreProfile[];
@@ -38,6 +40,13 @@ export interface FactoryPlanningInput {
   lines: ProductionLine[];
   products: ProductionProduct[];
   schedules: WeeklyProductionSchedule[];
+  /**
+   * Opcional. Consumido apenas pela expansão MPI (atrás da flag
+   * EXPAND_MPI_INTO_OPS) para escalar receitas com ingredientes em
+   * unidades não-Kg. Pode ficar undefined em call sites legados sem
+   * regressão — `getRecipeReferenceWeightKgFromData` faz fallback.
+   */
+  ingredients?: ProductionIngredient[];
 }
 
 interface ResolvedPlanningSource {
@@ -45,6 +54,8 @@ interface ResolvedPlanningSource {
   sectorsById: Map<string, ProductionSector>;
   linesById: Map<string, ProductionLine>;
   productsById: Map<string, ProductionProduct>;
+  products: ProductionProduct[];
+  ingredients: ProductionIngredient[];
   schedules: WeeklyProductionSchedule[];
 }
 
@@ -383,12 +394,23 @@ function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<s
   return map;
 }
 
+/**
+ * Feature flag para expansão automática de MPI em OPs separadas (AJ-0008).
+ * Lida em runtime para permitir override em testes via `process.env`.
+ * Default off em produção até validação do cliente em ambiente dev.
+ */
+function isMpiExpansionEnabled() {
+  return process.env.EXPAND_MPI_INTO_OPS === "true";
+}
+
 function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
   return {
     settings: input.settings,
     sectorsById: new Map(input.sectors.map((sector) => [sector.id, sector])),
     linesById: new Map(input.lines.map((line) => [line.id, line])),
     productsById: new Map(input.products.map((product) => [product.id, product])),
+    products: input.products,
+    ingredients: input.ingredients ?? [],
     schedules: input.schedules,
   };
 }
@@ -958,7 +980,14 @@ export function buildFactoryPlanningData(
     referenceDate,
   );
 
-  const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(orderItems, referenceDate);
+  // Expansão de sub-receita produto-MPI em itens planejados (AJ-0008).
+  // Ver Docs/decisoes/ADR_expansao_mpi_em_op.md. Default off: comportamento
+  // legado preservado até validação do cliente em dev.
+  const expandedItems = isMpiExpansionEnabled()
+    ? expandRecipeIntoItems(orderItems, source.productsById, source.ingredients, source.products)
+    : orderItems;
+
+  const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(expandedItems, referenceDate);
   const orderItemsWithOpCodes = orderItems.map((item) => {
     const planningKey = getPlanningKey(item);
     return {

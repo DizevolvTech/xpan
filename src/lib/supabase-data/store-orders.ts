@@ -337,6 +337,7 @@ export async function buildFactoryInputFromDb(
     sectors: snapshot.sectors,
     lines: snapshot.lines,
     products: snapshot.products,
+    ingredients: snapshot.ingredients,
     schedules: snapshot.schedules,
   };
 }
