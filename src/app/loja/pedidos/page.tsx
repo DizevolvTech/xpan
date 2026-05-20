@@ -6,12 +6,12 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertCircle,
+  AlertTriangle,
   CalendarRange,
   ChevronRight,
   Clock3,
   Package,
   Plus,
-  ShoppingCart,
   Truck,
   type LucideIcon,
 } from "lucide-react";
@@ -405,8 +405,8 @@ export default function PedidosLojaPage() {
   );
 
   const orderKpis = useMemo(
+    // Auditoria visível: "Total" removido por ser redundante com a tabela logo abaixo.
     () => ({
-      total: scopedStoreOrderSummaries.length,
       agendado: scopedStoreOrderSummaries.filter((item) => item.status === "agendado").length,
       emProducao: scopedStoreOrderSummaries.filter((item) => item.status === "em_producao").length,
       entregas: scopedStoreOrderSummaries.filter((item) =>
@@ -787,10 +787,9 @@ export default function PedidosLojaPage() {
               Novo Pedido
             </Button>
           </DialogTrigger>
-          <DialogContent size="full">
+          <DialogContent size="3xl">
             <DialogHeader>
-              <DialogTitle>{editingOrderId ? "Editar Pedido" : "Pedido Diário"}</DialogTitle>
-              <DialogDescription>Faça seu pedido de produtos</DialogDescription>
+              <DialogTitle>{editingOrderId ? "Editar Pedido" : "Novo Pedido"}</DialogTitle>
             </DialogHeader>
 
             {isEditOrderLoading ? (
@@ -800,7 +799,7 @@ export default function PedidosLojaPage() {
               </div>
             ) : (
             <>
-            <div className="space-y-6 py-2">
+            <div className="space-y-4 py-2">
               {availableStores.length === 0 ? (
                 <div className="rounded-lg border border-danger/35 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
                   Nenhuma loja ativa está vinculada ao seu perfil. Revise os vínculos de loja antes de criar pedidos.
@@ -808,7 +807,7 @@ export default function PedidosLojaPage() {
               ) : null}
 
               {duplicateActiveOrder ? (
-                <div className="flex flex-col gap-3 rounded-lg border border-warning/45 bg-warning/15 px-4 py-3 text-sm text-warning-foreground sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-3 rounded-lg border border-danger/45 bg-danger/15 px-4 py-3 text-sm text-danger-foreground sm:flex-row sm:items-center sm:justify-between">
                   <p>
                     Já existe um pedido ativo (
                     <strong className="font-semibold">{duplicateActiveOrder.code}</strong>) para{" "}
@@ -827,113 +826,148 @@ export default function PedidosLojaPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-lg border border-border/80 bg-panel p-4">
-                <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-                  <div className="grid gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <Label className="text-xs text-muted-foreground">Loja</Label>
-                      <InfoHint
-                        size="xs"
-                        content={
-                          <div className="space-y-2 text-xs text-muted-foreground">
-                            <p>
-                              Dias de pedido: <strong className="text-foreground">{orderingDaysLabel}</strong>. Domingo permitido:{" "}
-                              <strong className="text-foreground">
-                                {selectedStore ? (getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não") : "-"}
-                              </strong>.
-                            </p>
-                            <p>
-                              Dias de recebimento: <strong className="text-foreground">{receivingDaysLabel}</strong>. Recebe domingo:{" "}
-                              <strong className="text-foreground">
-                                {selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "-"}
-                              </strong>.
-                            </p>
-                          </div>
-                        }
-                      />
+              {/* Header de 1 linha (auditoria visível, P5): substitui o painel
+                  de 7 inputs disabled + OperationalSequenceCard. Loja editável,
+                  datas como texto, regra/cronograma atrás de "Como funciona". */}
+              <div className="rounded-lg bg-panel/55 px-3.5 py-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+                    <div className="flex min-w-[220px] items-center gap-2">
+                      <Label className="text-xs font-medium text-muted-foreground">Pedido para</Label>
+                      {shouldUseSearchableStoreSelect ? (
+                        <SearchableSelect
+                          value={selectedStore?.id ?? ""}
+                          onValueChange={setSelectedStoreId}
+                          options={storeOptions}
+                          placeholder="Selecione uma loja"
+                          searchPlaceholder="Buscar loja..."
+                          emptyMessage="Nenhuma loja encontrada."
+                          title="Selecionar loja"
+                          description="A loja define a janela operacional e as regras de entrega."
+                          disabled={availableStores.length === 0}
+                          className="h-9 min-w-[200px] bg-background/80"
+                        />
+                      ) : (
+                        <Select
+                          value={selectedStore?.id ?? ""}
+                          onValueChange={setSelectedStoreId}
+                          disabled={availableStores.length === 0}
+                        >
+                          <SelectTrigger className="h-9 min-w-[200px] bg-background/80">
+                            <SelectValue placeholder="Selecione uma loja" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableStores.map((store) => (
+                              <SelectItem key={store.id} value={store.id}>
+                                {store.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
-                    {shouldUseSearchableStoreSelect ? (
-                      <SearchableSelect
-                        value={selectedStore?.id ?? ""}
-                        onValueChange={setSelectedStoreId}
-                        options={storeOptions}
-                        placeholder="Selecione uma loja"
-                        searchPlaceholder="Buscar loja..."
-                        emptyMessage="Nenhuma loja encontrada."
-                        title="Selecionar loja"
-                        description="A loja define a janela operacional e as regras de entrega."
-                        disabled={availableStores.length === 0}
-                      />
-                    ) : (
-                      <Select
-                        value={selectedStore?.id ?? ""}
-                        onValueChange={setSelectedStoreId}
-                        disabled={availableStores.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione uma loja" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableStores.map((store) => (
-                            <SelectItem key={store.id} value={store.id}>
-                              {store.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
+
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+                      <span className="text-muted-foreground/80">·</span>
+                      <span className="text-foreground">
+                        entrega{" "}
+                        <strong className="font-semibold tabular-nums">{deliveryDateLabel}</strong>{" "}
+                        <span className="text-muted-foreground">(D+{snapshot.operationalSettings.expeditionLeadDays})</span>
+                      </span>
+                      <span className="text-muted-foreground/80">·</span>
+                      <span className="text-success-foreground">
+                        venda{" "}
+                        <strong className="font-semibold tabular-nums">{saleDateLabel}</strong>
+                      </span>
+                      <span className="text-muted-foreground/80">·</span>
+                      <span className="text-foreground">
+                        prazo{" "}
+                        <strong className="font-semibold tabular-nums">
+                          {snapshot.operationalSettings.orderCutoffTime}
+                        </strong>
+                      </span>
+
+                      {/* Chips de ajuste (cutoff / janela) — só quando aplicáveis */}
+                      {cutoffAppliedMessage ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 text-[11px] font-medium text-warning">
+                          <AlertTriangle className="size-3" aria-hidden />
+                          cutoff aplicado
+                          <InfoHint
+                            size="xs"
+                            tone="warning"
+                            content={<p className="text-xs text-muted-foreground">{cutoffAppliedMessage}</p>}
+                          />
+                        </span>
+                      ) : null}
+                      {orderingWindowAdjustmentMessage ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-info/[var(--opacity-subtle)] px-2 py-0.5 text-[11px] font-medium text-info">
+                          janela ajustada
+                          <InfoHint
+                            size="xs"
+                            tone="info"
+                            content={<p className="text-xs text-muted-foreground">{orderingWindowAdjustmentMessage}</p>}
+                          />
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="grid gap-2">
-                    <Label className="text-xs text-muted-foreground">Pedido lançado em</Label>
-                    <Input value={orderDateLabel} disabled className="bg-muted" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-xs text-muted-foreground">Base operacional</Label>
-                    <Input value={baseOperationalDateLabel} disabled className="bg-muted" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-xs text-muted-foreground">Recebimento previsto da loja</Label>
-                    <Input
-                      value={`${deliveryDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays})`}
-                      disabled
-                      className="bg-muted"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-xs text-muted-foreground">Início das vendas</Label>
-                    <Input
-                      value={`${saleDateLabel} (D+${snapshot.operationalSettings.expeditionLeadDays + (snapshot.operationalSettings.saleLeadDays ?? 1)})`}
-                      disabled
-                      className="border-success/40 bg-success/20 font-semibold text-success-foreground"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-xs text-muted-foreground">Horário Limite Global</Label>
-                    <Input value={snapshot.operationalSettings.orderCutoffTime} disabled className="bg-muted" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label className="text-xs text-muted-foreground">Janela de Recebimento</Label>
-                    <Input value={selectedStore?.receiveWindow ?? "Nenhuma loja disponível"} disabled className="bg-muted" />
-                  </div>
+
+                  {/* "Como funciona" — abre OperationalSequenceCard + regras da
+                      loja em popover. Usuário novo abre; veterano não vê. */}
+                  <InfoHint
+                    size="sm"
+                    label="Como funciona o pedido"
+                    align="end"
+                    side="bottom"
+                    contentClassName="w-[420px] max-w-[calc(100vw-2rem)]"
+                    content={
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                            Janela operacional
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            Base operacional:{" "}
+                            <strong className="font-semibold">{baseOperationalDateLabel}</strong>
+                          </p>
+                          <p className="text-foreground">
+                            Janela de recebimento:{" "}
+                            <strong className="font-semibold">
+                              {selectedStore?.receiveWindow ?? "—"}
+                            </strong>
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                            Regras da loja
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            Dias de pedido:{" "}
+                            <strong className="font-semibold">{orderingDaysLabel}</strong> · Domingo:{" "}
+                            <strong className="font-semibold">
+                              {selectedStore ? (getStoreCanOrderSunday(selectedStore) ? "Sim" : "Não") : "—"}
+                            </strong>
+                          </p>
+                          <p className="text-foreground">
+                            Dias de recebimento:{" "}
+                            <strong className="font-semibold">{receivingDaysLabel}</strong> · Domingo:{" "}
+                            <strong className="font-semibold">
+                              {selectedStore ? (getStoreReceivesSunday(selectedStore) ? "Sim" : "Não") : "—"}
+                            </strong>
+                          </p>
+                        </div>
+                        <OperationalSequenceCard
+                          eyebrow="Sequência operacional"
+                          title="Pedido → entrega → venda"
+                          description="O sistema calcula automaticamente as datas conforme as regras da loja e o cronograma de produção."
+                          steps={orderSequenceSteps}
+                          footer="Se não houver produção na janela de entrega, o item fica bloqueado no catálogo."
+                          className="!mt-0"
+                        />
+                      </div>
+                    }
+                  />
                 </div>
-                {cutoffAppliedMessage ? (
-                  <div className="mt-3 rounded-lg border border-warning/40 bg-warning/15 px-3 py-2 text-sm text-warning-foreground">
-                    {cutoffAppliedMessage}
-                  </div>
-                ) : null}
-                {orderingWindowAdjustmentMessage ? (
-                  <div className="mt-3 rounded-lg border border-border/70 bg-background/70 px-3 py-2 text-sm text-muted-foreground">
-                    {orderingWindowAdjustmentMessage}
-                  </div>
-                ) : null}
-                <OperationalSequenceCard
-                  className="mt-4"
-                  eyebrow="Leitura simples do cronograma"
-                  title="O sistema liga pedido, entrega e previsão de venda"
-                  description="Acompanhe a sequência abaixo para saber quando os produtos chegarão na loja e quando poderão ser vendidos."
-                  steps={orderSequenceSteps}
-                  footer="Se não existir disponibilidade na janela de entrega, o item fica bloqueado no catálogo."
-                />
               </div>
 
               <div className="rounded-lg border border-border/80 bg-panel/55 p-3">
@@ -1008,13 +1042,13 @@ export default function PedidosLojaPage() {
 
               <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
                 {(paginatedProducts) => (
+                  // Tabela enxuta (auditoria visível): 13 col → 10 col.
+                  // Código vira linha sub do Produto; Categoria já é filtro.
                   <div className="max-h-[640px] overflow-auto rounded-lg border border-border/80">
-                    <table className="w-full min-w-[1120px] border-collapse border-spacing-0">
+                    <table className="w-full min-w-[840px] border-collapse border-spacing-0">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-secondary/85">
-                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Código</th>
-                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
-                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Categoria</th>
+                          <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
                           <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Un.</th>
                           {dayColumns.map((dayField, index) => (
                             <th
@@ -1033,7 +1067,7 @@ export default function PedidosLojaPage() {
                       <tbody>
                         {filteredOrderProducts.length === 0 ? (
                           <tr>
-                            <td colSpan={12} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                            <td colSpan={10} className="px-3 py-8 text-center text-sm text-muted-foreground">
                               Nenhum produto encontrado para os filtros selecionados.
                             </td>
                           </tr>
@@ -1046,44 +1080,51 @@ export default function PedidosLojaPage() {
                                 !product.available && "bg-muted/30 text-muted-foreground",
                               )}
                             >
-                              <td className="px-2 py-2 font-mono text-sm">{product.code}</td>
-                              <td className="px-2 py-2 text-sm">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-medium text-foreground">{product.name}</span>
-                                  <InfoHint
-                                    size="xs"
-                                    tone={!product.available ? "danger" : "muted"}
-                                    label="Cronograma e calendário do produto"
-                                    content={
-                                      <div className="space-y-2.5 text-xs">
-                                        <p className="text-muted-foreground">
-                                          {product.scheduleName}
-                                          {product.productionDays.length > 0
-                                            ? ` · Produz em ${formatOperationalDays(product.productionDays)}`
-                                            : ""}
-                                        </p>
-                                        <div className="flex flex-wrap gap-1.5 text-[11px]">
-                                          <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
-                                            Pedido: {orderDateLabel}
-                                          </span>
-                                          <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
-                                            Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
-                                          </span>
-                                          <span className="rounded-full border border-success/35 bg-success/10 px-2 py-1 text-success-foreground">
-                                            Vender: {formatDateKeyWithWeekday(product.saleDate)}
-                                          </span>
-                                        </div>
-                                        {!product.available && product.blockedReason ? (
-                                          <p className="font-medium text-danger-foreground">
-                                            Indisponível: {product.blockedReason}
-                                          </p>
-                                        ) : null}
-                                      </div>
-                                    }
-                                  />
+                              <td className="px-3 py-2 text-sm">
+                                <div className="flex items-start gap-1.5">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="truncate font-medium text-foreground">{product.name}</span>
+                                      <InfoHint
+                                        size="xs"
+                                        tone={!product.available ? "danger" : "muted"}
+                                        label="Cronograma e calendário do produto"
+                                        content={
+                                          <div className="space-y-2.5 text-xs">
+                                            <p className="text-muted-foreground">
+                                              {product.scheduleName}
+                                              {product.productionDays.length > 0
+                                                ? ` · Produz em ${formatOperationalDays(product.productionDays)}`
+                                                : ""}
+                                            </p>
+                                            <div className="flex flex-wrap gap-1.5 text-[11px]">
+                                              <span className="rounded-full border border-border/70 bg-panel/35 px-2 py-1 text-foreground">
+                                                Pedido: {orderDateLabel}
+                                              </span>
+                                              <span className="rounded-full border border-warning/35 bg-warning/10 px-2 py-1 text-warning-foreground">
+                                                Entregar: {formatDateKeyWithWeekday(product.deliveryDate)}
+                                              </span>
+                                              <span className="rounded-full border border-success/35 bg-success/10 px-2 py-1 text-success-foreground">
+                                                Vender: {formatDateKeyWithWeekday(product.saleDate)}
+                                              </span>
+                                            </div>
+                                            {!product.available && product.blockedReason ? (
+                                              <p className="font-medium text-danger-foreground">
+                                                Indisponível: {product.blockedReason}
+                                              </p>
+                                            ) : null}
+                                          </div>
+                                        }
+                                      />
+                                    </div>
+                                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                                      <span className="font-mono">{product.code}</span>
+                                      <span className="opacity-50">·</span>
+                                      <span className="truncate">{product.category}</span>
+                                    </div>
+                                  </div>
                                 </div>
                               </td>
-                              <td className="px-2 py-2 text-sm">{product.category}</td>
                               <td className="px-2 py-2 text-sm">
                                 <div>{product.unit}</div>
                               </td>
@@ -1280,10 +1321,9 @@ export default function PedidosLojaPage() {
           </div>
         </section>
 
-        {/* KPIs: fita de métricas flat — número protagonista, ícone discreto,
-            sem moldura concêntrica. */}
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
-          <FlatKpi title="Total de Pedidos" value={orderKpis.total} icon={ShoppingCart} tone="info" />
+        {/* KPIs: fita de métricas flat — número protagonista, ícone discreto.
+            "Total" removido (redundante com a tabela). 5 → 4. */}
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <FlatKpi title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
           <FlatKpi title="Em Produção" value={orderKpis.emProducao} icon={Package} tone="neutral" />
           <FlatKpi title="Entregas" value={orderKpis.entregas} icon={Truck} tone="success" />
