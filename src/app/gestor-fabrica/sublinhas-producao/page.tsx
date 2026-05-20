@@ -807,20 +807,23 @@ export default function SublinhasProducaoPage() {
 
   return (
     <PageLayout
-      title="Auditoria dos cronogramas de produção"
-      description="Acompanhe as revisões pendentes, consulte a versão principal de cada linha e valide a grade semanal usada pela fábrica."
+      title="Auditoria dos cronogramas"
+      description="Revisões pendentes, versão ativa por linha e validação da grade semanal."
       badge="Fábrica"
       breadcrumbs={[
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
         { label: "Auditoria dos cronogramas" },
       ]}
     >
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Total de linhas" value={String(kpis.total)} icon={Clock} tone="info" />
+      {/* P2 — 4 KPIs → 3 primários (Pendentes / Ativas / Inativas); Total vira linha-stats. */}
+      <div className="grid gap-3 md:grid-cols-3">
         <KPICard title="Revisões pendentes" value={String(kpis.pendentes)} icon={Clock} tone="warning" />
         <KPICard title="Linhas com versão ativa" value={String(kpis.ativas)} icon={PlayCircle} tone="success" />
         <KPICard title="Linhas sem versão ativa" value={String(kpis.inativas)} icon={PauseCircle} tone="neutral" />
       </div>
+      <p className="text-[11px] tabular-nums text-muted-foreground/80">
+        Total de linhas: {kpis.total}
+      </p>
 
       {pageNotice ? (
         <div
@@ -839,11 +842,19 @@ export default function SublinhasProducaoPage() {
       ) : null}
 
       {pendingAuditRows.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Revisões pendentes do cronograma</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 xl:grid-cols-2">
+        <section aria-labelledby="revisoes-pendentes-title" className="space-y-3">
+          <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/[var(--opacity-divider)] pb-3">
+            <h2
+              id="revisoes-pendentes-title"
+              className="font-heading text-base font-semibold tracking-[-0.005em] text-foreground"
+            >
+              Revisões pendentes
+            </h2>
+            <span className="text-[11px] tabular-nums text-muted-foreground/80">
+              {pendingAuditRows.length} pendente{pendingAuditRows.length === 1 ? "" : "s"}
+            </span>
+          </header>
+          <div className="grid gap-3 xl:grid-cols-2">
             {pendingAuditRows.map((schedule) => {
               const previousVersion = schedule.revisionOfId
                 ? scheduleRowById.get(schedule.revisionOfId) ?? null
@@ -941,57 +952,60 @@ export default function SublinhasProducaoPage() {
               </article>
               );
             })}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Linhas auditáveis do cronograma</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SearchFilter
-            searchPlaceholder="Buscar por linha, versão exibida ou categoria..."
-            onSearch={setSearchTerm}
-            searchValue={searchTerm}
-            filters={[
-              {
-                key: "status",
-                label: "Status",
-                value: statusFilter,
-                onChange: setStatusFilter,
-                options: [
-                  { value: "pendente", label: "Pendente" },
-                  { value: "ativo", label: "Ativa" },
-                  { value: "inativo", label: "Inativa" },
-                ],
-              },
-              {
-                key: "line",
-                label: "Linha de produção",
-                value: lineFilter,
-                onChange: setLineFilter,
-                options: snapshot.lines.map((line) => ({ value: line.id, label: line.name })),
-              },
-            ]}
-          />
-          {error || pageError ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-              {pageError ?? error}
-            </div>
-          ) : null}
-          <DataTable
-            data={filteredSublinhas}
-            columns={columns}
-            actions={actions}
-            keyField="lineId"
-            isRowExpanded={(item) => item.lineId === expandedLineId}
-            renderExpandedRow={renderExpandedWeeklyView}
-            emptyMessage={isLoading ? "Carregando linhas..." : "Nenhuma linha encontrada"}
-            stickyHeader
-          />
-        </CardContent>
-      </Card>
+      <section aria-labelledby="linhas-auditaveis-title" className="space-y-4">
+        <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/[var(--opacity-divider)] pb-3">
+          <h2
+            id="linhas-auditaveis-title"
+            className="font-heading text-base font-semibold tracking-[-0.005em] text-foreground"
+          >
+            Linhas auditáveis
+          </h2>
+        </header>
+        <SearchFilter
+          searchPlaceholder="Buscar por linha, versão exibida ou categoria..."
+          onSearch={setSearchTerm}
+          searchValue={searchTerm}
+          filters={[
+            {
+              key: "status",
+              label: "Status",
+              value: statusFilter,
+              onChange: setStatusFilter,
+              options: [
+                { value: "pendente", label: "Pendente" },
+                { value: "ativo", label: "Ativa" },
+                { value: "inativo", label: "Inativa" },
+              ],
+            },
+            {
+              key: "line",
+              label: "Linha de produção",
+              value: lineFilter,
+              onChange: setLineFilter,
+              options: snapshot.lines.map((line) => ({ value: line.id, label: line.name })),
+            },
+          ]}
+        />
+        {error || pageError ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {pageError ?? error}
+          </div>
+        ) : null}
+        <DataTable
+          data={filteredSublinhas}
+          columns={columns}
+          actions={actions}
+          keyField="lineId"
+          isRowExpanded={(item) => item.lineId === expandedLineId}
+          renderExpandedRow={renderExpandedWeeklyView}
+          emptyMessage={isLoading ? "Carregando linhas..." : "Nenhuma linha encontrada"}
+          stickyHeader
+        />
+      </section>
 
       <Dialog
         open={selectedLineIdForVersions !== null}

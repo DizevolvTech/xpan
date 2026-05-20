@@ -1,25 +1,30 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, MessageSquarePlus, SearchCheck, RotateCcw } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  MessageSquarePlus,
+  SearchCheck,
+  RotateCcw,
+  type LucideIcon,
+} from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
-import { KPICard } from "@/components/shared/kpi-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import {
   useStoreOccurrences,
@@ -53,6 +58,59 @@ function buildFactoryTransitionActions(status: StoreOccurrence["status"]) {
   return [];
 }
 
+// FlatKpi local — mesmo padrão visual de loja/pedidos (Onda 1).
+// Rail vertical + ícone em chip + número tabular-nums grande.
+type FlatKpiTone = "neutral" | "info" | "success" | "warning" | "danger";
+const flatKpiToneStyles: Record<FlatKpiTone, { rail: string; icon: string }> = {
+  neutral: { rail: "bg-border-strong", icon: "bg-secondary text-secondary-foreground" },
+  info: { rail: "bg-info", icon: "bg-info/[var(--opacity-subtle)] text-info" },
+  success: { rail: "bg-success", icon: "bg-success/[var(--opacity-subtle)] text-success" },
+  warning: { rail: "bg-warning", icon: "bg-warning/[var(--opacity-subtle)] text-warning" },
+  danger: { rail: "bg-danger", icon: "bg-danger/[var(--opacity-subtle)] text-danger" },
+};
+
+function FlatKpi({
+  title,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  title: string;
+  value: number;
+  icon: LucideIcon;
+  tone: FlatKpiTone;
+}) {
+  const styles = flatKpiToneStyles[tone];
+  return (
+    <article className="group relative flex items-center gap-3.5 overflow-hidden rounded-lg bg-card/60 px-4 py-3.5 transition-colors duration-200 hover:bg-card">
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-y-2.5 left-0 w-[3px] rounded-r-full opacity-70 transition-opacity duration-200 group-hover:opacity-100",
+          styles.rail,
+        )}
+        aria-hidden
+      />
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-[1.04]",
+          styles.icon,
+        )}
+        aria-hidden
+      >
+        <Icon className="size-[1.05rem]" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[10.5px] font-semibold uppercase tracking-[0.11em] text-muted-foreground">
+          {title}
+        </p>
+        <p className="mt-0.5 font-heading text-[1.45rem] font-bold leading-none tracking-[-0.022em] text-foreground tabular-nums">
+          {value}
+        </p>
+      </div>
+    </article>
+  );
+}
+
 export default function GestorFabricaOcorrenciasPage() {
   const { snapshot } = useMasterDataSnapshot();
   const {
@@ -77,6 +135,14 @@ export default function GestorFabricaOcorrenciasPage() {
     () => new Map(snapshot.stores.map((store) => [store.id, store.name])),
     [snapshot.stores],
   );
+
+  const statusCounts = useMemo(() => {
+    const counts = { aberta: 0, em_analise: 0, resolvida: 0, fechada: 0 };
+    for (const item of occurrences) {
+      counts[item.status] = (counts[item.status] ?? 0) + 1;
+    }
+    return counts;
+  }, [occurrences]);
 
   const filteredOccurrences = useMemo(
     () =>
@@ -104,19 +170,45 @@ export default function GestorFabricaOcorrenciasPage() {
   );
 
   const columns = [
-    { key: "code", header: "Código" },
+    {
+      key: "code",
+      header: "Código",
+      render: (item: StoreOccurrence) => (
+        <span className="font-mono text-[11px] text-muted-foreground/90">{item.code}</span>
+      ),
+    },
+    {
+      key: "problemType",
+      header: "Tipo",
+      render: (item: StoreOccurrence) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground">{item.problemType}</p>
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{item.productName}</p>
+        </div>
+      ),
+    },
     {
       key: "storeName",
       header: "Loja",
-      render: (item: StoreOccurrence) => storeNameById.get(item.storeId) ?? item.storeId,
+      render: (item: StoreOccurrence) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-foreground">
+            {storeNameById.get(item.storeId) ?? item.storeId}
+          </p>
+          <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground/80">
+            {item.orderCode}
+          </p>
+        </div>
+      ),
     },
-    { key: "orderCode", header: "Pedido" },
-    { key: "productName", header: "Produto" },
-    { key: "problemType", header: "Tipo" },
     {
       key: "updatedAt",
       header: "Última atualização",
-      render: (item: StoreOccurrence) => formatDateTimeBr(item.updatedAt),
+      render: (item: StoreOccurrence) => (
+        <span className="tabular-nums text-[12px] text-muted-foreground">
+          {formatDateTimeBr(item.updatedAt)}
+        </span>
+      ),
     },
     {
       key: "status",
@@ -192,69 +284,96 @@ export default function GestorFabricaOcorrenciasPage() {
   return (
     <PageLayout
       title="Ocorrências"
-      description="Central de triagem e resolução das ocorrências abertas pelas lojas."
+      description="Triagem das ocorrências abertas pelas lojas."
       badge="Gestor de Fábrica"
       breadcrumbs={[{ label: "Gestor de Fábrica", href: "/gestor-fabrica" }, { label: "Ocorrências" }]}
     >
-      <div className="grid gap-3 md:grid-cols-4">
-        <KPICard title="Abertas" value={occurrences.filter((item) => item.status === "aberta").length} icon={AlertCircle} tone="danger" />
-        <KPICard title="Em análise" value={occurrences.filter((item) => item.status === "em_analise").length} icon={SearchCheck} tone="warning" />
-        <KPICard title="Resolvidas" value={occurrences.filter((item) => item.status === "resolvida").length} icon={CheckCircle2} tone="success" />
-        <KPICard title="Fechadas" value={occurrences.filter((item) => item.status === "fechada").length} icon={RotateCcw} tone="neutral" />
+      {/* P2 — 3 KPIs primários (Abertas / Em análise / Resolvidas);
+          Fechada vira linha-stats menor abaixo. */}
+      <div className="grid gap-3 md:grid-cols-3">
+        <FlatKpi
+          title="Abertas"
+          value={statusCounts.aberta}
+          icon={AlertCircle}
+          tone="danger"
+        />
+        <FlatKpi
+          title="Em análise"
+          value={statusCounts.em_analise}
+          icon={SearchCheck}
+          tone="warning"
+        />
+        <FlatKpi
+          title="Resolvidas"
+          value={statusCounts.resolvida}
+          icon={CheckCircle2}
+          tone="success"
+        />
       </div>
+      <p className="text-[11px] tabular-nums text-muted-foreground/80">
+        Fechadas: {statusCounts.fechada} · Total no período: {occurrences.length}
+      </p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Fila de ocorrências</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
-              {error}
-            </div>
-          ) : null}
+      {/* P5 — wrapper Card removido; toolbar + tabela como primeira dobra. */}
+      <section aria-labelledby="fila-ocorrencias-title" className="space-y-4">
+        <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border/[var(--opacity-divider)] pb-3">
+          <h2
+            id="fila-ocorrencias-title"
+            className="font-heading text-base font-semibold tracking-[-0.005em] text-foreground"
+          >
+            Fila de ocorrências
+          </h2>
+          <span className="text-[11px] tabular-nums text-muted-foreground/80">
+            {filteredOccurrences.length} de {occurrences.length}
+          </span>
+        </header>
 
-          <SearchFilter
-            searchPlaceholder="Buscar por código, pedido ou produto..."
-            searchValue={searchTerm}
-            onSearch={setSearchTerm}
-            filters={[
-              {
-                key: "status",
-                label: "Status",
-                value: statusFilter,
-                onChange: setStatusFilter,
-                options: [
-                  { value: "all", label: "Todos" },
-                  { value: "aberta", label: "Aberta" },
-                  { value: "em_analise", label: "Em análise" },
-                  { value: "resolvida", label: "Resolvida" },
-                  { value: "fechada", label: "Fechada" },
-                ],
-              },
-              {
-                key: "store",
-                label: "Loja",
-                value: storeFilter,
-                onChange: setStoreFilter,
-                options: [{ value: "all", label: "Todas" }, ...storeOptions],
-              },
-            ]}
-          />
+        {error ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
+            {error}
+          </div>
+        ) : null}
 
-          <DataTable
-            data={filteredOccurrences}
-            columns={columns}
-            actions={actions}
-            keyField="id"
-            onRowClick={(item) => {
-              void openOccurrenceDetail(item.id);
-            }}
-            emptyMessage="Nenhuma ocorrência encontrada"
-            isLoading={isLoading}
-          />
-        </CardContent>
-      </Card>
+        <SearchFilter
+          searchPlaceholder="Buscar por código, pedido ou produto..."
+          searchValue={searchTerm}
+          onSearch={setSearchTerm}
+          filters={[
+            {
+              key: "status",
+              label: "Status",
+              value: statusFilter,
+              onChange: setStatusFilter,
+              options: [
+                { value: "all", label: "Todos" },
+                { value: "aberta", label: "Aberta" },
+                { value: "em_analise", label: "Em análise" },
+                { value: "resolvida", label: "Resolvida" },
+                { value: "fechada", label: "Fechada" },
+              ],
+            },
+            {
+              key: "store",
+              label: "Loja",
+              value: storeFilter,
+              onChange: setStoreFilter,
+              options: [{ value: "all", label: "Todas" }, ...storeOptions],
+            },
+          ]}
+        />
+
+        <DataTable
+          data={filteredOccurrences}
+          columns={columns}
+          actions={actions}
+          keyField="id"
+          onRowClick={(item) => {
+            void openOccurrenceDetail(item.id);
+          }}
+          emptyMessage="Nenhuma ocorrência encontrada"
+          isLoading={isLoading}
+        />
+      </section>
 
       <Dialog
         open={Boolean(selectedOccurrenceId)}
@@ -267,67 +386,82 @@ export default function GestorFabricaOcorrenciasPage() {
           }
         }}
       >
-        <DialogContent size="xl">
-          <DialogHeader>
-            <DialogTitle>{selectedOccurrence?.code ?? "Ocorrência"}</DialogTitle>
-            <DialogDescription>
-              Análise, comentários e resolução conduzidos pela fábrica.
-            </DialogDescription>
+        {/* xl (max-w-3xl) → 2xl (max-w-4xl): timeline + comentário precisam de respiro. */}
+        <DialogContent size="2xl">
+          <DialogHeader className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <DialogTitle className="font-mono text-base">
+                {selectedOccurrence?.code ?? "Ocorrência"}
+              </DialogTitle>
+              {selectedOccurrence ? <StatusBadge status={selectedOccurrence.status} /> : null}
+            </div>
+            {selectedOccurrence ? (
+              <p className="text-[11px] tabular-nums text-muted-foreground/80">
+                Aberta em {formatDateTimeBr(selectedOccurrence.createdAt)} · atualizada em{" "}
+                {formatDateTimeBr(selectedOccurrence.updatedAt)}
+              </p>
+            ) : null}
           </DialogHeader>
 
           {isDetailLoading ? (
             <div className="py-8 text-sm text-muted-foreground">Carregando ocorrência...</div>
           ) : selectedOccurrence ? (
             <div className="grid gap-4 py-2">
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-lg border border-border/80 bg-panel/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Loja</p>
-                  <p className="mt-1 text-sm font-medium text-foreground">
-                    {storeNameById.get(selectedOccurrence.storeId) ?? selectedOccurrence.storeId}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border/80 bg-panel/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Pedido</p>
-                  <p className="mt-1 text-sm font-medium text-foreground">{selectedOccurrence.orderCode}</p>
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-lg border border-border/80 bg-card p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Produto afetado</p>
-                  <p className="mt-1 text-sm font-medium text-foreground">{selectedOccurrence.productName}</p>
-                </div>
-                <div className="rounded-lg border border-border/80 bg-card p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Quantidade afetada</p>
-                  <p className="mt-1 text-sm font-medium text-foreground">
-                    {selectedOccurrence.quantityType === "percentual"
-                      ? `${selectedOccurrence.quantity}%`
-                      : `${selectedOccurrence.quantity} ${selectedOccurrence.quantityUnit}`}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                <div className="rounded-lg border border-border/80 bg-card p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Tipo do problema</p>
-                  <p className="mt-1 text-sm font-medium text-foreground">{selectedOccurrence.problemType}</p>
-                </div>
-                <div className="rounded-lg border border-border/80 bg-card p-3">
-                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Status</p>
-                  <div className="mt-1">
-                    <StatusBadge status={selectedOccurrence.status} />
+              {/* P4 — 6 mini-cards aninhados → 1 painel denso de 3 colunas + descrição. */}
+              <div className="rounded-lg border border-border/[var(--opacity-divider)] bg-panel/40 p-4">
+                <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Loja
+                    </dt>
+                    <dd className="mt-0.5 truncate text-sm text-foreground">
+                      {storeNameById.get(selectedOccurrence.storeId) ?? selectedOccurrence.storeId}
+                    </dd>
                   </div>
+                  <div className="min-w-0">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Pedido
+                    </dt>
+                    <dd className="mt-0.5 truncate font-mono text-sm text-foreground">
+                      {selectedOccurrence.orderCode}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Tipo do problema
+                    </dt>
+                    <dd className="mt-0.5 truncate text-sm font-semibold text-foreground">
+                      {selectedOccurrence.problemType}
+                    </dd>
+                  </div>
+                  <div className="min-w-0 sm:col-span-2">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Produto afetado
+                    </dt>
+                    <dd className="mt-0.5 truncate text-sm text-foreground">
+                      {selectedOccurrence.productName}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Quantidade afetada
+                    </dt>
+                    <dd className="mt-0.5 truncate text-sm font-semibold tabular-nums text-foreground">
+                      {selectedOccurrence.quantityType === "percentual"
+                        ? `${selectedOccurrence.quantity}%`
+                        : `${selectedOccurrence.quantity} ${selectedOccurrence.quantityUnit}`}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="mt-4 border-t border-border/[var(--opacity-divider)] pt-3">
+                  <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Descrição
+                  </p>
+                  <p className="mt-1.5 whitespace-pre-wrap text-sm text-foreground">
+                    {selectedOccurrence.description}
+                  </p>
                 </div>
-              </div>
-
-              <div className="rounded-lg border border-border/80 bg-card p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Descrição</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{selectedOccurrence.description}</p>
-              </div>
-
-              <div className="grid gap-3 text-xs text-muted-foreground md:grid-cols-2">
-                <p>Abertura: {formatDateTimeBr(selectedOccurrence.createdAt)}</p>
-                <p>Última atualização: {formatDateTimeBr(selectedOccurrence.updatedAt)}</p>
               </div>
 
               {detailActions.length > 0 ? (
@@ -350,40 +484,69 @@ export default function GestorFabricaOcorrenciasPage() {
                 </div>
               ) : null}
 
-              <div className="rounded-lg border border-border/80 bg-panel/25 p-4">
-                <div className="flex items-center gap-2">
-                  <MessageSquarePlus className="size-4 text-muted-foreground" />
-                  <p className="text-sm font-semibold text-foreground">Timeline da ocorrência</p>
-                </div>
-                <div className="mt-3 grid gap-3">
-                  {selectedOccurrence.events.map((event) => (
-                    <article key={event.id} className="rounded-lg border border-border/70 bg-card p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-foreground">{event.content}</p>
-                        <span className="text-xs text-muted-foreground">{formatDateTimeBr(event.createdAt)}</span>
-                      </div>
-                      {event.actorName ? (
-                        <p className="mt-1 text-xs text-muted-foreground">Responsável: {event.actorName}</p>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
+              {/* Timeline — sem mini-card por evento; rail vertical à esquerda + tipografia em hierarquia. */}
+              <section aria-labelledby="timeline-title" className="space-y-3">
+                <header className="flex items-center gap-2 border-b border-border/[var(--opacity-divider)] pb-2">
+                  <MessageSquarePlus className="size-4 text-muted-foreground" aria-hidden />
+                  <h3
+                    id="timeline-title"
+                    className="font-heading text-sm font-semibold text-foreground"
+                  >
+                    Timeline
+                  </h3>
+                  <span className="text-[11px] tabular-nums text-muted-foreground/80">
+                    {selectedOccurrence.events.length} evento
+                    {selectedOccurrence.events.length === 1 ? "" : "s"}
+                  </span>
+                </header>
 
-                <div className="mt-4 grid gap-2">
-                  <Label htmlFor="factory-occurrence-comment">Novo comentário</Label>
+                {selectedOccurrence.events.length === 0 ? (
+                  <p className="py-2 text-sm text-muted-foreground">Nenhum evento registrado ainda.</p>
+                ) : (
+                  <ol className="relative space-y-3 border-l border-border/[var(--opacity-divider)] pl-4">
+                    {selectedOccurrence.events.map((event) => (
+                      <li key={event.id} className="relative">
+                        <span
+                          className="absolute -left-[calc(1rem+3px)] top-1.5 size-1.5 rounded-full bg-border-strong"
+                          aria-hidden
+                        />
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <p className="text-sm text-foreground">{event.content}</p>
+                          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/80">
+                            {formatDateTimeBr(event.createdAt)}
+                          </span>
+                        </div>
+                        {event.actorName ? (
+                          <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+                            por {event.actorName}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+
+                <div className="grid gap-2 pt-1">
+                  <Label htmlFor="factory-occurrence-comment" className="text-xs">
+                    Novo comentário
+                  </Label>
                   <Textarea
                     id="factory-occurrence-comment"
                     value={detailComment}
                     onChange={(event) => setDetailComment(event.target.value)}
                     placeholder="Registre a análise, causa, ação corretiva ou alinhamento com a loja."
-                    className="min-h-[100px]"
+                    className="min-h-[96px]"
                     disabled={!selectedOccurrence.canComment || isDetailSubmitting}
                   />
                   <div className="flex justify-end">
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={!selectedOccurrence.canComment || detailComment.trim().length === 0 || isDetailSubmitting}
+                      disabled={
+                        !selectedOccurrence.canComment ||
+                        detailComment.trim().length === 0 ||
+                        isDetailSubmitting
+                      }
                       onClick={() => void handleAddComment()}
                     >
                       <MessageSquarePlus className="size-4" />
@@ -391,7 +554,7 @@ export default function GestorFabricaOcorrenciasPage() {
                     </Button>
                   </div>
                 </div>
-              </div>
+              </section>
 
               {detailError ? (
                 <div className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
