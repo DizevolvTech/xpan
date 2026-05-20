@@ -237,7 +237,8 @@ export default function PedidosLojaPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [orderNote, setOrderNote] = useState("");
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
-  const [hideUnavailable, setHideUnavailable] = useState(false);
+  // Indisponíveis ocultos por padrão; usuário pode desmarcar para ver tudo.
+  const [hideUnavailable, setHideUnavailable] = useState(true);
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
