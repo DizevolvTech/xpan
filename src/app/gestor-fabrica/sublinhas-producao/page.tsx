@@ -279,6 +279,110 @@ function reorderProductsWithinDay(
   });
 }
 
+// AJ-0013: drag-drop entre dias diferentes na grade Kanban da auditoria.
+// Remove o produto do dia origem e insere no dia destino — no índice do target
+// quando informado, ou no fim caso contrário. Recalcula `plannedKg` apenas dos
+// dias afetados (origem e destino) usando a mesma regra de
+// `buildScheduleSnapshotProducts`/`buildScheduleDaySummariesFromSnapshotProducts`
+// (soma de `minimumProduction` dos produtos do dia, com 2 casas decimais).
+function moveProductBetweenDays(
+  dayBoards: ScheduleDayBoard[],
+  fromDayKey: ProductionProduct["productionDays"][number],
+  toDayKey: ProductionProduct["productionDays"][number],
+  draggedProductId: string,
+  targetProductId?: string,
+): ScheduleDayBoard[] {
+  if (fromDayKey === toDayKey) {
+    return reorderProductsWithinDay(dayBoards, fromDayKey, draggedProductId, targetProductId);
+  }
+
+  const fromDay = dayBoards.find((day) => day.key === fromDayKey);
+  const draggedProduct = fromDay?.products.find((product) => product.snapshotId === draggedProductId);
+
+  if (!draggedProduct) {
+    return dayBoards;
+  }
+
+  const sumPlannedKg = (products: AuditableScheduleProduct[]) =>
+    Number(products.reduce((total, product) => total + product.minimumProduction, 0).toFixed(2));
+
+  return dayBoards.map((day) => {
+    if (day.key === fromDayKey) {
+      const nextProducts = day.products.filter((product) => product.snapshotId !== draggedProductId);
+      return { ...day, products: nextProducts, plannedKg: sumPlannedKg(nextProducts) };
+    }
+
+    if (day.key === toDayKey) {
+      const nextProducts = [...day.products];
+      const targetIndex = targetProductId
+        ? nextProducts.findIndex((product) => product.snapshotId === targetProductId)
+        : -1;
+
+      if (targetIndex < 0) {
+        nextProducts.push(draggedProduct);
+      } else {
+        nextProducts.splice(targetIndex, 0, draggedProduct);
+      }
+
+      return { ...day, products: nextProducts, plannedKg: sumPlannedKg(nextProducts) };
+    }
+
+    return day;
+  });
+}
+
+// AJ-0013: diff visível das mudanças em edição (draft) comparado ao snapshot
+// persistido. Reusa o tipo `ScheduleProductChange` do diff entre versões.
+// A "fonte da verdade" dos dias atuais do produto vem da estrutura `dayBoards`
+// (cada produto aparece nos dias em que está posicionado), evitando a
+// necessidade de recomputar `productionDays` em cada item.
+function getProductDaysFromBoards(
+  dayBoards: ScheduleDayBoard[],
+  snapshotId: string,
+): ProductionProduct["productionDays"] {
+  return dayBoards
+    .filter((day) => day.products.some((product) => product.snapshotId === snapshotId))
+    .map((day) => day.key);
+}
+
+function buildDraftDayDiff(
+  persistedBoards: ScheduleDayBoard[],
+  draftBoards: ScheduleDayBoard[],
+): ScheduleProductChange[] {
+  const seen = new Map<string, AuditableScheduleProduct>();
+  draftBoards.forEach((day) => {
+    day.products.forEach((product) => {
+      if (!seen.has(product.snapshotId)) {
+        seen.set(product.snapshotId, product);
+      }
+    });
+  });
+
+  const changes: ScheduleProductChange[] = [];
+  seen.forEach((product, snapshotId) => {
+    const prevDays = getProductDaysFromBoards(persistedBoards, snapshotId);
+    const currDays = getProductDaysFromBoards(draftBoards, snapshotId);
+
+    if (describeProductionDays(prevDays) !== describeProductionDays(currDays)) {
+      changes.push({
+        productId: product.productId,
+        code: product.code,
+        name: product.name,
+        kind: "alterado",
+        fields: [
+          {
+            label: "Dias de produção",
+            from: describeProductionDays(prevDays),
+            to: describeProductionDays(currDays),
+          },
+        ],
+      });
+    }
+  });
+
+  return changes;
+}
+
 export default function SublinhasProducaoPage() {
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
   const [searchTerm, setSearchTerm] = useState("");
@@ -423,6 +527,16 @@ export default function SublinhasProducaoPage() {
   );
   const hasPriorityChanges =
     Boolean(canEditDailyPriority) && draftDayBoardSignature !== persistedDayBoardSignature;
+  // AJ-0013: diff "produto X mudou de dia" entre o snapshot persistido e o
+  // rascunho em edição. Só renderiza quando há mudanças reais de dia (a
+  // reordenação dentro do mesmo dia não aparece aqui — fica só no aviso geral).
+  const draftDayDiff = useMemo(
+    () =>
+      canEditDailyPriority && hasPriorityChanges
+        ? buildDraftDayDiff(selectedDayBoards, draftDayBoards)
+        : [],
+    [canEditDailyPriority, draftDayBoards, hasPriorityChanges, selectedDayBoards],
+  );
   const hasAuditNotesChanges = (selectedSchedule?.auditNotes ?? "") !== auditNotes;
   const pendingAuditRows = useMemo(
     () =>
@@ -698,6 +812,25 @@ export default function SublinhasProducaoPage() {
       return;
     }
 
+    // AJ-0013: validação defensiva client-side — todo produto da revisão
+    // precisa aparecer em pelo menos um dia após o drag-drop. O backend já
+    // rejeita o caso com 400 em pt-BR, mas validar aqui evita ida ao servidor
+    // e dá feedback imediato apontando o produto órfão.
+    if (canEditDailyPriority) {
+      const orphanProduct = selectedLineProducts.find(
+        (product) =>
+          !draftDayBoards.some((day) =>
+            day.products.some((candidate) => candidate.snapshotId === product.snapshotId),
+          ),
+      );
+      if (orphanProduct) {
+        setPageError(
+          `O produto ${orphanProduct.code} · ${orphanProduct.name} precisa ficar em pelo menos um dia. Arraste de volta antes de salvar.`,
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     setPageError(null);
     setPageNotice(null);
@@ -771,7 +904,9 @@ export default function SublinhasProducaoPage() {
     dayKey: ProductionProduct["productionDays"][number],
     productId?: string,
   ) => {
-    if (!dragState || dragState.dayKey !== dayKey) {
+    // AJ-0013: removida a restrição `dragState.dayKey !== dayKey` para permitir
+    // hover em outro dia (drag-drop cross-day).
+    if (!dragState) {
       return;
     }
 
@@ -788,18 +923,25 @@ export default function SublinhasProducaoPage() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (!dragState || dragState.dayKey !== dayKey) {
+    // AJ-0013: removida a restrição `dragState.dayKey !== dayKey` — drop em
+    // outro dia agora chama `moveProductBetweenDays`.
+    if (!dragState) {
       return;
     }
 
-    if (productId && dragState.productId === productId) {
+    // Noop em soltar sobre o próprio card (mesmo produto, mesmo dia).
+    if (productId && dragState.productId === productId && dragState.dayKey === dayKey) {
       setDragState(null);
       setDropTarget(null);
       return;
     }
 
+    const isSameDay = dragState.dayKey === dayKey;
+
     setDraftDayBoards((current) =>
-      reorderProductsWithinDay(current, dayKey, dragState.productId, productId),
+      isSameDay
+        ? reorderProductsWithinDay(current, dayKey, dragState.productId, productId)
+        : moveProductBetweenDays(current, dragState.dayKey, dayKey, dragState.productId, productId),
     );
     setDragState(null);
     setDropTarget(null);
@@ -1293,15 +1435,59 @@ export default function SublinhasProducaoPage() {
               </div>
 
               {hasPriorityChanges ? (
-                <div className="rounded-lg border border-warning/40 bg-warning/20 px-4 py-3 text-sm text-warning-foreground">
-                  Existem alterações de prioridade diária ainda não salvas nesta revisão.
+                <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/20 px-4 py-3 text-sm text-warning-foreground">
+                  <p>Existem alterações de prioridade diária ainda não salvas nesta revisão.</p>
+                  {draftDayDiff.length > 0 ? (
+                    <ul className="space-y-1.5">
+                      {draftDayDiff.map((change) => (
+                        <li
+                          key={`draft-diff-${change.productId}`}
+                          className="rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs"
+                        >
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-full bg-warning/25 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-warning-foreground">
+                              {change.kind}
+                            </span>
+                            <span className="font-mono font-semibold text-foreground">{change.code}</span>
+                            <span className="text-muted-foreground">{change.name}</span>
+                          </div>
+                          <ul className="mt-1 space-y-0.5 pl-1">
+                            {change.fields.map((field) => (
+                              <li key={`${change.productId}-${field.label}`} className="text-muted-foreground">
+                                {field.label}:{" "}
+                                <span className="text-danger-foreground line-through">{field.from}</span>
+                                {" → "}
+                                <span className="font-semibold text-foreground">{field.to}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </div>
               ) : null}
 
               <div className="overflow-hidden rounded-xl border border-border/80">
                 <div className="grid gap-px bg-border/80 md:grid-cols-2 xl:grid-cols-7">
-                  {draftDayBoards.map((day) => (
-                    <div key={`${selectedSchedule.id}-${day.key}`} className="bg-card">
+                  {draftDayBoards.map((day) => {
+                    // AJ-0013: destaca o dia destino quando o drag está sobre
+                    // um dia diferente do de origem. Não destaca o próprio dia
+                    // de origem para não competir com o feedback do card-target.
+                    const isCrossDayDropHover =
+                      Boolean(dragState) &&
+                      dropTarget?.dayKey === day.key &&
+                      dragState?.dayKey !== day.key;
+
+                    return (
+                    <div
+                      key={`${selectedSchedule.id}-${day.key}`}
+                      className={cn(
+                        "bg-card transition-colors",
+                        isCrossDayDropHover && "ring-2 ring-info ring-inset bg-info/[0.08]",
+                      )}
+                      data-dropping={isCrossDayDropHover ? "true" : undefined}
+                    >
                       <div className="border-b border-border/80 bg-amber-600 px-3 py-2 text-white">
                         <p className="text-xs font-semibold uppercase tracking-[0.08em]">{day.label}</p>
                         <p className="mt-1 text-[11px] text-amber-50">
@@ -1356,7 +1542,8 @@ export default function SublinhasProducaoPage() {
                         )}
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </div>
 
