@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildDefaultScheduleDayPriorities,
+  deriveProductionDaysFromDayPriorities,
   getProductOperationalStatusLabel,
   getProductRecipeTotalsFromData,
   normalizeScheduleDayPriorities,
@@ -176,4 +177,68 @@ test("schedule entries sort by day priority before alphabetical fallback", () =>
     ordered.map((item) => item.code),
     ["PR-0001", "PR-0002", "PR-0003"],
   );
+});
+
+test("derives production days from a dayPriorities payload (drag de [sabado, domingo] para [segunda, quarta])", () => {
+  // Simula o frontend arrastando um produto que produzia em sábado+domingo
+  // para passar a produzir em segunda+quarta. Como o payload do PATCH só
+  // carrega o objeto de dias novos, o backend deve derivar production_days
+  // a partir das chaves desse objeto — exatamente o bug que essa mudança
+  // corrige.
+  const { days, invalidKeys } = deriveProductionDaysFromDayPriorities({
+    segunda: 1,
+    quarta: 2,
+  });
+
+  assert.deepEqual(days, ["segunda", "quarta"]);
+  assert.deepEqual(invalidKeys, []);
+
+  // E o normalizador de prioridades agora deve operar com os dias NOVOS,
+  // não com os antigos do item — preservando os números fornecidos.
+  const normalized = normalizeScheduleDayPriorities(
+    { segunda: 1, quarta: 2 },
+    days,
+  );
+  assert.deepEqual(normalized, { segunda: 1, quarta: 2 });
+});
+
+test("derived production days are sorted by canonical weekday order and deduplicated", () => {
+  // Payload propositalmente fora de ordem; resultado deve seguir
+  // sortProductionDays (segunda → ... → domingo).
+  const { days } = deriveProductionDaysFromDayPriorities({
+    domingo: 1,
+    quarta: 1,
+    segunda: 1,
+    sabado: 1,
+  });
+
+  assert.deepEqual(days, ["segunda", "quarta", "sabado", "domingo"]);
+});
+
+test("derives empty days for null/undefined/{} payload (caller deve bloquear)", () => {
+  assert.deepEqual(deriveProductionDaysFromDayPriorities(undefined), {
+    days: [],
+    invalidKeys: [],
+  });
+  assert.deepEqual(deriveProductionDaysFromDayPriorities(null), {
+    days: [],
+    invalidKeys: [],
+  });
+  assert.deepEqual(deriveProductionDaysFromDayPriorities({}), {
+    days: [],
+    invalidKeys: [],
+  });
+});
+
+test("reports invalid weekday keys without throwing", () => {
+  // Simula um payload malicioso/bug do cliente com chaves fora do enum.
+  // Cast deliberado: o contrato é `Partial<Record<ProductionWeekDay, number>>`,
+  // mas em runtime o JSON.parse não garante nada — a função precisa lidar.
+  const payload = { segunda: 1, foo: 2, sunday: 3 } as unknown as Partial<
+    Record<import("@/lib/production-planning").ProductionWeekDay, number>
+  >;
+  const { days, invalidKeys } = deriveProductionDaysFromDayPriorities(payload);
+
+  assert.deepEqual(days, ["segunda"]);
+  assert.deepEqual(invalidKeys.sort(), ["foo", "sunday"]);
 });

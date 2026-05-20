@@ -66,6 +66,47 @@ export function buildDefaultScheduleDayPriorities<T extends { productionDays: Pr
   );
 }
 
+const VALID_PRODUCTION_WEEK_DAYS = new Set<ProductionWeekDay>(
+  productionWeekDays.map((entry) => entry.key),
+);
+
+/**
+ * Derives the canonical (deduplicated + sorted) list of production days from a
+ * `dayPriorities` payload. The keys of the payload identify which days the
+ * caller wants the item to produce on; the numeric values represent priority
+ * order within each day.
+ *
+ * Returns `{ days, invalidKeys }` so callers can decide how to surface
+ * validation errors. `days` is always sorted by `sortProductionDays` (canonical
+ * weekday order). Falsy/non-numeric priority values are still treated as a
+ * "day is selected" signal — the payload contract is "key presence == include
+ * this day", priority normalization happens later via
+ * `normalizeScheduleDayPriorities`.
+ */
+export function deriveProductionDaysFromDayPriorities(
+  dayPriorities: Partial<Record<ProductionWeekDay, number>> | null | undefined,
+): { days: ProductionWeekDay[]; invalidKeys: string[] } {
+  if (!dayPriorities || typeof dayPriorities !== "object") {
+    return { days: [], invalidKeys: [] };
+  }
+
+  const seen = new Set<ProductionWeekDay>();
+  const invalidKeys: string[] = [];
+
+  for (const key of Object.keys(dayPriorities)) {
+    if (VALID_PRODUCTION_WEEK_DAYS.has(key as ProductionWeekDay)) {
+      seen.add(key as ProductionWeekDay);
+    } else {
+      invalidKeys.push(key);
+    }
+  }
+
+  return {
+    days: sortProductionDays(Array.from(seen)),
+    invalidKeys,
+  };
+}
+
 export function normalizeScheduleDayPriorities(
   dayPriorities: Partial<Record<ProductionWeekDay, number>> | null | undefined,
   productionDays: ProductionWeekDay[],

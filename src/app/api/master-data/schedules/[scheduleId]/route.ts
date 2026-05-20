@@ -4,7 +4,10 @@ import type { ProductionWeekDay } from "@/lib/production-planning";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { updateScheduleLineStatus } from "@/lib/supabase-data/master-data-admin";
+import {
+  MasterDataValidationError,
+  updateScheduleLineStatus,
+} from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
@@ -54,6 +57,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof MasterDataValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to update schedule line" },
       { status: 500 },

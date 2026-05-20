@@ -13,6 +13,7 @@ import type {
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   buildDefaultScheduleDayPriorities,
+  deriveProductionDaysFromDayPriorities,
   normalizeScheduleDayPriorities,
 } from "@/lib/production-data-utils";
 import {
@@ -75,6 +76,19 @@ type MutationOptions = {
   supabase?: SupabaseDataClient;
   actingProfileId?: string | null;
 };
+
+/**
+ * Erro de validação semântica de entrada em mutations de master data.
+ * As rotas de API devem mapear instâncias dessa classe para HTTP 400 e expor
+ * `error.message` (já em pt-BR) diretamente ao cliente. Não usar para falhas
+ * de banco / 500.
+ */
+export class MasterDataValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MasterDataValidationError";
+  }
+}
 
 function buildGeneratedLegacyId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -1353,34 +1367,95 @@ export async function updateScheduleLineStatus(
   const subcategoryId = String(row.subcategory_id);
   const timestamp = new Date().toISOString();
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Atualização de dias/prioridades de produção dos itens do cronograma.
+  //
+  // Contrato: `dayPrioritiesByItemId` mapeia `itemId -> { <weekday>: priority }`.
+  // As CHAVES do objeto interno definem os novos `production_days` do item
+  // (presença = produz nesse dia). Os VALORES definem a prioridade dentro de
+  // cada dia, normalizada por `normalizeScheduleDayPriorities`.
+  //
+  // Casos de teste cobertos por `production-data-utils.test.ts`
+  // (deriveProductionDaysFromDayPriorities):
+  //   - Payload `{ segunda: 1, quarta: 2 }` em item que tinha `[sabado, domingo]`
+  //     produz novos dias `[segunda, quarta]` (sortProductionDays canônico).
+  //   - Chaves inválidas (ex.: "foo") são reportadas em `invalidKeys`.
+  //   - Payload vazio retorna `days: []` → bloqueado pela validação abaixo.
+  //
+  // Compatibilidade: itens não mencionados no payload ficam intactos (não
+  // mexemos em `production_days` nem em `day_priorities`). Isso preserva o
+  // comportamento esperado para chamadas que só reordenam alguns itens.
+  // ─────────────────────────────────────────────────────────────────────────
   if (input.dayPrioritiesByItemId) {
-    const scheduleItemsResult = await supabase
-      .from("schedule_line_item_snapshots")
-      .select("id, production_days")
-      .eq("schedule_line_id", scheduleId);
-    const scheduleItems = assertSupabaseResult(
-      scheduleItemsResult,
-      "Failed to load schedule items for priority update",
-    );
+    const requestedItemIds = Object.keys(input.dayPrioritiesByItemId);
 
-    const priorityUpdates = await Promise.all(
-      scheduleItems.map((item) =>
-        supabase
-          .from("schedule_line_item_snapshots")
-          .update({
-            day_priorities: normalizeScheduleDayPriorities(
-              input.dayPrioritiesByItemId?.[item.id],
-              (item.production_days ?? []) as ProductionWeekDay[],
-            ),
-          })
-          .eq("id", item.id)
-          .eq("schedule_line_id", scheduleId),
-      ),
-    );
+    if (requestedItemIds.length > 0) {
+      const scheduleItemsResult = await supabase
+        .from("schedule_line_item_snapshots")
+        .select("id, production_days")
+        .eq("schedule_line_id", scheduleId)
+        .in("id", requestedItemIds);
+      const scheduleItems = assertSupabaseResult(
+        scheduleItemsResult,
+        "Failed to load schedule items for priority update",
+      );
 
-    const priorityError = priorityUpdates.find((result) => result.error)?.error;
-    if (priorityError) {
-      throw new Error(`Failed to update schedule priorities: ${priorityError.message}`);
+      const knownItemIds = new Set(scheduleItems.map((item) => String(item.id)));
+      const unknownItemIds = requestedItemIds.filter((itemId) => !knownItemIds.has(itemId));
+      if (unknownItemIds.length > 0) {
+        throw new MasterDataValidationError(
+          `Itens não pertencem a este cronograma: ${unknownItemIds.join(", ")}.`,
+        );
+      }
+
+      type ItemUpdate = {
+        id: string;
+        productionDays: ProductionWeekDay[];
+        dayPriorities: Partial<Record<ProductionWeekDay, number>>;
+      };
+
+      const itemUpdates: ItemUpdate[] = scheduleItems.map((item) => {
+        const itemId = String(item.id);
+        const payloadForItem = input.dayPrioritiesByItemId?.[itemId];
+        const { days: newProductionDays, invalidKeys } =
+          deriveProductionDaysFromDayPriorities(payloadForItem);
+
+        if (invalidKeys.length > 0) {
+          throw new MasterDataValidationError(
+            `Dia inválido informado para o item ${itemId}: ${invalidKeys.join(", ")}.`,
+          );
+        }
+
+        if (newProductionDays.length === 0) {
+          throw new MasterDataValidationError(
+            `Item ${itemId} deve produzir em pelo menos um dia. Use a tela de cadastros para remover o item do cronograma.`,
+          );
+        }
+
+        return {
+          id: itemId,
+          productionDays: newProductionDays,
+          dayPriorities: normalizeScheduleDayPriorities(payloadForItem, newProductionDays),
+        };
+      });
+
+      const priorityUpdates = await Promise.all(
+        itemUpdates.map((update) =>
+          supabase
+            .from("schedule_line_item_snapshots")
+            .update({
+              production_days: update.productionDays,
+              day_priorities: update.dayPriorities,
+            })
+            .eq("id", update.id)
+            .eq("schedule_line_id", scheduleId),
+        ),
+      );
+
+      const priorityError = priorityUpdates.find((result) => result.error)?.error;
+      if (priorityError) {
+        throw new Error(`Failed to update schedule priorities: ${priorityError.message}`);
+      }
     }
   }
 
