@@ -545,7 +545,10 @@ pendente", l.492 "Entregas em campo" — **mesma transformação mecânica**).
   **permanece** → `a[href*="/gestor-fabrica/…"]` intacto pós-carga.
 - **Não regredir AJ-0001/AJ-0002:** o Kanban "Acompanhamento" e os cards
   navegáveis **não são tocados** (só o slot do valor dos 5 KPIs). e2e roda
-  pós-carga → vê o número real + os `href` reais.
+  pós-carga → vê o número real + os `href` reais. *(Nota 2026-05-20: AJ-0001
+  ganhou nova diretriz — Kanban acionável com ações inline + batch — ver
+  [[Backlog de Ajustes#AJ-0001 — Kanban acionável (substitui read-only)|AJ-0001]].
+  Não afeta UX-0003: skeleton continua cobrindo só os KPIs.)*
 
 ### 2.6 Fronteira — o que UX-0003 ADOTA vs o que ADIA (explícito)
 

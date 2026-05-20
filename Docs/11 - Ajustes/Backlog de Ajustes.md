@@ -2,7 +2,7 @@
 
 > Lista única, numerada, com status. Atualizar conforme cada ajuste é trabalhado.
 
-**Última revisão:** 2026-05-19
+**Última revisão:** 2026-05-20
 
 ---
 
@@ -89,16 +89,39 @@
 
 ## 🟡 Importante (UX/Bug operacional)
 
-### AJ-0001 — Visualização Kanban read-only (acompanhamento)
-**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3
-**Origem:** Call 2026-05-13 (Bloco 1) · **Status:** Concluído · **Categoria:** UX
+### AJ-0001 — Kanban acionável (substitui read-only)
+**Revisado em:** 2026-05-20 — **diretriz original SUBSTITUÍDA por decisão do cliente** (Daniel, sessão 2026-05-20)
+**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3 *(implementação inicial read-only — superada pela nova diretriz)*
+**Origem:** Call 2026-05-13 (Bloco 1) + Revisão cliente 2026-05-20 · **Status:** Ativo (re-aberto para Onda 5) · **Categoria:** UX
 
-> **Feito:** seção "Acompanhamento" no dashboard `gestor-fabrica/page.tsx` — 4 colunas (Aberto / Em produção / Aguardando expedição / Em rota·entregue) a partir de `planningData.orders`. Read-only; cada card navega para `/gestor-fabrica/pedidos?status=<status>` (reaproveita o deep-link do AJ-0002). Não manipula status. Card→lista filtrada (decisão Giuseppe); deep-link ao modal de detalhe fica como possível refino futuro.
-**Área:** novo módulo (?) ou inserir em `gestor-fabrica/dashboard` · `src/app/gestor-fabrica/page.tsx`
+> [!warning] Substituição de diretriz — 2026-05-20
+> A diretriz original ("Kanban é só visualização; não manipular status pelo Kanban") **foi revogada pelo cliente final** na sessão de 2026-05-20. O texto histórico abaixo (escopo Giuseppe, implementação read-only de 2026-05-19) está preservado para registro, mas **não é mais a regra vigente**.
+>
+> **Citação literal do cliente:** *"quero poder otimizar tudo, tipo um botão pra colocar tudo de uma vez pra produção, do dia esse tipo de coisa, tem que otimizar".*
+>
+> **Nova diretriz (vigente):** o Kanban dos dashboards de fábrica é o **ponto de ação primária** para otimizar fabricação — pode e deve mutar status.
+>
+> **Permitido:**
+> - Ações **inline** em cada card (1 toque): `Liberar` (gestor), `Marcar concluída` (chão), `Abrir checklist`, `Reportar problema`.
+> - Ações **em batch** no header das colunas: `Liberar tudo do dia`, `Liberar todos em espera`.
+> - **Priorização visual:** badge `PRÓXIMA` na primeira OP da fila (ordenada por SLA).
+>
+> **Restrições mantidas:**
+> - **Drag-and-drop NÃO foi adotado** — risco de toque acidental no chão-de-fábrica.
+> - **Read-only continua valendo nas colunas terminais** (`Em rota` / `Entregue`).
+> - Toda mutation **passa pelo endpoint existente** `PATCH /api/factory-planning/workflow` — sem novo endpoint backend.
+> - **Batch = loop client-side** com toast de progresso (sem endpoint dedicado).
+>
+> **Implementação:** pendente — abrir UX-spec em `Docs/12 - Iniciativa UX/specs/` na próxima onda. Não regredir os deep-links do AJ-0002 (card → lista filtrada continua disponível como ação secundária).
 
-**O quê:** Cards de pedido em colunas por status (Aberto → Em produção → Aguardando expedição → Entregue). Read-only; clique navega para o detalhe respeitando a persona (loja → pedido, fábrica/chão → OP).
+---
 
-**Escopo Giuseppe:** só visualização e navegação. **Não manipular status pelo Kanban.**
+> **Histórico — implementação original (2026-05-19, commit 9027976):** seção "Acompanhamento" no dashboard `gestor-fabrica/page.tsx` — 4 colunas (Aberto / Em produção / Aguardando expedição / Em rota·entregue) a partir de `planningData.orders`. Read-only; cada card navegava para `/gestor-fabrica/pedidos?status=<status>` (reaproveita o deep-link do AJ-0002). Não manipulava status. Card→lista filtrada (decisão Giuseppe); deep-link ao modal de detalhe ficava como possível refino futuro.
+**Área:** `src/app/gestor-fabrica/page.tsx` · endpoint `PATCH /api/factory-planning/workflow` (reuso)
+
+**O quê (vigente):** Cards de pedido / OP em colunas por status (Aberto → Em produção → Aguardando expedição → Em rota·entregue). **Acionável** nas colunas não-terminais via ações inline e batch; navega para detalhe respeitando a persona como ação secundária.
+
+**Escopo original (revogado 2026-05-20):** ~~só visualização e navegação; não manipular status pelo Kanban.~~
 
 ---
 
@@ -302,7 +325,7 @@ Onda de regra/motor — decisões confirmadas com Giuseppe antes de codar (AskUs
 
 | ID | Resultado | Arquivos principais |
 |---|---|---|
-| AJ-0001 | Kanban read-only de acompanhamento no dashboard (card→lista filtrada) | `src/app/gestor-fabrica/page.tsx` |
+| AJ-0001 | ~~Kanban read-only de acompanhamento no dashboard~~ — **revogado em 2026-05-20** (ver bloco AJ-0001: cliente pediu Kanban acionável com ações inline + batch) | `src/app/gestor-fabrica/page.tsx` |
 | AJ-0014 | Dias de cobertura: N quadradinhos verdes por cadência `round(7/dias)` | `src/app/loja/pedidos/page.tsx` |
 | AJ-0016 | Data real em cada quadradinho (`SÁB 17`) | `src/app/loja/pedidos/page.tsx` |
 | AJ-0011 | Checkpoint persistido em `delivery_executions` + evento `producao_finalizada` (sem migração) | `src/lib/supabase-data/workflow.ts` |

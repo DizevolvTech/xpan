@@ -57,7 +57,7 @@ Esses são os ajustes "de regra" que exigem mudança no motor.
 | AJ-0014 | Quadradinhos verdes = dias de cobertura | L | Mudança no engine + UI |
 | AJ-0016 | Mostrar data nos quadradinhos | S | Pendurar em AJ-0014 |
 | AJ-0011 | Sincronia OP / Expedição / Entrega | L | Persistir transição derivada, emitir evento |
-| AJ-0001 | Kanban read-only (acompanhamento) | L | Depende de AJ-0011 estar correto |
+| AJ-0001 | ~~Kanban read-only (acompanhamento)~~ — **revogado 2026-05-20**: cliente pediu Kanban acionável (inline + batch). Ver [[Backlog de Ajustes#AJ-0001 — Kanban acionável (substitui read-only)]]. | L | Depende de AJ-0011 estar correto |
 
 **Saída:** o cronograma de pedido funciona conforme o cliente entende. Operação tem visão clara.
 

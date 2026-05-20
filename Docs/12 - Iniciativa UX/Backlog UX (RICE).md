@@ -159,7 +159,7 @@
 
 #### `UX-0014` — `gestor-fabrica/page.tsx` dashboard · 🟡 Estado · Score 2.4
 - **Arquivo:** `/Users/giuseppedangelis/Dev/daniel-augusto-v2-new/src/app/gestor-fabrica/page.tsx` (l.460-492).
-- **Depende de:** `UX-0003`, `UX-0007`. Cross-link [[Backlog de Ajustes#AJ-0001]]/[[Backlog de Ajustes#AJ-0002]] (Kanban/cards já feitos — **não regredir**).
+- **Depende de:** `UX-0003`, `UX-0007`. Cross-link [[Backlog de Ajustes#AJ-0001 — Kanban acionável (substitui read-only)|AJ-0001]] (Kanban — **diretriz revisada 2026-05-20: agora acionável, com ações inline + batch; não mais read-only**) / [[Backlog de Ajustes#AJ-0002]] (cards já feitos — **não regredir**).
 - **RICE:** R2 · I1 · C0.85 · E0.7.
 
 #### `UX-0016` — Matriz `administrador/usuarios` responsiva · 🔴 Responsivo · Score 2.5
