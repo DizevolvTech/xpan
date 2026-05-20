@@ -5,17 +5,23 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   CalendarRange,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Factory,
+  FileSearch,
   ListChecks,
+  Loader2,
+  Play,
   Settings2,
   ShoppingCart,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { InfoHint } from "@/components/shared/info-hint";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { PageLayout } from "@/components/shared/page-layout";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -118,10 +124,140 @@ export default function GestorFabricaPage() {
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
   const [expandedOpIds, setExpandedOpIds] = useState<Record<string, boolean>>({});
+  // AJ-0001 substituída: o Kanban agora muta status (liberar p/ produção). State
+  // local controla feedback otimista por card e progresso do batch.
+  const [pendingOrderIds, setPendingOrderIds] = useState<Set<string>>(new Set());
+  const [batchProgress, setBatchProgress] = useState<{
+    columnKey: string;
+    current: number;
+    total: number;
+  } | null>(null);
+
+  const toast = useToast();
+  const confirm = useConfirm();
 
   function toggleOpExpansion(opId: string) {
     setExpandedOpIds((current) => ({ ...current, [opId]: !current[opId] }));
   }
+
+  // Chama direto o endpoint (não o hook), porque o hook faz refresh por
+  // chamada — em batch isso seria N refreshes seriais. Aqui paralelizamos e
+  // refreshamos uma vez no fim.
+  const releaseOrderRequest = useCallback(async (orderId: string) => {
+    const response = await fetch("/api/factory-planning/workflow", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "release-order", orderId }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      throw new Error(payload?.message ?? `Falha ao liberar (status ${response.status}).`);
+    }
+  }, []);
+
+  const runSingleRelease = useCallback(
+    async (order: PlannedOrderRow) => {
+      if (pendingOrderIds.has(order.id) || batchProgress) return;
+      setPendingOrderIds((current) => {
+        const next = new Set(current);
+        next.add(order.id);
+        return next;
+      });
+      try {
+        await releaseOrderRequest(order.id);
+        toast.success(`Pedido ${order.code} liberado para produção.`);
+        await refreshPlanning(true);
+      } catch (releaseError) {
+        toast.error(
+          releaseError instanceof Error
+            ? releaseError.message
+            : `Falha ao liberar o pedido ${order.code}.`,
+        );
+      } finally {
+        setPendingOrderIds((current) => {
+          const next = new Set(current);
+          next.delete(order.id);
+          return next;
+        });
+      }
+    },
+    [batchProgress, pendingOrderIds, refreshPlanning, releaseOrderRequest, toast],
+  );
+
+  const runBatchRelease = useCallback(
+    async (columnKey: string, orders: PlannedOrderRow[]) => {
+      if (orders.length === 0 || batchProgress) return;
+
+      // Confirmação só p/ batch grande (regra: ações unitárias agilizam; o
+      // risco percebido sobe com volume).
+      if (orders.length > 10) {
+        const confirmed = await confirm({
+          title: `Liberar ${orders.length} pedidos para produção?`,
+          description:
+            "Esta ação cria as ordens de produção correspondentes para todos os pedidos selecionados. Pedidos com falha são reportados ao final.",
+          tone: "default",
+          confirmLabel: `Liberar ${orders.length}`,
+          cancelLabel: "Cancelar",
+        });
+        if (!confirmed) return;
+      }
+
+      setBatchProgress({ columnKey, current: 0, total: orders.length });
+      const progressToastId = toast.info(`Liberando 0/${orders.length} pedidos…`, {
+        title: "Liberação em lote",
+        duration: 60_000,
+      });
+
+      let succeeded = 0;
+      let failed = 0;
+      let firstError: string | null = null;
+      let completed = 0;
+
+      await Promise.allSettled(
+        orders.map(async (order) => {
+          try {
+            await releaseOrderRequest(order.id);
+            succeeded += 1;
+          } catch (releaseError) {
+            failed += 1;
+            if (!firstError) {
+              firstError =
+                releaseError instanceof Error
+                  ? releaseError.message
+                  : `Falha ao liberar ${order.code}.`;
+            }
+          } finally {
+            completed += 1;
+            setBatchProgress((current) =>
+              current && current.columnKey === columnKey
+                ? { ...current, current: completed }
+                : current,
+            );
+          }
+        }),
+      );
+
+      toast.dismiss(progressToastId);
+
+      if (failed === 0) {
+        toast.success(`${succeeded} pedidos liberados para produção.`);
+      } else if (succeeded === 0) {
+        toast.error(firstError ?? `Falha ao liberar ${failed} pedidos.`);
+      } else {
+        toast.warning(
+          `${succeeded} liberados · ${failed} com falha${firstError ? `. Primeiro erro: ${firstError}` : "."}`,
+        );
+      }
+
+      setBatchProgress(null);
+      // Rollback otimista = simplesmente refazer o fetch. Não tentamos reverter
+      // estado local manualmente.
+      await refreshPlanning(true).catch(() => undefined);
+    },
+    [batchProgress, confirm, refreshPlanning, releaseOrderRequest, toast],
+  );
 
   useEffect(() => {
     setSettingsDraft({
@@ -266,12 +402,13 @@ export default function GestorFabricaPage() {
     return { background: `conic-gradient(${segments.join(", ")})` };
   }, [productionLoad]);
 
-  // AJ-0001: Kanban read-only de acompanhamento. Só visualização + navegação
-  // (deep-link p/ a lista filtrada — reaproveita o ?status do AJ-0002).
-  // Não manipula status.
-  // Mudança estrutural: a coluna "Em produção" agrupa por OP (a unidade real
-  // de trabalho da fábrica); cada OP expande para revelar os pedidos que ela
-  // cobre. As outras 3 colunas seguem pedido-centric.
+  // AJ-0001 SUBSTITUÍDA (decisão do cliente, 2026-05): o Kanban é ACIONÁVEL.
+  // Header das colunas expõe batch (liberar tudo do dia / liberar em espera);
+  // cada card carrega ações inline (Liberar, Auditar, Abrir checklist). A
+  // navegação para a lista filtrada continua disponível como destino secundário.
+  // Estrutura: coluna "Em produção" agrupa por OP (unidade real de trabalho da
+  // fábrica) e expande p/ revelar os pedidos cobertos. As outras 3 colunas
+  // seguem pedido-centric.
   const kanbanColumns = useMemo<KanbanColumn[]>(() => {
     const orderColumns: Array<{
       key: string;
@@ -320,6 +457,22 @@ export default function GestorFabricaPage() {
     // Ordem visual: Aberto → Em produção → Aguardando expedição → Em rota.
     return [mapped[0], producaoColumn, mapped[1], mapped[2]];
   }, [planningData.orders, planningData.productionOrders]);
+
+  // Subconjuntos liberáveis da coluna "Aberto" (em_espera + agendado &
+  // availableForRelease) — usados pelos botões de batch no header da coluna.
+  // "Do dia" = anchorDate (modo all → hoje; modo day → data escolhida;
+  // modo range → endDate, espelhando resolveOperationalScopeAnchorDate).
+  const openColumnReleasable = useMemo(() => {
+    const openColumn = kanbanColumns.find((column) => column.key === "aberto");
+    if (!openColumn || openColumn.kind !== "orders") {
+      return { all: [] as PlannedOrderRow[], today: [] as PlannedOrderRow[] };
+    }
+    const all = openColumn.items.filter(
+      (order) => order.availableForRelease && !order.releasedToProduction,
+    );
+    const today = all.filter((order) => order.deliveryDate === anchorDate);
+    return { all, today };
+  }, [anchorDate, kanbanColumns]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -726,18 +879,27 @@ export default function GestorFabricaPage() {
         </div>
         <InfoHint
           size="sm"
-          content="Visão read-only do fluxo. A coluna de produção lista ordens (OPs); as outras listam pedidos. Clique em uma coluna ou OP para abrir a lista filtrada. O status não é alterado por aqui."
+          content="Cada coluna mostra o estágio do fluxo. A coluna 'Em produção' lista ordens (OPs); as demais listam pedidos. Os botões inline e no topo da coluna avançam o status — use 'Liberar tudo do dia' para criar todas as OPs do dia de uma vez."
         />
       </div>
 
-      {/* Kanban — protagonista da visão geral. Estado vivo do fluxo (4 colunas).
-          Coluna "Em produção" lista OPs (unidade real de trabalho); demais
-          listam pedidos. Read-only: a navegação vai p/ a lista filtrada e o
-          status não é alterado por aqui. */}
+      {/* Kanban — protagonista da visão geral e principal superfície de
+          AÇÃO do gestor. 4 colunas: a "Aberto" carrega quick-actions de
+          batch no header; cada card tem ações inline (Liberar / Auditar /
+          Abrir checklist) conforme o estágio. Coluna "Em produção" agrupa
+          por OP; demais listam pedidos. */}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {kanbanColumns.map((column, columnIndex) => {
           const tone = KANBAN_TONE_STYLES[column.tone];
           const isEmpty = column.items.length === 0;
+          const isOpenColumn = column.key === "aberto";
+          const isExpedColumn = column.key === "expedicao";
+          const columnBatchActive =
+            batchProgress?.columnKey === column.key ? batchProgress : null;
+          const todayReleasable = openColumnReleasable.today;
+          const allReleasable = openColumnReleasable.all;
+          const showAllReleaseButton =
+            isOpenColumn && allReleasable.length > todayReleasable.length;
           return (
             <motion.section
               key={column.key}
@@ -776,6 +938,65 @@ export default function GestorFabricaPage() {
                 ) : null}
               </header>
 
+              {/* Batch quick-actions — só na coluna "Aberto". Filtros:
+                  • "do dia"  = deliveryDate === anchorDate
+                  • "em espera" = todos com availableForRelease no scope visível.
+                  Confirmação via useConfirm para batches >10 (no runBatchRelease). */}
+              {isOpenColumn ? (
+                <div className="flex flex-col gap-1.5 pl-2">
+                  {columnBatchActive ? (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-md border border-warning/[var(--opacity-border)] bg-warning/[var(--opacity-faint)] px-3 py-2 text-xs font-medium text-warning-foreground"
+                    >
+                      <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+                      <span className="tabular-nums">
+                        Liberando {columnBatchActive.current}/{columnBatchActive.total}…
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="min-h-11 w-full justify-start gap-2"
+                        disabled={todayReleasable.length === 0 || batchProgress !== null}
+                        onClick={() =>
+                          void runBatchRelease(column.key, todayReleasable)
+                        }
+                      >
+                        <Play className="size-3.5" aria-hidden />
+                        Liberar tudo do dia
+                        <span className="ms-auto tabular-nums opacity-80">
+                          ({todayReleasable.length})
+                        </span>
+                      </Button>
+                      {showAllReleaseButton ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="min-h-11 w-full justify-start gap-2"
+                          disabled={
+                            allReleasable.length === 0 || batchProgress !== null
+                          }
+                          onClick={() =>
+                            void runBatchRelease(column.key, allReleasable)
+                          }
+                        >
+                          <Play className="size-3.5" aria-hidden />
+                          Liberar todos em espera
+                          <span className="ms-auto tabular-nums opacity-80">
+                            ({allReleasable.length})
+                          </span>
+                        </Button>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+
               <div className="scroll-modern -mx-1 flex max-h-[360px] flex-col gap-1 overflow-y-auto px-1 pl-2">
                 {isEmpty ? (
                   <p
@@ -785,25 +1006,67 @@ export default function GestorFabricaPage() {
                     —
                   </p>
                 ) : column.kind === "orders" ? (
-                  column.items.map((order) => (
-                    <Link
-                      key={order.id}
-                      href={`/gestor-fabrica/pedidos?status=${order.status}`}
-                      className="group/order flex items-center justify-between gap-2 rounded-md px-2 py-1.5 leading-tight transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-mono text-xs font-semibold text-foreground">
-                          {order.code}
-                        </span>
-                        <span className="block truncate text-[11px] text-muted-foreground">
-                          {order.storeName}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
-                        {order.deliveryDateLabel}
-                      </span>
-                    </Link>
-                  ))
+                  column.items.map((order) => {
+                    const isPending = pendingOrderIds.has(order.id);
+                    const canRelease =
+                      isOpenColumn &&
+                      order.availableForRelease &&
+                      !order.releasedToProduction;
+                    const isRowBusy = isPending || batchProgress !== null;
+                    return (
+                      <div
+                        key={order.id}
+                        className={`group/order flex items-center gap-2 rounded-md transition-colors hover:bg-muted/60 focus-within:bg-muted/60 ${
+                          isPending ? "opacity-60" : ""
+                        }`}
+                      >
+                        <Link
+                          href={`/gestor-fabrica/pedidos?status=${order.status}`}
+                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={`Abrir pedido ${order.code} de ${order.storeName} na lista`}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-mono text-xs font-semibold text-foreground">
+                              {order.code}
+                            </span>
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {order.storeName}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
+                            {order.deliveryDateLabel}
+                          </span>
+                        </Link>
+                        {canRelease ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="me-1 h-9 shrink-0 gap-1.5 px-2"
+                            disabled={isRowBusy}
+                            onClick={() => void runSingleRelease(order)}
+                            aria-label={`Liberar pedido ${order.code} para produção`}
+                          >
+                            {isPending ? (
+                              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                            ) : (
+                              <Play className="size-3.5" aria-hidden />
+                            )}
+                            <span className="text-[11px] font-semibold">Liberar</span>
+                          </Button>
+                        ) : isExpedColumn ? (
+                          <Link
+                            href={`/gestor-fabrica/expedicao?status=aguardando_expedicao`}
+                            className="me-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-semibold text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            aria-label={`Abrir checklist de expedição do pedido ${order.code}`}
+                          >
+                            <ClipboardCheck className="size-3.5" aria-hidden />
+                            Checklist
+                          </Link>
+                        ) : null}
+                      </div>
+                    );
+                  })
                 ) : (
                   column.items.map((op) => {
                     const isOpen = !!expandedOpIds[op.id];
@@ -897,6 +1160,18 @@ export default function GestorFabricaPage() {
                                   ))
                                 )}
                               </ul>
+                              {/* Auditar — navega para a tela de detalhe da OP.
+                                  Sem mutation (apenas navegação), por isso só link. */}
+                              <div className="mt-1 ms-3 ps-2">
+                                <Link
+                                  href={`/gestor-fabrica/ordens-producao/${op.id}`}
+                                  className="inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-[11px] font-semibold text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  aria-label={`Auditar ordem de produção ${op.code}`}
+                                >
+                                  <FileSearch className="size-3.5" aria-hidden />
+                                  Auditar OP
+                                </Link>
+                              </div>
                             </motion.div>
                           ) : null}
                         </AnimatePresence>
