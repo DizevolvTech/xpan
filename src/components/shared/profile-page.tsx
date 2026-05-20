@@ -1,14 +1,25 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent } from "react";
-import { Camera, KeyRound, MapPin, Phone, Save, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Camera, KeyRound, LogOut, Save } from "lucide-react";
 
 import { PageLayout } from "@/components/shared/page-layout";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { formatBrazilPhone } from "@/lib/phone-mask";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 
@@ -97,6 +108,7 @@ export function ProfilePage({
   initialName,
   initialEmail,
 }: ProfilePageProps) {
+  const router = useRouter();
   const [form, setForm] = useState<ProfileForm>(() => buildInitialForm(initialName, initialEmail));
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -105,16 +117,18 @@ export function ProfilePage({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [passwordUpdatedAt, setPasswordUpdatedAt] = useState("-");
   const [savedSnapshot, setSavedSnapshot] = useState(() =>
     JSON.stringify(buildInitialForm(initialName, initialEmail)),
   );
+  const hasPendingPassword =
+    Boolean(currentPassword.trim()) ||
+    Boolean(newPassword.trim()) ||
+    Boolean(confirmPassword.trim());
   const isDirty =
-    !isLoadingProfile &&
-    (JSON.stringify(form) !== savedSnapshot ||
-      Boolean(currentPassword.trim()) ||
-      Boolean(newPassword.trim()) ||
-      Boolean(confirmPassword.trim()));
+    !isLoadingProfile && (JSON.stringify(form) !== savedSnapshot || hasPendingPassword);
   useUnsavedChangesGuard({
     isDirty,
   });
@@ -221,6 +235,23 @@ export function ProfilePage({
     reader.readAsDataURL(file);
   }
 
+  function resetPasswordFields() {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  async function handleLogout() {
+    setIsLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.replace("/login");
+      router.refresh();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }
+
   async function handleSave() {
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -309,9 +340,8 @@ export function ProfilePage({
         }),
       );
       setPasswordUpdatedAt(updatedProfile.passwordUpdatedAt);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
+      resetPasswordFields();
+      setPasswordDialogOpen(false);
       setSuccessMessage("Perfil atualizado no banco com sucesso.");
     } catch (error) {
       setErrorMessage(
@@ -322,109 +352,151 @@ export function ProfilePage({
     }
   }
 
+  const displayName = form.name.trim() || "Sem nome";
+  const displayEmail = form.email.trim() || "—";
+
   return (
     <PageLayout
       title="Meu Perfil"
-      description={`Gerencie seus dados de conta e segurança (${roleLabel}).`}
+      description="Atualize seus dados de conta, contato e endereço."
       badge="Conta"
       breadcrumbs={[
         { label: homeLabel, href: homeHref },
         { label: "Meu Perfil" },
       ]}
       actions={
-        <Button type="button" onClick={() => void handleSave()} disabled={isSaving || isLoadingProfile}>
+        <Button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={isSaving || isLoadingProfile}
+        >
           <Save className="size-4" />
           {isSaving ? "Salvando..." : "Salvar alterações"}
         </Button>
       }
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>Conta e Contato</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          <div className="rounded-lg border border-border/[var(--opacity-prominent)] bg-panel/[var(--opacity-border)] p-4">
-            <div className="flex flex-col items-center gap-3">
-              <Avatar className="size-20 border border-border/[var(--opacity-strong)]">
-                {form.avatarUrl ? <AvatarImage src={form.avatarUrl} alt={`Foto de ${form.name}`} /> : null}
-                <AvatarFallback className="text-base font-semibold">
-                  {getInitials(form.name)}
-                </AvatarFallback>
-              </Avatar>
-              <Label
-                htmlFor="profile-photo"
-                className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border/[var(--opacity-prominent)] bg-card px-3 py-2 text-xs font-semibold text-foreground"
-              >
-                <Camera className="size-4" />
-                Trocar foto
-              </Label>
-              <input
-                id="profile-photo"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handlePhotoChange}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => updateFormField("avatarUrl", "")}
-                disabled={isSaving || isLoadingProfile}
-              >
-                Remover foto
-              </Button>
+      {/* Bloco de identidade — de-boxed, no topo */}
+      <section
+        aria-label="Identidade da conta"
+        className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="flex items-center gap-4">
+          <Avatar className="size-20 border border-border/[var(--opacity-strong)]">
+            {form.avatarUrl ? (
+              <AvatarImage src={form.avatarUrl} alt={`Foto de ${displayName}`} />
+            ) : null}
+            <AvatarFallback className="text-lg font-semibold">
+              {getInitials(displayName)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-lg font-semibold tracking-tight text-foreground">
+                {displayName}
+              </h2>
+              <Badge variant="secondary" className="font-medium">
+                {roleLabel}
+              </Badge>
             </div>
+            <p className="truncate text-sm text-muted-foreground">{displayEmail}</p>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Label
+            htmlFor="profile-photo"
+            className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-border/[var(--opacity-prominent)] bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:bg-secondary"
+          >
+            <Camera className="size-4" />
+            Trocar foto
+          </Label>
+          <input
+            id="profile-photo"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoChange}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => updateFormField("avatarUrl", "")}
+            disabled={isSaving || isLoadingProfile || !form.avatarUrl}
+          >
+            Remover foto
+          </Button>
+        </div>
+      </section>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="profile-name">Nome</Label>
-              <Input
-                id="profile-name"
-                value={form.name}
-                onChange={(event) => updateFormField("name", event.target.value)}
-                placeholder="Nome completo"
-                disabled={isSaving || isLoadingProfile}
-              />
-            </div>
-            <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="profile-email">E-mail</Label>
-              <Input
-                id="profile-email"
-                type="email"
-                value={form.email}
-                onChange={(event) => updateFormField("email", event.target.value)}
-                placeholder="voce@empresa.com"
-                disabled={isSaving || isLoadingProfile}
-              />
-            </div>
-            <div className="grid gap-2 sm:col-span-2">
-              <Label htmlFor="profile-phone" className="inline-flex items-center gap-2">
-                <Phone className="size-4" />
-                Telefone
-              </Label>
-              <Input
-                id="profile-phone"
-                value={form.phone}
-                onChange={(event) => updateFormField("phone", formatBrazilPhone(event.target.value))}
-                placeholder="(99) 99999-9999"
-                disabled={isSaving || isLoadingProfile}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Separator className="bg-border/[var(--opacity-border)]" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="inline-flex items-center gap-2">
-            <MapPin className="size-4" />
-            Endereço
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
+      {/* Seção: Contato */}
+      <section aria-labelledby="profile-contact-heading" className="space-y-4">
+        <header className="space-y-1">
+          <h3
+            id="profile-contact-heading"
+            className="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Contato
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Dados visíveis para sua equipe e usados em notificações operacionais.
+          </p>
+        </header>
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid gap-2">
+            <Label htmlFor="profile-name">Nome</Label>
+            <Input
+              id="profile-name"
+              value={form.name}
+              onChange={(event) => updateFormField("name", event.target.value)}
+              placeholder="Nome completo"
+              disabled={isSaving || isLoadingProfile}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="profile-email">E-mail</Label>
+            <Input
+              id="profile-email"
+              type="email"
+              value={form.email}
+              onChange={(event) => updateFormField("email", event.target.value)}
+              placeholder="voce@empresa.com"
+              disabled={isSaving || isLoadingProfile}
+            />
+          </div>
+          <div className="grid gap-2 sm:col-span-2">
+            <Label htmlFor="profile-phone">Telefone</Label>
+            <Input
+              id="profile-phone"
+              value={form.phone}
+              onChange={(event) =>
+                updateFormField("phone", formatBrazilPhone(event.target.value))
+              }
+              placeholder="(99) 99999-9999"
+              disabled={isSaving || isLoadingProfile}
+            />
+          </div>
+        </div>
+      </section>
+
+      <Separator className="bg-border/[var(--opacity-border)]" />
+
+      {/* Seção: Endereço */}
+      <section aria-labelledby="profile-address-heading" className="space-y-4">
+        <header className="space-y-1">
+          <h3
+            id="profile-address-heading"
+            className="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+          >
+            Endereço
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Usado em documentos fiscais e cadastros internos da rede.
+          </p>
+        </header>
+        <div className="grid gap-3 sm:grid-cols-6">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="profile-zip">CEP</Label>
             <Input
               id="profile-zip"
@@ -434,7 +506,7 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-          <div className="grid gap-2 sm:col-span-2">
+          <div className="grid gap-2 sm:col-span-4">
             <Label htmlFor="profile-street">Rua</Label>
             <Input
               id="profile-street"
@@ -444,7 +516,7 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-          <div className="grid gap-2">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="profile-number">Número</Label>
             <Input
               id="profile-number"
@@ -454,7 +526,7 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-          <div className="grid gap-2">
+          <div className="grid gap-2 sm:col-span-4">
             <Label htmlFor="profile-complement">Complemento</Label>
             <Input
               id="profile-complement"
@@ -464,7 +536,7 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-          <div className="grid gap-2">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="profile-neighborhood">Bairro</Label>
             <Input
               id="profile-neighborhood"
@@ -474,7 +546,7 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-          <div className="grid gap-2 sm:col-span-2">
+          <div className="grid gap-2 sm:col-span-3">
             <Label htmlFor="profile-city">Cidade</Label>
             <Input
               id="profile-city"
@@ -484,7 +556,7 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-          <div className="grid gap-2">
+          <div className="grid gap-2 sm:col-span-1">
             <Label htmlFor="profile-state">UF</Label>
             <Input
               id="profile-state"
@@ -494,7 +566,7 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-          <div className="grid gap-2 sm:col-span-3">
+          <div className="grid gap-2 sm:col-span-2">
             <Label htmlFor="profile-country">País</Label>
             <Input
               id="profile-country"
@@ -504,88 +576,153 @@ export function ProfilePage({
               disabled={isSaving || isLoadingProfile}
             />
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="inline-flex items-center gap-2">
-            <KeyRound className="size-4" />
-            Segurança
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
-          <div className="grid gap-2">
-            <Label htmlFor="current-password">Senha atual</Label>
-            <Input
-              id="current-password"
-              type="password"
-              value={currentPassword}
-              onChange={(event) => setCurrentPassword(event.target.value)}
-              placeholder="Senha atual"
-              disabled={isSaving || isLoadingProfile}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="new-password">Nova senha</Label>
-            <Input
-              id="new-password"
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              placeholder="Mínimo 8 caracteres"
-              disabled={isSaving || isLoadingProfile}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="confirm-password">Confirmar senha</Label>
-            <Input
-              id="confirm-password"
-              type="password"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              placeholder="Repita a nova senha"
-              disabled={isSaving || isLoadingProfile}
-            />
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {errorMessage ? (
-        <div className="rounded-lg border border-danger/[var(--opacity-border)] bg-danger/[var(--opacity-muted)] px-3 py-2 text-sm text-danger-foreground">
+        <div
+          role="alert"
+          className="rounded-lg border border-danger/[var(--opacity-border)] bg-danger/[var(--opacity-muted)] px-3 py-2 text-sm text-danger-foreground"
+        >
           {errorMessage}
         </div>
       ) : null}
 
       {successMessage ? (
-        <div className="rounded-lg border border-success/[var(--opacity-border)] bg-success/[var(--opacity-muted)] px-3 py-2 text-sm text-success-foreground">
+        <div
+          role="status"
+          className="rounded-lg border border-success/[var(--opacity-border)] bg-success/[var(--opacity-muted)] px-3 py-2 text-sm text-success-foreground"
+        >
           {successMessage}
         </div>
       ) : null}
 
-      <Card>
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">
-              Alterações são persistidas no banco e, quando o usuário já estiver vinculado ao Supabase Auth, a senha também é sincronizada.
+      <Separator className="bg-border/[var(--opacity-border)]" />
+
+      {/* Footer enxuto: segurança + sair + salvar */}
+      <section
+        aria-label="Conta e segurança"
+        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="space-y-0.5 text-xs text-muted-foreground">
+          <p>Última troca de senha: {passwordUpdatedAt}</p>
+          {isDirty ? (
+            <p className="font-semibold text-warning-foreground">
+              Alterações pendentes de salvamento.
             </p>
-            <p className="text-xs text-muted-foreground">
-              Última atualização de senha: {passwordUpdatedAt}
-            </p>
-            {isDirty ? (
-              <p className="text-xs font-semibold text-warning-foreground">Alterações pendentes de salvamento.</p>
-            ) : null}
-          </div>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Dialog
+            open={passwordDialogOpen}
+            onOpenChange={(open) => {
+              setPasswordDialogOpen(open);
+              if (!open) {
+                resetPasswordFields();
+              }
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isSaving || isLoadingProfile}
+              >
+                <KeyRound className="size-4" />
+                Alterar senha
+              </Button>
+            </DialogTrigger>
+            <DialogContent size="md">
+              <DialogHeader>
+                <DialogTitle>Alterar senha</DialogTitle>
+                <DialogDescription>
+                  Informe sua senha atual e escolha uma nova com pelo menos 8 caracteres.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="current-password">Senha atual</Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    placeholder="Senha atual"
+                    disabled={isSaving}
+                    autoComplete="current-password"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="new-password">Nova senha</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="Mínimo 8 caracteres"
+                    disabled={isSaving}
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="confirm-password">Confirmar senha</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    placeholder="Repita a nova senha"
+                    disabled={isSaving}
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setPasswordDialogOpen(false);
+                    resetPasswordFields();
+                  }}
+                  disabled={isSaving}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={isSaving || !hasPendingPassword}
+                >
+                  <Save className="size-4" />
+                  {isSaving ? "Salvando..." : "Salvar nova senha"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Button
             type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void handleLogout()}
+            disabled={isLoggingOut}
+            aria-label="Sair da conta"
+          >
+            <LogOut className="size-4" />
+            {isLoggingOut ? "Saindo..." : "Sair"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             onClick={() => void handleSave()}
             disabled={isSaving || isLoadingProfile}
           >
-            <UserRound className="size-4" />
-            {isLoadingProfile ? "Carregando..." : isSaving ? "Salvando..." : "Salvar perfil"}
+            <Save className="size-4" />
+            {isLoadingProfile ? "Carregando..." : isSaving ? "Salvando..." : "Salvar"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     </PageLayout>
   );
 }
