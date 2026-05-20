@@ -2,7 +2,7 @@
 
 ## Status
 
-**Aceito em 2026-05-20** — Giuseppe aprovou os 4 defaults defendidos. PR de spike em andamento na branch `feat/mpi-expansion-spike`. Daniel/Adriano vão validar em ambiente dev antes da flag `EXPAND_MPI_INTO_OPS` ser ligada em produção.
+**Aceito em 2026-05-20** — Giuseppe aprovou os 4 defaults defendidos. **Ativado em 2026-05-20** (mesma data) por decisão de Giuseppe: a flag `EXPAND_MPI_INTO_OPS` passou para **default ON**; quem precisar rollback emergencial sem novo deploy define `EXPAND_MPI_INTO_OPS=false` no ambiente (escape hatch).
 
 > **Simplificação descoberta na implementação (2026-05-20):** a `productionItemKey` do MPI já é única por construção (`${date}|${lineId}|${scheduleId}|${mpiProductId}` com `mpiProductId` distinto do produto-pai). `resolvePreparationStagesForProductionItem` (`workflow.ts:197`) extrai `productIdentifier = key.split("|").at(-1)` que vai retornar o `mpiProductId` e buscar o produto MPI normalmente. **Sufixo `mpi:` no productionItemKey não é necessário.** Ajuste em `workflow.ts:197` removido do escopo do commit 3.
 

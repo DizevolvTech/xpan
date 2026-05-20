@@ -854,8 +854,21 @@ test("workflow recognizes orders as ready for expedition when items finish on di
 // ---------------------------------------------------------------------------
 
 function withMpiExpansion<T>(fn: () => T): T {
+  // Default da flag agora é ON. Mantemos o wrapper para explicitar intenção
+  // no nome do teste e garantir o estado mesmo se outro teste tiver mexido na env.
   const previous = process.env.EXPAND_MPI_INTO_OPS;
-  process.env.EXPAND_MPI_INTO_OPS = "true";
+  delete process.env.EXPAND_MPI_INTO_OPS;
+  try {
+    return fn();
+  } finally {
+    if (previous === undefined) delete process.env.EXPAND_MPI_INTO_OPS;
+    else process.env.EXPAND_MPI_INTO_OPS = previous;
+  }
+}
+
+function withMpiExpansionDisabled<T>(fn: () => T): T {
+  const previous = process.env.EXPAND_MPI_INTO_OPS;
+  process.env.EXPAND_MPI_INTO_OPS = "false";
   try {
     return fn();
   } finally {
@@ -1045,29 +1058,33 @@ test("buildFactoryPlanningData soma demanda de MPI em uma única OP quando flag 
   });
 });
 
-test("buildFactoryPlanningData NÃO expande MPI quando flag desligada — comportamento legado preservado", () => {
-  // Sem withMpiExpansion: garantimos que o default (flag off) mantém o sistema atual.
-  delete process.env.EXPAND_MPI_INTO_OPS;
-  const { sectors, lines, products, schedules } = buildPizzaScenario();
-  const planning = buildFactoryPlanningData("2026-03-19", {
-    stores: [baseStore],
-    storeOrders: [
-      {
-        id: "order-1",
-        code: "PD-0001",
-        storeId: "store-1",
-        orderedAt: "2026-03-17T09:00:00.000Z",
-        items: [{ id: "item-1", productId: "pizza", quantity: 8, unit: "Un" }],
-      },
-    ],
-    settings,
-    sectors,
-    lines,
-    products,
-    schedules,
-  });
+test("buildFactoryPlanningData respeita escape hatch EXPAND_MPI_INTO_OPS=false (rollback sem deploy)", () => {
+  withMpiExpansionDisabled(() => {
+    const { sectors, lines, products, schedules } = buildPizzaScenario();
+    const planning = buildFactoryPlanningData("2026-03-19", {
+      stores: [baseStore],
+      storeOrders: [
+        {
+          id: "order-1",
+          code: "PD-0001",
+          storeId: "store-1",
+          orderedAt: "2026-03-17T09:00:00.000Z",
+          items: [{ id: "item-1", productId: "pizza", quantity: 8, unit: "Un" }],
+        },
+      ],
+      settings,
+      sectors,
+      lines,
+      products,
+      schedules,
+    });
 
-  const productIds = new Set(planning.productionOrders.flatMap((op) => op.items.map((item) => item.productId)));
-  assert.ok(productIds.has("pizza"), "pizza presente");
-  assert.equal(productIds.has("mpi-massa"), false, "massa NÃO deve aparecer com flag desligada (comportamento atual)");
+    const productIds = new Set(planning.productionOrders.flatMap((op) => op.items.map((item) => item.productId)));
+    assert.ok(productIds.has("pizza"), "pizza presente");
+    assert.equal(
+      productIds.has("mpi-massa"),
+      false,
+      "massa NÃO deve aparecer quando alguém define EXPAND_MPI_INTO_OPS=false explicitamente (escape hatch)",
+    );
+  });
 });

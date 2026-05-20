@@ -66,10 +66,10 @@
 ---
 
 ### AJ-0008 — MPI / Ingrediente misturado deve gerar OP separada
-**Investigado em:** 2026-05-19 (Giuseppe) · **Auditado E2E em:** 2026-05-20 (Giuseppe) · **Implementado atrás de flag em:** 2026-05-20 (branch `feat/mpi-expansion-spike`, 3 commits)
-**Origem:** Call 2026-05-13 (Bloco 4) · **Status:** Implementado / atrás de feature flag `EXPAND_MPI_INTO_OPS` · **Categoria:** Bug/Regra
+**Investigado em:** 2026-05-19 (Giuseppe) · **Auditado E2E em:** 2026-05-20 (Giuseppe) · **Implementado + ATIVADO em:** 2026-05-20
+**Origem:** Call 2026-05-13 (Bloco 4) · **Status:** ✅ Concluído / ativado em produção · **Categoria:** Bug/Regra
 
-> **Resolução (2026-05-20):** ADR aprovado em [[decisoes/ADR_expansao_mpi_em_op]]; expansão automática de produto-MPI em OP separada implementada em `src/lib/factory-planning/recipe-expansion.ts` e plugada em `engine.ts:buildFactoryPlanningData` atrás da flag `EXPAND_MPI_INTO_OPS` (default off). Cobertura: 5 testes unitários da função pura + 3 testes de integração no motor (cenário canônico "pedido de pizza gera OP da massa" + agrupamento de demanda de 2 pedidos + legacy preservado com flag off). Ativação em produção depende de Daniel validar em ambiente dev.
+> **Resolução (2026-05-20):** ADR aprovado em [[decisoes/ADR_expansao_mpi_em_op]]; expansão automática de produto-MPI em OP separada implementada em `src/lib/factory-planning/recipe-expansion.ts` e plugada em `engine.ts:buildFactoryPlanningData`. Ativada (default ON) na mesma data; escape hatch `EXPAND_MPI_INTO_OPS=false` permite rollback emergencial sem novo deploy. Pizza Margherita (PR-PIZZA01) e Massa de Pizza (MPI-002) cadastradas no banco do tenant Ecossistema Atual para o Daniel validar em produção. Cobertura: 5 testes unitários da função pura + 3 testes de integração no motor (expansão básica + agrupamento de demanda + escape hatch).
 >
 > Caminho B (ingrediente `type='misturado'`) **continua sem virar OP** — fica como composição interna na folha de pré-pesagem. Decisão documentada no ADR.
 >
@@ -346,7 +346,7 @@ Sem mudança de regra de negócio. `tsc --noEmit` limpo, `eslint` 0 erros (segue
 | AJ-0013 | KPI + painel de OPs agendadas para próximos dias | `src/app/gestor-fabrica/ordens-producao/page.tsx` |
 | AJ-0012 | Diff por produto na auditoria (compara revisões, sem product_changelog) | `src/app/gestor-fabrica/sublinhas-producao/page.tsx` |
 | AJ-0002 | `KPICard` com `href` + 5 cards do dashboard navegáveis + `?status` em 3 telas | `src/components/shared/kpi-card.tsx` · `gestor-fabrica/page.tsx` · `pedidos` · `ordens-producao` · `entregas` |
-| AJ-0008 | **Implementado atrás de flag** — `EXPAND_MPI_INTO_OPS` off por padrão; ativar após validação de Daniel em dev | `src/lib/factory-planning/recipe-expansion.ts`, `engine.ts`, `engine.test.ts`, [[decisoes/ADR_expansao_mpi_em_op]] (branch `feat/mpi-expansion-spike`) |
+| AJ-0008 | ✅ **Concluído** — `EXPAND_MPI_INTO_OPS` ativado por padrão (escape hatch `=false`); Pizza Margherita + Massa de Pizza cadastradas no tenant Ecossistema Atual | `src/lib/factory-planning/recipe-expansion.ts`, `engine.ts`, `engine.test.ts`, [[decisoes/ADR_expansao_mpi_em_op]] |
 
 > **Decisões pendentes p/ levar ao cliente:** ~~(1) AJ-0008 — manter modelo MPI-como-produto (só legenda) vs implementar OP automática de sub-receita (estrutural).~~ **Resolvido 2026-05-20**: ADR aprovado, expansão atrás de flag entregue na branch `feat/mpi-expansion-spike`, ativação em produção condicionada à validação de Daniel em dev. (2) AJ-0007 — quando adicionar o `UNIQUE` no banco (amarrado ao AJ-0009/Onda 4). Onda 2 não fez `next build` aqui (validação por `tsc`/`eslint`/testes); `useSearchParams` segue padrão já commitado no repo.
 

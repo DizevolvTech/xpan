@@ -396,11 +396,15 @@ function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<s
 
 /**
  * Feature flag para expansão automática de MPI em OPs separadas (AJ-0008).
- * Lida em runtime para permitir override em testes via `process.env`.
- * Default off em produção até validação do cliente em ambiente dev.
+ *
+ * **Default: ON** desde 2026-05-20 — comportamento que o cliente Daniel pediu
+ * na Call 2026-05-13 (Bloco 4). Para desligar em emergência sem novo deploy,
+ * defina `EXPAND_MPI_INTO_OPS=false` no ambiente (escape hatch).
+ *
+ * Ver Docs/decisoes/ADR_expansao_mpi_em_op.md.
  */
 function isMpiExpansionEnabled() {
-  return process.env.EXPAND_MPI_INTO_OPS === "true";
+  return process.env.EXPAND_MPI_INTO_OPS !== "false";
 }
 
 function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
