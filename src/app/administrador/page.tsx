@@ -1,11 +1,14 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useMemo, type CSSProperties } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import {
   Factory,
+  Minus,
   Package,
   ShoppingCart,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 
 import { InfoHint } from "@/components/shared/info-hint";
@@ -364,6 +367,104 @@ export default function AdministradorPage() {
     [loadTrend],
   );
 
+  // Séries diárias completas para sparklines/deltas dos KPIs primários.
+  // Cobertura: snapshot inteiro (não restrito ao scope), para gerar
+  // janela atual de 7d + janela anterior de 7d e calcular delta %.
+  const dailyKpiSeries = useMemo(() => {
+    type DailyPoint = { ordersCount: number; opsInProgress: number; deliveriesInField: number };
+    const map = new Map<string, DailyPoint>();
+
+    const ensure = (key: string): DailyPoint => {
+      const existing = map.get(key);
+      if (existing) return existing;
+      const created: DailyPoint = { ordersCount: 0, opsInProgress: 0, deliveriesInField: 0 };
+      map.set(key, created);
+      return created;
+    };
+
+    planningSnapshot.orders.forEach((order) => {
+      ensure(order.deliveryDate).ordersCount += 1;
+    });
+    planningSnapshot.productionOrders.forEach((op) => {
+      if (op.status === "em_producao") {
+        ensure(op.productionDate).opsInProgress += 1;
+      }
+    });
+    planningSnapshot.expedition.forEach((row) => {
+      const execution = deliveryExecution.resolveExecution(
+        row.orderId,
+        row.status === "aguardando_expedicao",
+      );
+      if (execution.status === "em_rota" || execution.status === "no_destino") {
+        ensure(row.deliveryDate).deliveriesInField += 1;
+      }
+    });
+
+    const dateKeys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+    return dateKeys.map((dateKey) => ({ dateKey, ...ensure(dateKey) }));
+  }, [planningSnapshot, deliveryExecution]);
+
+  // Janelas: últimos 7d ativos vs 7d ativos anteriores. Usamos os
+  // pontos com dado (sem 0-pad de calendário) para evitar deltas
+  // distorcidos por lacunas.
+  const kpiDeltas = useMemo(() => {
+    const series = dailyKpiSeries;
+    const current = series.slice(-7);
+    const previous = series.slice(-14, -7);
+
+    const sum = (rows: typeof series, key: "ordersCount" | "opsInProgress" | "deliveriesInField") =>
+      rows.reduce((acc, row) => acc + row[key], 0);
+
+    const buildDelta = (key: "ordersCount" | "opsInProgress" | "deliveriesInField") => {
+      const cur = sum(current, key);
+      const prev = sum(previous, key);
+      if (prev === 0 && cur === 0) return { pct: 0, direction: "flat" as const, hasData: false };
+      if (prev === 0) return { pct: 100, direction: "up" as const, hasData: true };
+      const pct = Number((((cur - prev) / prev) * 100).toFixed(0));
+      const direction = pct > 0 ? ("up" as const) : pct < 0 ? ("down" as const) : ("flat" as const);
+      return { pct, direction, hasData: true };
+    };
+
+    const buildSparkPoints = (key: "ordersCount" | "opsInProgress" | "deliveriesInField") => {
+      if (current.length === 0) return "";
+      const values = current.map((row) => row[key]);
+      const max = Math.max(1, ...values);
+      const step = current.length > 1 ? 100 / (current.length - 1) : 100;
+      return values
+        .map((value, index) => {
+          const x = (index * step).toFixed(2);
+          // Inverte eixo Y (SVG cresce p/ baixo). Margem 2px topo/baixo.
+          const y = (26 - (value / max) * 22).toFixed(2);
+          return `${x},${y}`;
+        })
+        .join(" ");
+    };
+
+    return {
+      orders: { ...buildDelta("ordersCount"), points: buildSparkPoints("ordersCount") },
+      ops: { ...buildDelta("opsInProgress"), points: buildSparkPoints("opsInProgress") },
+      deliveries: {
+        ...buildDelta("deliveriesInField"),
+        points: buildSparkPoints("deliveriesInField"),
+      },
+    };
+  }, [dailyKpiSeries]);
+
+  // Top 5 categorias por carga (sectorSummary já vem ordenado desc).
+  const topCategories = useMemo(() => {
+    const top = sectorSummary.slice(0, 5);
+    const maxKg = top.reduce((acc, sector) => Math.max(acc, sector.totalKg), 0);
+    const totalKg = sectorSummary.reduce((acc, sector) => acc + sector.totalKg, 0);
+    return {
+      rows: top.map((sector) => ({
+        ...sector,
+        widthPct: maxKg > 0 ? Number(((sector.totalKg / maxKg) * 100).toFixed(1)) : 0,
+        sharePct: totalKg > 0 ? Number(((sector.totalKg / totalKg) * 100).toFixed(1)) : 0,
+      })),
+      totalKg,
+    };
+  }, [sectorSummary]);
+
   return (
     <PageLayout
       title="Administrador"
@@ -389,17 +490,38 @@ export default function AdministradorPage() {
         className="space-y-2"
       >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <KPICard title="Pedidos Totais" value={totalOrders} icon={ShoppingCart} tone="info" />
-          <KPICard title="OPs em Progresso" value={opsInProgress} icon={Factory} tone="warning" />
-          <KPICard
-            title="Entregas em Campo"
-            value={deliverySummary.inField}
-            subtitle={`${deliverySummary.delivered} concluídas`}
-            icon={Package}
+          <KpiWithTrend
+            tone="info"
+            stroke="var(--info)"
+            delta={kpiDeltas.orders}
+            ariaLabel="Tendência de pedidos nos últimos 7 dias"
+          >
+            <KPICard title="Pedidos Totais" value={totalOrders} icon={ShoppingCart} tone="info" />
+          </KpiWithTrend>
+          <KpiWithTrend
+            tone="warning"
+            stroke="var(--warning)"
+            delta={kpiDeltas.ops}
+            ariaLabel="Tendência de OPs em progresso nos últimos 7 dias"
+          >
+            <KPICard title="OPs em Progresso" value={opsInProgress} icon={Factory} tone="warning" />
+          </KpiWithTrend>
+          <KpiWithTrend
             tone={deliverySummary.inField > 0 ? "info" : "neutral"}
-          />
+            stroke={deliverySummary.inField > 0 ? "var(--info)" : "var(--muted-foreground)"}
+            delta={kpiDeltas.deliveries}
+            ariaLabel="Tendência de entregas em campo nos últimos 7 dias"
+          >
+            <KPICard
+              title="Entregas em Campo"
+              value={deliverySummary.inField}
+              subtitle={`${deliverySummary.delivered} concluídas`}
+              icon={Package}
+              tone={deliverySummary.inField > 0 ? "info" : "neutral"}
+            />
+          </KpiWithTrend>
         </div>
-        <p className="px-1 text-xs text-muted-foreground">
+        <p className="mt-1 px-1 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Liberados:</span> {releasedOrders}
           <span className="mx-2 opacity-50">·</span>
           <span className="font-medium text-foreground">Carga:</span> {formatKgLabel(productionKg, { maximumFractionDigits: 2 })}
@@ -546,7 +668,55 @@ export default function AdministradorPage() {
         <CardHeader>
           <CardTitle>Carga por Categoria da Fábrica</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {topCategories.rows.length > 0 && (
+            <div className="rounded-lg border border-border/[var(--opacity-divider)] bg-panel/45 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Top categorias por carga
+                </p>
+                <p className="text-[11px] tabular-nums text-muted-foreground">
+                  Total {formatKgLabel(topCategories.totalKg, { maximumFractionDigits: 0 })}
+                </p>
+              </div>
+              <ol className="space-y-1.5">
+                {topCategories.rows.map((sector, index) => (
+                  <li
+                    key={sector.sectorName}
+                    className="grid grid-cols-[1.25rem_minmax(7rem,11rem)_1fr_auto] items-center gap-2.5 text-xs"
+                  >
+                    <span className="tabular-nums text-muted-foreground">{index + 1}.</span>
+                    <span
+                      className="truncate font-medium text-foreground"
+                      title={sector.sectorName}
+                    >
+                      {sector.sectorName}
+                    </span>
+                    <span
+                      className="h-1.5 w-full overflow-hidden rounded-full bg-panel/70"
+                      role="presentation"
+                    >
+                      <span
+                        className={`block h-full rounded-full ${
+                          sector.criticalOps > 0 ? "bg-danger" : "bg-info"
+                        }`}
+                        style={{ width: `${Math.max(sector.widthPct, 4)}%` }}
+                      />
+                    </span>
+                    <span className="inline-flex items-baseline gap-1.5 tabular-nums">
+                      <span className="font-semibold text-foreground">
+                        {formatKgValue(sector.totalKg)}
+                      </span>
+                      <span className="text-[10.5px] text-muted-foreground">
+                        {sector.sharePct}%
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
           <PaginatedSection items={sectorSummary} label="categorias" initialPageSize={6}>
             {(paginatedSectors) => (
               <div className="overflow-x-auto rounded-xl border border-border/75">
@@ -597,5 +767,84 @@ export default function AdministradorPage() {
       </Card>
 
     </PageLayout>
+  );
+}
+
+type KpiDelta = {
+  pct: number;
+  direction: "up" | "down" | "flat";
+  hasData: boolean;
+  points: string;
+};
+
+type KpiTrendTone = "neutral" | "info" | "success" | "warning" | "danger";
+
+const trendToneText: Record<KpiTrendTone, string> = {
+  neutral: "text-muted-foreground",
+  info: "text-[var(--kpi-trend-info)]",
+  success: "text-[var(--kpi-trend-success)]",
+  warning: "text-[var(--kpi-trend-warning)]",
+  danger: "text-[var(--kpi-trend-danger)]",
+};
+
+function KpiWithTrend({
+  children,
+  delta,
+  stroke,
+  tone,
+  ariaLabel,
+}: {
+  children: ReactNode;
+  delta: KpiDelta;
+  stroke: string;
+  tone: KpiTrendTone;
+  ariaLabel: string;
+}) {
+  const hasSparkline = delta.points.length > 0;
+  const deltaToneText =
+    delta.direction === "up"
+      ? "text-success"
+      : delta.direction === "down"
+        ? "text-danger"
+        : "text-muted-foreground";
+  const DeltaIcon =
+    delta.direction === "up" ? TrendingUp : delta.direction === "down" ? TrendingDown : Minus;
+  const deltaLabel = delta.hasData
+    ? `${delta.direction === "down" ? "" : delta.direction === "up" ? "+" : ""}${delta.pct}%`
+    : "—";
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {children}
+      <div className="flex items-center justify-between gap-3 px-1">
+        <span
+          className={`inline-flex items-center gap-1 text-[11px] font-semibold tabular-nums ${deltaToneText}`}
+          title="Comparado aos 7 dias anteriores"
+        >
+          <DeltaIcon className="size-3" aria-hidden />
+          <span>{deltaLabel}</span>
+          <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">vs 7d ant.</span>
+        </span>
+        {hasSparkline && (
+          <svg
+            viewBox="0 0 100 28"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={ariaLabel}
+            className={`h-5 w-24 shrink-0 ${trendToneText[tone]}`}
+          >
+            <polyline
+              points={delta.points}
+              fill="none"
+              stroke={stroke}
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        )}
+      </div>
+    </div>
   );
 }
