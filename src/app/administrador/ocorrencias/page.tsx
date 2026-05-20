@@ -7,7 +7,7 @@ export default function AdministradorOcorrenciasPage() {
   return (
     <PageLayout
       title="Canal com o Sistema"
-      description="Abra ocorrências administrativas, acompanhe a resposta do Master e confirme quando o caso estiver resolvido."
+      description="Ocorrências administrativas com o time Master."
       badge="Administrador"
       breadcrumbs={[
         { label: "Administrador", href: "/administrador" },
@@ -18,7 +18,7 @@ export default function AdministradorOcorrenciasPage() {
         apiBasePath="/api/admin/support-occurrences"
         mode="tenant"
         title="Ocorrências administrativas"
-        description="Use este canal para tratar cadastro de usuários, recuperação de acesso, inativação/reativação e ajustes operacionais com o time Master."
+        description="Acesso, usuários, reativação e ajustes operacionais."
       />
     </PageLayout>
   );

@@ -5,17 +5,13 @@ import { useMemo } from "react";
 import {
   Building2,
   Factory,
-  LayoutDashboard,
+  PlusCircle,
   ShieldCheck,
-  ShoppingCart,
-  Store,
   Users,
 } from "lucide-react";
 
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
-import { ModuleCard } from "@/components/shared/module-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useMasterClients } from "@/lib/use-master-clients";
 import { getTenantIdentifier } from "@/lib/tenant";
 
@@ -46,13 +42,16 @@ export default function AdministradorMasterPage() {
   return (
     <PageLayout
       title="Painel SaaS"
-      description="Cadastre novos clientes, acompanhe o uso do ecossistema e entre em modo leitura para revisar cada operação."
+      description="Carteira de tenants, adoção e sinais operacionais."
       badge="Administrador Master"
       breadcrumbs={[{ label: "Administrador Master" }, { label: "Painel SaaS" }]}
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="outline">
-            <Link href="/administrador-master/clientes?new=1">Cadastrar cliente</Link>
+            <Link href="/administrador-master/clientes?new=1">
+              <PlusCircle className="size-4" />
+              Cadastrar cliente
+            </Link>
           </Button>
           <Button asChild>
             <Link href="/administrador-master/clientes">Gerenciar clientes</Link>
@@ -60,109 +59,133 @@ export default function AdministradorMasterPage() {
         </div>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <KPICard title="Clientes" value={metrics.totalClients} icon={Building2} tone="info" />
-        <KPICard title="Clientes ativos" value={metrics.activeClients} icon={ShieldCheck} tone="success" />
-        <KPICard title="Usuários ativos" value={metrics.activeUsers} icon={Users} tone="warning" />
-        <KPICard title="Lojas" value={metrics.stores} icon={Store} tone="neutral" />
-        <KPICard title="Pedidos" value={metrics.orders} icon={ShoppingCart} tone="info" />
-        <KPICard title="Ocorrências abertas" value={metrics.openOccurrences} icon={Factory} tone="danger" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <KPICard
+          title="Clientes ativos"
+          value={metrics.activeClients}
+          icon={ShieldCheck}
+          tone="success"
+        />
+        <KPICard
+          title="Usuários ativos"
+          value={metrics.activeUsers}
+          icon={Users}
+          tone="info"
+        />
+        <KPICard
+          title="Ocorrências abertas"
+          value={metrics.openOccurrences}
+          icon={Factory}
+          tone="danger"
+        />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Fluxos principais do master</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <ModuleCard
-              href="/administrador-master/clientes"
-              title="Base de clientes"
-              subtitle="Operação comercial e onboarding"
-              description="Acompanhe status, footprint do ecossistema e dados de cada conta atendida pelo SaaS."
-              icon={LayoutDashboard}
-              tone="slate"
-              items={[
-                "Lista completa de tenants",
-                "Métricas agregadas por cliente",
-                "Acesso ao detalhe de cada ecossistema",
-              ]}
-            />
-            <ModuleCard
-              href="/administrador-master/clientes?new=1"
-              title="Novo cliente"
-              subtitle="Provisionamento inicial"
-              description="Crie o tenant, o primeiro administrador e as configurações mínimas para iniciar a operação."
-              icon={Building2}
-              tone="emerald"
-              items={[
-                "Tenant com slug exclusivo",
-                "Administrador inicial ativo",
-                "Configuração operacional padrão",
-              ]}
-            />
-            <ModuleCard
-              href="/administrador-master/clientes"
-              title="Canal com clientes"
-              subtitle="Ocorrências administrativas"
-              description="Acompanhe as conversas entre o administrador do cliente e o Master entrando no detalhe do tenant e abrindo a aba de ocorrências."
-              icon={ShieldCheck}
-              tone="violet"
-              items={[
-                "Bloqueios de acesso e reativação",
-                "Usuários e troca de senha",
-                "Histórico de tratativas por cliente",
-              ]}
-            />
-          </CardContent>
-        </Card>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
+        <span>
+          Total de clientes <span className="font-medium text-foreground">{metrics.totalClients}</span>
+        </span>
+        <span aria-hidden>·</span>
+        <span>
+          Lojas no ecossistema <span className="font-medium text-foreground">{metrics.stores}</span>
+        </span>
+        <span aria-hidden>·</span>
+        <span>
+          Pedidos acumulados <span className="font-medium text-foreground">{metrics.orders}</span>
+        </span>
+      </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Clientes mais recentes</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {error ? (
-              <div className="rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
-                {error}
-              </div>
-            ) : null}
+      <section className="space-y-3">
+        <div className="flex items-end justify-between gap-3 border-b border-border/[var(--opacity-divider)] pb-2">
+          <div>
+            <h2 className="font-heading text-base font-semibold text-foreground">
+              Clientes mais recentes
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Últimas atualizações por tenant.
+            </p>
+          </div>
+          <Link
+            href="/administrador-master/clientes"
+            className="text-xs font-medium text-foreground/80 underline-offset-4 hover:underline"
+          >
+            Ver todos
+          </Link>
+        </div>
 
-            {isLoading ? (
-              <div className="rounded-lg border border-border/70 bg-panel/35 px-3 py-4 text-sm text-muted-foreground">
-                Carregando carteira de clientes...
-              </div>
-            ) : null}
+        {error ? (
+          <div className="rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
+            {error}
+          </div>
+        ) : null}
 
-            {!isLoading && recentClients.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/70 bg-panel/20 px-3 py-4 text-sm text-muted-foreground">
-                Nenhum cliente cadastrado até o momento.
-              </div>
-            ) : null}
+        {isLoading ? (
+          <div className="rounded-lg bg-panel/40 px-3 py-4 text-sm text-muted-foreground">
+            Carregando carteira de clientes...
+          </div>
+        ) : null}
 
+        {!isLoading && recentClients.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border/[var(--opacity-divider)] bg-panel/20 px-3 py-4 text-sm text-muted-foreground">
+            Nenhum cliente cadastrado até o momento.
+          </div>
+        ) : null}
+
+        {recentClients.length > 0 ? (
+          <ul className="divide-y divide-border/[var(--opacity-divider)] overflow-hidden rounded-xl bg-panel/40">
             {recentClients.map((client) => (
-              <Link
-                key={client.id}
-                href={`/administrador-master/clientes/${getTenantIdentifier(client)}`}
-                className="flex items-center justify-between rounded-xl border border-border/70 bg-panel/20 px-4 py-3 transition hover:border-border-strong/35 hover:bg-panel/35"
-              >
-                <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">{client.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {client.metrics.users} usuários · {client.metrics.stores} lojas
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {client.metrics.openOccurrences} ocorrências abertas
-                  </p>
-                </div>
-                <div className="text-right text-xs text-muted-foreground">
-                  <p>{client.status === "ativo" ? "Ativo" : "Inativo"}</p>
-                  <p>{formatDateTime(client.updatedAt)}</p>
-                </div>
-              </Link>
+              <li key={client.id}>
+                <Link
+                  href={`/administrador-master/clientes/${getTenantIdentifier(client)}`}
+                  className="flex items-center justify-between gap-4 px-4 py-3 transition hover:bg-panel/60"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {client.name}
+                    </p>
+                    <p className="text-[11px] tabular-nums text-muted-foreground/80">
+                      <span className="font-medium text-foreground/90">{client.metrics.users}</span> usuários
+                      <span aria-hidden> · </span>
+                      <span className="font-medium text-foreground/90">{client.metrics.stores}</span> lojas
+                      <span aria-hidden> · </span>
+                      <span className="font-medium text-foreground/90">
+                        {client.metrics.openOccurrences}
+                      </span>{" "}
+                      ocorrências
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span
+                      className={
+                        client.status === "ativo"
+                          ? "inline-flex items-center rounded-full bg-success/20 px-2 py-0.5 text-[11px] font-semibold text-success-foreground"
+                          : "inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-[11px] font-semibold text-secondary-foreground"
+                      }
+                    >
+                      {client.status === "ativo" ? "Ativo" : "Inativo"}
+                    </span>
+                    <span className="hidden whitespace-nowrap text-[11px] tabular-nums text-muted-foreground/80 sm:inline">
+                      {formatDateTime(client.updatedAt)}
+                    </span>
+                  </div>
+                </Link>
+              </li>
             ))}
-          </CardContent>
-        </Card>
+          </ul>
+        ) : null}
+      </section>
+
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/[var(--opacity-divider)] pt-3">
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/administrador-master/clientes?tab=occurrences">
+            Canal com clientes
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/administrador-master/clientes?new=1">
+            <Building2 className="size-4" />
+            Provisionar tenant
+          </Link>
+        </Button>
       </div>
     </PageLayout>
   );

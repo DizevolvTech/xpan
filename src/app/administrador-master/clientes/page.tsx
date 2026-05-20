@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Building2, ShieldCheck, ShoppingCart, Store, Users } from "lucide-react";
+import { Building2, ShieldCheck, Users } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
 import { InfoHint } from "@/components/shared/info-hint";
@@ -136,11 +136,11 @@ export default function AdministradorMasterClientesPage() {
       key: "footprint",
       header: "Ecossistema",
       render: (client: MasterClient) => (
-        <div className="min-w-[14rem] space-y-1 text-sm">
+        <div className="min-w-[14rem] space-y-0.5 text-sm tabular-nums">
           <p className="font-medium text-foreground">
             {client.metrics.stores} lojas · {client.metrics.products} produtos
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground/80">
             {client.metrics.users} usuários · {client.metrics.orders} pedidos
           </p>
         </div>
@@ -150,11 +150,11 @@ export default function AdministradorMasterClientesPage() {
       key: "health",
       header: "Sinais",
       render: (client: MasterClient) => (
-        <div className="min-w-[12rem] space-y-1 text-sm">
+        <div className="min-w-[12rem] space-y-0.5 text-sm tabular-nums">
           <p className="font-medium text-foreground">
             {client.metrics.activeUsers} usuários ativos
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground/80">
             {client.metrics.openOccurrences} ocorrências abertas
           </p>
         </div>
@@ -291,7 +291,7 @@ export default function AdministradorMasterClientesPage() {
   return (
     <PageLayout
       title="Clientes"
-      description="Cadastre administradores de cliente, acompanhe a adoção por tenant e abra cada ecossistema existente em modo leitura."
+      description="Carteira SaaS — adoção e acesso em modo leitura por tenant."
       badge="Administrador Master"
       breadcrumbs={[
         { label: "Administrador Master", href: "/administrador-master" },
@@ -311,12 +311,35 @@ export default function AdministradorMasterClientesPage() {
         </Button>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KPICard title="Clientes" value={metrics.totalClients} icon={Building2} tone="info" />
-        <KPICard title="Clientes ativos" value={metrics.activeClients} icon={ShieldCheck} tone="success" />
-        <KPICard title="Usuários" value={metrics.users} icon={Users} tone="warning" />
-        <KPICard title="Lojas" value={metrics.stores} icon={Store} tone="neutral" />
-        <KPICard title="Pedidos" value={metrics.orders} icon={ShoppingCart} tone="info" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <KPICard
+          title="Clientes"
+          value={metrics.totalClients}
+          icon={Building2}
+          tone="info"
+        />
+        <KPICard
+          title="Clientes ativos"
+          value={metrics.activeClients}
+          icon={ShieldCheck}
+          tone="success"
+        />
+        <KPICard
+          title="Usuários"
+          value={metrics.users}
+          icon={Users}
+          tone="warning"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
+        <span>
+          Lojas <span className="font-medium text-foreground">{metrics.stores}</span>
+        </span>
+        <span aria-hidden>·</span>
+        <span>
+          Pedidos acumulados <span className="font-medium text-foreground">{metrics.orders}</span>
+        </span>
       </div>
 
       {createdResult ? (
@@ -422,21 +445,19 @@ export default function AdministradorMasterClientesPage() {
       >
         <DialogContent size="xl">
           <DialogHeader>
-            <DialogTitle>Novo cliente SaaS</DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle>Novo cliente SaaS</DialogTitle>
+              <InfoHint
+                size="sm"
+                content="Provisionamento seguro: o cliente só é criado quando o e-mail do administrador inicial estiver livre. Se já existir, nada é salvo."
+              />
+            </div>
             <DialogDescription>
-              O provisionamento cria o tenant, o primeiro administrador e a configuração operacional mínima do ecossistema.
+              Cria o tenant, o primeiro administrador e a configuração operacional mínima.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-5 py-2">
-            <div className="flex items-center gap-1.5 rounded-xl border border-border/70 bg-panel/20 p-4">
-              <p className="text-sm font-semibold text-foreground">Provisionamento seguro</p>
-              <InfoHint
-                size="sm"
-                content="O cliente só é criado quando o e-mail do administrador inicial estiver livre. Se esse e-mail já existir, nada é salvo e você pode corrigir o cadastro na hora."
-              />
-            </div>
-
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="tenant-name">Nome do cliente</Label>
