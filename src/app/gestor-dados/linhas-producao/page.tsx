@@ -6,7 +6,6 @@ import { CalendarDays, Clock3, Layers3, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -157,26 +156,58 @@ export default function LinhasProducaoPage() {
   }, [isDialogOpen, router, searchParams, snapshot.sectors]);
 
   const columns = [
-    { key: "code", header: "Código" },
-    { key: "name", header: "Linha de produção" },
-    { key: "sectorName", header: "Categoria" },
-    { key: "type", header: "Tipo" },
+    {
+      key: "code",
+      header: "Código",
+      render: (item: LinhaRow) => (
+        <span className="text-sm font-medium tabular-nums text-foreground">{item.code}</span>
+      ),
+    },
+    {
+      key: "name",
+      header: "Linha de produção",
+      render: (item: LinhaRow) => (
+        <div className="space-y-0.5">
+          <span className="block text-sm font-semibold text-foreground">{item.name}</span>
+          <span className="block text-[11px] text-muted-foreground/80">{item.sectorName}</span>
+        </div>
+      ),
+    },
+    {
+      key: "type",
+      header: "Tipo",
+      render: (item: LinhaRow) => (
+        <span className="text-sm text-foreground">{item.type}</span>
+      ),
+    },
     {
       key: "productCount",
       header: "Produtos",
       render: (item: LinhaRow) => (
         <div className="space-y-0.5">
-          <p className="text-sm font-semibold text-foreground">{item.productCount} operacionais</p>
-          <p className="text-xs text-muted-foreground">{item.masterProductCount} no cadastro base</p>
+          <span className="block text-sm font-semibold tabular-nums text-foreground">
+            {item.productCount} operacionais
+          </span>
+          <span className="block text-[11px] tabular-nums text-muted-foreground/80">
+            {item.masterProductCount} no cadastro base
+          </span>
         </div>
       ),
     },
-    { key: "operatingHours", header: "Horário" },
+    {
+      key: "operatingHours",
+      header: "Horário",
+      render: (item: LinhaRow) => (
+        <span className="text-sm tabular-nums text-foreground">{item.operatingHours}</span>
+      ),
+    },
     {
       key: "pendingAudits",
       header: "Pend. Auditoria",
       render: (item: LinhaRow) => (
-        <span className="text-sm font-semibold text-foreground">{item.pendingAudits}</span>
+        <span className={`text-sm font-semibold tabular-nums ${item.pendingAudits > 0 ? "text-warning-foreground" : "text-foreground"}`}>
+          {item.pendingAudits}
+        </span>
       ),
     },
     {
@@ -186,10 +217,10 @@ export default function LinhasProducaoPage() {
         <div className="space-y-1">
           <StatusBadge status={item.status} />
           {item.status === "ativo" && !item.hasActiveSchedule && (
-            <span className="block text-xs font-medium text-danger-foreground">Sem LP aprovada</span>
+            <span className="block text-[11px] font-medium text-danger-foreground">Sem LP aprovada</span>
           )}
           {item.status === "ativo" && item.hasActiveSchedule && item.pendingAudits > 0 && (
-            <span className="block text-xs font-medium text-warning-foreground">LP em revisão</span>
+            <span className="block text-[11px] font-medium text-warning-foreground">LP em revisão</span>
           )}
         </div>
       ),
@@ -267,12 +298,18 @@ export default function LinhasProducaoPage() {
   return (
     <PageLayout
       title="Linhas de produção"
-      description="Cada linha de produção pertence a uma categoria e controla o cronograma ativo usado na operação e na auditoria."
+      description="Cronograma ativo de cada linha, usado na operação e na auditoria."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
         { label: "Linhas de produção" },
       ]}
+      actions={
+        <Button type="button" onClick={openNewLine} disabled={isSubmitting}>
+          <Plus className="size-4" />
+          Nova linha
+        </Button>
+      }
     >
       <div className="grid gap-3 md:grid-cols-3">
         <KPICard title="Linhas ativas" value={`${activeLines} linhas`} icon={Layers3} tone="success" />
@@ -280,51 +317,42 @@ export default function LinhasProducaoPage() {
           title="Auditorias pendentes"
           value={`${pendingAudits} revisões`}
           icon={CalendarDays}
-          tone="warning"
+          tone={pendingAudits > 0 ? "warning" : "neutral"}
         />
         <KPICard
-          title="Última Atualização"
-          value={isLoading ? "Carregando..." : `${lineRows.length} cadastradas`}
+          title="Total Cadastradas"
+          value={isLoading ? "Carregando..." : `${lineRows.length} linhas`}
           icon={Clock3}
           tone="neutral"
         />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de linhas de produção</CardTitle>
-          <Button type="button" onClick={openNewLine} disabled={isSubmitting}>
-            <Plus className="size-4" />
-            Nova linha de produção
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SearchFilter
-            searchPlaceholder="Buscar por código, linha de produção ou categoria..."
-            onSearch={setSearchTerm}
-            searchValue={searchTerm}
-            showFilters={false}
-          />
-          {error ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-              {error}
-            </div>
-          ) : null}
-          <DataTable
-            data={filteredLinhas}
-            columns={columns}
-            actions={actions}
-            keyField="id"
-            onRowClick={(item) => router.push(`/gestor-dados/linhas-producao/${item.id}`)}
-            stickyHeader
-            emptyMessage={
-              isLoading
-                ? "Carregando linhas de produção..."
-                : "Nenhuma linha de produção encontrada"
-            }
-          />
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <SearchFilter
+          searchPlaceholder="Buscar por código, linha ou categoria..."
+          onSearch={setSearchTerm}
+          searchValue={searchTerm}
+          showFilters={false}
+        />
+        {error ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {error}
+          </div>
+        ) : null}
+        <DataTable
+          data={filteredLinhas}
+          columns={columns}
+          actions={actions}
+          keyField="id"
+          onRowClick={(item) => router.push(`/gestor-dados/linhas-producao/${item.id}`)}
+          stickyHeader
+          emptyMessage={
+            isLoading
+              ? "Carregando linhas de produção..."
+              : "Nenhuma linha de produção encontrada"
+          }
+        />
+      </section>
 
       <Dialog
         open={isDialogOpen}
@@ -338,7 +366,7 @@ export default function LinhasProducaoPage() {
           setIsDialogOpen(open);
         }}
       >
-        <DialogContent size="xl">
+        <DialogContent size="2xl">
           <DialogHeader>
             <DialogTitle>
               {editingLine ? "Editar linha de produção" : "Nova linha de produção"}
@@ -355,132 +383,134 @@ export default function LinhasProducaoPage() {
                 Existem alterações pendentes nesta linha de produção.
               </div>
             ) : null}
-            <div className="grid gap-2">
-              <Label>Nome completo da linha de produção *</Label>
-              <Input
-                placeholder="Ex: Linha de Pães"
-                value={formState.name}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, name: event.target.value }))
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Capacidade - Dia (Kg) *</Label>
-              <Input
-                type="number"
-                value={formState.capacityPerDayKg}
-                onChange={(event) =>
-                  setFormState((current) => ({
-                    ...current,
-                    capacityPerDayKg: Number(event.target.value),
-                  }))
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Categoria *</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={formState.sectorId}
-                  onValueChange={(value) =>
-                    setFormState((current) => ({ ...current, sectorId: value }))
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2 md:col-span-2">
+                <Label>Nome completo da linha de produção *</Label>
+                <Input
+                  placeholder="Ex: Linha de Pães"
+                  value={formState.name}
+                  onChange={(event) =>
+                    setFormState((current) => ({ ...current, name: event.target.value }))
                   }
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {snapshot.sectors.map((sector) => (
-                      <SelectItem key={sector.id} value={sector.id}>
-                        {sector.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  title="Criar nova categoria"
-                  onClick={() => {
-                    setCategoryDraft({ name: "", responsible: "" });
-                    setIsCategoryDialogOpen(true);
-                  }}
-                >
-                  <Plus className="size-4" />
-                </Button>
+                />
               </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Tipo *</Label>
-              <div className="flex gap-2">
+              <div className="grid gap-2">
+                <Label>Categoria *</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={formState.sectorId}
+                    onValueChange={(value) =>
+                      setFormState((current) => ({ ...current, sectorId: value }))
+                    }
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {snapshot.sectors.map((sector) => (
+                        <SelectItem key={sector.id} value={sector.id}>
+                          {sector.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Criar nova categoria"
+                    onClick={() => {
+                      setCategoryDraft({ name: "", responsible: "" });
+                      setIsCategoryDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="size-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Tipo *</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={formState.type}
+                    onValueChange={(value) =>
+                      setFormState((current) => ({
+                        ...current,
+                        type: value as ProductionLine["type"],
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(lineTypes.length > 0
+                        ? [...new Map(lineTypes.map((lt) => [lt.name, lt])).values()]
+                        : [{ id: "seco", name: "Seco" }, { id: "congelado", name: "Congelado" }]
+                      ).map((lt) => (
+                        <SelectItem key={lt.id} value={lt.name}>
+                          {lt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Criar novo tipo"
+                    onClick={() => {
+                      setTypeDraftName("");
+                      setIsTypeDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="size-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Capacidade - Dia (Kg) *</Label>
+                <Input
+                  type="number"
+                  value={formState.capacityPerDayKg}
+                  onChange={(event) =>
+                    setFormState((current) => ({
+                      ...current,
+                      capacityPerDayKg: Number(event.target.value),
+                    }))
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Horário de Funcionamento</Label>
+                <Input
+                  value={formState.operatingHours}
+                  onChange={(event) =>
+                    setFormState((current) => ({ ...current, operatingHours: event.target.value }))
+                  }
+                  placeholder="05:00 - 14:00"
+                />
+              </div>
+              <div className="grid gap-2 md:col-span-2">
+                <Label>Status</Label>
                 <Select
-                  value={formState.type}
+                  value={formState.status}
                   onValueChange={(value) =>
                     setFormState((current) => ({
                       ...current,
-                      type: value as ProductionLine["type"],
+                      status: value as ProductionLine["status"],
                     }))
                   }
                 >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Selecione" />
+                  <SelectTrigger>
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(lineTypes.length > 0
-                      ? [...new Map(lineTypes.map((lt) => [lt.name, lt])).values()]
-                      : [{ id: "seco", name: "Seco" }, { id: "congelado", name: "Congelado" }]
-                    ).map((lt) => (
-                      <SelectItem key={lt.id} value={lt.name}>
-                        {lt.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="ativo">Ativo</SelectItem>
+                    <SelectItem value="inativo">Inativo</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  title="Criar novo tipo"
-                  onClick={() => {
-                    setTypeDraftName("");
-                    setIsTypeDialogOpen(true);
-                  }}
-                >
-                  <Plus className="size-4" />
-                </Button>
               </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Horário de Funcionamento</Label>
-              <Input
-                value={formState.operatingHours}
-                onChange={(event) =>
-                  setFormState((current) => ({ ...current, operatingHours: event.target.value }))
-                }
-                placeholder="05:00 - 14:00"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Status</Label>
-              <Select
-                value={formState.status}
-                onValueChange={(value) =>
-                  setFormState((current) => ({
-                    ...current,
-                    status: value as ProductionLine["status"],
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ativo">Ativo</SelectItem>
-                  <SelectItem value="inativo">Inativo</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter>

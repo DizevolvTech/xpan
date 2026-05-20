@@ -6,7 +6,6 @@ import { Building, Clock3, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -87,15 +86,39 @@ export default function SetoresPage() {
   const activeCount = setorRows.filter((item) => item.status === "ativo").length;
 
   const columns = [
-    { key: "code", header: "Código" },
-    { key: "name", header: "Nome completo" },
-    { key: "lines", header: "Nº Linhas de produção" },
+    {
+      key: "code",
+      header: "Código",
+      render: (item: SetorRow) => (
+        <span className="text-sm font-medium tabular-nums text-foreground">{item.code}</span>
+      ),
+    },
+    {
+      key: "name",
+      header: "Categoria",
+      render: (item: SetorRow) => (
+        <span className="text-sm font-semibold text-foreground">{item.name}</span>
+      ),
+    },
+    {
+      key: "lines",
+      header: "Linhas",
+      render: (item: SetorRow) => (
+        <span className="text-sm tabular-nums text-foreground">{item.lines}</span>
+      ),
+    },
     {
       key: "status",
       header: "Status",
       render: (item: SetorRow) => <StatusBadge status={item.status} />,
     },
-    { key: "responsible", header: "Responsável" },
+    {
+      key: "responsible",
+      header: "Responsável",
+      render: (item: SetorRow) => (
+        <span className="text-sm text-foreground">{item.responsible?.trim() || "—"}</span>
+      ),
+    },
   ];
 
   const actions = [
@@ -167,54 +190,51 @@ export default function SetoresPage() {
   return (
     <PageLayout
       title="Gestão de Categorias"
-      description="Gerencie as categorias macro da operação e seus responsáveis."
+      description="Categorias macro da operação e seus responsáveis."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
         { label: "Categorias" },
       ]}
+      actions={
+        <Button type="button" onClick={openNewCategory} disabled={isSubmitting}>
+          <Plus className="size-4" />
+          Nova Categoria
+        </Button>
+      }
     >
       <div className="grid gap-3 md:grid-cols-2">
-        <KPICard title="Registros Ativos" value={`${activeCount} categorias`} icon={Building} tone="success" />
+        <KPICard title="Categorias Ativas" value={`${activeCount} categorias`} icon={Building} tone="success" />
         <KPICard
-          title="Última Atualização"
-          value={isLoading ? "Carregando..." : `${setorRows.length} cadastradas`}
+          title="Total Cadastradas"
+          value={isLoading ? "Carregando..." : `${setorRows.length} categorias`}
           icon={Clock3}
           tone="neutral"
         />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Categorias</CardTitle>
-          <Button type="button" onClick={openNewCategory} disabled={isSubmitting}>
-            <Plus className="size-4" />
-            Nova Categoria
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SearchFilter
-            searchPlaceholder="Buscar por código ou nome completo..."
-            onSearch={setSearchTerm}
-            searchValue={searchTerm}
-            showFilters={false}
-          />
-          {error ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-              {error}
-            </div>
-          ) : null}
-          <DataTable
-            data={filteredSetores}
-            columns={columns}
-            actions={actions}
-            keyField="id"
-            onRowClick={(item) => router.push(`/gestor-dados/setores/${item.id}`)}
-            stickyHeader
-            emptyMessage={isLoading ? "Carregando categorias..." : "Nenhuma categoria encontrada"}
-          />
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <SearchFilter
+          searchPlaceholder="Buscar por código ou nome..."
+          onSearch={setSearchTerm}
+          searchValue={searchTerm}
+          showFilters={false}
+        />
+        {error ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {error}
+          </div>
+        ) : null}
+        <DataTable
+          data={filteredSetores}
+          columns={columns}
+          actions={actions}
+          keyField="id"
+          onRowClick={(item) => router.push(`/gestor-dados/setores/${item.id}`)}
+          stickyHeader
+          emptyMessage={isLoading ? "Carregando categorias..." : "Nenhuma categoria encontrada"}
+        />
+      </section>
 
       <Dialog
         open={isDialogOpen}

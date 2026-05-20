@@ -12,7 +12,6 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { useToast } from "@/components/shared/toast";
 import { useConfirm } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   hierarchyLabels,
   type ProductionProduct,
@@ -107,19 +106,42 @@ export default function ProdutosPage() {
   ).length;
 
   const columns = [
-    { key: "code", header: "Código da fábrica" },
     {
-      key: "externalCode",
-      header: "Código da loja",
-      render: (item: ProductRow) => item.externalCode || "-",
+      key: "code",
+      header: "Códigos",
+      render: (item: ProductRow) => (
+        <div className="space-y-0.5">
+          <span className="block text-sm font-medium tabular-nums text-foreground">{item.code}</span>
+          {item.externalCode ? (
+            <span className="block text-[11px] tabular-nums text-muted-foreground/80">
+              loja {item.externalCode}
+            </span>
+          ) : null}
+        </div>
+      ),
     },
-    { key: "name", header: "Nome completo" },
     {
-      key: "shortName",
-      header: "Nome reduzido",
-      render: (item: ProductRow) => item.shortName || "-",
+      key: "name",
+      header: "Produto",
+      render: (item: ProductRow) => (
+        <div className="space-y-0.5">
+          <span className="block text-sm font-semibold text-foreground">{item.name}</span>
+          {item.shortName ? (
+            <span className="block text-[11px] text-muted-foreground/80">{item.shortName}</span>
+          ) : null}
+        </div>
+      ),
     },
-    { key: "lineName", header: `${hierarchyLabels.line} Cadastral` },
+    {
+      key: "lineName",
+      header: `${hierarchyLabels.line} Cadastral`,
+      render: (item: ProductRow) => (
+        <div className="space-y-0.5">
+          <span className="block text-sm text-foreground">{item.lineName}</span>
+          <span className="block text-[11px] text-muted-foreground/80">{item.sectorName}</span>
+        </div>
+      ),
+    },
     {
       key: "operationalStatusLabel",
       header: "Status",
@@ -135,12 +157,11 @@ export default function ProdutosPage() {
             {item.operationalStatusLabel}
           </span>
           {item.active && item.operationalLineId && !item.hasApprovedLp && (
-            <span className="block text-xs font-medium text-danger-foreground">Sem LP aprovada</span>
+            <span className="block text-[11px] font-medium text-danger-foreground">Sem LP aprovada</span>
           )}
         </div>
       ),
     },
-    { key: "sectorName", header: hierarchyLabels.sector },
     {
       key: "active",
       header: "Ativo?",
@@ -150,10 +171,21 @@ export default function ProdutosPage() {
     {
       key: "unitProfiles",
       header: "Venda / Produção / Expedição",
-      render: (item: ProductRow) =>
-        `${item.unitProfiles.sales.unit} / ${item.unitProfiles.production.unit} / ${item.unitProfiles.expedition.unit}`,
+      render: (item: ProductRow) => (
+        <span className="text-sm tabular-nums text-foreground">
+          {item.unitProfiles.sales.unit} / {item.unitProfiles.production.unit} / {item.unitProfiles.expedition.unit}
+        </span>
+      ),
     },
-    { key: "productionDaysLabel", header: "Cronograma" },
+    {
+      key: "productionDaysLabel",
+      header: "Cronograma",
+      render: (item: ProductRow) => (
+        <span className="text-[11px] tabular-nums text-muted-foreground/80">
+          {item.productionDaysLabel}
+        </span>
+      ),
+    },
   ];
 
   function openProductDialog(product: ProductRow | null, mode: ProductDialogMode) {
@@ -212,12 +244,18 @@ export default function ProdutosPage() {
   return (
     <PageLayout
       title="Gestão de Produtos"
-      description="Modele a engenharia em kg, o cronograma por produto e o espelho MPI no mesmo cadastro."
+      description="Engenharia em kg, cronograma e espelho MPI no mesmo cadastro."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
         { label: "Produtos" },
       ]}
+      actions={
+        <Button type="button" onClick={() => openProductDialog(null, "edit")}>
+          <Plus className="size-4" />
+          Novo Produto
+        </Button>
+      }
     >
       <div className="grid gap-3 md:grid-cols-3">
         <KPICard
@@ -250,38 +288,28 @@ export default function ProdutosPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Produtos</CardTitle>
-          <Button type="button" onClick={() => openProductDialog(null, "edit")}>
-            <Plus className="size-4" />
-            Novo Produto
-          </Button>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          <SearchFilter
-            searchPlaceholder="Buscar por código da fábrica, código da loja, nome completo, nome reduzido ou status..."
-            onSearch={setSearchTerm}
-            searchValue={searchTerm}
-            showFilters={false}
-          />
-          {error ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-              {error}
-            </div>
-          ) : null}
-          <DataTable
-            data={filteredProducts}
-            columns={columns}
-            actions={actions}
-            keyField="id"
-            onRowClick={(item) => openProductDialog(item, "view")}
-            emptyMessage={isLoading ? "Carregando produtos..." : "Nenhum produto encontrado"}
-            stickyHeader
-          />
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <SearchFilter
+          searchPlaceholder="Buscar por código, nome ou status..."
+          onSearch={setSearchTerm}
+          searchValue={searchTerm}
+          showFilters={false}
+        />
+        {error ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {error}
+          </div>
+        ) : null}
+        <DataTable
+          data={filteredProducts}
+          columns={columns}
+          actions={actions}
+          keyField="id"
+          onRowClick={(item) => openProductDialog(item, "view")}
+          emptyMessage={isLoading ? "Carregando produtos..." : "Nenhum produto encontrado"}
+          stickyHeader
+        />
+      </section>
 
       <ProductFormDialog
         open={isDialogOpen}

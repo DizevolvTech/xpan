@@ -5,7 +5,6 @@ import { Building2, Clock3, Pencil, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KPICard } from "@/components/shared/kpi-card";
 import { DataTable } from "@/components/shared/data-table";
 import { InfoHint } from "@/components/shared/info-hint";
@@ -128,33 +127,69 @@ export default function LojasPage() {
   );
 
   const columns = [
-    { key: "code", header: "Código" },
-    { key: "name", header: "Nome completo" },
     {
-      key: "responsible",
-      header: "Responsável",
-      render: (item: Loja) => item.responsible?.trim() || "Não vinculado",
+      key: "code",
+      header: "Código",
+      render: (item: Loja) => (
+        <span className="text-sm font-medium tabular-nums text-foreground">{item.code}</span>
+      ),
+    },
+    {
+      key: "name",
+      header: "Loja",
+      render: (item: Loja) => (
+        <div className="space-y-0.5">
+          <span className="block text-sm font-semibold text-foreground">{item.name}</span>
+          <span className="block text-[11px] text-muted-foreground/80">
+            {item.responsible?.trim() ? `Resp.: ${item.responsible}` : "Sem responsável vinculado"}
+          </span>
+        </div>
+      ),
     },
     {
       key: "orderingDays",
-      header: "Dias de Pedido",
-      render: (item: Loja) => `${(item.orderingDays ?? []).length} dias`,
+      header: "Pedido",
+      render: (item: Loja) => {
+        const total = (item.orderingDays ?? []).length;
+        const blocked = (item.orderingBlockedDays ?? []).length;
+        return (
+          <div className="space-y-0.5">
+            <span className="block text-sm tabular-nums text-foreground">{total} dias</span>
+            {blocked > 0 ? (
+              <span className="block text-[11px] tabular-nums text-muted-foreground/80">
+                {blocked} bloqueado{blocked > 1 ? "s" : ""}
+              </span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "receivingDays",
-      header: "Dias de Recebimento",
-      render: (item: Loja) => `${(item.receivingDays ?? []).length} dias`,
-    },
-    {
-      key: "blockedDays",
-      header: "Bloqueios",
-      render: (item: Loja) =>
-        `${(item.orderingBlockedDays ?? []).length} pedido · ${(item.receivingBlockedDays ?? []).length} receb.`,
+      header: "Recebimento",
+      render: (item: Loja) => {
+        const total = (item.receivingDays ?? []).length;
+        const blocked = (item.receivingBlockedDays ?? []).length;
+        return (
+          <div className="space-y-0.5">
+            <span className="block text-sm tabular-nums text-foreground">{total} dias</span>
+            {blocked > 0 ? (
+              <span className="block text-[11px] tabular-nums text-muted-foreground/80">
+                {blocked} bloqueado{blocked > 1 ? "s" : ""}
+              </span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: "receivesSunday",
       header: "Recebe Domingo",
-      render: (item: Loja) => (getStoreReceivesSunday(item) ? "Sim" : "Não"),
+      render: (item: Loja) => (
+        <span className="text-sm text-foreground">
+          {getStoreReceivesSunday(item) ? "Sim" : "Não"}
+        </span>
+      ),
     },
     {
       key: "status",
@@ -284,88 +319,88 @@ export default function LojasPage() {
   return (
     <PageLayout
       title="Gestão de Lojas"
-      description="Configure os dias operacionais por loja e centralize horário limite e D+X como regras globais."
+      description="Dias operacionais por loja. Horário limite e D+X são regras globais."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
         { label: "Lojas" },
       ]}
+      actions={
+        <Button type="button" onClick={openNewStore}>
+          <Plus className="size-4" />
+          Nova Loja
+        </Button>
+      }
     >
       <div className="grid gap-3 md:grid-cols-2">
         <KPICard title="Registros Ativos" value={`${lojas.length} lojas`} icon={Building2} tone="success" />
         <KPICard
-          title="Última Atualização"
+          title="Lojas Ativas"
           value={isLoading ? "Carregando..." : `${lojas.filter((store) => store.status === "ativo").length} ativas`}
           icon={Clock3}
           tone="neutral"
         />
       </div>
 
-      <Card className="border-info/25 bg-info/10">
-        <CardContent className="grid gap-3 p-4 md:grid-cols-2">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Regra Global</p>
-              <InfoHint
-                size="xs"
-                content="Os horários limite e a regra D+X agora pertencem ao sistema/fábrica. Na loja ficam somente os dias em que ela pede e recebe mercadoria."
-              />
-            </div>
-            <p className="mt-1 text-lg font-semibold text-foreground">{snapshot.operationalSettings.orderCutoffTime}</p>
-            <p className="text-sm text-muted-foreground">Horário limite do pedido</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Regra Global</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">D+{snapshot.operationalSettings.expeditionLeadDays}</p>
-            <p className="text-sm text-muted-foreground">Lead time padrão de expedição</p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Regra global — pílula discreta, não Card. Setting pertence ao sistema/fábrica. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border/70 bg-panel/40 px-3 py-2 text-xs text-muted-foreground">
+        <span className="font-semibold uppercase tracking-[0.08em] text-muted-foreground/90">
+          Regra Global
+        </span>
+        <span className="text-foreground">
+          Horário limite{" "}
+          <strong className="font-semibold tabular-nums">
+            {snapshot.operationalSettings.orderCutoffTime}
+          </strong>
+        </span>
+        <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+        <span className="text-foreground">
+          Lead time{" "}
+          <strong className="font-semibold tabular-nums">
+            D+{snapshot.operationalSettings.expeditionLeadDays}
+          </strong>
+        </span>
+        <InfoHint
+          size="xs"
+          content="Horários limite e D+X pertencem ao sistema/fábrica. Na loja ficam apenas os dias em que ela pede e recebe mercadoria."
+        />
+      </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Lojas</CardTitle>
-          <Button type="button" onClick={openNewStore}>
-            <Plus className="size-4" />
-            Nova Loja
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SearchFilter
-            searchPlaceholder="Buscar por código ou nome..."
-            onSearch={setSearchTerm}
-            searchValue={searchTerm}
-            showFilters={false}
-          />
-          {error ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-              {error}
-            </div>
-          ) : null}
-          {storeUsersError ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-              {storeUsersError}
-            </div>
-          ) : null}
-          <DataTable
-            data={filteredLojas}
-            columns={columns}
-            actions={actions}
-            keyField="id"
-            onRowClick={(item) => {
-              setDialogMode("view");
-              setEditingStore(item);
-              const nextFormState = buildLojaFormState(item);
-              setFormState(nextFormState);
-              setFormBaseline(JSON.stringify(nextFormState));
-              setFormError(null);
-              setIsDialogOpen(true);
-            }}
-            stickyHeader
-            emptyMessage={isLoading ? "Carregando lojas..." : "Nenhuma loja encontrada"}
-          />
-        </CardContent>
-      </Card>
+      <section className="space-y-3">
+        <SearchFilter
+          searchPlaceholder="Buscar por código ou nome..."
+          onSearch={setSearchTerm}
+          searchValue={searchTerm}
+          showFilters={false}
+        />
+        {error ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {error}
+          </div>
+        ) : null}
+        {storeUsersError ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {storeUsersError}
+          </div>
+        ) : null}
+        <DataTable
+          data={filteredLojas}
+          columns={columns}
+          actions={actions}
+          keyField="id"
+          onRowClick={(item) => {
+            setDialogMode("view");
+            setEditingStore(item);
+            const nextFormState = buildLojaFormState(item);
+            setFormState(nextFormState);
+            setFormBaseline(JSON.stringify(nextFormState));
+            setFormError(null);
+            setIsDialogOpen(true);
+          }}
+          stickyHeader
+          emptyMessage={isLoading ? "Carregando lojas..." : "Nenhuma loja encontrada"}
+        />
+      </section>
 
       <Dialog
         open={isDialogOpen}

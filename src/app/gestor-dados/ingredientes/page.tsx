@@ -13,7 +13,6 @@ import { KPICard } from "@/components/shared/kpi-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   type ProductionIngredient,
   type ProductionProduct,
@@ -123,25 +122,51 @@ export default function IngredientesPage() {
   );
 
   const columns = [
-    { key: "code", header: "Código XPAN" },
     {
-      key: "externalCode",
-      header: "Código ERP",
-      render: (item: IngredientListRow) => item.externalCode || "-",
+      key: "code",
+      header: "Códigos",
+      render: (item: IngredientListRow) => (
+        <div className="space-y-0.5">
+          <span className="block text-sm font-medium tabular-nums text-foreground">{item.code}</span>
+          {item.externalCode ? (
+            <span className="block text-[11px] tabular-nums text-muted-foreground/80">
+              ERP {item.externalCode}
+            </span>
+          ) : null}
+        </div>
+      ),
     },
-    { key: "name", header: "Nome completo" },
     {
-      key: "shortName",
-      header: "Nome reduzido",
-      render: (item: IngredientListRow) => item.shortName || "-",
+      key: "name",
+      header: "Ingrediente",
+      render: (item: IngredientListRow) => (
+        <div className="space-y-0.5">
+          <span className="block text-sm font-semibold text-foreground">{item.name}</span>
+          {item.shortName ? (
+            <span className="block text-[11px] text-muted-foreground/80">{item.shortName}</span>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "typeLabel",
       header: "Tipo",
       render: (item: IngredientListRow) => renderTypeBadge(item),
     },
-    { key: "unitLabel", header: "Un. Medida" },
-    { key: "compositionLabel", header: "Composição" },
+    {
+      key: "unitLabel",
+      header: "Un. Medida",
+      render: (item: IngredientListRow) => (
+        <span className="text-sm tabular-nums text-foreground">{item.unitLabel}</span>
+      ),
+    },
+    {
+      key: "compositionLabel",
+      header: "Composição",
+      render: (item: IngredientListRow) => (
+        <span className="text-[11px] text-muted-foreground/80">{item.compositionLabel}</span>
+      ),
+    },
   ];
 
   function openIngredientDialog(ingredient: IngredientRow | null, mode: IngredientDialogMode) {
@@ -190,12 +215,18 @@ export default function IngredientesPage() {
   return (
     <PageLayout
       title="Gestão de Ingredientes"
-      description="Cadastre ingredientes puros, misturados e acompanhe os produtos MPI reutilizáveis na mesma listagem."
+      description="Ingredientes puros, misturados e produtos MPI reutilizáveis na mesma listagem."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
         { label: "Ingredientes" },
       ]}
+      actions={
+        <Button type="button" onClick={() => openIngredientDialog(null, "edit")}>
+          <Plus className="size-4" />
+          Novo Ingrediente
+        </Button>
+      }
     >
       <div className="grid gap-3 md:grid-cols-2">
         <KPICard
@@ -213,46 +244,37 @@ export default function IngredientesPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>Lista de Ingredientes e MPI</CardTitle>
-          <Button type="button" onClick={() => openIngredientDialog(null, "edit")}>
-            <Plus className="size-4" />
-            Novo Ingrediente
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SearchFilter
-            searchPlaceholder="Buscar por código XPAN, ERP, nome completo, nome reduzido ou tipo..."
-            onSearch={setSearchTerm}
-            searchValue={searchTerm}
-            showFilters={false}
-          />
-          {error ? (
-            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-              {error}
-            </div>
-          ) : null}
-          <DataTable
-            data={filteredRows}
-            columns={columns}
-            actions={actions}
-            keyField="rowKey"
-            onRowClick={(item) => {
-              if (item.rowKind === "mpiProduct" && item.product) {
-                openProductDialog(item.product, "view");
-                return;
-              }
+      <section className="space-y-3">
+        <SearchFilter
+          searchPlaceholder="Buscar por código, nome ou tipo..."
+          onSearch={setSearchTerm}
+          searchValue={searchTerm}
+          showFilters={false}
+        />
+        {error ? (
+          <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+            {error}
+          </div>
+        ) : null}
+        <DataTable
+          data={filteredRows}
+          columns={columns}
+          actions={actions}
+          keyField="rowKey"
+          onRowClick={(item) => {
+            if (item.rowKind === "mpiProduct" && item.product) {
+              openProductDialog(item.product, "view");
+              return;
+            }
 
-              if (item.ingredient) {
-                openIngredientDialog(item.ingredient, "view");
-              }
-            }}
-            emptyMessage={isLoading ? "Carregando ingredientes..." : "Nenhuma referência encontrada"}
-            stickyHeader
-          />
-        </CardContent>
-      </Card>
+            if (item.ingredient) {
+              openIngredientDialog(item.ingredient, "view");
+            }
+          }}
+          emptyMessage={isLoading ? "Carregando ingredientes..." : "Nenhuma referência encontrada"}
+          stickyHeader
+        />
+      </section>
 
       <IngredientFormDialog
         open={isIngredientDialogOpen}
