@@ -6,9 +6,7 @@ import {
   CheckCircle2,
   KeyRound,
   Plus,
-  ShieldCheck,
   UserCog,
-  Users,
   XCircle,
 } from "lucide-react";
 
@@ -240,8 +238,8 @@ export default function AdministradorUsuariosPage() {
             <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
           </Avatar>
           <div className="space-y-0.5">
-            <p className="text-sm font-medium leading-5 text-foreground">{user.name}</p>
-            <p className="text-xs leading-4 text-muted-foreground">{user.email}</p>
+            <p className="text-sm font-semibold leading-5 text-foreground">{user.name}</p>
+            <p className="text-[11px] leading-4 text-muted-foreground/80">{user.email}</p>
           </div>
         </div>
       ),
@@ -280,10 +278,10 @@ export default function AdministradorUsuariosPage() {
       header: "Perfil",
       render: (user: ManagedUser) => (
         <div className="min-w-[11rem] space-y-0.5">
-          <p className="text-sm font-medium leading-5 text-foreground">
+          <p className="text-[13px] font-medium leading-5 tabular-nums text-foreground">
             {user.profile.phone || "Telefone pendente"}
           </p>
-          <p className="text-xs leading-4 text-muted-foreground">
+          <p className="text-[11px] leading-4 text-muted-foreground/80">
             {buildAddressSummary(user.profile.address)}
           </p>
         </div>
@@ -294,11 +292,12 @@ export default function AdministradorUsuariosPage() {
       header: "Delegação",
       render: (user: ManagedUser) => (
         <div className="min-w-[9rem] space-y-0.5">
-          <p className="text-sm font-medium leading-5 text-foreground">
-            {countAllowedModules(user.permissions)} módulos
+          <p className="text-[13px] font-medium leading-5 text-foreground">
+            <span className="tabular-nums">{countAllowedModules(user.permissions)}</span>
+            <span className="ml-1 text-muted-foreground/80">módulos</span>
           </p>
-          <p className="text-xs leading-4 text-muted-foreground">
-            {countManagementPermissions(user.permissions)} gerenciar
+          <p className="text-[11px] leading-4 text-muted-foreground/80">
+            <span className="tabular-nums">{countManagementPermissions(user.permissions)}</span> gerenciar
           </p>
         </div>
       ),
@@ -311,8 +310,8 @@ export default function AdministradorUsuariosPage() {
 
         return (
           <div className="min-w-[11rem] space-y-0.5">
-            <p className="text-sm font-medium leading-5 text-foreground">{preview.landingPath}</p>
-            <p className="text-xs leading-4 text-muted-foreground">{preview.groupSummary}</p>
+            <p className="text-[13px] font-medium leading-5 text-foreground">{preview.landingPath}</p>
+            <p className="text-[11px] leading-4 text-muted-foreground/80">{preview.groupSummary}</p>
           </div>
         );
       },
@@ -323,12 +322,19 @@ export default function AdministradorUsuariosPage() {
       render: (user: ManagedUser) =>
         supportsStoreScope(user.role) ? (
           <div className="min-w-[11rem] space-y-0.5">
-            <p className="text-sm font-medium leading-5 text-foreground">
-              {user.storeIds?.length
-                ? `${user.storeIds.length} loja${user.storeIds.length > 1 ? "s" : ""} autorizada${user.storeIds.length > 1 ? "s" : ""}`
-                : "Todas as lojas"}
+            <p className="text-[13px] font-medium leading-5 text-foreground">
+              {user.storeIds?.length ? (
+                <>
+                  <span className="tabular-nums">{user.storeIds.length}</span>{" "}
+                  <span className="text-muted-foreground/80">
+                    loja{user.storeIds.length > 1 ? "s" : ""} autorizada{user.storeIds.length > 1 ? "s" : ""}
+                  </span>
+                </>
+              ) : (
+                "Todas as lojas"
+              )}
             </p>
-            <p className="text-xs leading-4 text-muted-foreground">
+            <p className="text-[11px] leading-4 text-muted-foreground/80">
               {user.storeIds?.length
                 ? user.storeIds
                     .slice(0, 2)
@@ -339,9 +345,9 @@ export default function AdministradorUsuariosPage() {
           </div>
         ) : (
           <div className="min-w-[11rem] space-y-0.5">
-            <p className="text-sm font-medium leading-5 text-foreground">Nao se aplica</p>
-            <p className="text-xs leading-4 text-muted-foreground">
-              Vinculo de lojas disponivel apenas para perfil loja
+            <p className="text-[13px] font-medium leading-5 text-muted-foreground">Não se aplica</p>
+            <p className="text-[11px] leading-4 text-muted-foreground/80">
+              Vínculo de lojas disponível apenas para perfil loja
             </p>
           </div>
         ),
@@ -350,7 +356,9 @@ export default function AdministradorUsuariosPage() {
       key: "updatedAt",
       header: "Última Atualização",
       render: (user: ManagedUser) => (
-        <span className="whitespace-nowrap text-xs text-muted-foreground">{user.updatedAt}</span>
+        <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground/80">
+          {user.updatedAt}
+        </span>
       ),
     },
   ];
@@ -789,17 +797,17 @@ export default function AdministradorUsuariosPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KPICard title="Usuários cadastrados" value={kpis.total} icon={Users} tone="info" />
-        <KPICard title="Usuários ativos" value={kpis.ativos} icon={CheckCircle2} tone="success" />
-        <KPICard title="Com acesso admin" value={kpis.admin} icon={KeyRound} tone="warning" />
-        <KPICard title="Perfis completos" value={kpis.perfisCompletos} icon={UserCog} tone="neutral" />
-        <KPICard
-          title="Permissões customizadas"
-          value={kpis.customizados}
-          icon={ShieldCheck}
-          tone="info"
-        />
+      <div className="space-y-2">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <KPICard title="Usuários ativos" value={kpis.ativos} icon={CheckCircle2} tone="success" />
+          <KPICard title="Com acesso admin" value={kpis.admin} icon={KeyRound} tone="warning" />
+          <KPICard title="Perfis completos" value={kpis.perfisCompletos} icon={UserCog} tone="neutral" />
+        </div>
+        <p className="px-1 text-[11px] tabular-nums text-muted-foreground/80">
+          <span className="font-medium text-muted-foreground">Total cadastrados:</span> {kpis.total}
+          <span className="mx-2 opacity-50">·</span>
+          <span className="font-medium text-muted-foreground">Permissões customizadas:</span> {kpis.customizados}
+        </p>
       </div>
 
       <Card>
@@ -881,43 +889,6 @@ export default function AdministradorUsuariosPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Passo 1
-            </p>
-            <p className="mt-1 font-medium text-foreground">
-              Defina o perfil-base do usuário para aplicar o template inicial de acesso.
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Passo 2
-            </p>
-            <p className="mt-1 font-medium text-foreground">
-              Abra o perfil para manter foto, telefone, endereço e senha atualizados.
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Passo 3
-            </p>
-            <p className="mt-1 font-medium text-foreground">
-              Abra a delegação e habilite os módulos realmente necessários para esse usuário.
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Passo 4
-            </p>
-            <p className="mt-1 font-medium text-foreground">
-              Ajuste o nível de acesso: visualizar, operar ou gerenciar cada módulo.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       <Dialog
         open={isUserDialogOpen}
         onOpenChange={(open) => {
@@ -930,11 +901,11 @@ export default function AdministradorUsuariosPage() {
           setIsUserDialogOpen(open);
         }}
       >
-        <DialogContent size="full" className="gap-0 p-0">
+        <DialogContent size="3xl" className="gap-0 p-0">
           <DialogHeader className="border-b border-border/70 px-6 py-5 pr-14">
             <DialogTitle>{editingUserId ? "Editar Usuário" : "Novo Usuário"}</DialogTitle>
             <DialogDescription>
-              O perfil-base define as permissões padrão. O escopo de lojas abaixo é opcional e funciona como uma segunda camada: quando preenchido, limita em quais unidades o usuário pode operar sempre que tiver módulos da loja liberados.
+              O perfil-base aplica o template padrão de permissões. O escopo de lojas é opcional e restringe em quais unidades o usuário pode operar.
             </DialogDescription>
           </DialogHeader>
 
@@ -1148,11 +1119,11 @@ export default function AdministradorUsuariosPage() {
       >
         <DialogContent size="3xl">
           <DialogHeader>
-            <DialogTitle>Perfil do Usuário</DialogTitle>
+            <DialogTitle>
+              {profileUser ? `Perfil de ${profileUser.name}` : "Perfil do Usuário"}
+            </DialogTitle>
             <DialogDescription>
-              {profileUser
-                ? `Atualize foto, contato, endereço e senha de ${profileUser.name}.`
-                : "Ajuste os dados de perfil do usuário."}
+              Foto, contato, endereço e senha.
             </DialogDescription>
           </DialogHeader>
 
@@ -1417,10 +1388,12 @@ export default function AdministradorUsuariosPage() {
       >
         <DialogContent size="3xl">
           <DialogHeader>
-            <DialogTitle>Delegação de Permissões</DialogTitle>
+            <DialogTitle>
+              {permissionUser ? `Delegação · ${permissionUser.name}` : "Delegação de Permissões"}
+            </DialogTitle>
             <DialogDescription>
               {permissionUser
-                ? `Usuário: ${permissionUser.name} (${roleLabels[permissionUser.role]} como perfil-base).`
+                ? `${roleLabels[permissionUser.role]} como perfil-base.`
                 : "Ajuste os níveis de acesso por módulo."}
             </DialogDescription>
           </DialogHeader>
@@ -1428,40 +1401,40 @@ export default function AdministradorUsuariosPage() {
           {permissionUser && permissionDraft && (
             <div className="space-y-4 py-1">
               {permissionNavigationPreview ? (
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
-                    <div className="flex items-center gap-1.5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        Entrada inicial
-                      </p>
-                      <InfoHint size="xs" content="A primeira rota liberada por esta delegação." />
-                    </div>
-                    <p className="mt-1 text-sm font-medium text-foreground">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-border/70 bg-panel/30 px-3 py-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+                      Entrada
+                    </span>
+                    <span className="font-medium text-foreground">
                       {permissionNavigationPreview.landingPath}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Áreas visíveis
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-foreground">
+                    </span>
+                    <InfoHint size="xs" content="A primeira rota liberada por esta delegação." />
+                  </span>
+                  <span className="h-3 w-px bg-border/70" aria-hidden />
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+                      Áreas
+                    </span>
+                    <span className="font-medium text-foreground">
                       {permissionNavigationPreview.groupSummary}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {permissionNavigationPreview.visibleGroupCount} área{permissionNavigationPreview.visibleGroupCount === 1 ? "" : "s"} com navegação disponível.
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-border/80 bg-panel/25 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                      Módulos visíveis
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-foreground">
-                      {permissionNavigationPreview.visibleModuleCount} módulo{permissionNavigationPreview.visibleModuleCount === 1 ? "" : "s"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {permissionNavigationPreview.moduleSummary}
-                    </p>
-                  </div>
+                    </span>
+                    <span className="tabular-nums text-muted-foreground/80">
+                      ({permissionNavigationPreview.visibleGroupCount})
+                    </span>
+                  </span>
+                  <span className="h-3 w-px bg-border/70" aria-hidden />
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+                      Módulos
+                    </span>
+                    <span className="font-medium tabular-nums text-foreground">
+                      {permissionNavigationPreview.visibleModuleCount}
+                    </span>
+                    <span className="truncate text-muted-foreground/80" title={permissionNavigationPreview.moduleSummary}>
+                      · {permissionNavigationPreview.moduleSummary}
+                    </span>
+                  </span>
                 </div>
               ) : null}
 
