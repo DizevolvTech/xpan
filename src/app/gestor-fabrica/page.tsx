@@ -11,7 +11,7 @@ import {
   Settings2,
   ShoppingCart,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { InfoHint } from "@/components/shared/info-hint";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
@@ -184,6 +184,87 @@ export default function GestorFabricaPage() {
       expeditionRows: planningData.expedition.length,
     };
   }, [deliveryExecution, planningData.expedition, planningData.orders, planningData.productionOrders.length]);
+
+  // Carga de produção do período: avanço agregado (donut) + ocupação por linha
+  // (barras). Read-only, deriva tudo de planningData.productionOrders. Sem libs
+  // de chart — mesma técnica artesanal do admin (conic-gradient + div width).
+  const productionLoad = useMemo(() => {
+    const ops = planningData.productionOrders;
+    const totalKg = ops.reduce((sum, op) => sum + op.totalKg, 0);
+
+    // Agrega kg por linha — top 4 por carga.
+    const byLineMap = new Map<string, { lineName: string; totalKg: number; opsCount: number }>();
+    ops.forEach((op) => {
+      const current = byLineMap.get(op.lineId) ?? {
+        lineName: op.lineName,
+        totalKg: 0,
+        opsCount: 0,
+      };
+      current.totalKg += op.totalKg;
+      current.opsCount += 1;
+      byLineMap.set(op.lineId, current);
+    });
+    const byLine = Array.from(byLineMap.entries())
+      .map(([lineId, value]) => ({ lineId, ...value }))
+      .sort((a, b) => b.totalKg - a.totalKg);
+    const lineMaxKg = byLine.length > 0 ? byLine[0].totalKg : 0;
+
+    // Avanço agregado em kg (% ponderado pela carga).
+    let producedKg = 0;
+    let inProgressKg = 0;
+    let pendingKg = 0;
+    ops.forEach((op) => {
+      const progress = Math.max(0, Math.min(100, op.progress));
+      if (op.status === "em_producao") {
+        producedKg += (op.totalKg * progress) / 100;
+        inProgressKg += op.totalKg * (1 - progress / 100);
+      } else if (progress > 0) {
+        producedKg += (op.totalKg * progress) / 100;
+        pendingKg += op.totalKg * (1 - progress / 100);
+      } else {
+        pendingKg += op.totalKg;
+      }
+    });
+
+    const safeTotal = totalKg > 0 ? totalKg : 1;
+    const producedPct = (producedKg / safeTotal) * 100;
+    const inProgressPct = (inProgressKg / safeTotal) * 100;
+    const pendingPct = (pendingKg / safeTotal) * 100;
+
+    return {
+      totalKg,
+      opsCount: ops.length,
+      producedKg,
+      inProgressKg,
+      pendingKg,
+      producedPct,
+      inProgressPct,
+      pendingPct,
+      byLine,
+      lineMaxKg,
+    };
+  }, [planningData.productionOrders]);
+
+  const productionDonutStyle = useMemo<CSSProperties>(() => {
+    if (productionLoad.totalKg <= 0) {
+      return { background: "conic-gradient(var(--muted) 0 100%)" };
+    }
+    const segments: string[] = [];
+    let cursor = 0;
+    const push = (size: number, color: string) => {
+      if (size <= 0) return;
+      const end = cursor + size;
+      segments.push(`${color} ${cursor}% ${end}%`);
+      cursor = end;
+    };
+    push(productionLoad.producedPct, "oklch(0.86 0.07 148)");
+    push(productionLoad.inProgressPct, "oklch(0.84 0.06 238)");
+    push(productionLoad.pendingPct, "var(--muted)");
+    if (segments.length === 0) {
+      return { background: "conic-gradient(var(--muted) 0 100%)" };
+    }
+    return { background: `conic-gradient(${segments.join(", ")})` };
+  }, [productionLoad]);
 
   // AJ-0001: Kanban read-only de acompanhamento. Só visualização + navegação
   // (deep-link p/ a lista filtrada — reaproveita o ?status do AJ-0002).
@@ -648,6 +729,110 @@ export default function GestorFabricaPage() {
           content="Visão read-only do fluxo. A coluna de produção lista ordens (OPs); as outras listam pedidos. Clique em uma coluna ou OP para abrir a lista filtrada. O status não é alterado por aqui."
         />
       </div>
+
+      {/* Carga de produção do período — leitura agregada que o Kanban não dá:
+          avanço total (donut) + ocupação por linha (barras). Read-only. */}
+      {productionLoad.opsCount > 0 ? (
+        <section
+          aria-labelledby="production-load-title"
+          className="grid gap-3 rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)] ring-1 ring-border/40 md:grid-cols-[auto_1fr]"
+        >
+          <div className="flex items-center gap-3 md:flex-col md:items-center md:justify-center md:gap-2 md:pe-4 md:border-e md:border-border/40">
+            <div className="relative size-24 shrink-0">
+              <div
+                aria-hidden
+                className="size-full rounded-full"
+                style={productionDonutStyle}
+              />
+              <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-card">
+                <span className="font-heading text-lg font-bold leading-none tabular-nums text-foreground">
+                  {productionLoad.totalKg > 0
+                    ? `${Math.round(productionLoad.producedPct)}%`
+                    : "—"}
+                </span>
+                <span className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Avanço
+                </span>
+              </div>
+            </div>
+            <div className="min-w-0 md:text-center">
+              <p
+                id="production-load-title"
+                className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+              >
+                Carga do período
+              </p>
+              <p className="mt-0.5 font-mono text-xs tabular-nums text-foreground">
+                {formatKgLabel(productionLoad.totalKg)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {productionLoad.opsCount} {productionLoad.opsCount === 1 ? "OP" : "OPs"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2">
+            <header className="flex items-baseline justify-between gap-3">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Ocupação por linha
+              </h3>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden className="size-1.5 rounded-full bg-success" />
+                  Concluído
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden className="size-1.5 rounded-full bg-info" />
+                  Em andamento
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden className="size-1.5 rounded-full bg-muted" />
+                  Pendente
+                </span>
+              </div>
+            </header>
+            {productionLoad.byLine.length === 0 ? (
+              <p className="py-2 text-xs text-muted-foreground/60">
+                Sem ordens de produção no período.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {productionLoad.byLine.slice(0, 4).map((line) => {
+                  const widthPct =
+                    productionLoad.lineMaxKg > 0
+                      ? Math.max(2, (line.totalKg / productionLoad.lineMaxKg) * 100)
+                      : 0;
+                  return (
+                    <li
+                      key={line.lineId}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-xs"
+                    >
+                      <span className="truncate font-medium text-foreground">
+                        {line.lineName}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {formatKgLabel(line.totalKg)}
+                        <span className="ml-1 text-muted-foreground/70">
+                          · {line.opsCount} {line.opsCount === 1 ? "OP" : "OPs"}
+                        </span>
+                      </span>
+                      <div
+                        aria-hidden
+                        className="col-span-2 h-1.5 overflow-hidden rounded-full bg-muted/60"
+                      >
+                        <div
+                          className="h-full rounded-full bg-info"
+                          style={{ width: `${widthPct}%` }}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       {/* Kanban — protagonista. Coluna "Em produção" lista OPs (unidade real
           de trabalho); demais colunas listam pedidos. */}
