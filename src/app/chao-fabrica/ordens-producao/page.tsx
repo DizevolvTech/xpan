@@ -2,14 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, ClipboardList, Factory, Layers, PackageCheck, Truck } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarRange,
+  ClipboardList,
+  Factory,
+  Layers,
+  PackageCheck,
+  Truck,
+} from "lucide-react";
 
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
-import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -17,7 +24,20 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  filterFactoryPlanningDataByOperationalScope,
+  type OperationalDateScopeMode,
+} from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
   type OrderStatus,
@@ -74,6 +94,7 @@ export default function OrdensProducaoPage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
+  const [isScopeOpen, setIsScopeOpen] = useState(false);
   const { planningData: planningSnapshot, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
@@ -212,6 +233,22 @@ export default function OrdensProducaoPage() {
     [opRows],
   );
 
+  // Stats secundárias: dados úteis, mas não competem com os 3 KPIs primários.
+  // Tablet/totem do chão: número grande + lista alta + 1 botão grande. Resto vira texto.
+  const secondaryStats = useMemo(
+    () => [
+      { label: "Carga total", value: `${formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })}` },
+      { label: "Linhas ativas", value: kpis.activeSubcategories },
+    ],
+    [kpis.activeSubcategories, kpis.totalKg],
+  );
+
+  const scopeLabel = useMemo(() => {
+    if (scope.mode === "all") return "Todo o período";
+    if (scope.mode === "day") return scope.date;
+    return `${scope.startDate} → ${scope.endDate}`;
+  }, [scope]);
+
   const selectedOp = useMemo(
     () => opRows.find((item) => item.id === selectedOpId) ?? null,
     [opRows, selectedOpId],
@@ -236,25 +273,61 @@ export default function OrdensProducaoPage() {
     },
   ];
 
+  // Tablet do chão: tipografia maior em código da OP (visível de longe) e progresso.
   const columns = [
-    { key: "code", header: "OP" },
-    { key: "productionDateLabel", header: "Data de produção" },
+    {
+      key: "code",
+      header: "OP",
+      render: (item: OpQueueRow) => (
+        <span className="font-mono text-base font-semibold tabular-nums text-foreground">
+          {item.code}
+        </span>
+      ),
+    },
+    {
+      key: "productionDateLabel",
+      header: "Data de produção",
+      render: (item: OpQueueRow) => (
+        <span className="text-sm tabular-nums text-foreground">{item.productionDateLabel}</span>
+      ),
+    },
     { key: "sectorName", header: hierarchyLabels.sector },
     { key: "lineName", header: hierarchyLabels.line },
     { key: "scheduleName", header: hierarchyLabels.schedule },
-    { key: "productsCount", header: "Produtos" },
-    { key: "totalKg", header: "Carga (Kg)" },
+    {
+      key: "productsCount",
+      header: "Produtos",
+      render: (item: OpQueueRow) => (
+        <span className="text-sm tabular-nums text-foreground">{item.productsCount}</span>
+      ),
+    },
+    {
+      key: "totalKg",
+      header: "Carga (Kg)",
+      render: (item: OpQueueRow) => (
+        <span className="text-sm font-semibold tabular-nums text-foreground">
+          {formatKgValue(item.totalKg)}
+        </span>
+      ),
+    },
     {
       key: "completion",
       header: "% conclusão",
       render: (item: OpQueueRow) => (
-        <div className="min-w-[220px]">
-          <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{item.completion.toFixed(1)}%</span>
-            <span>{formatKgValue(item.capacityKg)} Kg/dia de capacidade</span>
+        <div className="min-w-[200px]">
+          <div className="mb-1 flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold tabular-nums text-foreground">
+              {item.completion.toFixed(1)}%
+            </span>
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {formatKgValue(item.capacityKg)} Kg/dia
+            </span>
           </div>
-          <div className="h-2 rounded-full bg-panel">
-            <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.completion, 100)}%` }} />
+          <div className="h-2.5 rounded-full bg-panel">
+            <div
+              className="h-full rounded-full bg-info"
+              style={{ width: `${Math.min(item.completion, 100)}%` }}
+            />
           </div>
         </div>
       ),
@@ -342,29 +415,102 @@ export default function OrdensProducaoPage() {
         </Button>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="OPs liberadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" compactValue />
-        <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={Factory} tone="success" compactValue />
-        <KPICard title="% conclusão média" value={`${kpis.avgCompletion}%`} icon={PackageCheck} tone="info" compactValue />
-        <KPICard title="Linhas ativas" value={kpis.activeSubcategories} icon={Layers} tone="warning" compactValue />
+      {/* Action bar — pílula de escopo. ScopeCard cheio fica nas telas analíticas;
+          chão opera no "agora" e só precisa saber qual janela está visível. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-4">
+        <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-sm font-medium text-foreground shadow-[var(--shadow-soft)] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Ajustar janela operacional"
+            >
+              <CalendarRange className="size-4 text-muted-foreground" aria-hidden />
+              <span className="text-muted-foreground">Janela:</span>
+              <span className="font-semibold">{scopeLabel}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[320px] space-y-3 p-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Janela da produção
+              </p>
+              <p className="text-xs text-muted-foreground">{summary}</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground">Modo</Label>
+              <Select
+                value={scope.mode}
+                onValueChange={(value) => setMode(value as OperationalDateScopeMode)}
+              >
+                <SelectTrigger className="bg-background/80">
+                  <SelectValue placeholder="Selecionar modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo o período</SelectItem>
+                  <SelectItem value="day">Data específica</SelectItem>
+                  <SelectItem value="range">Período fechado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {scope.mode === "day" ? (
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Data</Label>
+                <Input
+                  type="date"
+                  value={scope.date}
+                  onChange={(event) => setDate(event.target.value)}
+                />
+              </div>
+            ) : null}
+            {scope.mode === "range" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">De</Label>
+                  <Input
+                    type="date"
+                    value={scope.startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">Até</Label>
+                  <Input
+                    type="date"
+                    value={scope.endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </PopoverContent>
+        </Popover>
       </div>
 
-      <OperationalDateScopeCard
-        scope={scope}
-        summary={summary}
-        setMode={setMode}
-        setDate={setDate}
-        setStartDate={setStartDate}
-        setEndDate={setEndDate}
-        title="Janela da produção"
-        description="Acompanhe todas as OPs, foque em um dia específico ou feche um período operacional."
-      />
+      {/* 3 KPIs primários — números grandes, leitura de longe. */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <KPICard title="OPs liberadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" compactValue />
+        <KPICard title="% conclusão média" value={`${kpis.avgCompletion}%`} icon={PackageCheck} tone="info" compactValue />
+        <KPICard
+          title="Carga em produção"
+          value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })}
+          icon={Factory}
+          tone="success"
+          compactValue
+        />
+      </div>
 
-      <FactoryFlow
-        currentKey="producao"
-        steps={flowSteps}
-        subtitle="O operador acompanha o avanço por produto. A expedição só libera após a conclusão da OP."
-      />
+      {/* Stats secundárias: linha enxuta de apoio, sem mini-cards aninhados. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-xs text-muted-foreground">
+        {secondaryStats.map((stat, index) => (
+          <span key={stat.label} className="inline-flex items-center gap-1.5">
+            {index > 0 && <span aria-hidden className="text-border">·</span>}
+            <Layers className="size-3 text-muted-foreground/70" aria-hidden />
+            <span>{stat.label}:</span>
+            <span className="font-semibold text-foreground tabular-nums">{stat.value}</span>
+          </span>
+        ))}
+      </div>
 
       <OperationFiltersCard
         title="Filtros da Produção"
@@ -424,7 +570,7 @@ export default function OrdensProducaoPage() {
       />
 
       <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">
+        <CardHeader className="border-b border-border/60">
           <CardTitle>Fila de OPs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -435,6 +581,7 @@ export default function OrdensProducaoPage() {
             pagination={false}
             showFooterControls={false}
             onRowClick={(item) => window.location.assign(`/chao-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`)}
+            rowClassName={() => "min-h-[44px]"}
             emptyMessage="Nenhuma OP encontrada para os filtros"
             stickyHeader
           />
@@ -461,76 +608,92 @@ export default function OrdensProducaoPage() {
         </CardContent>
       </Card>
 
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Resumo diário por linha de produção</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DataTable
-              data={dailyLineRows}
-              columns={dailyColumns}
-              keyField="id"
-              emptyMessage="Sem carga planejada para a referência atual"
-              compact
-            />
-          </CardContent>
-        </Card>
+      {/* Visões analíticas — fora da primeira dobra. Chão precisa decidir
+          qual OP iniciar agora; resumos por linha/dia são para auditoria. */}
+      <details className="group rounded-xl border border-border/60 bg-panel/40">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
+          <span>Visões analíticas por linha</span>
+          <span className="text-xs font-medium text-muted-foreground group-open:hidden">Mostrar</span>
+          <span className="hidden text-xs font-medium text-muted-foreground group-open:inline">Ocultar</span>
+        </summary>
+        <div className="space-y-4 px-4 pb-4 pt-1">
+          <Card>
+            <CardHeader>
+              <CardTitle>Resumo diário por linha de produção</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DataTable
+                data={dailyLineRows}
+                columns={dailyColumns}
+                keyField="id"
+                emptyMessage="Sem carga planejada para a referência atual"
+                compact
+              />
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Kg por linha de produção e dia</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PaginatedSection items={alignedLineRows.lines} label="linhas de produção" initialPageSize={8}>
-              {(paginatedLines) => (
-                <div className="overflow-x-auto rounded-xl border border-border/80">
-                  <table className="w-full min-w-[920px] border-collapse">
-                    <thead className="bg-panel">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">{hierarchyLabels.line}</th>
-                        {alignedLineRows.dates.map((date) => (
-                          <th key={date} className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                            {formatDateKeyBr(date)}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedLines.map((lineName) => (
-                        <tr key={lineName}>
-                          <td className="border-t border-border/70 bg-card px-3 py-2 text-sm font-semibold text-foreground">{lineName}</td>
-                          {alignedLineRows.dates.map((date) => {
-                            const key = `${lineName}|${date}`;
-                            const rows = alignedLineRows.map.get(key) ?? [];
-                            const totalKg = rows.reduce((sum, row) => sum + row.totalKg, 0);
-                            const totalItems = rows.reduce((sum, row) => sum + row.itemsCount, 0);
-
-                            return (
-                              <td key={key} className="border-t border-border/70 bg-card px-3 py-2 text-xs">
-                                {rows.length === 0 ? (
-                                  <span className="text-muted-foreground">-</span>
-                                ) : (
-                                  <div className="space-y-1">
-                                    <div className="font-semibold text-foreground">{formatKgLabel(totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                    <div className="text-muted-foreground">
-                                      {rows.length} OP(s) · {totalItems} item(ns)
-                                    </div>
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
+          <Card>
+            <CardHeader>
+              <CardTitle>Kg por linha de produção e dia</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PaginatedSection items={alignedLineRows.lines} label="linhas de produção" initialPageSize={8}>
+                {(paginatedLines) => (
+                  <div className="overflow-x-auto rounded-xl border border-border/80">
+                    <table className="w-full min-w-[920px] border-collapse">
+                      <thead className="bg-panel">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">{hierarchyLabels.line}</th>
+                          {alignedLineRows.dates.map((date) => (
+                            <th key={date} className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                              {formatDateKeyBr(date)}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </PaginatedSection>
-          </CardContent>
-        </Card>
-      </div>
+                      </thead>
+                      <tbody>
+                        {paginatedLines.map((lineName) => (
+                          <tr key={lineName}>
+                            <td className="border-t border-border/70 bg-card px-3 py-2 text-sm font-semibold text-foreground">{lineName}</td>
+                            {alignedLineRows.dates.map((date) => {
+                              const key = `${lineName}|${date}`;
+                              const rows = alignedLineRows.map.get(key) ?? [];
+                              const totalKg = rows.reduce((sum, row) => sum + row.totalKg, 0);
+                              const totalItems = rows.reduce((sum, row) => sum + row.itemsCount, 0);
+
+                              return (
+                                <td key={key} className="border-t border-border/70 bg-card px-3 py-2 text-xs">
+                                  {rows.length === 0 ? (
+                                    <span className="text-muted-foreground">-</span>
+                                  ) : (
+                                    <div className="space-y-1">
+                                      <div className="font-semibold text-foreground">{formatKgLabel(totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                      <div className="text-muted-foreground">
+                                        {rows.length} OP(s) · {totalItems} item(ns)
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </PaginatedSection>
+            </CardContent>
+          </Card>
+        </div>
+      </details>
+
+      {/* Navegação entre etapas — footer. Onde ir depois desta tela. */}
+      <FactoryFlow
+        currentKey="producao"
+        steps={flowSteps}
+        subtitle="O operador acompanha o avanço por produto. A expedição só libera após a conclusão da OP."
+      />
 
       <ProductionOrderStatusDialog
         open={selectedOpId !== null}

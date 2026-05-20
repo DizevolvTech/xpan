@@ -2,25 +2,37 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Factory, ListChecks, Package, Truck } from "lucide-react";
+import { ArrowLeft, CalendarRange, Factory, ListChecks, Package, Truck } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
-import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { type DeliveryExecutionStatus, useDeliveryExecution } from "@/lib/delivery-execution";
 import {
   getExpeditionVisibleStatus,
   isOrderReadyForDeliveryExecution,
   type ExpeditionVisibleStatus,
 } from "@/lib/delivery-workflow";
-import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import {
+  filterFactoryPlanningDataByOperationalScope,
+  type OperationalDateScopeMode,
+} from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
   type ExpeditionRow,
@@ -47,7 +59,7 @@ type ExpeditionOrderRow = ExpeditionRow & {
 function describeChecklistStatus(item: ExpeditionOrderRow) {
   if (!item.checklistReady) {
     if (item.totalOpsCount > 0 && item.readyOpsCount === item.totalOpsCount) {
-      return "Todas as OPs estao prontas, mas o pedido ainda nao fechou 100% para a expedicao.";
+      return "Todas as OPs estão prontas, mas o pedido ainda não fechou 100% para a expedição.";
     }
     if (item.totalOpsCount > 0) {
       return `Aguardando produção completa: ${item.readyOpsCount}/${item.totalOpsCount} OPs prontas`;
@@ -79,6 +91,7 @@ export default function ExpedicaoPage() {
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
+  const [isScopeOpen, setIsScopeOpen] = useState(false);
   const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
@@ -181,6 +194,18 @@ export default function ExpedicaoPage() {
     prontos: orderRows.filter((item) => item.checklistReady && item.checklistStatus === "aguardando_expedicao").length,
   };
 
+  // Stats secundárias: dado útil mas não compete com os 3 KPIs primários.
+  const secondaryStats = [
+    { label: "Itens", value: kpis.itens },
+  ];
+
+  const scopeLabel =
+    scope.mode === "all"
+      ? "Todo o período"
+      : scope.mode === "day"
+        ? scope.date
+        : `${scope.startDate} → ${scope.endDate}`;
+
   const flowSteps = [
     {
       key: "producao",
@@ -200,37 +225,80 @@ export default function ExpedicaoPage() {
     },
   ];
 
+  // Tablet do chão: pedido/loja em texto base, recebimento em chip legível,
+  // ação primária em size="lg" (h-11=44px) atendendo UX-0010.
   const columns = [
-    { key: "orderCode", header: "Pedido" },
-    { key: "storeName", header: "Loja" },
+    {
+      key: "orderCode",
+      header: "Pedido",
+      render: (item: ExpeditionOrderRow) => (
+        <span className="font-mono text-base font-semibold tabular-nums text-foreground">
+          {item.orderCode}
+        </span>
+      ),
+    },
+    {
+      key: "storeName",
+      header: "Loja",
+      render: (item: ExpeditionOrderRow) => (
+        <span className="text-sm font-medium text-foreground">{item.storeName}</span>
+      ),
+    },
     {
       key: "deliveryDateLabel",
       header: "Recebimento",
       render: (item: ExpeditionOrderRow) => (
-        <span className="rounded-md bg-warning/25 px-2 py-1 text-xs font-semibold text-warning-foreground">
+        <span className="inline-flex items-center rounded-md bg-warning/25 px-2.5 py-1 text-sm font-semibold tabular-nums text-warning-foreground">
           {item.deliveryDateLabel}
         </span>
       ),
     },
-    { key: "itemsCount", header: "Itens" },
-    { key: "totalKg", header: "Carga (Kg)" },
+    {
+      key: "itemsCount",
+      header: "Itens",
+      render: (item: ExpeditionOrderRow) => (
+        <span className="text-sm tabular-nums text-foreground">{item.itemsCount}</span>
+      ),
+    },
+    {
+      key: "totalKg",
+      header: "Carga (Kg)",
+      render: (item: ExpeditionOrderRow) => (
+        <span className="text-sm font-semibold tabular-nums text-foreground">
+          {formatKgLabel(item.totalKg)}
+        </span>
+      ),
+    },
     {
       key: "opsProgress",
       header: "OPs prontas",
       render: (item: ExpeditionOrderRow) =>
-        item.totalOpsCount > 0 ? `${item.readyOpsCount}/${item.totalOpsCount}` : "-",
+        item.totalOpsCount > 0 ? (
+          <span className="text-sm font-semibold tabular-nums text-foreground">
+            {item.readyOpsCount}/{item.totalOpsCount}
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">-</span>
+        ),
     },
     {
       key: "workflowProgress",
       header: "Conclusão",
       render: (item: ExpeditionOrderRow) => (
         <div className="min-w-[170px]">
-          <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{item.workflowProgress.toFixed(1)}%</span>
-            <span>{item.releasedToProduction ? "Liberado" : "Aguardando liberação"}</span>
+          <div className="mb-1 flex items-baseline justify-between gap-2">
+            <span className="text-sm font-semibold tabular-nums text-foreground">
+              {item.workflowProgress.toFixed(1)}%
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {item.releasedToProduction ? "Liberado" : "Aguardando liberação"}
+            </span>
           </div>
-          <div className="h-2 rounded-full bg-panel">
-            <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.workflowProgress, 100)}%` }} />
+          <div className="h-2.5 rounded-full bg-panel">
+            <div
+              className="h-full rounded-full bg-info"
+              style={{ width: `${Math.min(item.workflowProgress, 100)}%` }}
+            />
           </div>
         </div>
       ),
@@ -244,22 +312,32 @@ export default function ExpedicaoPage() {
       key: "actions",
       header: "Ações",
       render: (item: ExpeditionOrderRow) => (
-        <div className="flex min-w-[240px] flex-col gap-2">
+        <div className="flex min-w-[260px] flex-col gap-2">
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${anchorDate}`)}>
-              Imprimir
-            </Button>
             {item.checklistReady ? (
-              <Button asChild type="button" size="sm" variant={item.checklistStatus === "aguardando_expedicao" ? "default" : "outline"}>
+              <Button
+                asChild
+                type="button"
+                size="lg"
+                variant={item.checklistStatus === "aguardando_expedicao" ? "default" : "outline"}
+              >
                 <Link href={`/chao-fabrica/expedicao/${item.id}?ref=${anchorDate}`}>
                   {item.checklistStatus === "aguardando_expedicao" ? "Abrir checklist" : "Ver checklist"}
                 </Link>
               </Button>
             ) : (
-              <Button type="button" size="sm" disabled>
+              <Button type="button" size="lg" disabled>
                 Aguardando produção
               </Button>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${anchorDate}`)}
+            >
+              Imprimir
+            </Button>
           </div>
           <span className="text-xs text-muted-foreground">{describeChecklistStatus(item)}</span>
         </div>
@@ -300,29 +378,108 @@ export default function ExpedicaoPage() {
         </Button>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Pedidos" value={kpis.pedidos} icon={Truck} tone="info" compactValue />
-        <KPICard title="Itens" value={kpis.itens} icon={Package} tone="neutral" compactValue />
-        <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={ListChecks} tone="success" compactValue />
-        <KPICard title="Prontos para checklist" value={kpis.prontos} icon={Factory} tone="warning" compactValue />
+      {/* Action bar — pílula de escopo. Chão opera no "agora": só precisa
+          saber qual janela está visível, sem card cheio com descrição. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-4">
+        <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-11 items-center gap-2 rounded-full border border-border/70 bg-card px-4 text-sm font-medium text-foreground shadow-[var(--shadow-soft)] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Ajustar janela operacional"
+            >
+              <CalendarRange className="size-4 text-muted-foreground" aria-hidden />
+              <span className="text-muted-foreground">Janela:</span>
+              <span className="font-semibold">{scopeLabel}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[320px] space-y-3 p-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Janela da expedição
+              </p>
+              <p className="text-xs text-muted-foreground">{summary}</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground">Modo</Label>
+              <Select
+                value={scope.mode}
+                onValueChange={(value) => setMode(value as OperationalDateScopeMode)}
+              >
+                <SelectTrigger className="bg-background/80">
+                  <SelectValue placeholder="Selecionar modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo o período</SelectItem>
+                  <SelectItem value="day">Data específica</SelectItem>
+                  <SelectItem value="range">Período fechado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {scope.mode === "day" ? (
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Data</Label>
+                <Input
+                  type="date"
+                  value={scope.date}
+                  onChange={(event) => setDate(event.target.value)}
+                />
+              </div>
+            ) : null}
+            {scope.mode === "range" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">De</Label>
+                  <Input
+                    type="date"
+                    value={scope.startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">Até</Label>
+                  <Input
+                    type="date"
+                    value={scope.endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </PopoverContent>
+        </Popover>
       </div>
 
-      <OperationalDateScopeCard
-        scope={scope}
-        summary={summary}
-        setMode={setMode}
-        setDate={setDate}
-        setStartDate={setStartDate}
-        setEndDate={setEndDate}
-        title="Janela da expedição"
-        description="Acompanhe toda a fila, um único recebimento ou um período fechado mantendo checklist e entrega alinhados."
-      />
+      {/* 3 KPIs primários — número grande, leitura de longe no tablet/totem. */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <KPICard title="Pedidos" value={kpis.pedidos} icon={Truck} tone="info" compactValue />
+        <KPICard
+          title="Prontos para checklist"
+          value={kpis.prontos}
+          icon={ListChecks}
+          tone="warning"
+          compactValue
+        />
+        <KPICard
+          title="Carga total"
+          value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })}
+          icon={Factory}
+          tone="success"
+          compactValue
+        />
+      </div>
 
-      <FactoryFlow
-        currentKey="expedicao"
-        steps={flowSteps}
-        subtitle="A fila do chão de fábrica mostra somente pedidos realmente prontos para conferência final."
-      />
+      {/* Stats secundárias: linha enxuta de apoio. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-xs text-muted-foreground">
+        {secondaryStats.map((stat, index) => (
+          <span key={stat.label} className="inline-flex items-center gap-1.5">
+            {index > 0 && <span aria-hidden className="text-border">·</span>}
+            <Package className="size-3 text-muted-foreground/70" aria-hidden />
+            <span>{stat.label}:</span>
+            <span className="font-semibold text-foreground tabular-nums">{stat.value}</span>
+          </span>
+        ))}
+      </div>
 
       <OperationFiltersCard
         title="Filtros da Expedição"
@@ -382,7 +539,7 @@ export default function ExpedicaoPage() {
       />
 
       <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">
+        <CardHeader className="border-b border-border/60">
           <CardTitle>Fila de checklists</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -398,6 +555,7 @@ export default function ExpedicaoPage() {
               }
             }}
             isRowClickable={(item) => item.checklistReady}
+            rowClassName={() => "min-h-[44px]"}
             emptyMessage="Nenhum pedido encontrado para os filtros"
             stickyHeader
           />
@@ -423,6 +581,13 @@ export default function ExpedicaoPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Navegação entre etapas — footer. Onde ir depois desta tela. */}
+      <FactoryFlow
+        currentKey="expedicao"
+        steps={flowSteps}
+        subtitle="A fila do chão de fábrica mostra somente pedidos realmente prontos para conferência final."
+      />
     </PageLayout>
   );
 }
