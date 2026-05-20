@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowLeft, CalendarClock, ClipboardList, Factory, Layers, PackageCheck, ShoppingCart, Truck } from "lucide-react";
+import { ArrowLeft, CalendarClock, CalendarRange, ClipboardList, Factory, PackageCheck, ShoppingCart, Truck } from "lucide-react";
 
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
@@ -11,7 +11,6 @@ import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
-import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -19,7 +18,18 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
+import type { OperationalDateScopeMode } from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
   type OrderStatus,
@@ -78,6 +88,7 @@ export default function OrdensProducaoPage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
+  const [isScopeOpen, setIsScopeOpen] = useState(false);
   const { planningData: planningSnapshot, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
@@ -232,6 +243,12 @@ export default function OrdensProducaoPage() {
   );
   const nextScheduledLabel = scheduledOps[0]?.productionDateLabel ?? "—";
 
+  const scopeLabel = useMemo(() => {
+    if (scope.mode === "all") return "Todo o período";
+    if (scope.mode === "day") return scope.date;
+    return `${scope.startDate} → ${scope.endDate}`;
+  }, [scope]);
+
   const flowSteps = [
     {
       key: "pedidos",
@@ -365,63 +382,96 @@ export default function OrdensProducaoPage() {
         </Button>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      {/* Action bar — escopo em pílula popover (alinhado ao dashboard). */}
+      <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-[var(--shadow-soft)] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Ajustar janela operacional"
+            >
+              <CalendarRange className="size-3.5 text-muted-foreground" aria-hidden />
+              <span className="text-muted-foreground">Janela:</span>
+              <span className="font-semibold">{scopeLabel}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[320px] space-y-3 p-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Janela operacional
+              </p>
+              <p className="text-xs text-muted-foreground">{summary}</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground">Modo</Label>
+              <Select
+                value={scope.mode}
+                onValueChange={(value) => setMode(value as OperationalDateScopeMode)}
+              >
+                <SelectTrigger className="bg-background/80">
+                  <SelectValue placeholder="Selecionar modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo o período</SelectItem>
+                  <SelectItem value="day">Data específica</SelectItem>
+                  <SelectItem value="range">Período fechado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {scope.mode === "day" ? (
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Data</Label>
+                <Input
+                  type="date"
+                  value={scope.date}
+                  onChange={(event) => setDate(event.target.value)}
+                />
+              </div>
+            ) : null}
+            {scope.mode === "range" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">De</Label>
+                  <Input
+                    type="date"
+                    value={scope.startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">Até</Label>
+                  <Input
+                    type="date"
+                    value={scope.endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </PopoverContent>
+        </Popover>
+
+        {/* Linha-stats minúscula — KPIs secundários (linhas ativas + agendadas). */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
+          <span>
+            <span className="font-medium text-foreground/80">{kpis.activeSubcategories}</span> linhas ativas
+          </span>
+          <span aria-hidden className="text-muted-foreground/40">·</span>
+          <span>
+            <span className="font-medium text-foreground/80">{scheduledOps.length}</span>{" "}
+            agendada{scheduledOps.length === 1 ? "" : "s"}
+            {scheduledOps.length > 0 ? ` (próx. ${nextScheduledLabel})` : ""}
+          </span>
+        </div>
+      </div>
+
+      {/* KPIs 5 → 3 primários (linhas ativas e agendadas viraram linha-stats). */}
+      <div className="grid gap-3 sm:grid-cols-3">
         <KPICard title="OPs liberadas" value={kpis.totalOps} icon={ClipboardList} tone="neutral" compactValue />
         <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={Factory} tone="success" compactValue />
         <KPICard title="% conclusão média" value={`${kpis.avgCompletion}%`} icon={PackageCheck} tone="info" compactValue />
-        <KPICard title="Linhas ativas" value={kpis.activeSubcategories} icon={Layers} tone="warning" compactValue />
-        <KPICard
-          title="Agendadas (próximos dias)"
-          value={scheduledOps.length}
-          subtitle={scheduledOps.length > 0 ? `Próxima: ${nextScheduledLabel}` : "Nada agendado à frente"}
-          icon={CalendarClock}
-          tone="info"
-          compactValue
-        />
       </div>
-
-      <OperationalDateScopeCard
-        scope={scope}
-        summary={summary}
-        setMode={setMode}
-        setDate={setDate}
-        setStartDate={setStartDate}
-        setEndDate={setEndDate}
-        title="Janela da produção"
-        description="Visualize todas as OPs, concentre em um dia produtivo ou feche uma janela de produção específica."
-      />
-
-      <FactoryFlow
-        currentKey="producao"
-        steps={flowSteps}
-        subtitle="Pedido auditado gera OP; o progresso da OP sobe automaticamente conforme cada produto avança na operação."
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Documentos operacionais</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Pré-pesagem</p>
-              <InfoHint size="xs" content="Agrupa insumos por produto e destaca MPI/base compartilhada." />
-            </div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Produção</p>
-              <InfoHint size="xs" content="Folha dedicada da linha executora com carga, pedidos e andamento atual." />
-            </div>
-          </div>
-          <div className="rounded-lg border border-border/70 bg-panel/45 p-3 text-sm">
-            <div className="flex items-center gap-1.5">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Expedição</p>
-              <InfoHint size="xs" content="Checklist sai somente quando todos os produtos da OP estiverem concluídos." />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       <OperationFiltersCard
         title="Filtros da Produção"
@@ -522,7 +572,7 @@ export default function OrdensProducaoPage() {
       ) : null}
 
       <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">
+        <CardHeader className="border-b border-border/60">
           <CardTitle>Fila de OPs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -629,6 +679,13 @@ export default function OrdensProducaoPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Navegação operacional — fluxo entre páginas irmãs (rodapé). */}
+      <FactoryFlow
+        currentKey="producao"
+        steps={flowSteps}
+        subtitle="Pedido auditado gera OP; o progresso da OP sobe automaticamente conforme cada produto avança na operação."
+      />
 
       <ProductionOrderStatusDialog
         open={selectedOpId !== null}

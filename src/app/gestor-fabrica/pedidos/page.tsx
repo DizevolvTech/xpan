@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
-import { ArrowDown, ArrowRight, Factory, ListChecks, ShoppingCart, Truck } from "lucide-react";
+import { ArrowDown, ArrowRight, CalendarRange, Factory, ListChecks, ShoppingCart, Truck } from "lucide-react";
 
 import {
   Dialog,
@@ -14,10 +14,19 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
-import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -36,6 +45,7 @@ import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
+import type { OperationalDateScopeMode } from "@/lib/operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 type OrderSummaryRow = PlannedOrderRow & {
@@ -64,6 +74,7 @@ export default function PedidosFabricaPage() {
     orderId: string;
     view: "aggregated" | "original";
   } | null>(null);
+  const [isScopeOpen, setIsScopeOpen] = useState(false);
   const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
@@ -170,6 +181,12 @@ export default function PedidosFabricaPage() {
     aguardandoExpedicao: summaryRows.filter((item) => item.status === "aguardando_expedicao").length,
   };
 
+  const scopeLabel = useMemo(() => {
+    if (scope.mode === "all") return "Todo o período";
+    if (scope.mode === "day") return scope.date;
+    return `${scope.startDate} → ${scope.endDate}`;
+  }, [scope]);
+
   const allExpanded =
     pagination.items.length > 0 && pagination.items.every((item) => expandedOrderIds.includes(item.id));
 
@@ -245,32 +262,97 @@ export default function PedidosFabricaPage() {
         { label: "Pedidos" },
       ]}
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KPICard title="Pedidos" value={kpis.total} icon={ShoppingCart} tone="neutral" compactValue />
+      {/* Action bar — escopo em pílula popover (alinhado ao dashboard). */}
+      <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-[var(--shadow-soft)] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Ajustar janela operacional"
+            >
+              <CalendarRange className="size-3.5 text-muted-foreground" aria-hidden />
+              <span className="text-muted-foreground">Janela:</span>
+              <span className="font-semibold">{scopeLabel}</span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[320px] space-y-3 p-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Janela operacional
+              </p>
+              <p className="text-xs text-muted-foreground">{summary}</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium text-muted-foreground">Modo</Label>
+              <Select
+                value={scope.mode}
+                onValueChange={(value) => setMode(value as OperationalDateScopeMode)}
+              >
+                <SelectTrigger className="bg-background/80">
+                  <SelectValue placeholder="Selecionar modo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todo o período</SelectItem>
+                  <SelectItem value="day">Data específica</SelectItem>
+                  <SelectItem value="range">Período fechado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {scope.mode === "day" ? (
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground">Data</Label>
+                <Input
+                  type="date"
+                  value={scope.date}
+                  onChange={(event) => setDate(event.target.value)}
+                />
+              </div>
+            ) : null}
+            {scope.mode === "range" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">De</Label>
+                  <Input
+                    type="date"
+                    value={scope.startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">Até</Label>
+                  <Input
+                    type="date"
+                    value={scope.endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </PopoverContent>
+        </Popover>
+
+        {/* Linha-stats minúscula (KPIs secundários). */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
+          <span>
+            <span className="font-medium text-foreground/80">{kpis.total}</span> no período
+          </span>
+          <span aria-hidden className="text-muted-foreground/40">·</span>
+          <span>
+            <span className="font-medium text-foreground/80">{kpis.liberados}</span> liberados
+          </span>
+        </div>
+      </div>
+
+      {/* KPIs reduzidos 4 → 3 (cortado "Pedidos" — redundante com 'X de Y' abaixo). */}
+      <div className="grid gap-3 sm:grid-cols-3">
         <KPICard title="Liberados" value={kpis.liberados} icon={ListChecks} tone="info" compactValue />
         <KPICard title="Em Produção" value={kpis.emProducao} icon={Factory} tone="warning" compactValue />
         <KPICard title="Prontos p/ Expedição" value={kpis.aguardandoExpedicao} icon={Truck} tone="success" compactValue />
       </div>
 
-      <OperationalDateScopeCard
-        scope={scope}
-        summary={summary}
-        setMode={setMode}
-        setDate={setDate}
-        setStartDate={setStartDate}
-        setEndDate={setEndDate}
-        title="Janela da fábrica"
-        description="Use o mesmo recorte temporal em pedidos, produção e expedição sem ficar trocando referência por tela."
-      />
-
-      <FactoryFlow
-        currentKey="pedidos"
-        steps={flowSteps}
-        subtitle="Fluxo correto: pedido auditado -> liberar para produção -> acompanhar progresso por item -> expedir."
-      />
-
       <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/70 bg-gradient-to-r from-background via-background to-panel/80">
+        <CardHeader className="border-b border-border/60">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <div className="flex items-center gap-1.5">
@@ -522,6 +604,14 @@ export default function PedidosFabricaPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Navegação operacional — fluxo entre páginas irmãs (fica no rodapé,
+          fora da primeira dobra, como "para onde ir depois"). */}
+      <FactoryFlow
+        currentKey="pedidos"
+        steps={flowSteps}
+        subtitle="Fluxo correto: pedido auditado -> liberar para produção -> acompanhar progresso por item -> expedir."
+      />
 
       <Dialog
         open={detailModal !== null}
