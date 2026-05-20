@@ -2,21 +2,30 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, ChevronRight, Factory, ListChecks, Truck } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  ChevronRight,
+  Factory,
+  Inbox,
+  ListChecks,
+  PackageCheck,
+  Truck,
+} from "lucide-react";
 import { useMemo } from "react";
 
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { Button } from "@/components/ui/button";
-import type { OrderStatus, ProductionOrderRow, ExpeditionRow } from "@/lib/factory-planning";
+import type { OrderStatus, PlannedOrderRow, ProductionOrderRow } from "@/lib/factory-planning";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
 /**
- * Status visual map para os blocos do dashboard.
- * Mantemos chips grandes (px-3 py-1.5) — operário lê de longe.
+ * Status visual map para os chips do dashboard.
+ * Chips altos (px-3 py-1.5) — operário lê de longe, mãos sujas.
  */
 const STATUS_VISUAL: Record<OrderStatus, { label: string; chip: string; bar: string }> = {
   em_producao: {
@@ -51,6 +60,66 @@ const STATUS_VISUAL: Record<OrderStatus, { label: string; chip: string; bar: str
   },
 };
 
+// ============================================================
+// Kanban — espelha modelo do gestor, mas com cards "versão chão"
+// (glanceable, tablet, hit-targets ≥44px, read-only).
+// ============================================================
+
+type KanbanTone = "warning" | "info" | "primary" | "success";
+
+type KanbanColumnBase = {
+  key: string;
+  title: string;
+  tone: KanbanTone;
+  statuses: OrderStatus[];
+  icon: typeof Inbox;
+  emptyText: string;
+  listHref: string;
+  totalCount: number;
+};
+
+type KanbanColumn =
+  | (KanbanColumnBase & { kind: "orders"; items: PlannedOrderRow[] })
+  | (KanbanColumnBase & { kind: "ops"; items: ProductionOrderRow[] });
+
+const KANBAN_TONE_STYLES: Record<
+  KanbanTone,
+  { bar: string; count: string; eyebrow: string; ring: string; iconWrap: string }
+> = {
+  warning: {
+    bar: "bg-warning",
+    count: "text-warning",
+    eyebrow: "text-warning",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-warning/20",
+    iconWrap: "bg-warning/15 text-warning",
+  },
+  info: {
+    bar: "bg-info",
+    count: "text-info",
+    eyebrow: "text-info",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-info/20",
+    iconWrap: "bg-info/15 text-info",
+  },
+  primary: {
+    bar: "bg-primary",
+    count: "text-primary",
+    eyebrow: "text-primary",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-primary/20",
+    iconWrap: "bg-primary/15 text-primary",
+  },
+  success: {
+    bar: "bg-success",
+    count: "text-success",
+    eyebrow: "text-success",
+    ring: "shadow-[var(--shadow-soft)] ring-1 ring-success/20",
+    iconWrap: "bg-success/15 text-success",
+  },
+};
+
+// Limite de cards exibidos por coluna no chão.
+// Operário não rola listas longas no tablet — 6 + "Ver todas".
+const CHAO_KANBAN_LIMIT = 6;
+
 // Ordem da fila do chão: "em produção" e "agendado" sobem; "em espera" depois; concluído nunca aparece.
 const QUEUE_PRIORITY: Record<OrderStatus, number> = {
   em_producao: 0,
@@ -61,9 +130,26 @@ const QUEUE_PRIORITY: Record<OrderStatus, number> = {
   cancelado: 99,
 };
 
+/** Deep-link do card de pedido por status — leitura contextual no chão (read-only). */
+function getOrderHref(row: PlannedOrderRow): string {
+  switch (row.status) {
+    case "aguardando_expedicao":
+      return `/chao-fabrica/expedicao/${row.id}`;
+    case "rota_entrega":
+      return "/chao-fabrica/entregas?status=em_rota";
+    default:
+      // em_espera / agendado / cancelado: lista de OPs do chão (operário não libera pedido)
+      return "/chao-fabrica/ordens-producao";
+  }
+}
+
 export default function ChaoFabricaPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
-  const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const {
+    planningData: planningSnapshot,
+    isLoading,
+    error,
+  } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -84,7 +170,6 @@ export default function ChaoFabricaPage() {
   ];
 
   // Progresso do dia: OPs com progress=100 (ou status terminal) contam como concluídas.
-  // ProductionOrderRow.progress vem 0–100. Usamos 100 como limiar.
   const dayProgress = useMemo(() => {
     const total = planningData.productionOrders.length;
     if (total === 0) {
@@ -106,27 +191,97 @@ export default function ChaoFabricaPage() {
     };
   }, [planningData.productionOrders]);
 
-  // Próximas OPs na fila — top 5 não-concluídas, ordenadas por status.
-  const nextOps = useMemo(() => {
-    return [...planningData.productionOrders]
-      .filter((op) => op.progress < 100 && op.status !== "cancelado")
+  // Kanban (4 colunas) — espelha o modelo do gestor. Read-only.
+  //   1. Aberto                  — pedidos em_espera / agendado          (warning)
+  //   2. Em produção             — OPs em_producao (agrupa por OP)       (info)
+  //   3. Aguardando expedição    — pedidos aguardando_expedicao          (primary)
+  //   4. Em rota / entregue      — pedidos rota_entrega                  (success)
+  const kanbanColumns = useMemo<KanbanColumn[]>(() => {
+    const abertoItems = planningData.orders
+      .filter((order) => order.status === "em_espera" || order.status === "agendado")
       .sort((a, b) => {
         const ap = QUEUE_PRIORITY[a.status] ?? 50;
         const bp = QUEUE_PRIORITY[b.status] ?? 50;
         if (ap !== bp) return ap - bp;
-        // mesmo status: maior carga primeiro (mais relevante na fila)
-        return b.totalKg - a.totalKg;
-      })
-      .slice(0, 5);
-  }, [planningData.productionOrders]);
+        return a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code);
+      });
 
-  // Pronto pra expedir — top 4 pedidos aguardando, maior carga primeiro.
-  const readyExpedition = useMemo(() => {
-    return planningData.expedition
-      .filter((row) => row.status === "aguardando_expedicao")
-      .sort((a, b) => b.totalKg - a.totalKg)
-      .slice(0, 4);
-  }, [planningData.expedition]);
+    const producaoItems = [...planningData.productionOrders]
+      .filter((op) => op.status === "em_producao")
+      .sort((a, b) => {
+        // Mais "quentes" primeiro: maior progresso → maior carga
+        if (b.progress !== a.progress) return b.progress - a.progress;
+        return b.totalKg - a.totalKg;
+      });
+
+    const expedicaoItems = planningData.orders
+      .filter((order) => order.status === "aguardando_expedicao")
+      .sort(
+        (a, b) =>
+          a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
+      );
+
+    const rotaItems = planningData.orders
+      .filter((order) => order.status === "rota_entrega")
+      .sort(
+        (a, b) =>
+          a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
+      );
+
+    return [
+      {
+        kind: "orders",
+        key: "aberto",
+        title: "Aberto",
+        tone: "warning",
+        statuses: ["em_espera", "agendado"],
+        icon: Inbox,
+        emptyText: "Nenhum pedido aberto no período selecionado.",
+        listHref: "/chao-fabrica/ordens-producao",
+        items: abertoItems.slice(0, CHAO_KANBAN_LIMIT),
+        totalCount: abertoItems.length,
+      },
+      {
+        kind: "ops",
+        key: "producao",
+        title: "Em produção",
+        tone: "info",
+        statuses: ["em_producao"],
+        icon: Factory,
+        emptyText: "Nenhuma OP em produção agora.",
+        listHref: "/chao-fabrica/ordens-producao",
+        items: producaoItems.slice(0, CHAO_KANBAN_LIMIT),
+        totalCount: producaoItems.length,
+      },
+      {
+        kind: "orders",
+        key: "expedicao",
+        title: "Aguardando expedição",
+        tone: "primary",
+        statuses: ["aguardando_expedicao"],
+        icon: PackageCheck,
+        emptyText: "Nenhum pedido aguardando checklist.",
+        listHref: "/chao-fabrica/expedicao",
+        items: expedicaoItems.slice(0, CHAO_KANBAN_LIMIT),
+        totalCount: expedicaoItems.length,
+      },
+      {
+        kind: "orders",
+        key: "rota",
+        title: "Em rota / entregue",
+        tone: "success",
+        statuses: ["rota_entrega"],
+        icon: Truck,
+        emptyText: "Nenhum pedido em rota agora.",
+        listHref: "/chao-fabrica/entregas?status=em_rota",
+        items: rotaItems.slice(0, CHAO_KANBAN_LIMIT),
+        totalCount: rotaItems.length,
+      },
+    ];
+  }, [planningData.orders, planningData.productionOrders]);
+
+  const totalKanbanItems = kanbanColumns.reduce((sum, col) => sum + col.totalCount, 0);
+  const kanbanIsEmpty = totalKanbanItems === 0 && !isLoading && !error;
 
   return (
     <PageLayout
@@ -186,8 +341,7 @@ export default function ChaoFabricaPage() {
         ))}
       </motion.div>
 
-      {/* Progresso do dia — hero secundário, full-width.
-          Pensado para o tablet: número gigante à esquerda, barra horizontal alta à direita. */}
+      {/* Progresso do dia — hero secundário, full-width. */}
       <motion.section
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -215,7 +369,6 @@ export default function ChaoFabricaPage() {
           </div>
 
           <div className="flex-[1.4] min-w-0 space-y-2">
-            {/* Barra horizontal alta (h-3, grande pra tablet). Tokens existentes. */}
             <div
               className="relative h-3 w-full overflow-hidden rounded-full bg-panel/40 ring-1 ring-border/70"
               role="progressbar"
@@ -230,7 +383,6 @@ export default function ChaoFabricaPage() {
                     className="h-full bg-success transition-[width] duration-500"
                     style={{ width: `${dayProgress.percent}%` }}
                   />
-                  {/* Sobreposição "em andamento" empilhada à direita das concluídas */}
                   {dayProgress.inProgress > 0 && (
                     <div
                       className="absolute top-0 h-full bg-warning/70"
@@ -269,20 +421,125 @@ export default function ChaoFabricaPage() {
         </div>
       </motion.section>
 
-      {/* Dois blocos lado-a-lado em desktop, empilhados em tablet vertical.
-          - Próximas OPs (esquerda) → onde o operário pega a próxima tarefa.
-          - Pronto pra expedir (direita) → pedidos que o motorista/expedidor pega agora. */}
-      <motion.div
+      {/* ============================================================
+          KANBAN — peça central do chão.
+          4 colunas, espelha o modelo conceitual do gestor:
+          Aberto · Em produção · Aguardando expedição · Em rota.
+          Read-only. Cards na "versão chão" (glanceable, hit ≥96px).
+         ============================================================ */}
+      {error ? (
+        <div
+          role="alert"
+          className="flex items-center gap-3 rounded-2xl bg-danger/15 px-5 py-4 text-sm text-danger-foreground"
+        >
+          <AlertTriangle className="size-5 shrink-0" aria-hidden />
+          <span className="font-semibold">{error}</span>
+        </div>
+      ) : null}
+
+      {kanbanIsEmpty ? (
+        <p className="rounded-2xl border border-dashed border-border/70 bg-panel/30 px-5 py-3 text-sm text-muted-foreground">
+          Sem operações no período. Ajuste a janela.
+        </p>
+      ) : null}
+
+      <motion.section
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.22 }}
-        className="grid gap-4 xl:grid-cols-2"
+        aria-label="Quadro operacional do chão"
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
       >
-        <NextOpsBlock ops={nextOps} />
-        <ReadyExpeditionBlock rows={readyExpedition} />
-      </motion.div>
+        {kanbanColumns.map((column) => {
+          const tone = KANBAN_TONE_STYLES[column.tone];
+          const Icon = column.icon;
+          const isEmpty = column.items.length === 0;
+          const hasMore = column.totalCount > column.items.length;
+          return (
+            <section
+              key={column.key}
+              aria-labelledby={`chao-kanban-${column.key}-title`}
+              className={`group relative flex min-h-[420px] flex-col gap-3 overflow-hidden rounded-2xl bg-card p-4 ${tone.ring}`}
+            >
+              <span
+                aria-hidden
+                className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${tone.bar}`}
+              />
 
-      {/* Atalhos primários do chão. Navegação completa está na sidebar; aqui só os 2 destinos do dia. */}
+              {/* Header — número GIGANTE + título uppercase + ícone à esquerda.
+                  Clicável: leva à lista filtrada. h-11 mínimo no link. */}
+              <header className="flex items-start justify-between gap-3 pl-2">
+                <Link
+                  href={column.listHref}
+                  className="block min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={`Abrir lista — ${column.title} (${column.totalCount})`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      aria-hidden
+                      className={`inline-flex size-11 shrink-0 items-center justify-center rounded-xl ${tone.iconWrap}`}
+                    >
+                      <Icon className="size-6" />
+                    </span>
+                    <div className="min-w-0">
+                      <span
+                        className={`font-heading text-4xl font-bold leading-none tabular-nums ${tone.count} sm:text-5xl`}
+                      >
+                        {column.totalCount}
+                      </span>
+                      <span
+                        id={`chao-kanban-${column.key}-title`}
+                        className={`mt-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] ${tone.eyebrow}`}
+                      >
+                        {column.title}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+                {isLoading && isEmpty ? (
+                  <span className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                    Carregando…
+                  </span>
+                ) : null}
+              </header>
+
+              {/* Lista de cards — densidade chão (cards altos, glanceable). */}
+              <div className="flex flex-1 flex-col gap-2">
+                {isEmpty ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 py-6 text-center">
+                    <Icon
+                      aria-hidden
+                      className="size-7 text-muted-foreground/30"
+                    />
+                    <p className="text-sm text-muted-foreground">{column.emptyText}</p>
+                  </div>
+                ) : column.kind === "ops" ? (
+                  column.items.map((op) => (
+                    <ChaoOpCard key={op.id} op={op} tone={tone} />
+                  ))
+                ) : (
+                  column.items.map((order) => (
+                    <ChaoOrderCard key={order.id} order={order} />
+                  ))
+                )}
+
+                {hasMore ? (
+                  <Link
+                    href={column.listHref}
+                    className="mt-auto inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-panel/40 px-4 text-sm font-semibold text-foreground ring-1 ring-border/60 transition-colors hover:bg-panel/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`Ver todas — ${column.title} (${column.totalCount})`}
+                  >
+                    Ver todas ({column.totalCount})
+                    <ChevronRight className="size-4" aria-hidden />
+                  </Link>
+                ) : null}
+              </div>
+            </section>
+          );
+        })}
+      </motion.section>
+
+      {/* Atalhos primários do chão — supporting cast, rodapé da página. */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -322,158 +579,101 @@ export default function ChaoFabricaPage() {
 }
 
 /* ============================================================
- * Bloco: Próximas OPs (fila do chão)
+ * Card de OP — coluna "Em produção" (versão chão)
+ * min-h 112, p-4, hit-target enorme. Progress h-2.5.
  * ============================================================ */
 
-function NextOpsBlock({ ops }: { ops: ProductionOrderRow[] }) {
+function ChaoOpCard({
+  op,
+  tone,
+}: {
+  op: ProductionOrderRow;
+  tone: (typeof KANBAN_TONE_STYLES)[KanbanTone];
+}) {
+  const visual = STATUS_VISUAL[op.status] ?? STATUS_VISUAL.em_producao;
+  const progress = Math.max(0, Math.min(100, Math.round(op.progress)));
+  const orderCount = op.ordersCount;
+
   return (
-    <section
-      aria-labelledby="proximas-ops-titulo"
-      className="rounded-2xl border border-border/70 bg-panel/40"
+    <Link
+      href={`/chao-fabrica/ordens-producao?op=${encodeURIComponent(op.code)}`}
+      className="group/op flex min-h-[112px] flex-col gap-2 rounded-xl bg-panel/40 p-4 ring-1 ring-border/60 transition-colors hover:bg-panel/70 focus-visible:bg-panel/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <header className="flex items-center justify-between gap-3 px-5 py-4">
-        <div className="min-w-0">
-          <h2
-            id="proximas-ops-titulo"
-            className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-          >
-            Próximas OPs
-          </h2>
-          <p className="mt-1 text-base font-semibold text-foreground">Fila de produção</p>
-        </div>
-        <Link
-          href="/chao-fabrica/ordens-producao"
-          className="inline-flex h-11 items-center gap-1 rounded-md px-3 text-sm font-semibold text-foreground hover:bg-panel/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={`inline-flex shrink-0 items-center rounded-full px-3 py-1.5 text-sm font-semibold ${visual.chip}`}
         >
-          Ver todas
-          <ChevronRight className="size-4" aria-hidden />
-        </Link>
-      </header>
+          {visual.label}
+        </span>
+        <span className="truncate font-mono text-sm text-muted-foreground">{op.code}</span>
+      </div>
 
-      {ops.length === 0 ? (
-        <div className="flex min-h-[160px] items-center justify-center px-5 pb-5 text-center text-sm text-muted-foreground">
-          Sem OPs pendentes na janela.
+      <p className="truncate text-lg font-semibold leading-tight text-foreground">
+        {op.lineName}
+        {op.sectorName ? (
+          <span className="ml-1.5 text-base font-normal text-muted-foreground">— {op.sectorName}</span>
+        ) : null}
+      </p>
+
+      <div className="flex items-center gap-3">
+        <div
+          aria-hidden
+          className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-panel/60 ring-1 ring-border/60"
+        >
+          <div
+            className={`h-full ${tone.bar} transition-[width] duration-300`}
+            style={{ width: `${progress}%` }}
+          />
         </div>
-      ) : (
-        <ul className="divide-y divide-border/60 border-t border-border/60">
-          {ops.map((op) => {
-            const visual = STATUS_VISUAL[op.status] ?? STATUS_VISUAL.em_espera;
-            const progress = Math.max(0, Math.min(100, Math.round(op.progress)));
-            return (
-              <li key={op.id}>
-                <Link
-                  href={`/chao-fabrica/ordens-producao?op=${encodeURIComponent(op.code)}`}
-                  className="flex min-h-[72px] items-center gap-4 px-5 py-3 transition-colors hover:bg-panel/70 focus-visible:outline-none focus-visible:bg-panel/70 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex shrink-0 items-center rounded-full px-3 py-1.5 text-sm font-semibold ${visual.chip}`}
-                      >
-                        {visual.label}
-                      </span>
-                      <span className="truncate font-mono text-sm text-muted-foreground">{op.code}</span>
-                    </div>
-                    <p className="mt-1 truncate text-base font-semibold text-foreground">
-                      {op.lineName}
-                    </p>
-                    <p className="mt-0.5 text-sm text-muted-foreground tabular-nums">
-                      {formatKgValue(op.totalKg)} kg
-                      <span className="mx-1.5 opacity-50">·</span>
-                      {op.itemsCount} {op.itemsCount === 1 ? "item" : "itens"}
-                      <span className="mx-1.5 opacity-50">·</span>
-                      {op.productionDateLabel}
-                    </p>
-                  </div>
+        <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+          {progress}%
+        </span>
+      </div>
 
-                  <div className="flex w-24 shrink-0 flex-col items-end gap-1.5">
-                    <span className="text-sm font-semibold text-foreground tabular-nums">{progress}%</span>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-panel/60 ring-1 ring-border/60">
-                      <div
-                        className={`h-full ${visual.bar} transition-[width] duration-300`}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
+      <p className="text-sm text-muted-foreground tabular-nums">
+        {formatKgValue(op.totalKg)} kg
+        <span className="mx-1.5 opacity-50">·</span>
+        {orderCount} {orderCount === 1 ? "pedido" : "pedidos"}
+        <span className="mx-1.5 opacity-50">·</span>
+        entrega {op.productionDateLabel}
+      </p>
+    </Link>
   );
 }
 
 /* ============================================================
- * Bloco: Pronto pra expedir
+ * Card de pedido — colunas Aberto / Aguardando expedição / Em rota
+ * (versão chão) — min-h 96, p-4.
  * ============================================================ */
 
-function ReadyExpeditionBlock({ rows }: { rows: ExpeditionRow[] }) {
+function ChaoOrderCard({ order }: { order: PlannedOrderRow }) {
+  const visual = STATUS_VISUAL[order.status] ?? STATUS_VISUAL.em_espera;
+
   return (
-    <section
-      aria-labelledby="pronto-expedir-titulo"
-      className="rounded-2xl border border-border/70 bg-panel/40"
+    <Link
+      href={getOrderHref(order)}
+      className="group/order flex min-h-[96px] flex-col gap-2 rounded-xl bg-panel/40 p-4 ring-1 ring-border/60 transition-colors hover:bg-panel/70 focus-visible:bg-panel/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <header className="flex items-center justify-between gap-3 px-5 py-4">
-        <div className="min-w-0">
-          <h2
-            id="pronto-expedir-titulo"
-            className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
-          >
-            Pronto pra expedir
-          </h2>
-          <p className="mt-1 text-base font-semibold text-foreground">Esperando checklist</p>
-        </div>
-        <Link
-          href="/chao-fabrica/expedicao"
-          className="inline-flex h-11 items-center gap-1 rounded-md px-3 text-sm font-semibold text-foreground hover:bg-panel/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={`inline-flex shrink-0 items-center rounded-full px-3 py-1.5 text-sm font-semibold ${visual.chip}`}
         >
-          Ver todos
-          <ChevronRight className="size-4" aria-hidden />
-        </Link>
-      </header>
+          {visual.label}
+        </span>
+        <span className="truncate font-mono text-sm text-muted-foreground">{order.code}</span>
+      </div>
 
-      {rows.length === 0 ? (
-        <div className="flex min-h-[160px] items-center justify-center px-5 pb-5 text-center text-sm text-muted-foreground">
-          Nenhum pedido pronto para expedição agora.
-        </div>
-      ) : (
-        <ul className="divide-y divide-border/60 border-t border-border/60">
-          {rows.map((row) => (
-            <li key={row.id}>
-              <Link
-                href={`/chao-fabrica/expedicao/${row.id}`}
-                className="flex min-h-[72px] items-center gap-4 px-5 py-3 transition-colors hover:bg-panel/70 focus-visible:outline-none focus-visible:bg-panel/70 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex shrink-0 items-center rounded-full bg-success/35 px-3 py-1.5 text-sm font-semibold text-success-foreground">
-                      Pronto
-                    </span>
-                    <span className="truncate font-mono text-sm text-muted-foreground">{row.orderCode}</span>
-                  </div>
-                  <p className="mt-1 truncate text-base font-semibold text-foreground">{row.storeName}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground tabular-nums">
-                    {formatKgValue(row.totalKg)} kg
-                    <span className="mx-1.5 opacity-50">·</span>
-                    {row.itemsCount} {row.itemsCount === 1 ? "item" : "itens"}
-                    <span className="mx-1.5 opacity-50">·</span>
-                    entrega {row.deliveryDateLabel}
-                  </p>
-                </div>
+      <p className="truncate text-lg font-semibold leading-tight text-foreground">
+        {order.storeName}
+      </p>
 
-                <span className="inline-flex h-11 shrink-0 items-center gap-1 rounded-md bg-panel/60 px-3 text-sm font-semibold text-foreground ring-1 ring-border/70">
-                  Abrir checklist
-                  <ChevronRight className="size-4" aria-hidden />
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+      <p className="text-sm text-muted-foreground tabular-nums">
+        {formatKgValue(order.totalKg)} kg
+        <span className="mx-1.5 opacity-50">·</span>
+        {order.itemsCount} {order.itemsCount === 1 ? "item" : "itens"}
+        <span className="mx-1.5 opacity-50">·</span>
+        entrega {order.deliveryDateLabel}
+      </p>
+    </Link>
   );
 }
