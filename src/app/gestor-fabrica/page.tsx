@@ -730,112 +730,10 @@ export default function GestorFabricaPage() {
         />
       </div>
 
-      {/* Carga de produção do período — leitura agregada que o Kanban não dá:
-          avanço total (donut) + ocupação por linha (barras). Read-only. */}
-      {productionLoad.opsCount > 0 ? (
-        <section
-          aria-labelledby="production-load-title"
-          className="grid gap-3 rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)] ring-1 ring-border/40 md:grid-cols-[auto_1fr]"
-        >
-          <div className="flex items-center gap-3 md:flex-col md:items-center md:justify-center md:gap-2 md:pe-4 md:border-e md:border-border/40">
-            <div className="relative size-24 shrink-0">
-              <div
-                aria-hidden
-                className="size-full rounded-full"
-                style={productionDonutStyle}
-              />
-              <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-card">
-                <span className="font-heading text-lg font-bold leading-none tabular-nums text-foreground">
-                  {productionLoad.totalKg > 0
-                    ? `${Math.round(productionLoad.producedPct)}%`
-                    : "—"}
-                </span>
-                <span className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
-                  Avanço
-                </span>
-              </div>
-            </div>
-            <div className="min-w-0 md:text-center">
-              <p
-                id="production-load-title"
-                className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
-              >
-                Carga do período
-              </p>
-              <p className="mt-0.5 font-mono text-xs tabular-nums text-foreground">
-                {formatKgLabel(productionLoad.totalKg)}
-              </p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {productionLoad.opsCount} {productionLoad.opsCount === 1 ? "OP" : "OPs"}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex min-w-0 flex-col gap-2">
-            <header className="flex items-baseline justify-between gap-3">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Ocupação por linha
-              </h3>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <span aria-hidden className="size-1.5 rounded-full bg-success" />
-                  Concluído
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <span aria-hidden className="size-1.5 rounded-full bg-info" />
-                  Em andamento
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <span aria-hidden className="size-1.5 rounded-full bg-muted" />
-                  Pendente
-                </span>
-              </div>
-            </header>
-            {productionLoad.byLine.length === 0 ? (
-              <p className="py-2 text-xs text-muted-foreground/60">
-                Sem ordens de produção no período.
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {productionLoad.byLine.slice(0, 4).map((line) => {
-                  const widthPct =
-                    productionLoad.lineMaxKg > 0
-                      ? Math.max(2, (line.totalKg / productionLoad.lineMaxKg) * 100)
-                      : 0;
-                  return (
-                    <li
-                      key={line.lineId}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-xs"
-                    >
-                      <span className="truncate font-medium text-foreground">
-                        {line.lineName}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {formatKgLabel(line.totalKg)}
-                        <span className="ml-1 text-muted-foreground/70">
-                          · {line.opsCount} {line.opsCount === 1 ? "OP" : "OPs"}
-                        </span>
-                      </span>
-                      <div
-                        aria-hidden
-                        className="col-span-2 h-1.5 overflow-hidden rounded-full bg-muted/60"
-                      >
-                        <div
-                          className="h-full rounded-full bg-info"
-                          style={{ width: `${widthPct}%` }}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </section>
-      ) : null}
-
-      {/* Kanban — protagonista. Coluna "Em produção" lista OPs (unidade real
-          de trabalho); demais colunas listam pedidos. */}
+      {/* Kanban — protagonista da visão geral. Estado vivo do fluxo (4 colunas).
+          Coluna "Em produção" lista OPs (unidade real de trabalho); demais
+          listam pedidos. Read-only: a navegação vai p/ a lista filtrada e o
+          status não é alterado por aqui. */}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {kanbanColumns.map((column, columnIndex) => {
           const tone = KANBAN_TONE_STYLES[column.tone];
@@ -1011,6 +909,110 @@ export default function GestorFabricaPage() {
           );
         })}
       </div>
+
+      {/* Carga de produção do período — complemento agregado que o Kanban não dá:
+          avanço total (donut) + ocupação por linha (barras). Read-only. */}
+      {productionLoad.opsCount > 0 ? (
+        <section
+          aria-labelledby="production-load-title"
+          className="grid gap-3 rounded-2xl bg-card p-4 shadow-[var(--shadow-soft)] ring-1 ring-border/40 md:grid-cols-[auto_1fr]"
+        >
+          <div className="flex items-center gap-3 md:flex-col md:items-center md:justify-center md:gap-2 md:pe-4 md:border-e md:border-border/40">
+            <div className="relative size-24 shrink-0">
+              <div
+                aria-hidden
+                className="size-full rounded-full"
+                style={productionDonutStyle}
+              />
+              <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-card">
+                <span className="font-heading text-lg font-bold leading-none tabular-nums text-foreground">
+                  {productionLoad.totalKg > 0
+                    ? `${Math.round(productionLoad.producedPct)}%`
+                    : "—"}
+                </span>
+                <span className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+                  Avanço
+                </span>
+              </div>
+            </div>
+            <div className="min-w-0 md:text-center">
+              <p
+                id="production-load-title"
+                className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground"
+              >
+                Carga do período
+              </p>
+              <p className="mt-0.5 font-mono text-xs tabular-nums text-foreground">
+                {formatKgLabel(productionLoad.totalKg)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {productionLoad.opsCount} {productionLoad.opsCount === 1 ? "OP" : "OPs"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2">
+            <header className="flex items-baseline justify-between gap-3">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Ocupação por linha
+              </h3>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden className="size-1.5 rounded-full bg-success" />
+                  Concluído
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden className="size-1.5 rounded-full bg-info" />
+                  Em andamento
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden className="size-1.5 rounded-full bg-muted" />
+                  Pendente
+                </span>
+              </div>
+            </header>
+            {productionLoad.byLine.length === 0 ? (
+              <p className="py-2 text-xs text-muted-foreground/60">
+                Sem ordens de produção no período.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {productionLoad.byLine.slice(0, 4).map((line) => {
+                  const widthPct =
+                    productionLoad.lineMaxKg > 0
+                      ? Math.max(2, (line.totalKg / productionLoad.lineMaxKg) * 100)
+                      : 0;
+                  return (
+                    <li
+                      key={line.lineId}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-xs"
+                    >
+                      <span className="truncate font-medium text-foreground">
+                        {line.lineName}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {formatKgLabel(line.totalKg)}
+                        <span className="ml-1 text-muted-foreground/70">
+                          · {line.opsCount} {line.opsCount === 1 ? "OP" : "OPs"}
+                        </span>
+                      </span>
+                      <div
+                        aria-hidden
+                        className="col-span-2 h-1.5 overflow-hidden rounded-full bg-muted/60"
+                      >
+                        <div
+                          className="h-full rounded-full bg-info"
+                          style={{ width: `${widthPct}%` }}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       {/* Atalhos rápidos — pílulas mínimas, supporting cast. */}
       <nav aria-label="Atalhos" className="flex flex-wrap gap-1.5">
