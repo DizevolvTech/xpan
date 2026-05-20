@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import type { ManagedUser, UserFormState } from "@/lib/admin-users";
 import { roleLabels } from "@/lib/admin-users";
+import { formatDateTimeBr } from "@/lib/production-planning";
 import { useManagedUsers } from "@/lib/use-managed-users";
 
 type ClientUserManagementPanelProps = {
@@ -141,7 +142,7 @@ export function ClientUserManagementPanel({
       render: (user: ManagedUser) => (
         <div className="min-w-[10rem]">
           <p className="text-sm font-medium text-foreground">
-            {user.profile.passwordUpdatedAt}
+            {formatDateTimeBr(user.profile.passwordUpdatedAt)}
           </p>
           <p className="text-xs text-muted-foreground">Última atualização</p>
         </div>
@@ -152,7 +153,7 @@ export function ClientUserManagementPanel({
       header: "Última atualização",
       render: (user: ManagedUser) => (
         <span className="whitespace-nowrap text-xs text-muted-foreground">
-          {user.updatedAt}
+          {formatDateTimeBr(user.updatedAt)}
         </span>
       ),
     },

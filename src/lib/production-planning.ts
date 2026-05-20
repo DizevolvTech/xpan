@@ -1386,9 +1386,25 @@ export function getLinePlannedKgPerDay(lineId: string) {
 }
 
 export function formatDateBr(dateIso: string) {
-  const [year, month, day] = dateIso.split("-");
+  // Aceita "YYYY-MM-DD" puro ou ISO completo "YYYY-MM-DDTHH:mm:ss±TZ".
+  // Antes, split("-") em ISO completo retornava "06T22:12:07.380648+00:00/05/2026".
+  const datePart = dateIso.includes("T") ? dateIso.split("T")[0] : dateIso;
+  const [year, month, day] = (datePart ?? "").split("-");
   if (!year || !month || !day) {
     return dateIso;
   }
   return `${day}/${month}/${year}`;
+}
+
+// Data + hora curtas em pt-BR. Usar quando o valor de origem é timestamp
+// (updatedAt, createdAt, passwordUpdatedAt). Falha graciosa se a string for
+// inválida — retorna o input cru.
+export function formatDateTimeBr(dateTimeIso: string): string {
+  if (!dateTimeIso) return "—";
+  const date = new Date(dateTimeIso);
+  if (Number.isNaN(date.getTime())) return dateTimeIso;
+  const datePart = new Intl.DateTimeFormat("pt-BR").format(date);
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${datePart} ${hours}:${minutes}`;
 }

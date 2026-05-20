@@ -52,6 +52,7 @@ import {
   type UserFormState,
 } from "@/lib/admin-users";
 import { formatBrazilPhone } from "@/lib/phone-mask";
+import { formatDateTimeBr } from "@/lib/production-planning";
 import {
   buildDefaultPermissions,
   countAllowedModules,
@@ -357,7 +358,7 @@ export default function AdministradorUsuariosPage() {
       header: "Última Atualização",
       render: (user: ManagedUser) => (
         <span className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground/80">
-          {user.updatedAt}
+          {formatDateTimeBr(user.updatedAt)}
         </span>
       ),
     },
