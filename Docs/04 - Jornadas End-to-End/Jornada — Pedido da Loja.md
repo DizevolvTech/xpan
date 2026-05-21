@@ -2,6 +2,26 @@
 
 > Loja monta pedido D+X → envia → Gestor de Fábrica audita e libera → cronograma é impactado.
 
+> [!note] Atualizado em 2026-05-21 — iniciativa A1-A8
+> A jornada manteve toda a estrutura (modelo "loja cria" segue valendo — AJ-0009
+> continua aguardando decisão), mas o **passo 5 (liberação)** ganhou camadas:
+>
+> - **Validação server-side com override (A1):** `releaseOrder` valida via
+>   `assertPlanningAllowsRelease`. Pode bloquear com `order_cancelled` (não
+>   forçável), `order_not_planned` (forçável) ou `order_not_releasable`
+>   (forçável). Override do gestor dispara evento `liberacao_forcada` no
+>   `store_order_events`. UI dialog "Liberar mesmo assim". Ver
+>   [[Runbook A1-A8#2. Pedido bloqueado para produção — quando o gestor pode forçar|Runbook §2]].
+> - **Auto-release diário (A6/A6.2):** o cron `0 20 * * *` (17:00 BRT) libera
+>   automaticamente todos os pedidos elegíveis. Evento gravado com
+>   `metadata.origin = "sistema"` (vs `"manual"` para release pela UI).
+>   Botão "Auto-liberar elegíveis" no gestor faz o mesmo on-demand.
+> - **Demanda agregada por produto (A2):** card no `gestor-fabrica/pedidos`
+>   substitui a rota órfã `aggregated-quantities`. Derivado do snapshot do
+>   motor — incorpora MPI (A4).
+>
+> Referência completa: [[decisoes/ADR_iniciativa_automacao_pedido_entrega]].
+
 ## Atores envolvidos (ordem)
 
 | Ordem | Persona | Permissão exigida | Papel na jornada |
@@ -58,10 +78,27 @@
 - **Ação humana:** clica "Liberar para produção" (`page.tsx:391-406`); só habilita se `availableForRelease` e `!releasedToProduction`.
 - **API:** `PATCH /api/factory-planning/workflow` com `action: "release-order"` (`route.ts:36-56`).
 - **Server:** `releaseOrder` (`workflow.ts:149-187`):
+  - **Desde 2026-05-21 (A1):** valida via `assertPlanningAllowsRelease` antes
+    de qualquer mutação. Pode rejeitar com 3 razões — `order_cancelled` (não
+    forçável), `order_not_planned` (forçável), `order_not_releasable`
+    (forçável). Mensagens vêm com prefixo `Invalid release: ...` (convenção da
+    iniciativa A1-A8 que o route handler mapeia automaticamente para 400).
+  - Override forçável: chamar com `force: true` pula a validação e grava
+    evento adicional `liberacao_forcada` (auditoria explícita do override).
+    `performReleaseOrderWithConfirm` (`src/lib/release-order-with-confirm.ts`)
+    encapsula o dialog "Liberar mesmo assim".
   - Insere/atualiza `workflow_order_releases` (`onConflict: order_id`).
-  - Grava evento `liberacao_producao` em `store_order_events`.
+  - Grava evento `liberacao_producao` em `store_order_events` com
+    `metadata.origin = "manual" | "sistema"` (derivado da presença de
+    `releasedByProfileId`).
   - Invalida cache de planning.
 - **Efeito no engine:** próxima leitura marca `releasedToProduction = true` no item planejado → produção fica visível e editável em `chao-fabrica/ordens-producao` (jornada 32).
+- **Caminho alternativo — auto-release:** o endpoint
+  `POST /api/factory-planning/auto-release` (botão "Auto-liberar elegíveis" no
+  gestor) e o cron diário (`vercel.json` + `/api/cron/auto-release`)
+  iteram pedidos do dia e chamam `releaseOrder` por pedido. Falha individual
+  cai em `failed[]` sem interromper o batch. Cron passa
+  `releasedByProfileId = null` — evento fica com `origin = "sistema"`.
 
 ### Passo 6 — Cancelamento ou reabertura (caminho alternativo)
 - Loja: `DELETE /api/store-orders/[orderId]` (`route.ts:261-301`) chama `cancelOrder` (`workflow.ts:275-326`). Só permitido se **não** existir release.

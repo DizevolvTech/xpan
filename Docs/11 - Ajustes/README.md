@@ -7,6 +7,7 @@
 ## Índice
 
 - [[Backlog de Ajustes]] — lista única consolidada com status (A-fazer / Em andamento / Concluído)
+- [[Runbook A1-A8]] — operação do fluxo automatizado (cron, override, falhas, métricas, rotas) entregue em 2026-05-21
 - [[Call 2026-05-13 — Daniel + Adriano + Leonora]] — registro completo da call de validação
 - [[Call 2026-05-13 — Plano de Ataque]] — sequência proposta para executar os ajustes
 
@@ -31,8 +32,9 @@ Cada ajuste tem ID `AJ-####` com sequência crescente. O ID nunca é reaproveita
 3. Ao executar: atualizar status no backlog **e** registrar no [[10 - Changelog Vivo/2026-05|Changelog do mês]].
 4. Ao concluir: marcar `Concluído`, manter no backlog para histórico, adicionar `Concluído em` data.
 
-## Visão atual (2026-05-14)
+## Visão atual (2026-05-21)
 
-- **Origem dominante:** call de 2026-05-13 com Daniel + Adriano.
-- **Total aberto:** 22 ajustes (16 do dia, 6 já em testes anteriores que voltaram).
-- **Em destaque (estruturais):** modelo fábrica-cria-pedido (AJ-0009), cálculo de cobertura (AJ-0014), MPI gerando OP (AJ-0008).
+- **Origem dominante:** call de 2026-05-13 com Daniel + Adriano + auditoria interna pós-Ondas 1-3.
+- **Concluído em 2026-05-21:** Iniciativa A1-A8 (8 frentes + A6.2 + A8.1) — fluxo Pedido → Entrega auditável fim a fim. Ver [[Runbook A1-A8]] + [[decisoes/ADR_iniciativa_automacao_pedido_entrega]].
+- **Aberto / pendente:** AJ-0009 (modelo "fábrica abre pedido" — aguardando decisão do cliente), AJ-A7.1 / A7.2 / A8.2 (otimizações derivadas, não-bloqueantes), AJ-0019 (limpar banco — Giuseppe), AJ-0023 (dead code).
+- **Em destaque (estrutural ainda aberto):** modelo fábrica-cria-pedido (AJ-0009).

@@ -2,11 +2,13 @@
 
 ## Status
 
-**Aceito em 2026-05-20** — Giuseppe aprovou os 4 defaults defendidos. **Ativado em 2026-05-20** (mesma data) por decisão de Giuseppe: a flag `EXPAND_MPI_INTO_OPS` passou para **default ON**; quem precisar rollback emergencial sem novo deploy define `EXPAND_MPI_INTO_OPS=false` no ambiente (escape hatch).
+**Fase 1 aceita em 2026-05-20** — Giuseppe aprovou os 4 defaults defendidos. **Ativada em 2026-05-20** (mesma data): flag `EXPAND_MPI_INTO_OPS` passou para **default ON**; escape hatch `=false` para rollback emergencial sem novo deploy.
+
+**Fase 2 entregue em 2026-05-21** — dentro da iniciativa de automação A1-A8 (ver [[ADR_iniciativa_automacao_pedido_entrega]] / A4). Fechou a "Limitação conhecida" da fase 1: MPI passa a rodar na linha/setor nativos quando o cadastro define. Ver seção [[#Fase 2 — concluída 2026-05-21]] abaixo.
 
 > **Simplificação descoberta na implementação (2026-05-20):** a `productionItemKey` do MPI já é única por construção (`${date}|${lineId}|${scheduleId}|${mpiProductId}` com `mpiProductId` distinto do produto-pai). `resolvePreparationStagesForProductionItem` (`workflow.ts:197`) extrai `productIdentifier = key.split("|").at(-1)` que vai retornar o `mpiProductId` e buscar o produto MPI normalmente. **Sufixo `mpi:` no productionItemKey não é necessário.** Ajuste em `workflow.ts:197` removido do escopo do commit 3.
 
-Relacionado: [[Backlog de Ajustes#AJ-0008 — MPI / Ingrediente misturado deve gerar OP separada|AJ-0008]] · [[Backlog de Ajustes#AJ-0020 — Legenda/tooltip diferenciando "ingrediente" e "produto MPI"|AJ-0020]] (já concluído) · interage com [[decisoes/ADR_modelo_fabrica_abre_pedido]] (Onda 4) e com a futura fase de armazenamento ([[Backlog de Ajustes#AJ-0021 — Armazenamento / produção sob estoque (shelf life)|AJ-0021]]).
+Relacionado: [[Backlog de Ajustes#AJ-0008 — MPI / Ingrediente misturado deve gerar OP separada|AJ-0008]] · [[Backlog de Ajustes#AJ-0020 — Legenda/tooltip diferenciando "ingrediente" e "produto MPI"|AJ-0020]] (já concluído) · [[ADR_iniciativa_automacao_pedido_entrega]] (fase 2) · interage com [[decisoes/ADR_modelo_fabrica_abre_pedido]] (Onda 4) e com a futura fase de armazenamento ([[Backlog de Ajustes#AJ-0021 — Armazenamento / produção sob estoque (shelf life)|AJ-0021]]).
 
 ## Contexto
 
@@ -193,7 +195,7 @@ Existem dois caminhos paralelos para "MPI" no schema:
 
 - AJ-0008 sai do limbo "investigado / a-decidir" para "implementado atrás de flag".
 - O cliente Daniel ganha a OP separada que ele esperava na call.
-- O caminho B (ingrediente misturado) **continua sem virar OP** — documentar isso explicitamente em [[regras-de-negocio]] para evitar nova reclamação.
+- O caminho B (ingrediente misturado) **continua sem virar OP** — documentar isso explicitamente em [[Regra — Pedido da Loja]] para evitar nova reclamação.
 - Operadores precisam re-cadastrar "Massa de Pizza" como produto-MPI (não como ingrediente misturado) para o caso da call funcionar — Giuseppe pode fazer isso direto no banco dev como parte do PR.
 - A fase 1 não cobre lead-time de MPI nem armazenamento (`allows_storage`) — fica para [[Backlog de Ajustes#AJ-0021]] / fase 2.
 - Feature flag fica como contrato com o cliente: **ativada só após Daniel testar e validar**.
@@ -206,3 +208,71 @@ Existem dois caminhos paralelos para "MPI" no schema:
 4. Demo pro Daniel com `EXPAND_MPI_INTO_OPS=true` em ambiente dev.
 5. Se Daniel aprovar, atualizar AJ-0008 e ligar a flag em produção.
 6. Onda 2 (fora deste ADR): UI da OP de MPI com badge, simplificar PDF, ingrediente-misturado, lead-time, performance/profiling.
+
+## Fase 2 — concluída 2026-05-21
+
+Entregue dentro da iniciativa de automação A1-A8 (frente A4) — ver
+[[ADR_iniciativa_automacao_pedido_entrega]].
+
+### O que mudou
+
+A fase 1 tinha como **limitação consciente** rodar a OP do MPI na mesma
+planning key do pai — o `lineId` e `scheduleId` eram herdados. Isso bloqueava
+o caso real onde a fábrica tem **linha dedicada para MPI** (ex: massa de
+pizza produzida em outra linha que o produto final).
+
+A fase 2 ativa resolução de linha nativa do MPI:
+
+```ts
+// recipe-expansion.ts:169 (resumido)
+const nativeLineId = mpiProduct.operationalLineId ?? mpiProduct.lineId ?? null;
+```
+
+Comportamento:
+
+- **Cadastro novo (linha nativa preenchida):** se `nativeLineId` difere da
+  linha do pai, MPI vai pra essa linha. O `scheduleId` do pai é
+  **descartado** (vira `null`) — schedule pertence à linha do pai e não pode
+  ser reaproveitado em outra linha. O motor resolve o schedule da linha nova
+  por padrão.
+- **Cadastro fase 1 (sem linha nativa):** comportamento idêntico ao da fase 1
+  — MPI roda na linha do pai, schedule herdado. Zero regressão.
+
+### Por que descartar o schedule do pai
+
+A invariante "schedule pertence à linha" é load-bearing — o motor agrupa OPs
+por `(date|lineId|scheduleId)`. Reaproveitar o `scheduleId` do pai quando a
+linha muda geraria planning key com schedule de outra linha, o que quebra:
+
+- Filtro por linha no kanban (OP apareceria com schedule "estranho").
+- Resolução de `defaultProductPreparationStages` (que pode depender da
+  linha).
+- Consistência do snapshot — duas OPs com mesma planning key parcial mas
+  schedule de linhas diferentes.
+
+### Testes adicionados
+
+3 testes em `recipe-expansion.test.ts`:
+
+1. **MPI com linha nativa diferente** → expansão grava `lineId` do MPI e
+   descarta `scheduleId`.
+2. **MPI com mesma linha do pai** → herda schedule (mesmo da fase 1).
+3. **MPI sem `operationalLineId`/`lineId`** → fallback para linha do pai
+   (compatibilidade fase 1).
+
+Soma com a cobertura da fase 1 → 5 testes da função pura + 3 testes de
+integração no motor.
+
+### Consequência para AJ-0008
+
+Pode ser marcado como **100% concluído** (fase 1 + fase 2). A "Limitação
+conhecida" registrada no histórico da Onda 2 está fechada. O cliente que
+quiser MPI em linha dedicada já consegue cadastrar — basta preencher
+`operationalLineId` ou `lineId` no produto-MPI.
+
+### O que **continua** fora de escopo
+
+- **Lead-time da MPI** (produzir a MPI no dia D-1 do produto final). Continua
+  na onda 3 — quando entrar [[Backlog de Ajustes#AJ-0021 — Armazenamento / produção sob estoque (shelf life)|AJ-0021]].
+- **Caminho B (`ingredients.type='misturado'`)** continua sem virar OP.
+  Composição interna na folha de pré-pesagem, conforme decidido na fase 1.

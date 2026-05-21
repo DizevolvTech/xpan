@@ -2,6 +2,24 @@
 
 > Chão de Fábrica recebe OPs liberadas → avança status item a item (preparação → produção → forno → embalando → concluído) → libera o pedido para expedição.
 
+> [!note] Atualizado em 2026-05-21 — iniciativa A1-A8
+> A jornada manteve a mesma estrutura, mas ganhou **timeline persistida** por OP e
+> ajustes na expansão de MPI:
+>
+> - **Timeline auditável (A5):** toda chamada de `updateProductionItemStatus` agora
+>   também grava uma linha em `production_order_events` (indexada por
+>   `planning_key`, não por `opCode`). Card "Histórico da OP" no detalhe da OP
+>   mostra cronologicamente cada transição. Ver [[Runbook A1-A8#6. Histórico (timeline) da OP|Runbook §6]].
+> - **MPI em linha nativa (A4):** quando `mpiProduct.operationalLineId` ou
+>   `mpiProduct.lineId` está cadastrado e difere da linha do pai, a OP do MPI
+>   passa a rodar na linha nativa — `scheduleId` herdado do pai é descartado.
+>   Para cadastros sem linha nativa, comportamento idêntico ao da fase 1
+>   (herda do pai). Ver [[decisoes/ADR_expansao_mpi_em_op#Fase 2 — concluída 2026-05-21]].
+> - **Métricas derivadas da timeline (A7):** o card "Métricas operacionais" do
+>   gestor calcula lead time por estágio (média) a partir desses eventos.
+>
+> Referência completa: [[decisoes/ADR_iniciativa_automacao_pedido_entrega]].
+
 ## Atores envolvidos
 
 | Ordem | Persona | Permissão | Papel |
@@ -58,6 +76,11 @@ A API aceita qualquer das duas permissões (`anyOfPermissions` em `src/app/api/f
 ### Passo 6 — Eventos cronológicos
 - Toda mudança em produção gera evento `producao_status` em `store_order_events` para cada pedido tocado.
 - A loja vê esses eventos em `/loja/pedidos/[orderId]` (timeline em `src/app/loja/pedidos/[orderId]/page.tsx:623-644`).
+- **Desde 2026-05-21 (A5):** mesma chamada grava também uma linha em
+  `production_order_events` (indexada por `planning_key`), consumida pelo card
+  "Histórico da OP" em `/gestor-fabrica/ordens-producao/[opId]`. Os dois
+  registros são complementares: `store_order_events` é a visão do pedido,
+  `production_order_events` é a visão da OP. Ambos append-only.
 
 ## Máquina de estados (item de produção)
 

@@ -56,7 +56,7 @@ Layout: `src/app/chao-fabrica/layout.tsx`.
 ## Pontos de atenção
 
 - **`operar` ≠ `gerenciar`**. Operador pode mudar status de OP, mas não cria nem exclui. Para criar OPs, o [[Gestor de Fábrica]] precisa liberar via `workflow_order_releases`.
-- **Drop antes/depois do forno** é primitiva nova (2026-05-05) — operador registra em ambos os pontos. Ver [[Regra — Drop antes/depois do forno]].
+- **Drop antes/depois do forno** é primitiva nova (2026-05-05) — operador registra em ambos os pontos. Ver [[Regra — Drop antes e depois do forno]].
 - **Sem acesso direto ao motor** de cronograma — apenas consome OPs já liberadas.
 
 ## Jornadas envolvidas

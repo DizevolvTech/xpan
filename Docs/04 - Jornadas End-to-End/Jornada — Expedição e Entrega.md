@@ -2,6 +2,21 @@
 
 > Pós-produção: agrega itens por pedido → operador faz checklist de separação → marca "pronto para coleta" → entrega passa pelas etapas em rota / no destino / entregue.
 
+> [!note] Atualizado em 2026-05-21 — iniciativa A1-A8
+> Duas mudanças estruturais na jornada:
+>
+> - **Tentativa de falha estruturada (A3):** transição para `tentativa_falha`
+>   agora abre **diálogo obrigatório** com motivo (enum de 8 valores) +
+>   observação + reagendamento opcional. Cada falha grava linha nova em
+>   `delivery_attempts` (append-only) — não sobrescreve mais. Badge histórica
+>   na linha quando há tentativas prévias. Ver [[Runbook A1-A8#3. Tentativa de entrega falhada — registro estruturado|Runbook §3]] e a observação de risco "Rota/zona simuladas" abaixo (resolvida pelo A8).
+> - **Roteirização honesta (A8):** `buildRouteMeta` hash-based foi substituído
+>   por `buildDeliveryRoutes`. Agrupa por `store.delivery_zone` (texto livre
+>   cadastrado em `/gestor-dados/lojas` — ver A8.1) com fallback por janela
+>   de recebimento. Ver [[Runbook A1-A8#5. Cadastrar `delivery_zone` das lojas|Runbook §5]].
+>
+> Referência completa: [[decisoes/ADR_iniciativa_automacao_pedido_entrega]].
+
 ## Atores envolvidos
 
 | Ordem | Persona | Permissão | Papel |
@@ -131,6 +146,6 @@ sequenceDiagram
 
 ## Riscos / áreas frágeis
 
-- **Rota/zona** são **simuladas no cliente** via `hashCode` da combinação `orderCode+store+deliveryDate` (`chao-fabrica/entregas/page.tsx:44-62`). Não há tabela de rotas reais.
-- **Tentativa de falha** não captura motivo estruturado — só altera status. Nenhuma tabela `delivery_attempts` foi encontrada.
+- ~~**Rota/zona** são **simuladas no cliente** via `hashCode` da combinação `orderCode+store+deliveryDate` (`chao-fabrica/entregas/page.tsx:44-62`).~~ **Resolvido em 2026-05-21 (A8):** `buildRouteMeta` substituído por `buildDeliveryRoutes` (`src/lib/delivery-routing.ts`). Agrupa por `store.delivery_zone` com fallback por janela. Sem geo inventado.
+- ~~**Tentativa de falha** não captura motivo estruturado — só altera status. Nenhuma tabela `delivery_attempts` foi encontrada.~~ **Resolvido em 2026-05-21 (A3):** tabela `delivery_attempts` append-only + enum `delivery_failure_reason` (8 valores) + dialog estruturado. Bugfix de auditoria garantiu que mobile e desktop usam o mesmo caminho.
 - A janela entre `entregue` e a abertura de **ocorrência** (jornada 34) não tem prazo definido em código.

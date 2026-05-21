@@ -2,7 +2,132 @@
 
 > Lista única, numerada, com status. Atualizar conforme cada ajuste é trabalhado.
 
-**Última revisão:** 2026-05-20
+**Última revisão:** 2026-05-21
+
+---
+
+## ✅ Iniciativa A1-A8 — automação do fluxo pedido → entrega (2026-05-21)
+
+Frente coordenada após auditoria interna do fluxo. **8 frentes entregues +
+2 desdobramentos.** Documentação consolidada em
+[[decisoes/ADR_iniciativa_automacao_pedido_entrega]] · operação descrita em
+[[Runbook A1-A8]].
+
+### AJ-A1 — Validação server-side em `releaseOrder` com override forçável
+**Concluído em:** 2026-05-21 (commits `d289a23` + `b6212bf`)
+**Status:** ✅ Concluído · **Categoria:** Bug/UX
+**Área:** `src/lib/supabase-data/release-validation.ts` · `src/lib/release-order-with-confirm.ts` · `workflow.ts`
+
+`releaseOrder` agora valida via `assertPlanningAllowsRelease` (3 razões:
+`order_cancelled`, `order_not_planned`, `order_not_releasable`). Override
+via `force: true` grava evento `liberacao_forcada`. UI dialog "Liberar
+mesmo assim" nas duas páginas de pedido.
+
+### AJ-A2 — Card "Demanda por produto" derivado do engine
+**Concluído em:** 2026-05-21 (commit `d289a23`)
+**Status:** ✅ Concluído · **Categoria:** UX
+**Área:** `src/app/gestor-fabrica/pedidos/page.tsx`
+
+Agrega (data × produto) somando demanda de todas as lojas. Derivado do
+snapshot do motor — incorpora expansão de MPI (A4) corretamente. Substituiu
+a rota órfã `/api/store-orders/aggregated-quantities` (deletada).
+
+### AJ-A3 — Tabela `delivery_attempts` para histórico de tentativas
+**Concluído em:** 2026-05-21 (commits `d289a23` + `b6212bf`)
+**Status:** ✅ Concluído · **Categoria:** Modelo/UX
+**Área:** `supabase/migrations/20260521120000_delivery_attempts.sql` · `delivery-attempt-dialog.tsx`
+
+Append-only com enum `delivery_failure_reason` (8 valores). Dialog
+estruturado (motivo + observação + reagendamento) substitui caminho legado
+de "só virar `tentativa_falha`". Bugfix de auditoria: mobile passou a usar
+o dialog (estava bypassando).
+
+### AJ-A4 — Fase 2 do MPI: linha/setor nativos
+**Concluído em:** 2026-05-21 (commit `d289a23`)
+**Status:** ✅ Concluído · **Categoria:** Motor
+**Área:** `src/lib/factory-planning/recipe-expansion.ts`
+
+MPI passa a rodar em `operationalLineId ?? lineId` quando o cadastro define.
+`scheduleId` herdado do pai é descartado quando a linha muda. Fechou a
+"Limitação conhecida" da fase 1 — ver [[decisoes/ADR_expansao_mpi_em_op#Fase 2 — concluída 2026-05-21]].
+
+### AJ-A5 — Timeline de OPs (`production_order_events`)
+**Concluído em:** 2026-05-21 (commit `d289a23`)
+**Status:** ✅ Concluído · **Categoria:** Auditoria
+**Área:** `supabase/migrations/20260521130000_production_order_events.sql` · `production-order-timeline.tsx`
+
+Tabela append-only indexada por `planning_key` (não `opCode` — chave estável).
+`updateProductionItemStatus` emite eventos automaticamente. Endpoint +
+card "Histórico da OP" no detalhe da OP.
+
+### AJ-A6 — Auto-release: helper + endpoint batch
+**Concluído em:** 2026-05-21 (commit `d289a23`)
+**Status:** ✅ Concluído · **Categoria:** Automação
+**Área:** `src/lib/supabase-data/workflow.ts` · `src/app/api/factory-planning/auto-release/route.ts`
+
+`autoReleaseEligibleOrders` libera todos os pedidos elegíveis em batelada.
+Mantém a trava do A1 — bloqueados caem em `failed[]` sem interromper o batch.
+Botão "Auto-liberar elegíveis" no gestor.
+
+### AJ-A6.2 — Auto-release diário via Vercel Cron
+**Concluído em:** 2026-05-21 (commit `c21fe77` + `b6212bf`)
+**Status:** ✅ Concluído · **Categoria:** Automação
+**Área:** `vercel.json` · `src/app/api/cron/auto-release/route.ts`
+
+Schedule `0 20 * * *` (17:00 BRT). Autenticação `Authorization: Bearer ${CRON_SECRET}`.
+Iteração por tenant ativo com isolamento de falha. Bugfix de auditoria:
+evento `liberacao_producao` grava `metadata.origin = "manual" | "sistema"`.
+
+### AJ-A7 — Métricas operacionais (lead time, OTIF, ocupação, falhas)
+**Concluído em:** 2026-05-21 (commit `d289a23`)
+**Status:** ✅ Concluído · **Categoria:** Indicadores
+**Área:** `src/lib/supabase-data/factory-metrics.ts` · `factory-metrics-card.tsx`
+
+4 tiles no dashboard do gestor com thresholds visuais (OTIF ≥95/≥80;
+Ocupação ≥90/≥70). Cálculo on-demand — Edge Function fica como caminho
+de escape se latência ficar visível.
+
+### AJ-A8 — Roteirização honesta (zona + janela)
+**Concluído em:** 2026-05-21 (commit `d289a23`)
+**Status:** ✅ Concluído · **Categoria:** Motor
+**Área:** `src/lib/delivery-routing.ts`
+
+Substitui `buildRouteMeta` hash-based fake por `buildDeliveryRoutes`:
+agrupa por `delivery_zone` (texto livre cadastrado) com fallback por
+`receive_window`. Não inventa geo que não existe no schema.
+
+### AJ-A8.1 — Campo "Zona de Entrega" no cadastro de loja
+**Concluído em:** 2026-05-21 (commit `c0e6d87`)
+**Status:** ✅ Concluído · **Categoria:** UX
+**Área:** `src/app/gestor-dados/lojas/page.tsx` · `master-data-admin.ts`
+
+Form de cadastro de loja ganha campo opcional texto livre. Helper explica
+o fallback para janela. Destrava efetivamente o A8 — sem UI, a coluna
+`delivery_zone` ficaria sempre vazia.
+
+### Pendências derivadas (não-bloqueantes)
+
+#### AJ-A7.1 — Migrar métricas para Edge Function materializada
+**Status:** A-fazer (otimização) · **Categoria:** Performance
+**Área:** `factory-metrics.ts`
+
+Quando: se snapshot >500ms ou dashboard travar com volume maior. Contrato
+da API não muda — só a implementação.
+
+#### AJ-A8.2 — Geocoding real em `stores`
+**Status:** A-fazer se cliente pedir · **Categoria:** Modelo
+**Área:** `master-data-admin.ts` · `delivery-routing.ts`
+
+Quando: se o cliente pedir clusterização geográfica de verdade (não só
+zona manual). Integrar API externa (Google Maps ou similar). `buildDeliveryRoutes`
+funciona igual — `deliveryZone` continua sendo a chave de agrupamento.
+
+#### AJ-A7.2 — OTIF com janela horária da loja
+**Status:** Bloqueado por cadastro · **Categoria:** Indicador
+**Área:** `factory-metrics.ts` · schema `stores`
+
+Quando: se o schema ganhar `expected_delivery_time` (horário prometido por
+loja). Hoje OTIF considera "fim do dia D" como prazo.
 
 ---
 

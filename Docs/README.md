@@ -78,8 +78,15 @@ Este cofre é a **fonte única de verdade** sobre o Xpan. Quando algo no código
 
 ### 11 — Ajustes
 - [[Backlog de Ajustes]] — lista numerada com status
+- [[Runbook A1-A8]] — operação do fluxo automatizado (cron, override, falhas, métricas, rotas)
 - [[Call 2026-05-13 — Daniel + Adriano + Leonora]] — registro da call
 - [[Call 2026-05-13 — Plano de Ataque]] — 4 ondas de execução
+
+### Decisões (ADR)
+- [[decisoes/ADR_iniciativa_automacao_pedido_entrega]] — automação fim a fim do fluxo pedido → entrega (A1-A8 · 2026-05-21)
+- [[decisoes/ADR_expansao_mpi_em_op]] — MPI/produto-MPI gera OP separada (AJ-0008 · fase 1 + fase 2)
+- [[decisoes/ADR_modelo_fabrica_abre_pedido]] — modelo "fábrica abre pedido" (AJ-0009 · aguardando decisão do cliente)
+- [[decisoes/ADR_navegacao_orientada_por_permissoes]] — navegação derivada das permissões (legado pré-vault, conteúdo absorvido)
 
 ### 99 — Auditoria
 - [[Saúde do Sistema]] — semáforo geral
