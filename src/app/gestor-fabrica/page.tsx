@@ -18,6 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { useConfirm } from "@/components/shared/confirm-dialog";
+import { FactoryMetricsCard } from "@/components/production/factory-metrics-card";
 import { InfoHint } from "@/components/shared/info-hint";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -882,6 +883,10 @@ export default function GestorFabricaPage() {
           content="Cada coluna mostra o estágio do fluxo. A coluna 'Em produção' lista ordens (OPs); as demais listam pedidos. Os botões inline e no topo da coluna avançam o status — use 'Liberar tudo do dia' para criar todas as OPs do dia de uma vez."
         />
       </div>
+
+      {/* AJ-A7: métricas operacionais — lead time / OTIF / ocupação / falhas.
+          key força remount ao trocar de janela para estado limpo. */}
+      <FactoryMetricsCard key={anchorDate} referenceDate={anchorDate} windowDays={7} />
 
       {/* Kanban — protagonista da visão geral e principal superfície de
           AÇÃO do gestor. 4 colunas: a "Aberto" carrega quick-actions de

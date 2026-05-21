@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ProductionIngredient, ProductionProduct } from "@/lib/production-planning";
+import type {
+  ProductionIngredient,
+  ProductionLine,
+  ProductionProduct,
+  ProductionSector,
+} from "@/lib/production-planning";
 
 import type { PlannedOrderItem } from "./types";
 import { expandRecipeIntoItems, round3, scaleRecipeQuantity } from "./recipe-expansion";
@@ -319,6 +324,141 @@ void test("expandRecipeIntoItems detecta ciclo A→B→A e aborta sem loop infin
     warns.some((m) => m.includes("ciclo detectado")),
     "deve emitir warning de ciclo detectado",
   );
+});
+
+// ---------------------------------------------------------------------------
+// AJ-A4 — fase 2: MPI roda na linha/setor nativos quando configurados
+// ---------------------------------------------------------------------------
+
+function makeLine(id: string, name: string, sectorId: string): ProductionLine {
+  return {
+    id,
+    name,
+    description: "",
+    sectorId,
+    capacityPerDayKg: 100,
+    active: true,
+  } as unknown as ProductionLine;
+}
+
+function makeSector(id: string, name: string): ProductionSector {
+  return {
+    id,
+    name,
+    description: "",
+    active: true,
+  } as unknown as ProductionSector;
+}
+
+void test("AJ-A4: MPI com operationalLineId próprio roda na linha nativa, não na do pai", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const massa = makeMpiProduct({
+    id: "mpi-massa",
+    canBeIngredient: true,
+    operationalLineId: "line-massa",
+  } as Partial<ProductionProduct>);
+  const pizza = {
+    ...makePizzaProduct(),
+    recipe: [
+      { id: "r2", sourceType: "produto", sourceId: "mpi-massa", label: "Massa", quantity: 0.4, unit: "Kg" },
+    ],
+  } as ProductionProduct;
+  const productsById = new Map([
+    [pizza.id, pizza],
+    [massa.id, massa],
+  ]);
+  const linesById = new Map([
+    ["line-1", makeLine("line-1", "Linha Forno", "sector-forno")],
+    ["line-massa", makeLine("line-massa", "Linha Massa", "sector-padaria")],
+  ]);
+  const sectorsById = new Map([
+    ["sector-forno", makeSector("sector-forno", "Forno")],
+    ["sector-padaria", makeSector("sector-padaria", "Padaria")],
+  ]);
+
+  const result = expandRecipeIntoItems(
+    [makePlannedItem()],
+    productsById,
+    [farinha],
+    [pizza, massa],
+    { linesById, sectorsById },
+  );
+
+  assert.equal(result.length, 2);
+  const mpi = result.find((r) => r.productId === "mpi-massa");
+  assert.ok(mpi, "deve gerar item de MPI");
+  assert.equal(mpi!.lineId, "line-massa", "MPI roda na linha nativa");
+  assert.equal(mpi!.lineName, "Linha Massa");
+  assert.equal(mpi!.sectorId, "sector-padaria");
+  assert.equal(mpi!.sectorName, "Padaria");
+  // Schedule do pai não se aplica à linha de massa — campos limpos.
+  assert.equal(mpi!.scheduleId, null);
+  assert.equal(mpi!.scheduleCode, null);
+  assert.equal(mpi!.scheduleName, null);
+  assert.equal(mpi!.scheduleDayPriority, null);
+  // Planning key reflete a linha nativa, viabilizando agrupamento por linha de massa.
+  assert.equal(mpi!.productionItemKey, "2026-05-20|line-massa|sem-linha|mpi-massa");
+});
+
+void test("AJ-A4: MPI sem operationalLineId/lineId herda linha do pai (fallback fase 1)", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const massa = makeMpiProduct({
+    id: "mpi-massa",
+    canBeIngredient: true,
+  });
+  // Limpar operationalLineId E lineId no MPI (cadastro incompleto).
+  delete (massa as unknown as Record<string, unknown>).operationalLineId;
+  delete (massa as unknown as Record<string, unknown>).lineId;
+  const pizza = {
+    ...makePizzaProduct(),
+    recipe: [
+      { id: "r2", sourceType: "produto", sourceId: "mpi-massa", label: "Massa", quantity: 0.4, unit: "Kg" },
+    ],
+  } as ProductionProduct;
+  const productsById = new Map([
+    [pizza.id, pizza],
+    [massa.id, massa],
+  ]);
+
+  const result = expandRecipeIntoItems(
+    [makePlannedItem()],
+    productsById,
+    [farinha],
+    [pizza, massa],
+    { linesById: new Map(), sectorsById: new Map() },
+  );
+
+  const mpi = result.find((r) => r.productId === "mpi-massa");
+  assert.ok(mpi);
+  assert.equal(mpi!.lineId, "line-1", "sem operationalLineId/lineId, herda do pai");
+  assert.equal(mpi!.scheduleId, "schedule-1", "schedule do pai preservado quando linha não muda");
+});
+
+void test("AJ-A4: maps não fornecidos = comportamento fase 1 (herda tudo do pai)", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const massa = makeMpiProduct({
+    id: "mpi-massa",
+    canBeIngredient: true,
+    operationalLineId: "line-massa",
+  } as Partial<ProductionProduct>);
+  const pizza = {
+    ...makePizzaProduct(),
+    recipe: [
+      { id: "r2", sourceType: "produto", sourceId: "mpi-massa", label: "Massa", quantity: 0.4, unit: "Kg" },
+    ],
+  } as ProductionProduct;
+  const productsById = new Map([
+    [pizza.id, pizza],
+    [massa.id, massa],
+  ]);
+
+  // Sem options.linesById/sectorsById — backwards-compat com fase 1.
+  const result = expandRecipeIntoItems([makePlannedItem()], productsById, [farinha], [pizza, massa]);
+
+  const mpi = result.find((r) => r.productId === "mpi-massa");
+  assert.ok(mpi);
+  assert.equal(mpi!.lineId, "line-1", "sem maps, mantém fase 1 (linha do pai)");
+  assert.equal(mpi!.scheduleId, "schedule-1");
 });
 
 void test("expandRecipeIntoItems faz recursão de 2 níveis (A → MPI-B → MPI-C)", () => {

@@ -1,4 +1,9 @@
-import type { ProductionIngredient, ProductionProduct } from "@/lib/production-planning";
+import type {
+  ProductionIngredient,
+  ProductionLine,
+  ProductionProduct,
+  ProductionSector,
+} from "@/lib/production-planning";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
@@ -20,6 +25,13 @@ export interface ExpandRecipeOptions {
    * Default: console.warn. Em testes, injetar para capturar sem poluir stdout.
    */
   onWarn?: (message: string) => void;
+  /**
+   * Fase 2 (AJ-A4): se fornecidos, o MPI roda na linha/setor nativos
+   * (resolvidos via `mpiProduct.operationalLineId ?? mpiProduct.lineId`).
+   * Sem isso, fallback para a linha/setor do produto-pai (comportamento fase 1).
+   */
+  linesById?: Map<string, ProductionLine>;
+  sectorsById?: Map<string, ProductionSector>;
 }
 
 /**
@@ -37,8 +49,12 @@ export interface ExpandRecipeOptions {
  *
  * **Lead time (Decisão 2):** zero. Fase 1 mínima — MPI produzido no mesmo dia do pai.
  *
- * **Limitação conhecida:** a OP de MPI roda na linha/setor/schedule do produto-pai
- * (não na linha "nativa" do MPI). Aceita na fase 1; refinamento fica para onda 2.
+ * **Fase 2 (AJ-A4):** se `options.linesById` + `options.sectorsById` forem
+ * fornecidos, o MPI passa a rodar na sua própria linha/setor (resolvidos via
+ * `mpiProduct.operationalLineId ?? mpiProduct.lineId`). Quando o MPI roda em
+ * linha diferente do pai, o `scheduleId` herdado é descartado — uma OP de
+ * massa não pertence ao schedule semanal das pizzas. Sem os maps, mantém o
+ * comportamento da fase 1 (herda tudo do pai).
  *
  * @param plannedItems Itens já planejados pelo motor (output de `buildPlannedItems`).
  * @param productsById Lookup de produtos para resolver `recipe.sourceId`.
@@ -101,6 +117,8 @@ export function expandRecipeIntoItems(
           ingredients,
           products,
           sequence: ++mpiSequence,
+          linesById: options.linesById,
+          sectorsById: options.sectorsById,
         });
         expanded.push(mpiItem);
 
@@ -124,16 +142,51 @@ function buildMpiPlannedItem(params: {
   ingredients: ProductionIngredient[];
   products: ProductionProduct[];
   sequence: number;
+  linesById?: Map<string, ProductionLine>;
+  sectorsById?: Map<string, ProductionSector>;
 }): PlannedOrderItem {
-  const { parent, originItem, mpiProduct, parentProduct, recipeQuantity, ingredients, products, sequence } = params;
+  const {
+    parent,
+    originItem,
+    mpiProduct,
+    parentProduct,
+    recipeQuantity,
+    ingredients,
+    products,
+    sequence,
+    linesById,
+    sectorsById,
+  } = params;
 
   // Quantidade de MPI necessária para produzir `parent.internalKg` do pai.
   const requestedQuantity = scaleRecipeQuantity(parent.internalKg, parentProduct, ingredients, products, recipeQuantity);
   // MPI é trabalhado em kg internamente. `internalKg` = requestedQuantity (já em kg pela receita).
   const internalKg = requestedQuantity;
 
+  // Fase 2 (AJ-A4): tenta resolver linha/setor nativos do MPI.
+  // Fallback para linha/setor do pai se: (a) MPI não tem operationalLineId/lineId,
+  // (b) os maps não foram fornecidos, (c) os ids não são encontrados nos maps.
+  const nativeLineId = mpiProduct.operationalLineId ?? mpiProduct.lineId ?? null;
+  const nativeLine = nativeLineId ? linesById?.get(nativeLineId) ?? null : null;
+  const nativeSector = nativeLine ? sectorsById?.get(nativeLine.sectorId) ?? null : null;
+  const usesNativeRouting = Boolean(nativeLine && nativeSector);
+
+  const resolvedLineId = usesNativeRouting ? nativeLine!.id : parent.lineId;
+  const resolvedLineName = usesNativeRouting ? nativeLine!.name : parent.lineName;
+  const resolvedSectorId = usesNativeRouting ? nativeSector!.id : parent.sectorId;
+  const resolvedSectorName = usesNativeRouting ? nativeSector!.name : parent.sectorName;
+
+  // Se o MPI muda de linha, o schedule do pai não aplica — uma OP de massa
+  // não pertence ao schedule semanal das pizzas. Limpa os campos de schedule
+  // para não induzir o gestor a achar que essa OP está num cronograma alheio.
+  const linesChanged = usesNativeRouting && resolvedLineId !== parent.lineId;
+  const resolvedScheduleId = linesChanged ? null : parent.scheduleId;
+  const resolvedScheduleCode = linesChanged ? null : parent.scheduleCode;
+  const resolvedScheduleName = linesChanged ? null : parent.scheduleName;
+  const resolvedScheduleDayPriority = linesChanged ? null : parent.scheduleDayPriority;
+
   const productionItemKey = parent.productionDate
-    ? [parent.productionDate, parent.lineId, parent.scheduleId ?? "sem-linha", mpiProduct.id].join("|")
+    ? [parent.productionDate, resolvedLineId, resolvedScheduleId ?? "sem-linha", mpiProduct.id].join("|")
     : null;
 
   return {
@@ -151,13 +204,13 @@ function buildMpiPlannedItem(params: {
     productId: mpiProduct.id,
     productCode: mpiProduct.code,
     productName: mpiProduct.name,
-    lineId: parent.lineId,
-    lineName: parent.lineName,
-    sectorId: parent.sectorId,
-    sectorName: parent.sectorName,
-    scheduleId: parent.scheduleId,
-    scheduleCode: parent.scheduleCode,
-    scheduleName: parent.scheduleName,
+    lineId: resolvedLineId,
+    lineName: resolvedLineName,
+    sectorId: resolvedSectorId,
+    sectorName: resolvedSectorName,
+    scheduleId: resolvedScheduleId,
+    scheduleCode: resolvedScheduleCode,
+    scheduleName: resolvedScheduleName,
     requestedQuantity,
     requestedUnit: mpiProduct.productionUnit,
     internalKg,
@@ -165,7 +218,7 @@ function buildMpiPlannedItem(params: {
     expeditionQuantityRaw: internalKg,
     expeditionQuantity: internalKg,
     canPlan: parent.canPlan,
-    scheduleDayPriority: parent.scheduleDayPriority,
+    scheduleDayPriority: resolvedScheduleDayPriority,
     availableForRelease: parent.availableForRelease,
     releasedToProduction: parent.releasedToProduction,
     productionItemKey,

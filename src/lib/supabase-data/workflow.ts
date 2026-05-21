@@ -18,6 +18,11 @@ import {
   resolveProfileDatabaseId,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
+import {
+  OrderReleaseValidationError,
+  assertPlanningAllowsRelease,
+} from "@/lib/supabase-data/release-validation";
+import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
 
 export interface PersistedWorkflowState {
   releasedOrders: string[];
@@ -69,6 +74,7 @@ export async function getPersistedWorkflowState(
 async function appendOrderEventsForProductionItem(
   productionItemKey: string,
   status: ProductionItemStatus,
+  previousStatus: ProductionItemStatus,
   updatedByProfileId: string | null | undefined,
   tenantId: string,
   supabase: SupabaseDataClient,
@@ -86,6 +92,39 @@ async function appendOrderEventsForProductionItem(
   const planning = buildFactoryPlanningData(referenceDate, input);
   const matchingItems = planning.orderItems.filter((item) => item.productionItemKey === productionItemKey);
   const uniqueOrders = Array.from(new Set(matchingItems.map((item) => item.orderId)));
+
+  // AJ-A5: localizar a OP que contém esse item e persistir o evento na
+  // timeline da OP (production_order_events). planning_key é a chave estável
+  // — productionDate × sectorId × lineId × scheduleId.
+  const owningOp = planning.productionOrders.find((op) =>
+    op.items.some((item) => item.productionItemKey === productionItemKey),
+  );
+  if (owningOp) {
+    const planningKey = [
+      owningOp.productionDate,
+      owningOp.sectorId,
+      owningOp.lineId,
+      owningOp.scheduleId ?? "sem-linha",
+    ].join("|");
+    await appendProductionOrderEvent(
+      {
+        tenantId,
+        planningKey,
+        opCodeSnapshot: owningOp.code,
+        eventType: "item_status_changed",
+        statusFrom: previousStatus,
+        statusTo: status,
+        productionItemKey,
+        payload: {
+          productionDate: owningOp.productionDate,
+          lineName: owningOp.lineName,
+          sectorName: owningOp.sectorName,
+        },
+        createdByProfileId: updatedByProfileId ?? null,
+      },
+      supabase,
+    );
+  }
 
   await Promise.all(
     uniqueOrders.map((orderId) =>
@@ -230,16 +269,80 @@ async function resolvePreparationStagesForProductionItem(
   return normalizeProductPreparationStages(steps.map((row) => row.stage_key));
 }
 
+export interface ReleaseOrderOptions {
+  /**
+   * Quando true, ignora as validações server-side (capacidade / MPI / janela
+   * operacional) e registra o evento `liberacao_forcada` com o motivo da
+   * exceção que teria sido lançada. Use só quando o gestor decidir liberar
+   * mesmo assim.
+   */
+  force?: boolean;
+  /**
+   * Necessário para reconstruir o snapshot de planejamento ao validar.
+   * Quando ausente e `force=false`, releaseOrder cai num modo conservador
+   * que ainda assim verifica o status do pedido, mas pula a checagem de
+   * `availableForRelease` derivada do engine.
+   */
+  tenantId?: string | null;
+}
+
+async function validateOrderReleasable(
+  orderId: string,
+  orderRow: { id: string; legacy_id: string | null; management_status: string },
+  tenantId: string,
+  supabase: SupabaseDataClient,
+) {
+  if (orderRow.management_status === "cancelado") {
+    return assertPlanningAllowsRelease(orderRow, { orders: [] }, orderId);
+  }
+
+  const referenceDate = new Date().toISOString().slice(0, 10);
+  const input = await buildFactoryInputFromDb({
+    supabase,
+    includeProfileNames: false,
+    tenantId,
+  });
+  const planning = buildFactoryPlanningData(referenceDate, input);
+
+  return assertPlanningAllowsRelease(orderRow, planning, orderId);
+}
+
 export async function releaseOrder(
   orderId: string,
   releasedByProfileId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  options: ReleaseOrderOptions = {},
 ) {
   const releasedByDatabaseId = await resolveProfileDatabaseId(supabase, releasedByProfileId ?? null);
   const orderRow = await resolveOrderRow(orderId, supabase);
 
-  if (orderRow.management_status === "cancelado") {
-    throw new Error("Cancelled orders cannot be released to production");
+  let forcedReason: string | null = null;
+
+  if (options.tenantId) {
+    const validation = await validateOrderReleasable(
+      orderId,
+      orderRow,
+      options.tenantId,
+      supabase,
+    );
+
+    if (!validation.ok) {
+      if (!options.force) {
+        throw validation.error;
+      }
+      // Pedido cancelado nunca deve ser liberado — nem com force.
+      if (validation.error.reason === "order_cancelled") {
+        throw validation.error;
+      }
+      forcedReason = validation.error.message;
+    }
+  } else if (orderRow.management_status === "cancelado") {
+    // Sem tenantId não conseguimos rodar a engine; manter pelo menos a trava
+    // de cancelado.
+    throw new OrderReleaseValidationError(
+      "order_cancelled",
+      "pedido cancelado não pode ser liberado para produção.",
+    );
   }
 
   const upsertResult = await supabase.from("workflow_order_releases").upsert(
@@ -256,6 +359,21 @@ export async function releaseOrder(
 
   if (upsertResult.error) {
     throw new Error(`Failed to release order: ${upsertResult.error.message}`);
+  }
+
+  if (forcedReason) {
+    await appendStoreOrderEvent(
+      {
+        orderId: orderRow.id,
+        type: "liberacao_forcada",
+        title: "Pedido liberado com exceção",
+        description: `Liberação forçada pelo gestor mesmo com bloqueio: ${forcedReason}`,
+        createdByProfileId: releasedByProfileId ?? null,
+        metadata: { forcedReason },
+      },
+      supabase,
+    );
+    return;
   }
 
   await appendStoreOrderEvent(
@@ -322,6 +440,7 @@ export async function updateProductionItemStatus(
     await appendOrderEventsForProductionItem(
       productionItemKey,
       status,
+      currentStatus,
       updatedByProfileId,
       tenantId,
       supabase,
@@ -329,17 +448,100 @@ export async function updateProductionItemStatus(
   }
 }
 
+export interface AutoReleaseResult {
+  released: Array<{ orderId: string; orderCode: string }>;
+  skipped: Array<{ orderId: string; orderCode: string; reason: string }>;
+  failed: Array<{ orderId: string; orderCode: string; error: string }>;
+}
+
+/**
+ * AJ-A6: libera em batelada todos os pedidos elegíveis (releasable + não
+ * liberados + não cancelados). Não usa `force` — a trava do A1 continua
+ * valendo para cada pedido individualmente. Pedidos bloqueados pela
+ * validação caem em `failed` com o motivo, pra que o gestor possa
+ * intervir manualmente nos casos de exceção.
+ *
+ * Idempotente: pode ser chamado várias vezes seguidas que pedidos já
+ * liberados são pulados.
+ */
+export async function autoReleaseEligibleOrders(
+  options: {
+    referenceDate: string;
+    tenantId: string | null | undefined;
+    triggeredByProfileId?: string | null;
+  },
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+): Promise<AutoReleaseResult> {
+  const tenantId = options.tenantId;
+  if (!tenantId) {
+    throw new Error("tenantId is required to auto-release orders");
+  }
+  // Construímos o planning aqui (sem usar getFactoryPlanningSnapshot) para
+  // evitar dependência circular workflow.ts ↔ planning-snapshot.ts. Mesmo
+  // pipeline: input → engine → workflowState aplicado.
+  const input = await buildFactoryInputFromDb({
+    supabase,
+    includeProfileNames: false,
+    tenantId,
+  });
+  const basePlanning = buildFactoryPlanningData(options.referenceDate, input);
+  const workflowState = await getPersistedWorkflowState(supabase);
+  const planning = applyFactoryWorkflowState(basePlanning, {
+    isReleased: (id) => workflowState.releasedOrders.includes(id),
+    isCancelled: (id) => workflowState.cancelledOrders.includes(id),
+    resolveProductionItemStatus: (itemKey) =>
+      itemKey ? workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado" : null,
+  });
+
+  const result: AutoReleaseResult = { released: [], skipped: [], failed: [] };
+
+  for (const order of planning.orders) {
+    const id = order.id;
+    const code = order.code;
+
+    if (order.releasedToProduction) {
+      result.skipped.push({ orderId: id, orderCode: code, reason: "already_released" });
+      continue;
+    }
+    if (order.status === "cancelado") {
+      result.skipped.push({ orderId: id, orderCode: code, reason: "cancelled" });
+      continue;
+    }
+    if (!order.availableForRelease) {
+      result.skipped.push({ orderId: id, orderCode: code, reason: "not_releasable" });
+      continue;
+    }
+
+    try {
+      await releaseOrder(id, options.triggeredByProfileId ?? null, supabase, {
+        tenantId,
+      });
+      result.released.push({ orderId: id, orderCode: code });
+    } catch (error) {
+      // Não interrompemos o batch quando um pedido falha — outros podem ser
+      // liberados normalmente. O motivo fica registrado no resultado.
+      result.failed.push({
+        orderId: id,
+        orderCode: code,
+        error: error instanceof Error ? error.message : "Erro desconhecido ao liberar",
+      });
+    }
+  }
+
+  return result;
+}
+
 async function resolveOrderRow(
   orderId: string,
   supabase: SupabaseDataClient,
-) {
+): Promise<{ id: string; legacy_id: string | null; management_status: string }> {
   const query = supabase
     .from("store_orders")
-    .select("id, management_status");
+    .select("id, legacy_id, management_status");
 
   const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
   if (isSupabaseMissingSchemaError(result.error, ["management_status"])) {
-    const fallbackQuery = supabase.from("store_orders").select("id");
+    const fallbackQuery = supabase.from("store_orders").select("id, legacy_id");
     const fallbackResult = await (isUuid(orderId)
       ? fallbackQuery.eq("id", orderId)
       : fallbackQuery.eq("legacy_id", orderId)).maybeSingle();
@@ -349,11 +551,20 @@ async function resolveOrderRow(
     );
 
     return {
-      ...fallbackRow,
+      id: fallbackRow.id,
+      legacy_id: fallbackRow.legacy_id ?? null,
       management_status: "ativo",
     };
   }
-  return assertSupabaseResult({ data: result.data, error: result.error }, "Failed to resolve order management");
+  const row = assertSupabaseResult(
+    { data: result.data, error: result.error },
+    "Failed to resolve order management",
+  );
+  return {
+    id: row.id,
+    legacy_id: row.legacy_id ?? null,
+    management_status: row.management_status ?? "ativo",
+  };
 }
 
 export async function cancelOrder(

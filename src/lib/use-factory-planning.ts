@@ -26,10 +26,40 @@ type FactoryPlanningCacheEntry = {
 const factoryPlanningCache = new Map<string, FactoryPlanningCacheEntry>();
 const factoryPlanningInflight = new Map<string, Promise<FactoryPlanningData>>();
 
+export type ReleaseBlockReason =
+  | "order_cancelled"
+  | "order_not_planned"
+  | "order_not_releasable";
+
+export class ReleaseOrderBlockedError extends Error {
+  readonly reason: ReleaseBlockReason;
+  readonly forceable: boolean;
+
+  constructor(message: string, reason: ReleaseBlockReason, forceable: boolean) {
+    super(message);
+    this.name = "ReleaseOrderBlockedError";
+    this.reason = reason;
+    this.forceable = forceable;
+  }
+}
+
+type ApiErrorBody = {
+  message?: string;
+  reason?: ReleaseBlockReason;
+  forceable?: boolean;
+};
+
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, init);
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
+    if (response.status === 400 && body?.reason) {
+      throw new ReleaseOrderBlockedError(
+        body.message ?? "Liberação bloqueada",
+        body.reason,
+        body.forceable ?? body.reason !== "order_cancelled",
+      );
+    }
     throw new Error(body?.message ?? `Request failed with status ${response.status}`);
   }
   return (await response.json()) as T;
@@ -116,13 +146,14 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
   }, [refresh]);
 
   const releaseOrder = useCallback(
-    async (orderId: string) => {
+    async (orderId: string, options: { force?: boolean } = {}) => {
       await readJson("/api/factory-planning/workflow", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "release-order",
           orderId,
+          force: options.force === true,
         }),
       });
       await refresh();

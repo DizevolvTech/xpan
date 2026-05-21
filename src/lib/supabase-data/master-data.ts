@@ -283,6 +283,7 @@ async function loadMasterDataSnapshot(
     receivingDays: (row.receiving_days ?? []) as StoreMasterData["receivingDays"],
     orderingBlockedDays: (row.ordering_blocked_days ?? []) as StoreMasterData["orderingBlockedDays"],
     receivingBlockedDays: (row.receiving_blocked_days ?? []) as StoreMasterData["receivingBlockedDays"],
+    deliveryZone: (row as { delivery_zone?: string | null }).delivery_zone ?? null,
   }));
 
   const recipeByProductId = recipeRows.reduce<Map<string, ProductionProduct["recipe"]>>((acc, row) => {

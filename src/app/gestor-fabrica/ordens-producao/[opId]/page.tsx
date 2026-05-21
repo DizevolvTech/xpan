@@ -9,6 +9,7 @@ import { FactoryFlow } from "@/components/shared/factory-flow";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
+import { ProductionOrderTimeline } from "@/components/production/production-order-timeline";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -362,6 +363,14 @@ export default function OrdemProducaoDetailsPage() {
           </PaginatedSection>
         </CardContent>
       </Card>
+
+      <ProductionOrderTimeline
+        // key força remount ao trocar OP ou janela operacional — state sempre
+        // fresco sem precisar de setState dentro do effect.
+        key={`${op.code}|${anchorDate}`}
+        opCode={op.code}
+        referenceDate={anchorDate}
+      />
     </PageLayout>
   );
 }

@@ -26,6 +26,9 @@ export interface StoreProfile {
   orderingBlockedDays: ProductionWeekDay[];
   receivingBlockedDays: ProductionWeekDay[];
   receiveWindow: string;
+  /** AJ-A8: zona de entrega livre (texto). Quando ausente, a roteirização
+   * cai num fallback por janela horária. */
+  deliveryZone?: string | null;
 }
 
 export interface StoreOrderItem {

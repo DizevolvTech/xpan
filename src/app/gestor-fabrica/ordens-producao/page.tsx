@@ -60,6 +60,24 @@ type DailyLineRow = {
   itemsCount: number;
 };
 
+// AJ-A2: visão de batelada — agrega demanda por (data × produto) somando
+// tudo que está pendente para a fábrica preparar em batch único, em vez de
+// olhar pedido-a-pedido. Reconecta o espírito da rota órfã
+// /api/store-orders/aggregated-quantities usando o motor (mais correto).
+type BatchDemandRow = {
+  id: string;
+  productionDate: string;
+  productionDateLabel: string;
+  productId: string;
+  productCode: string;
+  productName: string;
+  totalKg: number;
+  opsCount: number;
+  ordersCount: number;
+  progress: number;
+  status: OrderStatus;
+};
+
 const ORDER_STATUS_FILTER_OPTIONS: Array<{ value: OrderStatus; label: string }> = [
   { value: "em_espera", label: "Em Espera" },
   { value: "agendado", label: "Agendado" },
@@ -71,6 +89,26 @@ const ORDER_STATUS_FILTER_OPTIONS: Array<{ value: OrderStatus; label: string }> 
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
+}
+
+const AGGREGATE_STATUS_PRIORITY: OrderStatus[] = [
+  "em_espera",
+  "agendado",
+  "em_producao",
+  "aguardando_expedicao",
+  "rota_entrega",
+  "cancelado",
+];
+
+function pickAggregateStatus(statuses: OrderStatus[]): OrderStatus {
+  // "Elo mais fraco" — se algum item da batelada ainda está em estágio
+  // anterior, a batelada toda só pode reportar esse estágio.
+  for (const candidate of AGGREGATE_STATUS_PRIORITY) {
+    if (statuses.includes(candidate)) {
+      return candidate;
+    }
+  }
+  return "em_espera";
 }
 
 export default function OrdensProducaoPage() {
@@ -197,6 +235,83 @@ export default function OrdensProducaoPage() {
       return a.lineName.localeCompare(b.lineName);
     });
   }, [opRows]);
+
+  const batchDemandRows = useMemo<BatchDemandRow[]>(() => {
+    const map = new Map<
+      string,
+      {
+        row: BatchDemandRow;
+        opIds: Set<string>;
+        orderCodes: Set<string>;
+        progressSum: number;
+        progressCount: number;
+        statuses: OrderStatus[];
+      }
+    >();
+
+    planningData.productionOrders.forEach((op) => {
+      op.items.forEach((item) => {
+        const key = `${op.productionDate}|${item.productId}`;
+        const existing = map.get(key);
+        const sourceItemsForProduct = op.sourceItems.filter(
+          (source) => source.productId === item.productId,
+        );
+        const orderCodesForProduct = sourceItemsForProduct.map((source) => source.orderCode);
+
+        if (existing) {
+          existing.row.totalKg = Number((existing.row.totalKg + item.totalKg).toFixed(2));
+          existing.opIds.add(op.id);
+          orderCodesForProduct.forEach((code) => existing.orderCodes.add(code));
+          existing.progressSum += item.progress;
+          existing.progressCount += 1;
+          existing.statuses.push(op.status);
+          existing.row.opsCount = existing.opIds.size;
+          existing.row.ordersCount = existing.orderCodes.size;
+          return;
+        }
+
+        const opIds = new Set<string>([op.id]);
+        const orderCodes = new Set<string>(orderCodesForProduct);
+        map.set(key, {
+          row: {
+            id: key,
+            productionDate: op.productionDate,
+            productionDateLabel: op.productionDateLabel,
+            productId: item.productId,
+            productCode: item.productCode,
+            productName: item.productName,
+            totalKg: Number(item.totalKg.toFixed(2)),
+            opsCount: opIds.size,
+            ordersCount: orderCodes.size,
+            progress: item.progress,
+            status: op.status,
+          },
+          opIds,
+          orderCodes,
+          progressSum: item.progress,
+          progressCount: 1,
+          statuses: [op.status],
+        });
+      });
+    });
+
+    return Array.from(map.values())
+      .map((entry) => {
+        entry.row.progress =
+          entry.progressCount > 0
+            ? Number((entry.progressSum / entry.progressCount).toFixed(1))
+            : 0;
+        entry.row.status = pickAggregateStatus(entry.statuses);
+        return entry.row;
+      })
+      .sort((a, b) => {
+        const byDate = a.productionDate.localeCompare(b.productionDate);
+        if (byDate !== 0) {
+          return byDate;
+        }
+        return b.totalKg - a.totalKg;
+      });
+  }, [planningData.productionOrders]);
 
   const alignedLineRows = useMemo(() => {
     const lines = Array.from(new Set(opRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
@@ -325,6 +440,56 @@ export default function OrdensProducaoPage() {
     { key: "totalKg", header: "Kg planejados" },
     { key: "opsCount", header: "OPs" },
     { key: "itemsCount", header: "Itens consolidados" },
+  ];
+
+  const batchDemandColumns = [
+    { key: "productionDateLabel", header: "Data" },
+    {
+      key: "product",
+      header: "Produto",
+      render: (item: BatchDemandRow) => (
+        <div className="flex flex-col">
+          <span className="font-semibold text-foreground">{item.productName}</span>
+          <span className="text-xs text-muted-foreground">{item.productCode}</span>
+        </div>
+      ),
+    },
+    {
+      key: "totalKg",
+      header: "Demanda total",
+      render: (item: BatchDemandRow) => (
+        <span className="font-semibold text-foreground">
+          {formatKgLabel(item.totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      key: "coverage",
+      header: "Cobertura",
+      render: (item: BatchDemandRow) => (
+        <div className="text-xs text-muted-foreground">
+          <div>{item.opsCount} OP(s)</div>
+          <div>{item.ordersCount} pedido(s)</div>
+        </div>
+      ),
+    },
+    {
+      key: "progress",
+      header: "% conclusão",
+      render: (item: BatchDemandRow) => (
+        <div className="min-w-[180px]">
+          <div className="mb-1 text-xs text-muted-foreground">{item.progress.toFixed(1)}%</div>
+          <div className="h-2 rounded-full bg-panel">
+            <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.progress, 100)}%` }} />
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (item: BatchDemandRow) => <StatusBadge status={item.status} />,
+    },
   ];
 
   const activeFiltersCount = [
@@ -620,6 +785,27 @@ export default function OrdensProducaoPage() {
               columns={dailyColumns}
               keyField="id"
               emptyMessage="Sem carga planejada para a referência atual"
+              compact
+            />
+          </CardContent>
+        </Card>
+
+        {/* AJ-A2: Demanda agregada por produto — bateladas em vez de pedido-a-pedido. */}
+        <Card>
+          <CardHeader className="border-b border-border/60">
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Demanda por produto (batelada)</CardTitle>
+              <InfoHint
+                content="Some toda a demanda do mesmo produto numa única linha por data. Use isso pra preparar massa, fermento e fornadas em batelada única — sem repetir set-up para cada pedido."
+              />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              data={batchDemandRows}
+              columns={batchDemandColumns}
+              keyField="id"
+              emptyMessage="Nenhuma demanda agregada para a janela atual"
               compact
             />
           </CardContent>

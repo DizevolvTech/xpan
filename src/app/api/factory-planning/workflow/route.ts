@@ -4,6 +4,7 @@ import type { ProductionItemStatus } from "@/lib/order-planning";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { OrderReleaseValidationError } from "@/lib/supabase-data/release-validation";
 import {
   cancelOrder,
   releaseOrder,
@@ -18,6 +19,7 @@ export async function PATCH(request: Request) {
       | {
           action: "release-order";
           orderId: string;
+          force?: boolean;
         }
       | {
           action: "cancel-order";
@@ -50,7 +52,10 @@ export async function PATCH(request: Request) {
         authorization.effectiveTenantId,
         createSupabaseAdminClient(),
       );
-      await releaseOrder(body.orderId, authorization.user.id, supabase);
+      await releaseOrder(body.orderId, authorization.user.id, supabase, {
+        tenantId: authorization.effectiveTenantId,
+        force: body.force === true,
+      });
       invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
     }
@@ -113,6 +118,18 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ message: "Unsupported workflow action" }, { status: 400 });
   } catch (error) {
+    if (error instanceof OrderReleaseValidationError) {
+      return NextResponse.json(
+        {
+          message: error.message,
+          reason: error.reason,
+          // A UI distingue "cancelado" (irrecuperável) dos demais (overridable
+          // via force) por esse campo.
+          forceable: error.reason !== "order_cancelled",
+        },
+        { status: 400 },
+      );
+    }
     console.error("Failed to update factory workflow", error);
     const message = error instanceof Error ? error.message : "Failed to update workflow";
     return NextResponse.json(

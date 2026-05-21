@@ -10,11 +10,31 @@ import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 
 export type { DeliveryChecklistState, DeliveryExecutionStatus } from "@/lib/delivery-workflow";
 
+export type DeliveryFailureReason =
+  | "cliente_ausente"
+  | "endereco_errado"
+  | "recusa_cliente"
+  | "estabelecimento_fechado"
+  | "veiculo_avaria"
+  | "acesso_bloqueado"
+  | "documentacao_pendente"
+  | "outro";
+
+export type DeliveryAttemptInfo = {
+  attemptNumber: number;
+  failedAt: string;
+  failureReason: DeliveryFailureReason;
+  reasonNotes: string | null;
+  rescheduleTo: string | null;
+};
+
 export type DeliveryExecutionEntry = {
   status: DeliveryExecutionStatus;
   checklistState: DeliveryChecklistState;
   checklistCompletedAt: string | null;
   updatedAt: string;
+  attemptsCount: number;
+  lastAttempt: DeliveryAttemptInfo | null;
 };
 
 type DeliveryExecutionState = Record<string, DeliveryExecutionEntry>;
@@ -130,6 +150,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
           checklistState: {},
           checklistCompletedAt: null,
           updatedAt: new Date().toISOString(),
+          attemptsCount: 0,
+          lastAttempt: null,
         };
       }
 
@@ -138,6 +160,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
         checklistState: {},
         checklistCompletedAt: null,
         updatedAt: new Date().toISOString(),
+        attemptsCount: 0,
+        lastAttempt: null,
       };
     },
     [executionState],
@@ -166,6 +190,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
         checklistCompletedAt:
           options?.checklistCompletedAt ?? previousEntry?.checklistCompletedAt ?? null,
         updatedAt,
+        attemptsCount: previousEntry?.attemptsCount ?? 0,
+        lastAttempt: previousEntry?.lastAttempt ?? null,
       };
 
       setExecutionState((current) => {
@@ -213,8 +239,41 @@ export function useDeliveryExecution(_referenceDate?: string) {
     [executionState],
   );
 
+  const registerAttempt = useCallback(
+    async (
+      orderId: string,
+      input: {
+        reason: DeliveryFailureReason;
+        notes?: string | null;
+        rescheduleTo?: string | null;
+      },
+    ) => {
+      const response = await fetch("/api/delivery-executions/attempts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          reason: input.reason,
+          notes: input.notes ?? null,
+          rescheduleTo: input.rescheduleTo ?? null,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Falha ao registrar tentativa de entrega");
+      }
+
+      // Recarrega o estado a partir do servidor (cache invalidado server-side
+      // pelo endpoint) para refletir attemptsCount + lastAttempt atualizados.
+      const refreshed = await fetchDeliveryExecutionState(true);
+      setExecutionState(refreshed);
+    },
+    [],
+  );
+
   return useMemo(
-    () => ({ resolveExecution, updateExecution, isHydrated }),
-    [isHydrated, resolveExecution, updateExecution],
+    () => ({ resolveExecution, updateExecution, registerAttempt, isHydrated }),
+    [isHydrated, registerAttempt, resolveExecution, updateExecution],
   );
 }

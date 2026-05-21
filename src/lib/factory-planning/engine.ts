@@ -988,7 +988,11 @@ export function buildFactoryPlanningData(
   // Ver Docs/decisoes/ADR_expansao_mpi_em_op.md. Default off: comportamento
   // legado preservado até validação do cliente em dev.
   const expandedItems = isMpiExpansionEnabled()
-    ? expandRecipeIntoItems(orderItems, source.productsById, source.ingredients, source.products)
+    ? expandRecipeIntoItems(orderItems, source.productsById, source.ingredients, source.products, {
+        // AJ-A4: fase 2 — passa os maps para que o MPI rode na linha/setor nativos.
+        linesById: source.linesById,
+        sectorsById: source.sectorsById,
+      })
     : orderItems;
 
   const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(expandedItems, referenceDate);

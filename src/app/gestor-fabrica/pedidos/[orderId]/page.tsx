@@ -11,6 +11,7 @@ import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useConfirm } from "@/components/shared/confirm-dialog";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
@@ -18,6 +19,7 @@ import { formatDateKeyBr } from "@/lib/order-planning";
 import { formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { performReleaseOrderWithConfirm } from "@/lib/release-order-with-confirm";
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -27,6 +29,7 @@ export default function PedidoDetailsPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const confirm = useConfirm();
+  const toast = useToast();
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const { planningData, isLoading, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
 
@@ -188,8 +191,10 @@ export default function PedidoDetailsPage() {
             <Button
               type="button"
               className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
-              disabled={!order.availableForRelease || order.releasedToProduction || order.status === "cancelado"}
-              onClick={() => void releaseOrder(order.id)}
+              // Servidor é a fonte da verdade — em caso de bloqueio, o gestor
+              // recebe o motivo e a opção de forçar via diálogo.
+              disabled={order.releasedToProduction || order.status === "cancelado"}
+              onClick={() => void performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast)}
             >
               {order.releasedToProduction ? "Pedido liberado" : "Liberar para produção"}
             </Button>

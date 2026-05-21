@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
-import { ArrowDown, ArrowRight, CalendarRange, Factory, ListChecks, ShoppingCart, Truck } from "lucide-react";
+import { ArrowDown, ArrowRight, CalendarRange, Factory, ListChecks, ShoppingCart, Truck, Zap } from "lucide-react";
 
 import {
   Dialog,
@@ -47,6 +47,7 @@ import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import type { OperationalDateScopeMode } from "@/lib/operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { performReleaseOrderWithConfirm } from "@/lib/release-order-with-confirm";
 
 type OrderSummaryRow = PlannedOrderRow & {
   productsCount: number;
@@ -75,7 +76,8 @@ export default function PedidosFabricaPage() {
     view: "aggregated" | "original";
   } | null>(null);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
-  const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
+  const [isAutoReleasing, setIsAutoReleasing] = useState(false);
+  const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder, refresh } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -238,6 +240,74 @@ export default function PedidosFabricaPage() {
     }
   }
 
+  async function handleReleaseOrder(order: OrderSummaryRow) {
+    await performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast);
+  }
+
+  // AJ-A6: libera em batelada todos os pedidos elegíveis num clique. Aplica a
+  // mesma trava server-side do A1 (sem force) — pedidos bloqueados aparecem
+  // como falhas no resumo, sem interromper o batch.
+  async function handleAutoReleaseEligible() {
+    if (isAutoReleasing) return;
+
+    const eligibleCount = summaryRows.filter(
+      (order) =>
+        !order.releasedToProduction && order.status !== "cancelado" && order.availableForRelease,
+    ).length;
+
+    if (eligibleCount === 0) {
+      toast.info("Nenhum pedido elegível para auto-liberação na janela atual.");
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: `Auto-liberar ${eligibleCount} pedido(s) elegível(eis)?`,
+      description:
+        "Pedidos que passem na validação serão liberados de uma vez. Pedidos bloqueados (capacidade / MPI / janela) ficam de fora e podem ser tratados manualmente.",
+      confirmLabel: "Auto-liberar",
+      cancelLabel: "Voltar",
+    });
+
+    if (!confirmed) return;
+
+    setIsAutoReleasing(true);
+    try {
+      const response = await fetch("/api/factory-planning/auto-release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ referenceDate: anchorDate }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? "Falha na auto-liberação");
+      }
+      const result = (await response.json()) as {
+        released: Array<{ orderCode: string }>;
+        skipped: Array<{ orderCode: string; reason: string }>;
+        failed: Array<{ orderCode: string; error: string }>;
+      };
+      await refresh();
+
+      const parts: string[] = [];
+      if (result.released.length > 0) parts.push(`${result.released.length} liberado(s)`);
+      if (result.failed.length > 0) parts.push(`${result.failed.length} bloqueado(s)`);
+      if (result.skipped.length > 0) parts.push(`${result.skipped.length} pulado(s)`);
+
+      const summary = parts.join(" · ");
+      if (result.released.length > 0 && result.failed.length === 0) {
+        toast.success(`Auto-liberação concluída: ${summary || "nada a fazer"}.`);
+      } else if (result.failed.length > 0) {
+        toast.warning(`Auto-liberação parcial: ${summary}. Trate os bloqueios manualmente.`);
+      } else {
+        toast.info(`Auto-liberação sem ação: ${summary || "nada elegível"}.`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha na auto-liberação.");
+    } finally {
+      setIsAutoReleasing(false);
+    }
+  }
+
   async function handleReopenOrder(order: OrderSummaryRow) {
     const confirmed = await confirm({
       title: `Reabrir o pedido ${order.code}?`,
@@ -332,15 +402,29 @@ export default function PedidosFabricaPage() {
           </PopoverContent>
         </Popover>
 
-        {/* Linha-stats minúscula (KPIs secundários). */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
-          <span>
-            <span className="font-medium text-foreground/80">{kpis.total}</span> no período
-          </span>
-          <span aria-hidden className="text-muted-foreground/40">·</span>
-          <span>
-            <span className="font-medium text-foreground/80">{kpis.liberados}</span> liberados
-          </span>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          {/* AJ-A6: libera todos os pedidos elegíveis num clique. Aplica a mesma
+              trava do A1 — os bloqueados aparecem como falhas no resumo. */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleAutoReleaseEligible()}
+            disabled={isAutoReleasing}
+          >
+            <Zap className="size-4" />
+            {isAutoReleasing ? "Liberando..." : "Auto-liberar elegíveis"}
+          </Button>
+          {/* Linha-stats minúscula (KPIs secundários). */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
+            <span>
+              <span className="font-medium text-foreground/80">{kpis.total}</span> no período
+            </span>
+            <span aria-hidden className="text-muted-foreground/40">·</span>
+            <span>
+              <span className="font-medium text-foreground/80">{kpis.liberados}</span> liberados
+            </span>
+          </div>
         </div>
       </div>
 
@@ -496,8 +580,10 @@ export default function PedidosFabricaPage() {
                             <Button
                               type="button"
                               size="sm"
-                              disabled={!order.availableForRelease || order.releasedToProduction || order.status === "cancelado"}
-                              onClick={() => void releaseOrder(order.id)}
+                              // Não desabilitamos mais por availableForRelease: o servidor é a
+                              // fonte da verdade e o gestor decide se quer forçar a liberação.
+                              disabled={order.releasedToProduction || order.status === "cancelado"}
+                              onClick={() => void handleReleaseOrder(order)}
                             >
                               {order.releasedToProduction ? "Liberado" : "Liberar para produção"}
                             </Button>

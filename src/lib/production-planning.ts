@@ -105,6 +105,9 @@ export interface StoreMasterData {
   receivingDays: ProductionWeekDay[];
   orderingBlockedDays: ProductionWeekDay[];
   receivingBlockedDays: ProductionWeekDay[];
+  /** AJ-A8: zona de entrega manual (texto livre). Quando vazia, a roteirização
+   * agrupa pela janela horária (`receiveWindow`). */
+  deliveryZone?: string | null;
 }
 
 export interface ProductionSector {

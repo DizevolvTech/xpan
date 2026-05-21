@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, MapPinned, Navigation, Package, Truck, XCircle } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
+import { DeliveryAttemptDialog } from "@/components/shared/delivery-attempt-dialog";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
@@ -13,10 +14,13 @@ import { OperationFiltersCard } from "@/components/shared/operation-filters-card
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   useDeliveryExecution,
+  type DeliveryAttemptInfo,
+  type DeliveryFailureReason,
 } from "@/lib/delivery-execution";
 import {
   canRegisterDeliveryFailure,
@@ -30,6 +34,9 @@ import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal
 import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { buildDeliveryRoutes } from "@/lib/delivery-routing";
+import type { StoreProfile } from "@/lib/factory-planning/types";
 
 type DeliveryRow = ExpeditionRow & {
   routeCode: string;
@@ -38,29 +45,25 @@ type DeliveryRow = ExpeditionRow & {
   expeditionReady: boolean;
   executionStatus: DeliveryExecutionStatus;
   executionUpdatedAt: string;
+  attemptsCount: number;
+  lastAttempt: DeliveryAttemptInfo | null;
 };
 
-const ROUTE_ZONES = ["Centro", "Norte", "Sul", "Leste", "Oeste", "Industrial"];
+const FAILURE_REASON_LABELS: Record<DeliveryFailureReason, string> = {
+  cliente_ausente: "Cliente ausente",
+  endereco_errado: "Endereço errado",
+  recusa_cliente: "Recusa do cliente",
+  estabelecimento_fechado: "Estabelecimento fechado",
+  veiculo_avaria: "Avaria no veículo",
+  acesso_bloqueado: "Acesso bloqueado",
+  documentacao_pendente: "Documentação pendente",
+  outro: "Outro motivo",
+};
 
-function hashCode(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) % 100000;
-  }
-  return hash;
-}
-
-function buildRouteMeta(item: ExpeditionRow, index: number) {
-  const seed = hashCode(`${item.orderCode}-${item.storeName}-${item.deliveryDate}-${index}`);
-  const routeNumber = (seed % 40) + 1;
-  const stopNumber = (seed % 12) + 1;
-
-  return {
-    routeCode: `R-${item.deliveryDate.replaceAll("-", "").slice(2)}-${String(routeNumber).padStart(2, "0")}`,
-    zone: ROUTE_ZONES[seed % ROUTE_ZONES.length],
-    stopLabel: `${stopNumber}a parada`,
-  };
-}
+// AJ-A8: rota agora vem do helper real (delivery-routing). O bloco antigo
+// usava hash determinístico — visualmente plausível mas zero relação com
+// dados de cadastro. Substituído por agrupamento honesto por zona (quando
+// preenchida) ou janela horária (fallback).
 
 function formatLastUpdate(dateIso: string) {
   const date = new Date(dateIso);
@@ -106,11 +109,39 @@ export default function EntregasPage() {
   const [pageSize, setPageSize] = useState(20);
 
   const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const { snapshot: masterDataSnapshot } = useMasterDataSnapshot();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
   );
   const deliveryExecutionState = useDeliveryExecution();
+  const toast = useToast();
+  const [attemptDialogRow, setAttemptDialogRow] = useState<DeliveryRow | null>(null);
+
+  // AJ-A8: roteirização real. Constrói StoreProfile[] a partir do master-data
+  // (que já traz deliveryZone) + calcula rotas via helper compartilhado.
+  const routeAssignmentsByOrderId = useMemo(() => {
+    const storeProfiles: StoreProfile[] = masterDataSnapshot.stores.map((store) => ({
+      id: store.id,
+      code: store.code,
+      name: store.name,
+      orderingDays: store.orderingDays,
+      receivingDays: store.receivingDays,
+      orderingBlockedDays: store.orderingBlockedDays,
+      receivingBlockedDays: store.receivingBlockedDays,
+      receiveWindow: store.receiveWindow,
+      deliveryZone: store.deliveryZone ?? null,
+    }));
+    const assignments = buildDeliveryRoutes(
+      planningData.expedition.map((item) => ({
+        orderId: item.orderId,
+        storeId: item.storeId,
+        deliveryDate: item.deliveryDate,
+      })),
+      storeProfiles,
+    );
+    return new Map(assignments.map((assignment) => [assignment.orderId, assignment]));
+  }, [masterDataSnapshot.stores, planningData.expedition]);
 
   // AJ-0017: mapa pedido → OP (primeira OP encontrada) para deep-link da
   // entrega que ainda está "aguardando produção" direto na ordem de produção.
@@ -142,8 +173,8 @@ export default function EntregasPage() {
 
           return a.orderCode.localeCompare(b.orderCode);
         })
-        .map((item, index) => {
-          const routeMeta = buildRouteMeta(item, index);
+        .map((item) => {
+          const assignment = routeAssignmentsByOrderId.get(item.orderId);
           const expeditionReady = item.status === "aguardando_expedicao";
           const execution = deliveryExecutionState.resolveExecution(
             item.orderId,
@@ -152,13 +183,17 @@ export default function EntregasPage() {
 
           return {
             ...item,
-            ...routeMeta,
+            routeCode: assignment?.routeCode ?? "—",
+            zone: assignment?.zone ?? "Sem agrupamento",
+            stopLabel: assignment?.stopLabel ?? "—",
             expeditionReady,
             executionStatus: execution.status,
             executionUpdatedAt: execution.updatedAt,
+            attemptsCount: execution.attemptsCount,
+            lastAttempt: execution.lastAttempt,
           };
         }),
-    [deliveryExecutionState, planningData.expedition],
+    [deliveryExecutionState, planningData.expedition, routeAssignmentsByOrderId],
   );
 
   const filteredRows = useMemo(() => {
@@ -250,7 +285,32 @@ export default function EntregasPage() {
     {
       key: "executionStatus",
       header: "Execução",
-      render: (item: DeliveryRow) => <StatusBadge status={item.executionStatus} />,
+      render: (item: DeliveryRow) => (
+        <div className="flex flex-col gap-1">
+          <StatusBadge status={item.executionStatus} />
+          {item.attemptsCount > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-semibold text-destructive"
+              title={
+                item.lastAttempt
+                  ? `Última falha (#${item.lastAttempt.attemptNumber}): ${FAILURE_REASON_LABELS[item.lastAttempt.failureReason]}${
+                      item.lastAttempt.reasonNotes ? ` — ${item.lastAttempt.reasonNotes}` : ""
+                    }${
+                      item.lastAttempt.rescheduleTo
+                        ? `. Reagendado para ${item.lastAttempt.rescheduleTo}.`
+                        : ""
+                    }`
+                  : undefined
+              }
+            >
+              {item.attemptsCount} tentativa{item.attemptsCount > 1 ? "s" : ""}
+              {item.lastAttempt
+                ? ` · ${FAILURE_REASON_LABELS[item.lastAttempt.failureReason]}`
+                : ""}
+            </span>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "updatedAt",
@@ -318,10 +378,10 @@ export default function EntregasPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => void deliveryExecutionState.updateExecution(item.orderId, "tentativa_falha")}
+                onClick={() => setAttemptDialogRow(item)}
               >
                 <XCircle className="size-4" />
-                Falha
+                Registrar falha
               </Button>
             )}
           </div>
@@ -578,6 +638,25 @@ export default function EntregasPage() {
           />
         </CardContent>
       </Card>
+
+      {attemptDialogRow !== null ? (
+        <DeliveryAttemptDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setAttemptDialogRow(null);
+          }}
+          orderCode={attemptDialogRow.orderCode}
+          storeName={attemptDialogRow.storeName}
+          onSubmit={async (input) => {
+            await deliveryExecutionState.registerAttempt(attemptDialogRow.orderId, input);
+            toast.warning(
+              input.rescheduleTo
+                ? `Falha #${attemptDialogRow.attemptsCount + 1} registrada. Reagendada para ${input.rescheduleTo}.`
+                : `Falha #${attemptDialogRow.attemptsCount + 1} registrada para o pedido ${attemptDialogRow.orderCode}.`,
+            );
+          }}
+        />
+      ) : null}
     </PageLayout>
   );
 }

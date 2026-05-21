@@ -331,6 +331,7 @@ export async function buildFactoryInputFromDb(
       orderingBlockedDays: store.orderingBlockedDays,
       receivingBlockedDays: store.receivingBlockedDays,
       receiveWindow: store.receiveWindow,
+      deliveryZone: store.deliveryZone ?? null,
     })),
     storeOrders,
     settings: snapshot.operationalSettings,
