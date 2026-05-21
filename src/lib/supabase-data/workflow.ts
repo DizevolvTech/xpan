@@ -284,19 +284,26 @@ export interface ReleaseOrderOptions {
    * `availableForRelease` derivada do engine.
    */
   tenantId?: string | null;
+  /**
+   * Data de referência usada na reconstrução do planning para validar.
+   * Default: hoje (UTC). Importante quando o gestor está olhando um
+   * referenceDate diferente — sem isso, a validação contra a janela
+   * operacional de hoje pode contradizer o que o gestor vê.
+   */
+  referenceDate?: string;
 }
 
 async function validateOrderReleasable(
   orderId: string,
   orderRow: { id: string; legacy_id: string | null; management_status: string },
   tenantId: string,
+  referenceDate: string,
   supabase: SupabaseDataClient,
 ) {
   if (orderRow.management_status === "cancelado") {
     return assertPlanningAllowsRelease(orderRow, { orders: [] }, orderId);
   }
 
-  const referenceDate = new Date().toISOString().slice(0, 10);
   const input = await buildFactoryInputFromDb({
     supabase,
     includeProfileNames: false,
@@ -319,10 +326,12 @@ export async function releaseOrder(
   let forcedReason: string | null = null;
 
   if (options.tenantId) {
+    const referenceDate = options.referenceDate ?? new Date().toISOString().slice(0, 10);
     const validation = await validateOrderReleasable(
       orderId,
       orderRow,
       options.tenantId,
+      referenceDate,
       supabase,
     );
 
@@ -376,13 +385,24 @@ export async function releaseOrder(
     return;
   }
 
+  // AJ-A6.2 fix: quando o release vem do cron, releasedByProfileId é null.
+  // Distinguir origem no evento ajuda o gestor a entender por que viu pedidos
+  // liberados sem ele ter feito nada (cron rodou de madrugada).
+  const origin = releasedByProfileId ? "manual" : "sistema";
   await appendStoreOrderEvent(
     {
       orderId: orderRow.id,
       type: "liberacao_producao",
-      title: "Pedido liberado para produção",
-      description: "O pedido entrou no fluxo operacional da fábrica.",
+      title:
+        origin === "sistema"
+          ? "Pedido liberado automaticamente"
+          : "Pedido liberado para produção",
+      description:
+        origin === "sistema"
+          ? "Auto-liberação pelo sistema (cron agendado) após validação completa."
+          : "O pedido entrou no fluxo operacional da fábrica.",
       createdByProfileId: releasedByProfileId ?? null,
+      metadata: { origin },
     },
     supabase,
   );
@@ -515,6 +535,7 @@ export async function autoReleaseEligibleOrders(
     try {
       await releaseOrder(id, options.triggeredByProfileId ?? null, supabase, {
         tenantId,
+        referenceDate: options.referenceDate,
       });
       result.released.push({ orderId: id, orderCode: code });
     } catch (error) {

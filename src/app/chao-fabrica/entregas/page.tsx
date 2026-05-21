@@ -591,7 +591,7 @@ export default function EntregasPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => void deliveryExecutionState.updateExecution(item.orderId, "tentativa_falha")}
+                            onClick={() => setAttemptDialogRow(item)}
                           >
                             <XCircle className="size-4" />
                             Registrar falha

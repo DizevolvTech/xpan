@@ -154,11 +154,14 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
           action: "release-order",
           orderId,
           force: options.force === true,
+          // AJ-A1 fix: passar referenceDate evita que a validação rode contra
+          // hoje quando o gestor está olhando outra data.
+          referenceDate,
         }),
       });
       await refresh();
     },
-    [refresh],
+    [refresh, referenceDate],
   );
 
   const cancelOrder = useCallback(

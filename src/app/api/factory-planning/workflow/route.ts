@@ -20,6 +20,7 @@ export async function PATCH(request: Request) {
           action: "release-order";
           orderId: string;
           force?: boolean;
+          referenceDate?: string;
         }
       | {
           action: "cancel-order";
@@ -55,6 +56,10 @@ export async function PATCH(request: Request) {
       await releaseOrder(body.orderId, authorization.user.id, supabase, {
         tenantId: authorization.effectiveTenantId,
         force: body.force === true,
+        referenceDate:
+          typeof body.referenceDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.referenceDate)
+            ? body.referenceDate
+            : undefined,
       });
       invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
