@@ -439,6 +439,15 @@ export async function updateProductionItemStatus(
     throw new Error("Invalid production workflow transition");
   }
 
+  // AJ-A5 fix: chamada idempotente (mesmo status) é permitida pela função de
+  // transição (true quando current===next) — mas não geramos upsert nem evento
+  // de mudança quando nada muda de fato. Antes do fix, isso ruidava
+  // production_order_events com rows `status_from=status_to` que inflavam
+  // amostras de lead-time em A7.
+  if (currentStatus === status) {
+    return;
+  }
+
   const upsertResult = await supabase.from("workflow_production_items").upsert(
     {
       production_item_key: productionItemKey,
