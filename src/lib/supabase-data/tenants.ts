@@ -62,6 +62,22 @@ function countByTenant<T extends { tenant_id: string | null }>(rows: T[]) {
   }, new Map());
 }
 
+/**
+ * AJ-A6.2: lista os ids de todos os tenants ativos. Usado pelo cron de
+ * auto-release pra iterar sem precisar de session de usuário. Bypassa RLS
+ * intencionalmente — chamado só do contexto do scheduler com service-role.
+ */
+export async function listActiveTenantIds(
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+): Promise<string[]> {
+  const result = await supabase
+    .from("tenants")
+    .select("id")
+    .eq("status", "ativo");
+  const rows = assertSupabaseResult(result, "Failed to list active tenants");
+  return rows.map((row) => row.id);
+}
+
 async function buildUniqueTenantSlug(
   name: string,
   supabase: SupabaseDataClient,
