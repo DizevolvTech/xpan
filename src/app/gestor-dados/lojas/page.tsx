@@ -61,6 +61,7 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
     receivingDays: store?.receivingDays ?? ["segunda", "terca", "quarta", "quinta", "sexta"],
     orderingBlockedDays: store?.orderingBlockedDays ?? [],
     receivingBlockedDays: store?.receivingBlockedDays ?? [],
+    deliveryZone: store?.deliveryZone ?? null,
   };
 }
 
@@ -573,6 +574,24 @@ export default function LojasPage() {
                     }
                     placeholder="07:00 - 10:00"
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="store-delivery-zone">Zona de Entrega</Label>
+                  <Input
+                    id="store-delivery-zone"
+                    value={formState.deliveryZone ?? ""}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        deliveryZone: event.target.value.length > 0 ? event.target.value : null,
+                      }))
+                    }
+                    placeholder="Centro, Norte, Industrial…"
+                    readOnly={isReadOnly}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Opcional. Agrupa entregas na mesma rota. Vazio = roteirização cai na janela horária.
+                  </p>
                 </div>
                 <div className="grid gap-2">
                   <Label>Status</Label>

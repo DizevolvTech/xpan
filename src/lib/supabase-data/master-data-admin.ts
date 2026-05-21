@@ -381,6 +381,9 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
     receiving_days: input.receivingDays,
     ordering_blocked_days: input.orderingBlockedDays,
     receiving_blocked_days: input.receivingBlockedDays,
+    // AJ-A8: zona de entrega manual (livre). Quando vazia, a roteirização
+    // cai no fallback por janela horária.
+    delivery_zone: input.deliveryZone?.trim() || null,
   }).select("id").single();
 
   const createdStore = assertSupabaseResult(result, "Failed to create store");
@@ -414,6 +417,8 @@ export async function updateStore(
       receiving_days: input.receivingDays,
       ordering_blocked_days: input.orderingBlockedDays,
       receiving_blocked_days: input.receivingBlockedDays,
+      // AJ-A8: zona de entrega manual (livre). Vazia = fallback por janela.
+      delivery_zone: input.deliveryZone?.trim() || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", String(row.id));
