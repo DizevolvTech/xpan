@@ -56,6 +56,8 @@ import {
 import { type MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
+import { useToast } from "@/components/shared/toast";
+import type { ScheduleRevisionRebuildImpact } from "@/lib/supabase-data/schedule-revision-plan";
 import { cn, formatKgLabel, formatLocaleNumber } from "@/lib/utils";
 
 export type ProductDialogMode = "view" | "edit";
@@ -144,6 +146,10 @@ export function ProductFormDialog({
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [commitDescription, setCommitDescription] = useState("");
   const [pendingProductPayload, setPendingProductPayload] = useState<ProductFormState | null>(null);
+  const toast = useToast();
+  // AJ-0025: produto em carteira operacional → editar reconstrói a revisão pendente
+  // do cronograma; avisamos antes de salvar e orientamos a reauditoria depois.
+  const isOperationalProduct = Boolean(product?.operationalLineId);
   const isReadOnly = mode === "view";
   const formDirty =
     open &&
@@ -621,14 +627,27 @@ export function ProductFormDialog({
         },
       );
 
+      const respBody = (await response.json().catch(() => null)) as
+        | { message?: string; scheduleRevisionImpact?: ScheduleRevisionRebuildImpact | null }
+        | null;
+
       if (!response.ok) {
-        const respBody = (await response.json().catch(() => null)) as { message?: string } | null;
         throw new Error(respBody?.message ?? "Falha ao salvar produto");
       }
 
       await refresh();
       setIsCommitDialogOpen(false);
       onOpenChange(false);
+
+      // AJ-0025: orienta a reauditoria quando o cronograma foi reconstruído pela edição.
+      const impact = respBody?.scheduleRevisionImpact ?? null;
+      if (impact) {
+        toast.warning(
+          impact.recreated
+            ? `Cronograma reconstruído (${impact.affectedProducts} produto(s) afetado(s)). Reaudite o cronograma antes de liberar os pedidos.`
+            : `Revisão pendente do cronograma atualizada (${impact.affectedProducts} produto(s)). Reaudite antes de liberar.`,
+        );
+      }
     } catch (saveError) {
       setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar produto");
     } finally {
@@ -2015,6 +2034,15 @@ export function ProductFormDialog({
                 autoFocus
               />
             </div>
+            {isOperationalProduct ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
+                <p className="text-xs text-foreground">
+                  Este produto está no cronograma operacional. Salvar vai{" "}
+                  <strong>reconstruir a revisão pendente</strong> do cronograma e os pedidos afetados
+                  precisarão ser <strong>reauditados/reliberados</strong> antes de liberar para produção.
+                </p>
+              </div>
+            ) : null}
             <div className="rounded-lg border border-border/70 bg-panel/40 px-3 py-2">
               <p className="text-xs text-muted-foreground">
                 Assinatura: <strong className="text-foreground">{product?.name ?? "Produto"}</strong>

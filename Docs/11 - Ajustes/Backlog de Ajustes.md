@@ -131,6 +131,63 @@ loja). Hoje OTIF considera "fim do dia D" como prazo.
 
 ---
 
+## 🔧 Ajustes do board 26/05 (Sprint 23) — em execução
+
+Lote derivado do [[Brief Claude Code — Ajustes 26-05 + gaps 13-05]] (estudo de
+origem: [[Estudo Trello — Analise 26-05 + Reuniao 13-05]]). Execução um item por
+vez, na ordem ORDEM 1 → 8, com `tsc`/`npm test`/`eslint` após cada item.
+
+### AJ-0025 — Editar receita não pode zerar o cronograma silenciosamente
+**Concluído em:** 2026-05-29 (commit `fix(cronograma): AJ-0025 …`)
+**Origem:** Trello 26/05 #5 (`ltvmA8RE`) + [[Dívida Técnica#D14]] · **Status:** ✅ Concluído · **Categoria:** Bug crítico (Motor/UX)
+**Área:** `src/lib/supabase-data/schedule-revision-plan.ts` (novo) · `master-data-admin.ts` · `release-block-message.ts` (novo) · `release-order-with-confirm.ts` · `product-form-dialog.tsx` · `api/master-data/products/[productId]/route.ts`
+
+**Causa-raiz confirmada:** `rebuildPendingScheduleRevisionForSubcategoryDbId`
+deletava a revisão `pendente` e recriava outra com `legacy_id` novo. Como o id
+da revisão entra no `planning_key` (`productionDate|sectorId|lineId|scheduleId`,
+ver [[Backlog de Ajustes#AJ-A5]]), recriar mudava a chave → cronograma ativo
+desativado (engine só planeja `status='ativo'`) + OPs/statuses órfãos →
+`OrderReleaseValidationError` → HTTP 400 silencioso.
+
+**O que mudou:**
+1. **Motor:** reaproveita a revisão pendente existente (id estável → `planning_key`
+   estável) em vez de delete+recriar; só recria quando NÃO há pendente (aí desativa
+   o ativo e devolve metadados de impacto). Lógica pura em `schedule-revision-plan.ts`.
+2. **UX (aviso):** banner no diálogo de commit do produto operacional avisando que
+   salvar reconstrói a revisão pendente e exige reauditoria/reliberação.
+3. **UX (erro 400):** `buildReleaseBlockMessage` traduz o `reason` para mensagem
+   acionável ("reaudite o cronograma e tente liberar de novo").
+4. **Impacto:** API devolve `scheduleRevisionImpact`; o form mostra toast orientando
+   reauditoria após o save.
+
+**a11y:** o diálogo de liberação já usava o `confirm-dialog` com `AlertDialogTitle` +
+`aria-describedby` (UX-0002) — o warning de console citado no card já estava resolvido.
+
+**Testes:** `schedule-revision-plan.test.ts` (3 casos: reaproveita pendente / recria
+sem pendente + impacto / consolida múltiplas pendentes) + `release-block-message.test.ts`
+(4 casos). `tsc` limpo, 148/148 testes, `eslint` sem erro novo (só o warning pré-existente [[#AJ-0023 — Dead code descoberto durante a Onda 1|AJ-0023]]).
+
+### AJ-0024 — Cronograma escolhe variante/data errada + falha no 1º salvamento
+**Origem:** Trello 26/05 #4 (`Xc8jwCfH`) · **Status:** A-fazer (ORDEM 2) · **Categoria:** Bug crítico (Motor)
+
+### AJ-0026 — Criar categoria inline no modal "Nova Linha de produção"
+**Origem:** Trello 26/05 #1 (`cUKnjx9p`) · **Status:** A-fazer (ORDEM 3) · **Categoria:** UX
+
+### AJ-0027 — Pedido: visualização do input numérico (só visual)
+**Origem:** Trello 26/05 #2 (`KiGOg0hB`) · **Status:** A-fazer (ORDEM 4) · **Categoria:** UX
+> Multi-dia (preencher outras colunas) está amarrado ao **AJ-0009** (⛔ decisão de cliente) — fora do escopo desta onda.
+
+### AJ-0028 — Tooltip "Sequência Operacional" bugado (layout)
+**Origem:** Trello 26/05 #3 (`hQn2Z2YC`) · **Status:** A-fazer (ORDEM 5) · **Categoria:** Bug visual
+
+### Gaps 13/05 (após os de 26/05)
+- **AJ-0003.1** (`QW11M8T0`, D20) — justificativa de edição visível na auditoria · **A-fazer (ORDEM 6)**
+- **AJ-0004.1** (`ZcZQpu9D`) — decimal preciso propagado a jusante · **A-fazer (ORDEM 7)**
+- **AJ-0006.1** (`c8HOkNBG`, D09) — lote mínimo consolidado na fábrica + validação na API · **A-fazer (ORDEM 8)**
+- **AJ-0009 / AJ-0005.1 / AJ-0008.1** — ⛔ decisão de cliente, não codar.
+
+---
+
 ## 🔴 Crítico (estrutural ou bloqueante)
 
 ### AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche
