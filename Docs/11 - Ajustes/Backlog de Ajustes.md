@@ -303,7 +303,10 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 
 ### AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche
 **Decisão tomada em:** 2026-05-30 (Giuseppe) — **Opção C (híbrido faseado), Fase 4a.** Fundação implementada (commit `feat(pedido): AJ-0009 Fase 4a …`).
-**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** 🟩 Fase 4a CODADA (atrás da flag) · falta validar visual + ligar a flag + validar com cliente · **Categoria:** Modelo
+**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** ⏸️ Fase 4a CODADA mas **PARADA atrás da flag (NÃO ativar)** — decisão do Giuseppe (2026-05-30): a loja continua criando os pedidos · **Categoria:** Modelo
+
+> [!warning] Decisão 2026-05-30 — NÃO ligar `FACTORY_OPENS_ORDERS`
+> Ao validar, ficou claro que **a LOJA é quem faz os pedidos** (1 por janela). A inversão "fábrica abre → loja só preenche" trancava a loja quando a fábrica não havia aberto nada. Decisão: **manter a flag OFF** (a loja cria). O código da Fase 4a fica como recurso **opcional/parqueado** atrás da flag — não ativar sem redesenhar o fluxo (ex.: modelo híbrido onde a loja também cria). A regra que vale é **1 pedido por janela** (ver `store-order-window.ts` + índice `UNIQUE`), que já está ativa independente da flag.
 
 > **Resolução (2026-05-30):** ADR [[decisoes/ADR_modelo_fabrica_abre_pedido]] passou a **Aceito (Opção C, Fase 4a)**. Tudo atrás da flag `FACTORY_OPENS_ORDERS` (default OFF) — produção intocada.
 >
