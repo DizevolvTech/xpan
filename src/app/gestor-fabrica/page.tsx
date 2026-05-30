@@ -44,7 +44,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import type { PlannedOrderRow, ProductionOrderRow } from "@/lib/factory-planning/types";
+import type { PlannedOrderRow, ProductionItemStatus, ProductionOrderRow } from "@/lib/factory-planning/types";
 import {
   filterFactoryPlanningDataByOperationalScope,
   type OperationalDateScopeMode,
@@ -54,6 +54,7 @@ import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { getNextProductionItemStatus } from "@/lib/production-workflow";
 import { formatKgLabel } from "@/lib/utils";
 
 type KanbanTone = "warning" | "info" | "primary" | "success";
@@ -132,6 +133,7 @@ export default function GestorFabricaPage() {
     columnKey: string;
     current: number;
     total: number;
+    label: string;
   } | null>(null);
 
   const toast = useToast();
@@ -205,7 +207,7 @@ export default function GestorFabricaPage() {
         if (!confirmed) return;
       }
 
-      setBatchProgress({ columnKey, current: 0, total: orders.length });
+      setBatchProgress({ columnKey, current: 0, total: orders.length, label: "Liberando" });
       const progressToastId = toast.info(`Liberando 0/${orders.length} pedidos…`, {
         title: "Liberação em lote",
         duration: 60_000,
@@ -258,6 +260,97 @@ export default function GestorFabricaPage() {
       await refreshPlanning(true).catch(() => undefined);
     },
     [batchProgress, confirm, refreshPlanning, releaseOrderRequest, toast],
+  );
+
+  // AJ — "iniciar produção" em lote: avança os itens `nao_iniciado` da OP para o
+  // 1º estágio (mesma transição que o chão usa), via o mesmo endpoint do release.
+  const startProductionItemRequest = useCallback(
+    async (productionItemKey: string, status: ProductionItemStatus) => {
+      const response = await fetch("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update-production-item-status", productionItemKey, status }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? `Falha ao iniciar produção (status ${response.status}).`);
+      }
+    },
+    [],
+  );
+
+  const runBatchStartProduction = useCallback(
+    async (columnKey: string, ops: ProductionOrderRow[]) => {
+      if (batchProgress) return;
+      // Itens ainda não iniciados → próximo estágio (1º da ficha do produto).
+      const startable = ops.flatMap((op) =>
+        op.items
+          .filter((item) => item.status === "nao_iniciado")
+          .map((item) => ({
+            productionItemKey: item.productionItemKey,
+            next: getNextProductionItemStatus("nao_iniciado", item.preparationStages),
+          }))
+          .filter((entry): entry is { productionItemKey: string; next: ProductionItemStatus } =>
+            Boolean(entry.next),
+          ),
+      );
+
+      if (startable.length === 0) {
+        toast.info("Nenhuma OP pendente de início nesta etapa.");
+        return;
+      }
+
+      if (startable.length > 10) {
+        const confirmed = await confirm({
+          title: `Iniciar a produção de ${startable.length} item(ns) de OP?`,
+          description:
+            "Esta ação coloca em produção todos os itens ainda não iniciados das OPs do dia. Itens com falha são reportados ao final.",
+          confirmLabel: `Iniciar ${startable.length}`,
+          cancelLabel: "Cancelar",
+        });
+        if (!confirmed) return;
+      }
+
+      setBatchProgress({ columnKey, current: 0, total: startable.length, label: "Iniciando" });
+      let succeeded = 0;
+      let failed = 0;
+      let firstError: string | null = null;
+      let completed = 0;
+
+      await Promise.allSettled(
+        startable.map(async (entry) => {
+          try {
+            await startProductionItemRequest(entry.productionItemKey, entry.next);
+            succeeded += 1;
+          } catch (startError) {
+            failed += 1;
+            if (!firstError) {
+              firstError =
+                startError instanceof Error ? startError.message : "Falha ao iniciar a produção.";
+            }
+          } finally {
+            completed += 1;
+            setBatchProgress((current) =>
+              current && current.columnKey === columnKey ? { ...current, current: completed } : current,
+            );
+          }
+        }),
+      );
+
+      if (failed === 0) {
+        toast.success(`${succeeded} item(ns) de OP em produção.`);
+      } else if (succeeded === 0) {
+        toast.error(firstError ?? `Falha ao iniciar ${failed} item(ns).`);
+      } else {
+        toast.warning(
+          `${succeeded} iniciados · ${failed} com falha${firstError ? `. Primeiro erro: ${firstError}` : "."}`,
+        );
+      }
+
+      setBatchProgress(null);
+      await refreshPlanning(true).catch(() => undefined);
+    },
+    [batchProgress, confirm, refreshPlanning, startProductionItemRequest, toast],
   );
 
   useEffect(() => {
@@ -474,6 +567,21 @@ export default function GestorFabricaPage() {
     const today = all.filter((order) => order.deliveryDate === anchorDate);
     return { all, today };
   }, [anchorDate, kanbanColumns]);
+
+  // OPs da coluna "Em produção" com itens ainda não iniciados (pendentes de começar).
+  const productionColumn = useMemo(
+    () => kanbanColumns.find((column) => column.key === "producao") ?? null,
+    [kanbanColumns],
+  );
+  const productionStartableCount = useMemo(() => {
+    if (!productionColumn || productionColumn.kind !== "ops") {
+      return 0;
+    }
+    return productionColumn.items.reduce(
+      (total, op) => total + op.items.filter((item) => item.status === "nao_iniciado").length,
+      0,
+    );
+  }, [productionColumn]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -898,6 +1006,7 @@ export default function GestorFabricaPage() {
           const tone = KANBAN_TONE_STYLES[column.tone];
           const isEmpty = column.items.length === 0;
           const isOpenColumn = column.key === "aberto";
+          const isProductionColumn = column.key === "producao";
           const isExpedColumn = column.key === "expedicao";
           const columnBatchActive =
             batchProgress?.columnKey === column.key ? batchProgress : null;
@@ -947,7 +1056,7 @@ export default function GestorFabricaPage() {
                   • "do dia"  = deliveryDate === anchorDate
                   • "em espera" = todos com availableForRelease no scope visível.
                   Confirmação via useConfirm para batches >10 (no runBatchRelease). */}
-              {isOpenColumn ? (
+              {isOpenColumn || isProductionColumn ? (
                 <div className="flex flex-col gap-1.5 pl-2">
                   {columnBatchActive ? (
                     <div
@@ -957,10 +1066,10 @@ export default function GestorFabricaPage() {
                     >
                       <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
                       <span className="tabular-nums">
-                        Liberando {columnBatchActive.current}/{columnBatchActive.total}…
+                        {columnBatchActive.label} {columnBatchActive.current}/{columnBatchActive.total}…
                       </span>
                     </div>
-                  ) : (
+                  ) : isOpenColumn ? (
                     <>
                       <Button
                         type="button"
@@ -998,6 +1107,26 @@ export default function GestorFabricaPage() {
                         </Button>
                       ) : null}
                     </>
+                  ) : (
+                    // AJ — coluna "Em produção": inicia as OPs do dia em lote (mesma pegada
+                    // do "Liberar tudo", mas avançando os itens não iniciados para produção).
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="min-h-11 w-full justify-start gap-2"
+                      disabled={productionStartableCount === 0 || batchProgress !== null}
+                      onClick={() => {
+                        if (column.kind === "ops") {
+                          void runBatchStartProduction(column.key, column.items);
+                        }
+                      }}
+                    >
+                      <Play className="size-3.5" aria-hidden />
+                      Iniciar produção do dia
+                      <span className="ms-auto tabular-nums opacity-80">
+                        ({productionStartableCount})
+                      </span>
+                    </Button>
                   )}
                 </div>
               ) : null}
