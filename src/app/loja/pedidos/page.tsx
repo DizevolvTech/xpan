@@ -49,7 +49,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { summarizeOperationalDates } from "@/lib/operational-sequence";
-import { cn } from "@/lib/utils";
+import { cn, formatLocaleNumber } from "@/lib/utils";
 import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import {
   getBaseDateByCutoff,
@@ -104,6 +104,70 @@ function getDayFieldByDate(date: Date): EditableDayField {
 function rotateDays(startDay: EditableDayField): EditableDayField[] {
   const startIndex = WEEK_SEQUENCE.indexOf(startDay);
   return [...WEEK_SEQUENCE.slice(startIndex), ...WEEK_SEQUENCE.slice(0, startIndex)];
+}
+
+// AJ-0027: teto razoável por célula de pedido — evita números absurdos que
+// estouram a largura da célula e "duplicam dígito" visualmente.
+const MAX_ORDER_QUANTITY = 99999;
+
+/** Converte o texto digitado (pt-BR: "1.234,5") em número, tolerando formatos mistos. */
+function parseQuantityInput(raw: string): number {
+  const cleaned = raw
+    .replace(/\s/g, "")
+    .replace(/\.(?=\d{3}(\D|$))/g, "") // remove pontos de milhar
+    .replace(",", ".");
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * AJ-0027 — célula de quantidade do pedido (só visual).
+ * Alinhada à direita, `tabular-nums`, largura maior; ao desfocar formata o milhar
+ * em pt-BR; ao focar mostra o valor cru para edição natural. Teto = MAX_ORDER_QUANTITY.
+ */
+function OrderQuantityCell({
+  value,
+  unitKind,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  unitKind: StoreOrderCatalogProduct["unitKind"];
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const [rawValue, setRawValue] = useState("");
+  const isDiscrete = unitKind === "discrete";
+
+  const formattedValue =
+    value > 0
+      ? formatLocaleNumber(value, {
+          maximumFractionDigits: isDiscrete ? 0 : 3,
+        })
+      : "";
+
+  return (
+    <Input
+      type="text"
+      inputMode={isDiscrete ? "numeric" : "decimal"}
+      className="h-8 min-w-[5.5rem] text-right tabular-nums"
+      value={isFocused ? rawValue : formattedValue}
+      placeholder="0"
+      disabled={disabled}
+      onFocus={() => {
+        setIsFocused(true);
+        setRawValue(value > 0 ? String(value) : "");
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setRawValue(next);
+        const parsed = Math.min(parseQuantityInput(next), MAX_ORDER_QUANTITY);
+        onChange(parsed);
+      }}
+      onBlur={() => setIsFocused(false)}
+    />
+  );
 }
 
 function formatDateWithWeekday(date: Date): string {
@@ -660,7 +724,7 @@ export default function PedidosLojaPage() {
       return;
     }
 
-    const numericValue = Number.isFinite(value) && value > 0 ? value : 0;
+    const numericValue = Number.isFinite(value) && value > 0 ? Math.min(value, MAX_ORDER_QUANTITY) : 0;
     const sanitizedValue =
       product.unitKind === "discrete"
         ? Math.max(0, Math.round(numericValue))
@@ -1193,14 +1257,11 @@ export default function PedidosLojaPage() {
                                       isActiveColumn && isCovered && "bg-success/40",
                                     )}
                                   >
-                                    <Input
-                                      type="number"
-                                      className="h-8 w-16 text-center"
-                                      min="0"
-                                      step={product.unitKind === "discrete" ? "1" : "0.1"}
+                                    <OrderQuantityCell
                                       value={product[dayField]}
-                                      onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
+                                      unitKind={product.unitKind}
                                       disabled={!canEdit || !product.available}
+                                      onChange={(next) => handleQuantityChange(product.id, dayField, next)}
                                     />
                                   </td>
                                 );

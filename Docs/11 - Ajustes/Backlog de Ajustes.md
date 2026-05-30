@@ -203,8 +203,16 @@ formulário (produto + linha) é preservado — nenhum "cancelar e recomeçar".
 auto-select. `tsc` limpo, 151/151, `eslint` sem erro novo.
 
 ### AJ-0027 — Pedido: visualização do input numérico (só visual)
-**Origem:** Trello 26/05 #2 (`KiGOg0hB`) · **Status:** A-fazer (ORDEM 4) · **Categoria:** UX
+**Concluído em:** 2026-05-30 (commit `fix(pedidos): AJ-0027 …`)
+**Origem:** Trello 26/05 #2 (`KiGOg0hB`) · **Status:** ✅ Concluído (parte visual) · **Categoria:** UX
+**Área:** `src/app/loja/pedidos/page.tsx`
 > Multi-dia (preencher outras colunas) está amarrado ao **AJ-0009** (⛔ decisão de cliente) — fora do escopo desta onda.
+
+Célula de quantidade reescrita (`OrderQuantityCell`): alinhada à direita, `tabular-nums`,
+largura maior (`min-w-[5.5rem]`), milhar pt-BR formatado ao desfocar (valor cru ao focar
+para edição natural) e teto `MAX_ORDER_QUANTITY` (99.999) — clampado também em
+`handleQuantityChange` — para não induzir duplicação de dígito. 1ª coluna segue editável.
+`tsc` limpo, 151/151, `eslint` sem erro novo. **Validação visual recomendada antes do deploy.**
 
 ### AJ-0028 — Tooltip "Sequência Operacional" bugado (layout)
 **Origem:** Trello 26/05 #3 (`hQn2Z2YC`) · **Status:** A-fazer (ORDEM 5) · **Categoria:** Bug visual
