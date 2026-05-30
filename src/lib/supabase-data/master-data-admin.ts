@@ -25,6 +25,7 @@ import {
   planScheduleRevisionRebuild,
   type ScheduleRevisionRebuildImpact,
 } from "@/lib/supabase-data/schedule-revision-plan";
+import { diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 type RecordStatus = "ativo" | "inativo";
@@ -1276,6 +1277,11 @@ export async function updateProduct(
       ? ((await supabase.from("profiles").select("name").eq("id", options.actingProfileId).maybeSingle()).data as { name: string } | null)?.name ?? ""
       : "";
 
+    // AJ-0003.1: registra também QUAIS campos mudaram (de/para), além do motivo,
+    // para a auditoria de cronograma destacar o que foi alterado. `row` é a versão
+    // anterior (carregada antes do update); diffamos contra o payload normalizado.
+    const changedFields = diffProductFields(row, normalizeProductPayload(input));
+
     await supabase.from("product_changelog").insert({
       tenant_id: row.tenant_id,
       product_id: productId,
@@ -1283,7 +1289,7 @@ export async function updateProduct(
       change_description: input.changeDescription.trim(),
       changed_by_profile_id: options.actingProfileId ?? null,
       changed_by_name: actingProfileName,
-      snapshot_data: { name: input.name, description: input.description },
+      snapshot_data: { name: input.name, description: input.description, changedFields },
     });
   }
 

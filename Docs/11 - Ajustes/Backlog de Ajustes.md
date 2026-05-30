@@ -232,7 +232,20 @@ para caber as 4 colunas iguais no desktop. Beneficia os 3 usos do card sem tocar
 `tsc` limpo, 151/151, `eslint` 0 erros. **Validação visual (desktop + mobile) recomendada.**
 
 ### Gaps 13/05 (após os de 26/05)
-- **AJ-0003.1** (`QW11M8T0`, D20) — justificativa de edição visível na auditoria · **A-fazer (ORDEM 6)**
+
+#### AJ-0003.1 — Justificativa (motivo + campos alterados) da edição visível na auditoria
+**Concluído em:** 2026-05-30 (commit `feat(auditoria): AJ-0003.1 …`)
+**Origem:** Trello (`QW11M8T0`, ps2) + [[Dívida Técnica#D20]] · **Status:** ✅ Concluído · **Categoria:** Auditoria
+**Área:** `src/lib/supabase-data/product-changelog-diff.ts` (novo) · `master-data-admin.ts` · `changelog/route.ts` · `gestor-fabrica/sublinhas-producao/page.tsx`
+
+Campo "motivo da alteração" já era obrigatório no salvar produto. Agora o
+`product_changelog.snapshot_data` registra também **quais campos mudaram (de/para)**
+via `diffProductFields` (lógica pura, 5 testes). O endpoint de changelog passou a
+devolver `snapshot_data`; a **auditoria de cronograma** (grade auditável) busca a
+última edição de cada produto e mostra um bloco destacado "Última edição" com o
+motivo, autor e a lista de campos alterados (de → para). `tsc` limpo, 156/156, `eslint` 0.
+
+#### Demais gaps
 - **AJ-0004.1** (`ZcZQpu9D`) — decimal preciso propagado a jusante · **A-fazer (ORDEM 7)**
 - **AJ-0006.1** (`c8HOkNBG`, D09) — lote mínimo consolidado na fábrica + validação na API · **A-fazer (ORDEM 8)**
 - **AJ-0009 / AJ-0005.1 / AJ-0008.1** — ⛔ decisão de cliente, não codar.
