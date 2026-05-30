@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
-import { ArrowDown, ArrowRight, CalendarRange, Factory, ListChecks, ShoppingCart, Truck, Zap } from "lucide-react";
+import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ListChecks, ShoppingCart, Truck, Zap } from "lucide-react";
 
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -48,6 +49,8 @@ import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import type { OperationalDateScopeMode } from "@/lib/operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { performReleaseOrderWithConfirm } from "@/lib/release-order-with-confirm";
+import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 
 type OrderSummaryRow = PlannedOrderRow & {
   productsCount: number;
@@ -77,6 +80,13 @@ export default function PedidosFabricaPage() {
   } | null>(null);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
   const [isAutoReleasing, setIsAutoReleasing] = useState(false);
+  // AJ-0009 Fase 4a: "fábrica abre o pedido" (atrás da flag FACTORY_OPENS_ORDERS).
+  const factoryOpensOrders = isFactoryOpensOrdersEnabled();
+  const { snapshot: masterData } = useMasterDataSnapshot();
+  const [isOpenOrdersDialogOpen, setIsOpenOrdersDialogOpen] = useState(false);
+  const [openDeliveryDate, setOpenDeliveryDate] = useState("");
+  const [openStoreIds, setOpenStoreIds] = useState<string[]>([]);
+  const [isOpeningOrders, setIsOpeningOrders] = useState(false);
   const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder, refresh } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
@@ -247,6 +257,51 @@ export default function PedidosFabricaPage() {
   // AJ-A6: libera em batelada todos os pedidos elegíveis num clique. Aplica a
   // mesma trava server-side do A1 (sem force) — pedidos bloqueados aparecem
   // como falhas no resumo, sem interromper o batch.
+  // AJ-0009 Fase 4a: abre pedidos vazios (status 'aberto') p/ as lojas preencherem.
+  async function handleOpenOrders() {
+    if (isOpeningOrders) return;
+    if (!openDeliveryDate || openStoreIds.length === 0) {
+      toast.error("Informe a data de entrega e selecione ao menos uma loja.");
+      return;
+    }
+
+    setIsOpeningOrders(true);
+    try {
+      const response = await fetch("/api/store-orders/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deliveryDate: openDeliveryDate, storeIds: openStoreIds }),
+      });
+      const result = (await response.json().catch(() => null)) as
+        | { opened?: Array<{ storeId: string; code: string }>; skipped?: string[]; message?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(result?.message ?? "Falha ao abrir pedidos.");
+      }
+      await refresh();
+      const openedCount = result?.opened?.length ?? 0;
+      const skippedCount = result?.skipped?.length ?? 0;
+      if (openedCount > 0) {
+        toast.success(
+          `${openedCount} pedido(s) aberto(s) para ${openDeliveryDate}.` +
+            (skippedCount > 0 ? ` ${skippedCount} loja(s) já tinha(m) pedido ativo.` : ""),
+        );
+      } else {
+        toast.info(
+          skippedCount > 0
+            ? `Nenhum pedido aberto: as ${skippedCount} loja(s) já tinham pedido ativo nessa data.`
+            : "Nenhum pedido aberto.",
+        );
+      }
+      setIsOpenOrdersDialogOpen(false);
+      setOpenStoreIds([]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao abrir pedidos.");
+    } finally {
+      setIsOpeningOrders(false);
+    }
+  }
+
   async function handleAutoReleaseEligible() {
     if (isAutoReleasing) return;
 
@@ -403,6 +458,18 @@ export default function PedidosFabricaPage() {
         </Popover>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          {/* AJ-0009 Fase 4a: a fábrica abre os pedidos (só com a flag ligada). */}
+          {factoryOpensOrders ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsOpenOrdersDialogOpen(true)}
+            >
+              <CalendarPlus className="size-4" />
+              Abrir pedidos
+            </Button>
+          ) : null}
           {/* AJ-A6: libera todos os pedidos elegíveis num clique. Aplica a mesma
               trava do A1 — os bloqueados aparecem como falhas no resumo. */}
           <Button
@@ -851,6 +918,97 @@ export default function PedidosFabricaPage() {
               )}
             </PaginatedSection>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* AJ-0009 Fase 4a: a fábrica abre pedidos vazios para as lojas preencherem. */}
+      <Dialog open={isOpenOrdersDialogOpen} onOpenChange={setIsOpenOrdersDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Abrir pedidos para as lojas</DialogTitle>
+            <DialogDescription>
+              Cria um pedido em aberto para cada loja selecionada preencher. Lojas que já têm
+              pedido ativo na data são ignoradas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="open-delivery-date">Data de entrega *</Label>
+              <Input
+                id="open-delivery-date"
+                type="date"
+                value={openDeliveryDate}
+                onChange={(event) => setOpenDeliveryDate(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between">
+                <Label>Lojas *</Label>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-info hover:text-info/80"
+                  onClick={() => {
+                    const active = masterData.stores.filter((store) => store.status === "ativo");
+                    setOpenStoreIds(
+                      openStoreIds.length === active.length ? [] : active.map((store) => store.id),
+                    );
+                  }}
+                >
+                  {openStoreIds.length === masterData.stores.filter((s) => s.status === "ativo").length
+                    ? "Limpar"
+                    : "Selecionar todas"}
+                </button>
+              </div>
+              <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border/70 p-2">
+                {masterData.stores.filter((store) => store.status === "ativo").length === 0 ? (
+                  <p className="px-1 py-2 text-xs text-muted-foreground">Nenhuma loja ativa.</p>
+                ) : (
+                  masterData.stores
+                    .filter((store) => store.status === "ativo")
+                    .map((store) => {
+                      const checked = openStoreIds.includes(store.id);
+                      return (
+                        <label
+                          key={store.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-panel/50"
+                        >
+                          <input
+                            type="checkbox"
+                            className="size-4 accent-[var(--primary)]"
+                            checked={checked}
+                            onChange={(event) =>
+                              setOpenStoreIds((current) =>
+                                event.target.checked
+                                  ? [...current, store.id]
+                                  : current.filter((id) => id !== store.id),
+                              )
+                            }
+                          />
+                          <span className="text-foreground">{store.name}</span>
+                        </label>
+                      );
+                    })
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsOpenOrdersDialogOpen(false)}
+              disabled={isOpeningOrders}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleOpenOrders()}
+              disabled={isOpeningOrders || !openDeliveryDate || openStoreIds.length === 0}
+            >
+              {isOpeningOrders ? "Abrindo..." : `Abrir ${openStoreIds.length || ""} pedido(s)`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </PageLayout>
