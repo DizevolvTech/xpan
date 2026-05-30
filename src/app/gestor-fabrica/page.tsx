@@ -1073,13 +1073,16 @@ export default function GestorFabricaPage() {
                     );
                   })
                 ) : (
-                  column.items.map((op) => {
+                  column.items.map((op, opIndex) => {
                     const isOpen = !!expandedOpIds[op.id];
                     const progress = Math.max(0, Math.min(100, op.progress));
                     const progressLabel =
                       progress <= 0
                         ? "iniciada"
                         : `${progress.toFixed(progress < 10 ? 1 : 0)}%`;
+                    // AJ-0001: a coluna já vem ordenada por productionDate (proxy de SLA),
+                    // então a 1ª OP da fila é a próxima a trabalhar → badge "PRÓXIMA".
+                    const isNextInQueue = opIndex === 0;
                     return (
                       <div
                         key={op.id}
@@ -1093,8 +1096,15 @@ export default function GestorFabricaPage() {
                           className="block w-full rounded-md px-2 py-1.5 text-left leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <div className="flex items-baseline justify-between gap-2">
-                            <span className="truncate font-mono text-xs font-semibold text-foreground">
-                              {op.code}
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              {isNextInQueue ? (
+                                <span className="shrink-0 rounded-full bg-info px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-info-foreground">
+                                  Próxima
+                                </span>
+                              ) : null}
+                              <span className="truncate font-mono text-xs font-semibold text-foreground">
+                                {op.code}
+                              </span>
                             </span>
                             <span className="shrink-0 truncate text-[10px] text-muted-foreground">
                               {op.lineName} · {op.sectorName}

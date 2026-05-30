@@ -387,8 +387,10 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 
 ### AJ-0001 — Kanban acionável (substitui read-only)
 **Revisado em:** 2026-05-20 — **diretriz original SUBSTITUÍDA por decisão do cliente** (Daniel, sessão 2026-05-20)
-**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3 *(implementação inicial read-only — superada pela nova diretriz)*
-**Origem:** Call 2026-05-13 (Bloco 1) + Revisão cliente 2026-05-20 · **Status:** Ativo (re-aberto para Onda 5) · **Categoria:** UX
+**Concluído em:** 2026-05-30 (badge PRÓXIMA: commit `feat(gestor): AJ-0001 …`) — a parte acionável (inline + batch) já havia sido entregue antes; faltava só o badge PRÓXIMA.
+**Origem:** Call 2026-05-13 (Bloco 1) + Revisão cliente 2026-05-20 · **Status:** ✅ Concluído · **Categoria:** UX
+
+> **Resolução (2026-05-30):** auditado o `gestor-fabrica/page.tsx` — o Kanban já era **acionável**: ações inline `Liberar` + `Abrir checklist` por card, batch `Liberar tudo do dia` / `Liberar todos em espera` no header (com confirmação p/ lotes >10 e toast de progresso), colunas terminais (`Em rota`/`Entregue`) read-only, sem drag-and-drop, tudo via `PATCH /api/factory-planning/workflow`. **Faltava o badge `PRÓXIMA`** na 1ª OP da fila (coluna "Em produção", já ordenada por `productionDate` = proxy de SLA) — **adicionado agora**. Ações `Marcar concluída` / `Reportar problema` pertencem ao chão-de-fábrica (outra superfície), fora deste dashboard. `tsc` limpo, 161/161, `eslint` 0.
 
 > [!warning] Substituição de diretriz — 2026-05-20
 > A diretriz original ("Kanban é só visualização; não manipular status pelo Kanban") **foi revogada pelo cliente final** na sessão de 2026-05-20. O texto histórico abaixo (escopo Giuseppe, implementação read-only de 2026-05-19) está preservado para registro, mas **não é mais a regra vigente**.
