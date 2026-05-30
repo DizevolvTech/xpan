@@ -319,15 +319,10 @@ export function ProductFormDialog({
     () => Math.max(0, Number((100 - formState.breakPercent).toFixed(3))),
     [formState.breakPercent],
   );
-  // AJ-0004: quantidade final precisa (sem arredondamento de unidade discreta),
-  // para o cliente conferir/copiar com 3 casas decimais (ex.: 9,123 em vez de 9).
-  const recipeFinalQuantityPrecise = useMemo(() => {
-    const unitWeightKg = recipeTotals.fractionUnitWeightKg;
-    if (!Number.isFinite(unitWeightKg) || unitWeightKg <= 0) {
-      return 0;
-    }
-    return recipeTotals.outputAfterBreakKg / unitWeightKg;
-  }, [recipeTotals.fractionUnitWeightKg, recipeTotals.outputAfterBreakKg]);
+  // AJ-0004 / AJ-0004.1: quantidade final precisa (sem arredondamento de unidade
+  // discreta), agora consumida da fonte única em `getProductRecipeTotalsFromData`
+  // (`finalFractionsQuantityPrecise`) — mesmo valor que propaga a jusante.
+  const recipeFinalQuantityPrecise = recipeTotals.finalFractionsQuantityPrecise;
   const recipeSourceOptionsForSearch = useMemo(
     () =>
       recipeSourceOptions.map((option) => ({

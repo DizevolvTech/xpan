@@ -326,12 +326,18 @@ export function getProductRecipeTotalsFromData(
       ? Number(outputAfterBreakKg.toFixed(3))
       : roundQuantityForUnit(outputAfterBreakKg / unitWeightKg, salesUnit);
   const finalFractionsQuantity = roundQuantityForUnit(outputAfterBreakKg / unitWeightKg, salesUnit);
+  // AJ-0004.1: fração final PRECISA (sem arredondar para unidade discreta nem para 2 casas).
+  // É a fonte única do "rendimento preciso" — propaga a jusante (demanda, OP, pré-pesagem) e
+  // para a exibição; `finalFractionsQuantity` segue arredondado p/ unidade inteira (ordenável).
+  const finalFractionsQuantityPrecise =
+    Number.isFinite(unitWeightKg) && unitWeightKg > 0 ? outputAfterBreakKg / unitWeightKg : 0;
 
   return {
     totalIngredientsKg,
     outputAfterBreakKg,
     fractionUnitWeightKg: unitWeightKg,
     finalFractionsQuantity,
+    finalFractionsQuantityPrecise,
     finalOutputQuantity,
     finalOutputUnit: salesUnit,
   };

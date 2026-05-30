@@ -245,8 +245,24 @@ devolver `snapshot_data`; a **auditoria de cronograma** (grade auditável) busca
 última edição de cada produto e mostra um bloco destacado "Última edição" com o
 motivo, autor e a lista de campos alterados (de → para). `tsc` limpo, 156/156, `eslint` 0.
 
+#### AJ-0004.1 — Decimal preciso das frações finais propagado a jusante
+**Concluído em:** 2026-05-30 (commit `fix(receita): AJ-0004.1 …`)
+**Origem:** Trello (`ZcZQpu9D`) · **Status:** ✅ Concluído · **Categoria:** Cálculo
+**Área:** `src/lib/production-data-utils.ts` · `src/components/production/product-form-dialog.tsx`
+
+**Auditoria:** `recipe-expansion.ts` (`scaleRecipeQuantity`, `round3`) e a pré-pesagem
+(`printing-documents.ts`, `round3`) já propagam quantidades com 3 casas — sem
+truncamento para inteiro/2 casas a jusante. O gap era pontual: o **rendimento preciso
+das frações finais** (ex.: `8,542857` = 2,99 kg ÷ 0,35) era recomputado **só na UI**
+(`recipeFinalQuantityPrecise`), enquanto o data layer só expunha o valor arredondado
+para unidade inteira (`finalFractionsQuantity`, `Math.ceil`).
+
+**Fix:** `getProductRecipeTotalsFromData` ganhou `finalFractionsQuantityPrecise` (fonte
+única, sem arredondar); a UI passou a consumi-lo. `finalFractionsQuantity` (ceil) segue
+para ordenar unidade inteira. Teste de propagação em `production-data-utils.test.ts`.
+`tsc` limpo, 157/157, `eslint` sem erro novo.
+
 #### Demais gaps
-- **AJ-0004.1** (`ZcZQpu9D`) — decimal preciso propagado a jusante · **A-fazer (ORDEM 7)**
 - **AJ-0006.1** (`c8HOkNBG`, D09) — lote mínimo consolidado na fábrica + validação na API · **A-fazer (ORDEM 8)**
 - **AJ-0009 / AJ-0005.1 / AJ-0008.1** — ⛔ decisão de cliente, não codar.
 

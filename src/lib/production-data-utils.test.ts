@@ -108,6 +108,43 @@ test("recipe totals include final quantity derived from unit sale weight", () =>
   assert.equal(totals.finalOutputUnit, "Un");
 });
 
+test("AJ-0004.1: decimal preciso das frações finais propaga (não só ceil para unidade discreta)", () => {
+  // 2,99 kg de saída / 0,35 kg por unidade = 8,542857… (ex. do card).
+  const totals = getProductRecipeTotalsFromData(
+    {
+      ...baseProduct,
+      unitProfiles: {
+        sales: { unit: "Un", description: "Unidade", weightKg: 0.35 },
+        production: { unit: "Kg", description: "Produção", weightKg: 1 },
+        expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+      },
+      recipe: [
+        {
+          id: "recipe-massa",
+          sourceType: "ingrediente",
+          sourceId: "missing",
+          label: "Massa",
+          quantity: 2.99,
+          unit: "Kg",
+        },
+      ],
+    },
+    [],
+    [],
+  );
+
+  // Display/downstream: valor preciso (não arredondado para unidade discreta).
+  assert.ok(
+    Math.abs(totals.finalFractionsQuantityPrecise - 8.542857142857143) < 1e-9,
+    `esperava ~8,542857, recebeu ${totals.finalFractionsQuantityPrecise}`,
+  );
+  // Não pode ter sido truncado para inteiro nem para 2 casas.
+  assert.notEqual(totals.finalFractionsQuantityPrecise, 9);
+  assert.notEqual(totals.finalFractionsQuantityPrecise, 8.54);
+  // O campo "ordenável" segue arredondando para cima (unidade inteira).
+  assert.equal(totals.finalFractionsQuantity, 9);
+});
+
 test("operational status label reflects whether the product is in the active schedule portfolio", () => {
   assert.equal(
     getProductOperationalStatusLabel({
