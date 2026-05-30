@@ -215,7 +215,21 @@ para edição natural) e teto `MAX_ORDER_QUANTITY` (99.999) — clampado também
 `tsc` limpo, 151/151, `eslint` sem erro novo. **Validação visual recomendada antes do deploy.**
 
 ### AJ-0028 — Tooltip "Sequência Operacional" bugado (layout)
-**Origem:** Trello 26/05 #3 (`hQn2Z2YC`) · **Status:** A-fazer (ORDEM 5) · **Categoria:** Bug visual
+**Concluído em:** 2026-05-30 (commit `fix(pedidos): AJ-0028 …`)
+**Origem:** Trello 26/05 #3 (`hQn2Z2YC`) · **Status:** ✅ Concluído · **Categoria:** Bug visual
+**Área:** `src/components/shared/operational-sequence-card.tsx` · `src/app/loja/pedidos/page.tsx`
+
+**Causa-raiz:** o `OperationalSequenceCard` usava `lg:grid-cols-4` (breakpoint de
+**viewport**) dentro de um popover de 420px. No desktop (viewport ≥1024px) ele forçava
+4 colunas em 420px → datas sobrepunham os rótulos das etapas.
+
+**Fix (só CSS/layout):** o grid passou a usar **container queries** (Tailwind v4,
+`@container` + `@md`/`@lg`) — responde à largura do próprio card, não do viewport.
+Dentro do popover estreito quebra em 2/1 colunas; num container largo segue 4/5.
+Adicionado `tabular-nums` + `break-words` no valor da etapa e `min-w-0` nas células.
+Popover do "Como funciona" alargado para `w-[600px]` (cap `max-w-[calc(100vw-2rem)]`)
+para caber as 4 colunas iguais no desktop. Beneficia os 3 usos do card sem tocar regra.
+`tsc` limpo, 151/151, `eslint` 0 erros. **Validação visual (desktop + mobile) recomendada.**
 
 ### Gaps 13/05 (após os de 26/05)
 - **AJ-0003.1** (`QW11M8T0`, D20) — justificativa de edição visível na auditoria · **A-fazer (ORDEM 6)**

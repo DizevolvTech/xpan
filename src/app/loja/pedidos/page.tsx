@@ -1032,7 +1032,7 @@ export default function PedidosLojaPage() {
                     label="Como funciona o pedido"
                     align="end"
                     side="bottom"
-                    contentClassName="w-[420px] max-w-[calc(100vw-2rem)]"
+                    contentClassName="w-[600px] max-w-[calc(100vw-2rem)]"
                     content={
                       <div className="space-y-3 text-xs">
                         <div>
