@@ -72,6 +72,7 @@ import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 import { findActiveWindowOrder } from "@/lib/store-order-window";
+import { buildCoveredDaysFill, sumOrderDayQuantities } from "@/lib/store-order-coverage";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
 type SelectedOrderItemSummary = {
@@ -572,13 +573,15 @@ export default function PedidosLojaPage() {
   const selectedOrderItems = useMemo<SelectedOrderItemSummary[]>(
     () =>
       orderProducts
-        .filter((product) => product.available && product[highlightedDay] > 0)
-        .map((product) => ({
+        // Total do item = soma dos dias cobertos preenchidos (AJ — cobertura).
+        .map((product) => ({ product, quantity: sumOrderDayQuantities(product) }))
+        .filter(({ product, quantity }) => product.available && quantity > 0)
+        .map(({ product, quantity }) => ({
           productId: product.productId,
           code: product.code,
           name: product.name,
           category: product.category,
-          quantity: product[highlightedDay],
+          quantity,
           unit: product.unit,
           unitKind: product.unitKind,
           productionDate: product.productionDate,
@@ -586,7 +589,7 @@ export default function PedidosLojaPage() {
           saleDate: product.saleDate,
         }))
         .sort((left, right) => left.name.localeCompare(right.name)),
-    [highlightedDay, orderProducts],
+    [orderProducts],
   );
   const selectedSaleSummary = useMemo(
     () =>
@@ -709,31 +712,48 @@ export default function PedidosLojaPage() {
     },
   ];
 
-  const handleQuantityChange = (productId: string, field: EditableDayField, value: number) => {
-    if (field !== highlightedDay) {
-      return;
-    }
+  const sanitizeQuantity = (value: number, unitKind: StoreOrderCatalogProduct["unitKind"]) => {
+    const numericValue = Number.isFinite(value) && value > 0 ? Math.min(value, MAX_ORDER_QUANTITY) : 0;
+    return unitKind === "discrete" ? Math.max(0, Math.round(numericValue)) : Number(numericValue.toFixed(3));
+  };
 
+  // AJ — cobertura: cada dia coberto (verde) é editável; o TOTAL do item é a SOMA dos dias.
+  // Serve para a loja se programar (informar o quanto precisa em cada dia até a próxima
+  // fabricação). Só o somatório é persistido no pedido.
+  const handleQuantityChange = (productId: string, field: EditableDayField, value: number) => {
     const product = orderProducts.find((entry) => entry.id === productId);
     if (!product || !product.available) {
       return;
     }
 
-    const numericValue = Number.isFinite(value) && value > 0 ? Math.min(value, MAX_ORDER_QUANTITY) : 0;
-    const sanitizedValue =
-      product.unitKind === "discrete"
-        ? Math.max(0, Math.round(numericValue))
-        : Number(numericValue.toFixed(3));
+    const sanitizedValue = sanitizeQuantity(value, product.unitKind);
 
     setOrderProducts((current) =>
-      current.map((product) => {
-        if (product.id !== productId) {
-          return product;
+      current.map((entry) => {
+        if (entry.id !== productId) {
+          return entry;
         }
 
-        const nextProduct = { ...product };
-        nextProduct[field] = sanitizedValue;
-        nextProduct.total = sanitizedValue;
+        const nextProduct = { ...entry, [field]: sanitizedValue };
+        nextProduct.total = sumOrderDayQuantities(nextProduct);
+        return nextProduct;
+      }),
+    );
+  };
+
+  // Mecânica de ajuda: replica a quantidade do 1º dia (coluna ativa) em todos os dias
+  // cobertos — "preciso de X por dia durante a cobertura". 1 clique evita digitar dia a dia.
+  const fillCoveredDays = (productId: string) => {
+    setOrderProducts((current) =>
+      current.map((entry) => {
+        if (entry.id !== productId || !entry.available) {
+          return entry;
+        }
+        const coverageDays = getCoverageDays(entry.productionDays);
+        const baseValue = sanitizeQuantity(entry[dayColumns[0]], entry.unitKind);
+        const fill = buildCoveredDaysFill(dayColumns, coverageDays, baseValue);
+        const nextProduct = { ...entry, ...fill };
+        nextProduct.total = sumOrderDayQuantities(nextProduct);
         return nextProduct;
       }),
     );
@@ -1107,6 +1127,13 @@ export default function PedidosLojaPage() {
                               cadência de produção do produto (produz 1x/semana → cobre ~7 dias;
                               3x/semana → ~2; todo dia → 1). Cada coluna mostra a data real.
                             </p>
+                            <p>
+                              <strong className="text-foreground">Planeje por dia:</strong> preencha a
+                              quantidade que precisa em <em>cada dia verde</em> para se programar até a
+                              próxima fabricação — o <strong>Total</strong> do item é a soma desses dias.
+                              Use <em>&quot;Cobrir os N dias&quot;</em> para repetir a quantidade do 1º dia
+                              em todos os dias cobertos.
+                            </p>
                           </div>
                         }
                       />
@@ -1236,6 +1263,19 @@ export default function PedidosLojaPage() {
                                       <span className="opacity-50">·</span>
                                       <span className="truncate">{product.category}</span>
                                     </div>
+                                    {/* AJ — cobertura: atalho pra replicar a qtd do 1º dia em
+                                        todos os dias cobertos (1x/semana → cobre vários dias). */}
+                                    {product.available && getCoverageDays(product.productionDays) > 1 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => fillCoveredDays(product.id)}
+                                        className="mt-1 inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[10.5px] font-medium text-success-foreground transition-colors hover:bg-success/20"
+                                        title={`Repete a quantidade do 1º dia nos ${getCoverageDays(product.productionDays)} dias cobertos por esta produção.`}
+                                      >
+                                        <CalendarRange className="size-3" aria-hidden />
+                                        Cobrir os {getCoverageDays(product.productionDays)} dias
+                                      </button>
+                                    ) : null}
                                   </div>
                                 </div>
                               </td>
@@ -1246,8 +1286,10 @@ export default function PedidosLojaPage() {
                                 const coverageDays = getCoverageDays(product.productionDays);
                                 return dayColumns.map((dayField, index) => {
                                 const isActiveColumn = index === 0;
-                                const canEdit = isActiveColumn;
                                 const isCovered = product.available && index < coverageDays;
+                                // AJ — cobertura: todo dia coberto (verde) é editável,
+                                // não só a coluna ativa, para a loja se programar.
+                                const canEdit = isCovered;
 
                                 return (
                                   <td
@@ -1270,8 +1312,8 @@ export default function PedidosLojaPage() {
                               })()}
                               <td className="px-2 py-2 text-sm font-semibold">
                                 {product.available ? (
-                                  <div>
-                                    {product[highlightedDay]} {product.unit}
+                                  <div className="tabular-nums">
+                                    {sumOrderDayQuantities(product)} {product.unit}
                                   </div>
                                 ) : (
                                   <div className="text-xs font-semibold text-danger-foreground">
