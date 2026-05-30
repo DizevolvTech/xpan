@@ -284,14 +284,22 @@ export function resolveScheduledProductAvailability(
   }
 
   if (productionWindow.delayed) {
+    // AJ-0024: a busca regressiva não achou dia de produção que entregue na data
+    // pedida; a próxima produção possível (`productionWindow.date`) cai DEPOIS da
+    // entrega. NÃO devolvemos essa data como `productionDate` — senão o catálogo e
+    // o planejamento "agendam" a variante +7 dias como se fosse válida. O item fica
+    // bloqueado (available:false) com o motivo explicando a data inviável.
+    const soonestProduction = productionWindow.date
+      ? formatDateKeyBr(productionWindow.date)
+      : "depois do horizonte de planejamento";
     return {
       baseDate,
       deliveryDate,
       deliveryWeekDay,
-      productionDate: productionWindow.date,
+      productionDate: null,
       available: false,
       delayed: true,
-      blockedReason: `Produção em ${formatDateKeyBr(productionWindow.date)} + ${options.productExpeditionLeadDays} dia(s) cai após a entrega prevista (${formatDateKeyBr(deliveryDate)}).`,
+      blockedReason: `Esta variante só produz em dias que não entregam ${formatDateKeyBr(deliveryDate)} com ${options.productExpeditionLeadDays} dia(s) de lead — a próxima produção possível seria ${soonestProduction}, após a entrega. Escolha a variante que produz no dia compatível.`,
       matchingDays,
       scheduleItemId: options.scheduleItem.id,
     };

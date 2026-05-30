@@ -20,14 +20,20 @@ export async function getCachedServerData<T>(
   key: string,
   ttlMs: number,
   loader: () => Promise<T>,
+  options: { forceRefresh?: boolean } = {},
 ): Promise<T> {
   const now = Date.now();
   const cachedEntry = serverDataCache.get(key);
 
-  if (cachedEntry && cachedEntry.expiresAt > now) {
+  // AJ-0024: caminhos de escrita (ex.: validar/salvar pedido) passam forceRefresh
+  // para não validar contra um snapshot defasado (TTL de 10-15s) logo após o
+  // cronograma virar ativo — era a causa do "1º salvamento com 0 itens".
+  if (!options.forceRefresh && cachedEntry && cachedEntry.expiresAt > now) {
     return cachedEntry.value as T;
   }
 
+  // Mesmo com forceRefresh, reaproveita uma carga já em andamento (mesma chave)
+  // para não disparar leituras duplicadas concorrentes.
   const inflightRequest = serverDataInflight.get(key);
   if (inflightRequest) {
     return inflightRequest as Promise<T>;

@@ -229,6 +229,64 @@ test("availability blocks product when production day + gap > deliveryDate (bolo
   assert.equal(availability.deliveryDate, "2026-05-01");
 });
 
+test("AJ-0024: variante incompatível (produz só sexta, entrega sexta, lead 1) não agenda produção +7", () => {
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["sexta"],
+      productExpeditionLeadDays: 1,
+      scheduleItem: { id: "schedule-bolo6", productionDays: ["sexta"] },
+    },
+  );
+
+  // Bloqueado (já era), mas o ponto do AJ-0024: NÃO pode devolver a sexta seguinte
+  // (+7) como `productionDate`. Caía no branch delayed e "agendava" 08/05 — a UI/o
+  // catálogo mostravam essa data futura como se o pedido fosse produzir lá.
+  assert.equal(availability.available, false);
+  assert.equal(availability.delayed, true);
+  assert.equal(availability.productionDate, null);
+});
+
+test("AJ-0024: branch delayed não rouba a janela válida — variante compatível (quinta) segue na quinta", () => {
+  // Regressão: a correção de +7 não pode empurrar uma variante VÁLIDA para delayed.
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["quinta"],
+      productExpeditionLeadDays: 1,
+      scheduleItem: { id: "schedule-bolo5", productionDays: ["quinta"] },
+    },
+  );
+
+  assert.equal(availability.available, true);
+  assert.equal(availability.delayed, false);
+  assert.equal(availability.productionDate, "2026-04-30");
+});
+
 test("availability allows fresh bread when gap = 0 (produz e entrega no mesmo dia)", () => {
   const breadStore: StoreProfile = {
     id: "store-bread",

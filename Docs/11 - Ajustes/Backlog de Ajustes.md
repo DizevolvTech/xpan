@@ -168,7 +168,27 @@ sem pendente + impacto / consolida múltiplas pendentes) + `release-block-messag
 (4 casos). `tsc` limpo, 148/148 testes, `eslint` sem erro novo (só o warning pré-existente [[#AJ-0023 — Dead code descoberto durante a Onda 1|AJ-0023]]).
 
 ### AJ-0024 — Cronograma escolhe variante/data errada + falha no 1º salvamento
-**Origem:** Trello 26/05 #4 (`Xc8jwCfH`) · **Status:** A-fazer (ORDEM 2) · **Categoria:** Bug crítico (Motor)
+**Concluído em:** 2026-05-30 (commit `fix(motor): AJ-0024 …`)
+**Origem:** Trello 26/05 #4 (`Xc8jwCfH`) · **Status:** ✅ Concluído · **Categoria:** Bug crítico (Motor)
+**Área:** `src/lib/factory-planning/engine.ts` · `src/lib/server-data-cache.ts` · `master-data.ts` · `store-orders.ts`
+
+**Causa-raiz confirmada:** em `resolveScheduledProductAvailability`, quando a busca
+regressiva (`resolveProductionDateInWindow`) não achava dia de produção que entregue
+na data pedida, o branch `delayed` avançava até 14 dias e devolvia essa data futura
+como `productionDate`. O item ficava `available:false` (correto), mas o catálogo/UI
+exibiam a data +7 como se a variante fosse produzir lá ("variante/data errada").
+
+**O que mudou:**
+1. **Motor:** o branch `delayed` agora devolve `productionDate: null` + `blockedReason`
+   acionável ("escolha a variante que produz no dia compatível"). Nunca mais agenda +7.
+2. **Entrada do pedido:** a variante incompatível já era `available:false` e o
+   `handleQuantityChange` já bloqueia edição de linha indisponível + `validateStoreOrderItems`
+   já lança no save — confirmado, sem regressão.
+3. **1º salvamento:** `getCachedServerData` ganhou `forceRefresh`; o caminho de
+   escrita do pedido (`validateStoreOrderItems` → `getMasterDataSnapshot`) força dados
+   frescos, eliminando o "salvou com 0 itens" causado pelo cache de 15s defasado.
+
+**Testes (engine.test.ts):** "produz só sexta + entrega sexta + lead 1 → bloqueado, `productionDate:null`, não +7" + regressão "variante compatível (quinta) segue na quinta, não delayed". `server-data-cache.test.ts`: `forceRefresh` ignora cache fresco e reaquece. `tsc` limpo, 151/151, `eslint` 0 problemas.
 
 ### AJ-0026 — Criar categoria inline no modal "Nova Linha de produção"
 **Origem:** Trello 26/05 #1 (`cUKnjx9p`) · **Status:** A-fazer (ORDEM 3) · **Categoria:** UX

@@ -156,6 +156,9 @@ async function validateStoreOrderItems(
     supabase: options.supabase,
     includeProfileNames: false,
     tenantId: options.tenantId,
+    // AJ-0024: valida/salva pedido sempre contra dados frescos — o snapshot tem
+    // TTL de 15s e o 1º pedido de um tenant novo caía num cache vazio/defasado.
+    forceRefresh: true,
   });
   const store = snapshot.stores.find((row) => row.id === options.storeId);
 
