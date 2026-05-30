@@ -303,17 +303,22 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 
 ### AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche
 **Decisão tomada em:** 2026-05-30 (Giuseppe) — **Opção C (híbrido faseado), Fase 4a.** Fundação implementada (commit `feat(pedido): AJ-0009 Fase 4a …`).
-**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** 🟨 Fase 4a — fundação concluída · rollout (UI + flag) pendente de migration aplicada + validação · **Categoria:** Modelo
+**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** 🟨 Fase 4a — fundação + backend + UI gestor concluídos · falta a UI da loja (preencher) + ligar a flag + validar · **Categoria:** Modelo
 
-> **Resolução (2026-05-30):** ADR [[decisoes/ADR_modelo_fabrica_abre_pedido]] passou a **Aceito (Opção C, Fase 4a)**.
-> **Entregue (fundação, atrás da flag `FACTORY_OPENS_ORDERS`, default OFF):**
-> - Migration `20260530120000_store_order_open_fill_model.sql`: `store_orders.status` (`aberto`→`preenchido`→`enviado`, default `preenchido`) + `opened_by_profile_id`/`opened_at` + **índice `UNIQUE` parcial** `(tenant_id, store_id, delivery_date)` para pedidos ativos → **fecha D03 / bônus AJ-0007** (duplicidade antes só barrada em código).
-> - `store-order-lifecycle.ts` (puro, 6 testes): `resolveFilledStatus`, `canStoreInitiateOrder`.
-> - `createStoreOrder` forward-compatible (status pelo DEFAULT — funciona antes/depois da migration).
-> - `tsc` limpo, 167/167, `eslint` 0.
+> **Resolução (2026-05-30):** ADR [[decisoes/ADR_modelo_fabrica_abre_pedido]] passou a **Aceito (Opção C, Fase 4a)**. Tudo atrás da flag `FACTORY_OPENS_ORDERS` (default OFF) — produção intocada.
 >
-> **Rollout pendente (gated, na ordem):** (1) **aplicar a migration** na base (precisa do OK do Giuseppe — checar duplicados ativos antes); (2) endpoint fábrica "abrir pedido(s)" + UI gestor + UI loja "preencher abertos"; (3) ligar `FACTORY_OPENS_ORDERS` e validar com cliente real. **Fase 4b** (`order_windows`, multi-dia/semana → fecha AJ-0014 "soma = semana") segue aguardando confirmação da granularidade (8 perguntas do ADR).
-> ⚠️ Migration **ainda não aplicada** na base.
+> **✅ Entregue:**
+> - Migration `20260530120000` **aplicada na base** (verificada): `store_orders.status` (`aberto`/`preenchido`/`enviado`, default `preenchido`) + `opened_by_profile_id`/`opened_at` + **índice `UNIQUE` parcial** `(tenant_id, store_id, delivery_date)` ativo → **fecha D03 / bônus AJ-0007**. Linhas legadas viraram `preenchido`.
+> - `store-order-lifecycle.ts` (puro, 6 testes) + `store-order-open-plan.ts` (puro, 4 testes) + `feature-flags.ts`.
+> - `openStoreOrders` (fábrica cria linhas `aberto`, pula duplicadas, grava evento) + endpoint `POST /api/store-orders/open` (409 se flag off).
+> - `updateStoreOrder` transiciona `aberto`→`preenchido` ao preencher.
+> - **UI gestor:** botão + dialog "Abrir pedidos" (data + multi-loja) em `gestor-fabrica/pedidos` (gated pela flag).
+> - `tsc` limpo, 171/171, `eslint` 0.
+>
+> **⏳ Falta (UI da loja + ativação):**
+> - **UI loja "preencher abertos":** surfacar os pedidos `aberto` na lista da loja + fluxo de preencher. **Dependência descoberta:** o AJ-0023 removeu o `startEditing` (modo de edição inalcançável) de `loja/pedidos/[orderId]` — o fluxo de "preencher" precisa religar uma entrada de edição. É o pedaço de **maior risco (jornada central)** e **precisa de validação visual** — recomendado fazer como passo focado.
+> - Ligar `FACTORY_OPENS_ORDERS=true` (após a UI da loja) e validar com cliente real.
+> - **Fase 4b** (`order_windows`, multi-dia → fecha AJ-0014) aguarda confirmação da granularidade (8 perguntas do ADR).
 
 > 📄 **Documento de decisão:** [[decisoes/ADR_modelo_fabrica_abre_pedido]] — opções de modelo (A: `order_windows`; B: estado em `store_orders`; **C: híbrido faseado — recomendada**), trade-offs, mapa de impacto (DB/API/UI/docs/migração) e **8 perguntas abertas** a levar para Daniel + Adriano + Leonora antes de codar. Conforme o plano: "Não fazer no calor da hora."
 **Área:** [[Jornada — Pedido da Loja]] · [[Regra — Pedido da Loja]] · `src/lib/supabase-data/store-orders.ts` · `src/app/loja/pedidos/page.tsx`
