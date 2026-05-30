@@ -55,6 +55,7 @@ import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { getNextProductionItemStatus } from "@/lib/production-workflow";
+import { isOpInProductionColumn, isOrderAwaitingAcceptance } from "@/lib/factory-kanban";
 import { formatKgLabel } from "@/lib/utils";
 
 type KanbanTone = "warning" | "info" | "primary" | "success";
@@ -527,7 +528,13 @@ export default function GestorFabricaPage() {
       tone: column.tone,
       statuses: column.statuses,
       items: planningData.orders
-        .filter((order) => column.statuses.includes(order.status))
+        // "Aberto" = aguardando aceite (não liberado), dirigido pelo estado, não pela data.
+        // As demais colunas seguem por status de workflow (expedição / rota).
+        .filter((order) =>
+          column.key === "aberto"
+            ? isOrderAwaitingAcceptance(order)
+            : column.statuses.includes(order.status),
+        )
         .sort(
           (a, b) =>
             a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
@@ -540,8 +547,10 @@ export default function GestorFabricaPage() {
       title: "Em produção",
       tone: "info",
       statuses: ["em_producao"],
+      // "Em produção" = OPs LIBERADAS e ainda não prontas (independe da data). Ao liberar
+      // na coluna anterior, a OP aparece aqui; "Iniciar produção do dia" começa o trabalho.
       items: planningData.productionOrders
-        .filter((op) => op.status === "em_producao")
+        .filter((op) => isOpInProductionColumn(op))
         .sort(
           (a, b) =>
             a.productionDate.localeCompare(b.productionDate) || a.code.localeCompare(b.code),
