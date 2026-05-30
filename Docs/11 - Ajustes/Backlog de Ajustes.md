@@ -277,8 +277,11 @@ O gestor vê um alerta "Abaixo do lote mínimo" na "Demanda por produto (batelad
 `gestor-fabrica/ordens-producao`. Teste no `engine.test.ts` (consolidado < mínimo →
 flag; ≥ mínimo → limpo). `tsc` limpo, 158/158, `eslint` 0.
 
-#### Decisões de cliente (⛔ não codar)
-- **AJ-0009 / AJ-0005.1 / AJ-0008.1** — ⛔ decisão de cliente, não codar.
+#### Decisões de cliente — RESOLVIDAS (Giuseppe, 2026-05-30)
+Após o lote 26/05, o Giuseppe fechou as decisões pendentes:
+- **AJ-0005.1** — itens inativos: **manter o toggle** (oculto por padrão, com opção de revelar). ✅ Já era o comportamento; sem mudança de código, só confirmação.
+- **AJ-0008.1** — ingrediente `misturado` puro: **estender (Fase 3)** para gerar OP separada. → ver bloco AJ-0008.1.
+- **AJ-0009** — fábrica abre o pedido: **implementar (modelo C, Fase 4a)**. → ver bloco AJ-0009.
 
 ---
 
