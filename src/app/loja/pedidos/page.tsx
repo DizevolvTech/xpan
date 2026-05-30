@@ -71,6 +71,7 @@ import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
+import { findActiveWindowOrder } from "@/lib/store-order-window";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
 type SelectedOrderItemSummary = {
@@ -436,31 +437,13 @@ export default function PedidosLojaPage() {
       ) ?? null
     );
   }, [editingOrderId, selectedStoreId, storeOrderSummaries, deliveryDateKey]);
-  // Pedido em andamento na loja ativa: status entre lançamento e entrega
-  // (exclui cancelado/entregue/tentativa_falha). Usado para esconder o botão
-  // "Novo Pedido" — ajustes vão pelo fluxo "Editar pedido". Se houver mais de
-  // um (raro), pega o de entrega mais próxima.
-  const activeOrderInScope = useMemo(() => {
-    if (!selectedStoreId) {
-      return null;
-    }
-    const inProgressStatuses = new Set([
-      "em_espera",
-      "agendado",
-      "em_producao",
-      "aguardando_expedicao",
-      "pronto_coleta",
-      "em_rota",
-      "no_destino",
-    ]);
-    return (
-      storeOrderSummaries
-        .filter(
-          (order) => order.storeId === selectedStoreId && inProgressStatuses.has(order.status),
-        )
-        .sort((a, b) => a.deliveryDateKey.localeCompare(b.deliveryDateKey))[0] ?? null
-    );
-  }, [selectedStoreId, storeOrderSummaries]);
+  // Pedido em andamento da loja PARA A JANELA ATUAL — usado para trocar "Novo Pedido"
+  // por "Editar pedido". A regra é 1 pedido por janela (deliveryDateKey): um pedido em
+  // andamento de janela/dia ANTERIOR NÃO bloqueia um novo pedido para a janela de hoje.
+  const activeOrderInScope = useMemo(
+    () => findActiveWindowOrder(storeOrderSummaries, { storeId: selectedStoreId, deliveryDateKey }),
+    [storeOrderSummaries, selectedStoreId, deliveryDateKey],
+  );
   const saleDateLabel = useMemo(() => formatDateWithWeekday(saleDate), [saleDate]);
   const baseOperationalDateLabel = useMemo(
     () => formatDateKeyWithWeekday(effectiveBaseDateKey),
