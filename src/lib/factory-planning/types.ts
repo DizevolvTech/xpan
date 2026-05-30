@@ -71,6 +71,9 @@ export interface PlannedOrderItem {
   requestedQuantity: number;
   requestedUnit: OrderUnit;
   internalKg: number;
+  // AJ-0006.1: lote mínimo de produção do produto (kg) — carregado para a OP
+  // consolidar a demanda da fábrica e sinalizar quando ficar abaixo do mínimo.
+  minimumProductionKg: number;
   expeditionUnit: OrderUnit;
   expeditionQuantityRaw: number;
   expeditionQuantity: number;
@@ -112,6 +115,10 @@ export interface ProductionOrderItem {
   productName: string;
   productionItemKey: string;
   totalKg: number;
+  // AJ-0006.1: lote mínimo de produção da fábrica e flag de demanda consolidada
+  // (soma de todas as lojas neste run) abaixo do mínimo — alerta para o gestor.
+  minimumProductionKg: number;
+  belowMinimum: boolean;
   productionSequence: number | null;
   progress: number;
   status: ProductionItemStatus;

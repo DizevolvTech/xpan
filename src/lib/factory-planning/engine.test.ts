@@ -437,6 +437,120 @@ test("factory planning uses operational subcategory instead of cadastral subcate
   assert.equal(planning.orderItems[0]?.scheduleId, "schedule-1");
 });
 
+test("AJ-0006.1: OP sinaliza demanda consolidada abaixo do lote mínimo da fábrica", () => {
+  const sectors: ProductionSector[] = [
+    { id: "sector-1", code: "SE-001", name: "Panificacao", responsible: "Maria", status: "ativo" },
+  ];
+  const lines: ProductionLine[] = [
+    {
+      id: "line-operational",
+      code: "LP-002",
+      name: "Carteira Operacional",
+      sectorId: "sector-1",
+      type: "Seco",
+      operatingHours: "05:00 - 14:00",
+      capacityPerDayKg: 1000,
+      status: "ativo",
+    },
+  ];
+  const buildProduct = (): ProductionProduct => ({
+    id: "product-1",
+    code: "PR-0001",
+    name: "Pao Frances",
+    description: "",
+    lineId: "line-operational",
+    masterLineId: "line-operational",
+    operationalLineId: "line-operational",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 2,
+    minimumProductionKg: 15,
+    economicProductionKg: 15,
+    allowsStorage: false,
+    productionDays: ["quinta"],
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.1 },
+      production: { unit: "Kg", description: "Kg", weightKg: 1 },
+      expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+    },
+    packagingProfile: undefined,
+    isSoldLoose: true,
+    recipe: [],
+    preparationStages: [...defaultProductPreparationStages],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: "",
+    productionUnit: "Kg",
+    salesUnit: "Un",
+    salesToKgFactor: 0.1,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 1,
+    expeditionLeadDays: 0,
+    isMpiIngredient: false,
+  });
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-17T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["quinta"], minimumProduction: 15 }],
+    },
+  ];
+
+  // 10 Un × 0,1 kg = 1 kg de demanda consolidada — abaixo do lote mínimo (15 kg).
+  const below = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-1", quantity: 10, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products: [buildProduct()],
+    schedules,
+  });
+
+  const belowItem = below.productionOrders[0]?.items[0];
+  assert.equal(belowItem?.minimumProductionKg, 15);
+  assert.equal(belowItem?.belowMinimum, true);
+
+  // 200 Un × 0,1 kg = 20 kg — acima do lote mínimo: não sinaliza.
+  const above = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-2",
+        code: "PD-0002",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [{ id: "item-2", productId: "product-1", quantity: 200, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products: [buildProduct()],
+    schedules,
+  });
+
+  const aboveItem = above.productionOrders[0]?.items[0];
+  assert.equal(aboveItem?.belowMinimum, false);
+});
+
 test("production orders keep the daily schedule priority when listing products", () => {
   const sectors: ProductionSector[] = [
     {

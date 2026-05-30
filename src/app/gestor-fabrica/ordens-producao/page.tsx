@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowLeft, CalendarClock, CalendarRange, ClipboardList, Factory, PackageCheck, ShoppingCart, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CalendarClock, CalendarRange, ClipboardList, Factory, PackageCheck, ShoppingCart, Truck } from "lucide-react";
 
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
@@ -72,6 +72,9 @@ type BatchDemandRow = {
   productCode: string;
   productName: string;
   totalKg: number;
+  // AJ-0006.1: lote mínimo da fábrica + flag de demanda consolidada (todas as lojas) abaixo dele.
+  minimumProductionKg: number;
+  belowMinimum: boolean;
   opsCount: number;
   ordersCount: number;
   progress: number;
@@ -281,6 +284,8 @@ export default function OrdensProducaoPage() {
             productCode: item.productCode,
             productName: item.productName,
             totalKg: Number(item.totalKg.toFixed(2)),
+            minimumProductionKg: item.minimumProductionKg,
+            belowMinimum: false,
             opsCount: opIds.size,
             ordersCount: orderCodes.size,
             progress: item.progress,
@@ -302,6 +307,10 @@ export default function OrdensProducaoPage() {
             ? Number((entry.progressSum / entry.progressCount).toFixed(1))
             : 0;
         entry.row.status = pickAggregateStatus(entry.statuses);
+        // AJ-0006.1: alerta quando a demanda consolidada (todas as lojas) ainda
+        // não atinge o lote mínimo de produção da fábrica para este produto.
+        entry.row.belowMinimum =
+          entry.row.minimumProductionKg > 0 && entry.row.totalKg < entry.row.minimumProductionKg;
         return entry.row;
       })
       .sort((a, b) => {
@@ -458,9 +467,22 @@ export default function OrdensProducaoPage() {
       key: "totalKg",
       header: "Demanda total",
       render: (item: BatchDemandRow) => (
-        <span className="font-semibold text-foreground">
-          {formatKgLabel(item.totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </span>
+        <div className="flex flex-col gap-1">
+          <span className="font-semibold text-foreground">
+            {formatKgLabel(item.totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          {item.belowMinimum ? (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 text-[11px] font-medium text-warning">
+              <AlertTriangle className="size-3" aria-hidden />
+              Abaixo do lote mínimo
+              <InfoHint
+                size="xs"
+                tone="warning"
+                content={`A demanda consolidada de todas as lojas (${formatKgLabel(item.totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) está abaixo do lote mínimo de produção (${formatKgLabel(item.minimumProductionKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Avalie consolidar com outra data ou produzir o mínimo.`}
+              />
+            </span>
+          ) : null}
+        </div>
       ),
     },
     {

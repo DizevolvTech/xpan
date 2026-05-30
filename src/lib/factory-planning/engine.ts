@@ -621,6 +621,7 @@ function buildPlannedItems(
           requestedQuantity: orderItem.quantity,
           requestedUnit: orderItem.unit,
           internalKg,
+          minimumProductionKg: product.minimumProductionKg,
           expeditionUnit: product.expeditionUnit,
           expeditionQuantityRaw,
           expeditionQuantity,
@@ -712,6 +713,10 @@ export function buildProductionOrdersFromPlannedItems(
           productName: item.productName,
           productionItemKey: item.productionItemKey ?? `${planningKey}|${item.productId}`,
           totalKg: 0,
+          // AJ-0006.1: mínimo da fábrica; belowMinimum é recomputado após somar a
+          // demanda consolidada de todas as lojas deste run de produção.
+          minimumProductionKg: item.minimumProductionKg,
+          belowMinimum: false,
           productionSequence: item.scheduleDayPriority,
           progress: item.workflowProgress,
           status: item.productionItemStatus ?? "nao_iniciado",
@@ -799,15 +804,21 @@ export function buildProductionOrdersFromPlannedItems(
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),
-      items: Array.from(group.items.values()).sort((a, b) => {
-        const bySequence =
-          (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
-          (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
-        if (bySequence !== 0) {
-          return bySequence;
-        }
-        return a.productCode.localeCompare(b.productCode);
-      }),
+      items: Array.from(group.items.values())
+        .map((opItem) => ({
+          ...opItem,
+          // AJ-0006.1: demanda consolidada (soma de todas as lojas) abaixo do lote mínimo.
+          belowMinimum: opItem.minimumProductionKg > 0 && opItem.totalKg < opItem.minimumProductionKg,
+        }))
+        .sort((a, b) => {
+          const bySequence =
+            (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
+            (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
+          if (bySequence !== 0) {
+            return bySequence;
+          }
+          return a.productCode.localeCompare(b.productCode);
+        }),
       sourceItems: group.sourceItems.sort((a, b) => {
         const bySequence =
           (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -

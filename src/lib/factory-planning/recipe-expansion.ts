@@ -214,6 +214,7 @@ function buildMpiPlannedItem(params: {
     requestedQuantity,
     requestedUnit: mpiProduct.productionUnit,
     internalKg,
+    minimumProductionKg: mpiProduct.minimumProductionKg,
     expeditionUnit: mpiProduct.expeditionUnit,
     expeditionQuantityRaw: internalKg,
     expeditionQuantity: internalKg,

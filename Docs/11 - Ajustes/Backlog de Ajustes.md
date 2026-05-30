@@ -262,8 +262,22 @@ para unidade inteira (`finalFractionsQuantity`, `Math.ceil`).
 para ordenar unidade inteira. Teste de propagação em `production-data-utils.test.ts`.
 `tsc` limpo, 157/157, `eslint` sem erro novo.
 
-#### Demais gaps
-- **AJ-0006.1** (`c8HOkNBG`, D09) — lote mínimo consolidado na fábrica + validação na API · **A-fazer (ORDEM 8)**
+#### AJ-0006.1 — Lote mínimo consolidado na fábrica + validação server-side
+**Concluído em:** 2026-05-30 (commit `feat(fabrica): AJ-0006.1 …`)
+**Origem:** Trello (`c8HOkNBG`) + [[Dívida Técnica#D09]] · **Status:** ✅ Concluído · **Categoria:** Regra/API
+**Área:** `src/lib/factory-planning/engine.ts` · `types.ts` · `recipe-expansion.ts` · `gestor-fabrica/ordens-producao/page.tsx`
+
+A noção de lote mínimo deixou de ser por loja (AJ-0006 já removeu a exposição na
+loja — confirmado, sem resquícios) e passou a ser **consolidada na fábrica**: o motor
+carrega `minimumProductionKg` no `PlannedOrderItem` e, ao montar a OP, compara a
+**demanda somada de todas as lojas** (`totalKg` consolidado por planning_key) contra
+o mínimo, marcando `belowMinimum` no `ProductionOrderItem`. A flag é **derivada
+server-side no snapshot de planejamento** — não depende de `window.confirm` do front.
+O gestor vê um alerta "Abaixo do lote mínimo" na "Demanda por produto (batelada)" em
+`gestor-fabrica/ordens-producao`. Teste no `engine.test.ts` (consolidado < mínimo →
+flag; ≥ mínimo → limpo). `tsc` limpo, 158/158, `eslint` 0.
+
+#### Decisões de cliente (⛔ não codar)
 - **AJ-0009 / AJ-0005.1 / AJ-0008.1** — ⛔ decisão de cliente, não codar.
 
 ---

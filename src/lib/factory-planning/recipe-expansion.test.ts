@@ -178,6 +178,7 @@ function makePlannedItem(overrides: Partial<PlannedOrderItem> = {}): PlannedOrde
     requestedQuantity: 8, // 8 pizzas → 8 * 0.25 = 2kg
     requestedUnit: "Un",
     internalKg: 2,
+    minimumProductionKg: 0,
     expeditionUnit: "Kg",
     expeditionQuantityRaw: 2,
     expeditionQuantity: 2,
