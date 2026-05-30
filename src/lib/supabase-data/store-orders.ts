@@ -8,6 +8,7 @@ import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import { allocateBusinessCode } from "@/lib/supabase-data/business-codes";
 import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
 import { planStoreOrdersToOpen } from "@/lib/store-order-open-plan";
+import { resolveFilledStatus, type StoreOrderLifecycleStatus } from "@/lib/store-order-lifecycle";
 import {
   assertSupabaseResult,
   isUuid,
@@ -60,6 +61,7 @@ type ResolvedStoreOrderRow = {
   ordered_at: string;
   management_status: "ativo" | "cancelado";
   note: string;
+  status: StoreOrderLifecycleStatus;
 };
 
 type ValidatedStoreOrderItem = {
@@ -86,7 +88,7 @@ async function resolveStoreOrderRow(
 ): Promise<ResolvedStoreOrderRow> {
   const query = supabase
     .from("store_orders")
-    .select("id, legacy_id, code, store_id, ordered_at, management_status, note");
+    .select("id, legacy_id, code, store_id, ordered_at, management_status, note, status");
   const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
 
   return assertSupabaseResult(
@@ -575,6 +577,9 @@ export async function updateStoreOrder(
     .from("store_orders")
     .update({
       note: input.note ?? "",
+      // AJ-0009 Fase 4a: preencher um pedido aberto pela fábrica o transiciona para
+      // 'preenchido' (legado/'preenchido'/'enviado' permanecem como estão).
+      status: resolveFilledStatus(orderRow.status),
       updated_at: new Date().toISOString(),
     })
     .eq("id", orderRow.id);
