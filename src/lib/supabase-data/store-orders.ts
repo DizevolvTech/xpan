@@ -397,6 +397,10 @@ export async function createStoreOrder(
       receive_window_snapshot: store.receiveWindow,
       expedition_lead_days_snapshot: snapshot.operationalSettings.expeditionLeadDays,
       note: input.note ?? "",
+      // AJ-0009 Fase 4a: pedido criado pela loja nasce "preenchido". Deixamos o
+      // DEFAULT da coluna (migration 20260530120000) cuidar disso — assim o código é
+      // forward-compatible (funciona antes E depois da migration). O ciclo
+      // aberto→preenchido só vale com a flag FACTORY_OPENS_ORDERS ligada (rollout gated).
     })
     .select("id, legacy_id, code")
     .single();

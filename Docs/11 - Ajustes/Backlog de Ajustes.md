@@ -281,7 +281,7 @@ flag; ≥ mínimo → limpo). `tsc` limpo, 158/158, `eslint` 0.
 Após o lote 26/05, o Giuseppe fechou as decisões pendentes:
 - **AJ-0005.1** — itens inativos: **manter o toggle** (oculto por padrão, com opção de revelar). ✅ Já era o comportamento; sem mudança de código, só confirmação.
 - **AJ-0008.1** — ingrediente `misturado` puro: **estender (Fase 3)** para gerar OP separada. → ver bloco AJ-0008.1.
-- **AJ-0009** — fábrica abre o pedido: **implementar (modelo C, Fase 4a)**. → ver bloco AJ-0009.
+- **AJ-0009** — fábrica abre o pedido: **implementar (modelo C, Fase 4a)**. → fundação entregue atrás de flag; rollout (UI + migration aplicada) pendente. Ver bloco AJ-0009.
 
 #### AJ-0008.1 — Ingrediente `misturado` puro gera OP (Fase 3)
 **Concluído em:** 2026-05-30 (commit `feat(motor): AJ-0008.1 …`)
@@ -302,8 +302,18 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 ## 🔴 Crítico (estrutural ou bloqueante)
 
 ### AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche
-**Onda 4 preparada em:** 2026-05-19 — ADR escrito, **aguardando decisão do cliente** (sem código)
-**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** Aguardando decisão (ADR) · **Categoria:** Modelo
+**Decisão tomada em:** 2026-05-30 (Giuseppe) — **Opção C (híbrido faseado), Fase 4a.** Fundação implementada (commit `feat(pedido): AJ-0009 Fase 4a …`).
+**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** 🟨 Fase 4a — fundação concluída · rollout (UI + flag) pendente de migration aplicada + validação · **Categoria:** Modelo
+
+> **Resolução (2026-05-30):** ADR [[decisoes/ADR_modelo_fabrica_abre_pedido]] passou a **Aceito (Opção C, Fase 4a)**.
+> **Entregue (fundação, atrás da flag `FACTORY_OPENS_ORDERS`, default OFF):**
+> - Migration `20260530120000_store_order_open_fill_model.sql`: `store_orders.status` (`aberto`→`preenchido`→`enviado`, default `preenchido`) + `opened_by_profile_id`/`opened_at` + **índice `UNIQUE` parcial** `(tenant_id, store_id, delivery_date)` para pedidos ativos → **fecha D03 / bônus AJ-0007** (duplicidade antes só barrada em código).
+> - `store-order-lifecycle.ts` (puro, 6 testes): `resolveFilledStatus`, `canStoreInitiateOrder`.
+> - `createStoreOrder` forward-compatible (status pelo DEFAULT — funciona antes/depois da migration).
+> - `tsc` limpo, 167/167, `eslint` 0.
+>
+> **Rollout pendente (gated, na ordem):** (1) **aplicar a migration** na base (precisa do OK do Giuseppe — checar duplicados ativos antes); (2) endpoint fábrica "abrir pedido(s)" + UI gestor + UI loja "preencher abertos"; (3) ligar `FACTORY_OPENS_ORDERS` e validar com cliente real. **Fase 4b** (`order_windows`, multi-dia/semana → fecha AJ-0014 "soma = semana") segue aguardando confirmação da granularidade (8 perguntas do ADR).
+> ⚠️ Migration **ainda não aplicada** na base.
 
 > 📄 **Documento de decisão:** [[decisoes/ADR_modelo_fabrica_abre_pedido]] — opções de modelo (A: `order_windows`; B: estado em `store_orders`; **C: híbrido faseado — recomendada**), trade-offs, mapa de impacto (DB/API/UI/docs/migração) e **8 perguntas abertas** a levar para Daniel + Adriano + Leonora antes de codar. Conforme o plano: "Não fazer no calor da hora."
 **Área:** [[Jornada — Pedido da Loja]] · [[Regra — Pedido da Loja]] · `src/lib/supabase-data/store-orders.ts` · `src/app/loja/pedidos/page.tsx`

@@ -2,9 +2,17 @@
 
 ## Status
 
-**Proposto — aguardando decisão do cliente.** Documento de preparação da Onda 4 do
-[[Call 2026-05-13 — Plano de Ataque]]. **Nenhum código foi escrito.** O plano determina
-explicitamente: *"Não fazer no calor da hora. Antes de codar: decidir."*
+**Aceito (2026-05-30) — Opção C (híbrido faseado), Fase 4a.** Decisão do Giuseppe.
+Fundação da Fase 4a **implementada** (migration + ciclo de status + `UNIQUE` que fecha
+D03/AJ-0007 + helpers/flag), atrás da feature flag `FACTORY_OPENS_ORDERS` (**default OFF**).
+A inversão de UX (loja só preenche / fábrica "abre pedidos") é o **rollout gated**: depende
+de (1) aplicar a migration na base, (2) ligar a flag, (3) validação com cliente real — exatamente
+o que este ADR recomenda. A **Fase 4b** (`order_windows`, multi-dia/semana) segue aguardando
+confirmação da granularidade real (perguntas abertas abaixo).
+
+> Histórico: documento nasceu "Proposto — aguardando decisão do cliente" (Onda 4 do
+> [[Call 2026-05-13 — Plano de Ataque]]). O plano alertava: *"Não fazer no calor da hora.
+> Antes de codar: decidir."* — decisão tomada em 2026-05-30.
 
 Relacionado: [[Backlog de Ajustes#AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche|AJ-0009]] ·
 desbloqueia o bônus de [[Backlog de Ajustes#AJ-0007 — Bloquear duplicidade antes de abrir o pedido|AJ-0007]] (`UNIQUE` no banco) ·
