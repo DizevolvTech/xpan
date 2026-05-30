@@ -581,18 +581,6 @@ export default function PedidosLojaPage() {
         .sort((left, right) => left.name.localeCompare(right.name)),
     [highlightedDay, orderProducts],
   );
-  const selectedProductionSummary = useMemo(
-    () =>
-      summarizeOperationalDates(
-        selectedOrderItems.map((item) => item.productionDate),
-        {
-          emptyValue: "Escolha os itens abaixo",
-          emptyHelper: "Cada produto mostra sua própria data de produção conforme o cronograma ativo.",
-          mixedValue: "Varia por item",
-        },
-      ),
-    [selectedOrderItems],
-  );
   const selectedSaleSummary = useMemo(
     () =>
       summarizeOperationalDates(

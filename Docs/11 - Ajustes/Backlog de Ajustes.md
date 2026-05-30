@@ -564,8 +564,11 @@ flag; ≥ mínimo → limpo). `tsc` limpo, 158/158, `eslint` 0.
 ---
 
 ### AJ-0023 — Dead code descoberto durante a Onda 1
-**Origem:** Implementação Onda 1 (2026-05-19, Giuseppe) · **Status:** A-fazer · **Categoria:** Dívida Técnica
+**Concluído em:** 2026-05-30 (commit `chore(lint): AJ-0023 …`) — removido após confirmação do Giuseppe
+**Origem:** Implementação Onda 1 (2026-05-19, Giuseppe) · **Status:** ✅ Concluído · **Categoria:** Dívida Técnica
 **Área:** `src/app/loja/pedidos/[orderId]/page.tsx` · `src/app/loja/pedidos/page.tsx` · `src/components/production/product-form-dialog.tsx`
+
+> **Resolução (2026-05-30):** removidos os 3 pontos — `startEditing` (edição já inalcançável, único caller de `setIsEditing(true)`; setters reutilizados em outros lugares, sem órfãos), `selectedProductionSummary` (memo não consumido) e a diretiva `eslint-disable` (deps já completas, virou comentário simples). Rota `aggregated-quantities` **mantida** (reservada p/ consolidação da fábrica). `eslint .` sem os 3 warnings; 158/158, `tsc` limpo.
 
 **O quê:** Três pontos de código morto detectados pelo lint (pré-existentes, não introduzidos pela Onda 1):
 - `startEditing` definido e nunca usado em `loja/pedidos/[orderId]/page.tsx`.

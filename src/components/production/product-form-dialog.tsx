@@ -200,10 +200,9 @@ export function ProductFormDialog({
     setFormError(null);
     setInvalidFields([]);
     setActiveTab("cadastro");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Reset only when
-    // dialog opens, mode changes, or a different product is selected.  Using
-    // `product` (object) would cause a reset on every snapshot refresh because
-    // the parent rebuilds the product reference from the new snapshot.
+    // Reset apenas quando o dialog abre, o modo muda, ou outro produto é selecionado.
+    // Usamos `product?.id` (não o objeto `product`) de propósito: o pai reconstrói a
+    // referência de `product` a cada refresh de snapshot, o que dispararia reset indevido.
   }, [mode, open, product?.id]);
 
   const sectorNameById = useMemo(

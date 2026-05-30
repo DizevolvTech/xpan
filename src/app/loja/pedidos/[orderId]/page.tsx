@@ -141,23 +141,6 @@ export default function PedidoLojaDetailsPage() {
   const deliveryDate = useMemo(() => (order ? parseBrDate(order.deliveryDate) : null), [order]);
   const deliveryOnSunday = deliveryDate ? deliveryDate.getDay() === 0 : false;
 
-  function startEditing() {
-    if (!order) {
-      return;
-    }
-
-    setDraftNote(order.note ?? "");
-    setDraftItems(
-      order.items.reduce<Record<string, number>>((acc, item) => {
-        acc[item.id] = item.quantity;
-        return acc;
-      }, {}),
-    );
-    setDraftAddedItems([]);
-    setSelectedCatalogProductId("");
-    setIsEditing(true);
-  }
-
   async function handleSave() {
     if (!order) {
       return;
