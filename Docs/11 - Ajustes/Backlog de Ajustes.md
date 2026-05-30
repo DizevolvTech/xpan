@@ -303,7 +303,7 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 
 ### AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche
 **Decisão tomada em:** 2026-05-30 (Giuseppe) — **Opção C (híbrido faseado), Fase 4a.** Fundação implementada (commit `feat(pedido): AJ-0009 Fase 4a …`).
-**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** 🟨 Fase 4a — fundação + backend + UI gestor concluídos · falta a UI da loja (preencher) + ligar a flag + validar · **Categoria:** Modelo
+**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** 🟩 Fase 4a CODADA (atrás da flag) · falta validar visual + ligar a flag + validar com cliente · **Categoria:** Modelo
 
 > **Resolução (2026-05-30):** ADR [[decisoes/ADR_modelo_fabrica_abre_pedido]] passou a **Aceito (Opção C, Fase 4a)**. Tudo atrás da flag `FACTORY_OPENS_ORDERS` (default OFF) — produção intocada.
 >
@@ -315,9 +315,14 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 > - **UI gestor:** botão + dialog "Abrir pedidos" (data + multi-loja) em `gestor-fabrica/pedidos` (gated pela flag).
 > - `tsc` limpo, 171/171, `eslint` 0.
 >
-> **⏳ Falta (UI da loja + ativação):**
-> - **UI loja "preencher abertos":** surfacar os pedidos `aberto` na lista da loja + fluxo de preencher. **Dependência descoberta:** o AJ-0023 removeu o `startEditing` (modo de edição inalcançável) de `loja/pedidos/[orderId]` — o fluxo de "preencher" precisa religar uma entrada de edição. É o pedaço de **maior risco (jornada central)** e **precisa de validação visual** — recomendado fazer como passo focado.
-> - Ligar `FACTORY_OPENS_ORDERS=true` (após a UI da loja) e validar com cliente real.
+> **✅ Entregue também (UI da loja):**
+> - `GET /api/store-orders/open` (escopo de loja) + `listOpenStoreOrders` (data fn).
+> - `loja/pedidos`: seção **"Pedidos para preencher"** (gated pela flag) listando os pedidos `aberto` com botão **Preencher** que reusa o fluxo de edição existente (`useUpdateStoreOrder` → transição aberto→preenchido). Com a flag ligada, o botão livre "Novo Pedido" some (a loja só preenche). *(O `startEditing` do AJ-0023 era do detalhe `[orderId]`; a lista usa outro fluxo de edição, intacto.)*
+> - `tsc` limpo, 171/171, `eslint` 0.
+>
+> **⏳ Falta (ativação):**
+> - **Validação visual** (desktop + mobile) com a flag ligada em dev — escolha do Giuseppe foi "construir agora, validar depois".
+> - Ligar `FACTORY_OPENS_ORDERS=true` em produção e validar com cliente real.
 > - **Fase 4b** (`order_windows`, multi-dia → fecha AJ-0014) aguarda confirmação da granularidade (8 perguntas do ADR).
 
 > 📄 **Documento de decisão:** [[decisoes/ADR_modelo_fabrica_abre_pedido]] — opções de modelo (A: `order_windows`; B: estado em `store_orders`; **C: híbrido faseado — recomendada**), trade-offs, mapa de impacto (DB/API/UI/docs/migração) e **8 perguntas abertas** a levar para Daniel + Adriano + Leonora antes de codar. Conforme o plano: "Não fazer no calor da hora."

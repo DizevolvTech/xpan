@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertCircle,
   AlertTriangle,
+  CalendarClock,
   CalendarRange,
   ChevronRight,
   Clock3,
@@ -69,6 +70,7 @@ import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
+import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
 type SelectedOrderItemSummary = {
@@ -304,6 +306,12 @@ export default function PedidosLojaPage() {
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   // Indisponíveis ocultos por padrão; usuário pode desmarcar para ver tudo.
   const [hideUnavailable, setHideUnavailable] = useState(true);
+  // AJ-0009 Fase 4a: com a flag ligada, a loja preenche pedidos abertos pela fábrica
+  // em vez de criar do zero.
+  const factoryOpensOrders = isFactoryOpensOrdersEnabled();
+  const [openOrders, setOpenOrders] = useState<
+    Array<{ id: string; code: string; storeId: string; storeName: string; deliveryDate: string }>
+  >([]);
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
@@ -327,8 +335,24 @@ export default function PedidosLojaPage() {
     setEditingOrderId(null);
     setOrderNote("");
   });
+  const refreshOpenOrders = useCallback(() => {
+    if (!factoryOpensOrders) {
+      setOpenOrders([]);
+      return;
+    }
+    void fetch("/api/store-orders/open")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setOpenOrders(Array.isArray(data) ? data : []))
+      .catch(() => setOpenOrders([]));
+  }, [factoryOpensOrders]);
+
+  useEffect(() => {
+    refreshOpenOrders();
+  }, [refreshOpenOrders]);
+
   const { updateOrder, isSubmitting: isUpdating } = useUpdateStoreOrder(() => {
     void refreshStoreOrders();
+    refreshOpenOrders();
     setIsNewOrderOpen(false);
     setEditingOrderId(null);
     setOrderNote("");
@@ -880,6 +904,12 @@ export default function PedidosLojaPage() {
                 Editar pedido
               </Button>
             </div>
+          ) : factoryOpensOrders ? (
+            // AJ-0009 Fase 4a: com a fábrica abrindo os pedidos, a loja não cria do
+            // zero — preenche os pedidos abertos (seção "Pedidos para preencher").
+            <p className="shrink-0 text-xs text-muted-foreground">
+              Os pedidos são abertos pela fábrica. Preencha-os na seção abaixo.
+            </p>
           ) : (
             <DialogTrigger asChild>
               <Button type="button" className="shrink-0">
@@ -1542,6 +1572,45 @@ export default function PedidosLojaPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* AJ-0009 Fase 4a: pedidos abertos pela fábrica, aguardando a loja preencher. */}
+          {factoryOpensOrders && openOrders.length > 0 ? (
+            <section className="space-y-2 rounded-xl border border-info/30 bg-info/[var(--opacity-subtle)] p-4">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="size-4 text-info" aria-hidden />
+                <h2 className="text-sm font-semibold text-foreground">
+                  Pedidos para preencher ({openOrders.length})
+                </h2>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A fábrica abriu estes pedidos. Clique em <strong>Preencher</strong> para informar as
+                quantidades antes do prazo.
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {openOrders.map((order) => (
+                  <li
+                    key={order.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{order.storeName}</p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => handleOpenEditOrder({ id: order.id } as StoreOrderSummary)}
+                    >
+                      Preencher
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <SearchFilter
             searchPlaceholder="Buscar por código ou loja..."

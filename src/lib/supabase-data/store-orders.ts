@@ -550,6 +550,52 @@ export async function openStoreOrders(
   return { opened, skipped };
 }
 
+export interface OpenStoreOrderSummary {
+  id: string;
+  code: string;
+  storeId: string;
+  storeName: string;
+  deliveryDate: string;
+}
+
+/**
+ * AJ-0009 Fase 4a: pedidos `aberto` (abertos pela fábrica, ainda não preenchidos),
+ * para a loja ver e preencher. `allowedStoreIds` (legacy) restringe ao escopo do usuário.
+ */
+export async function listOpenStoreOrders(
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  allowedStoreIds?: string[] | null,
+): Promise<OpenStoreOrderSummary[]> {
+  const [ordersResult, storesResult] = await Promise.all([
+    supabase
+      .from("store_orders")
+      .select("id, legacy_id, code, store_id, delivery_date")
+      .eq("status", "aberto")
+      .eq("management_status", "ativo")
+      .order("delivery_date", { ascending: true }),
+    supabase.from("stores").select("id, legacy_id, name"),
+  ]);
+
+  const orderRows = assertSupabaseResult(ordersResult, "Failed to load open store orders");
+  const storeRows = assertSupabaseResult(storesResult, "Failed to load stores for open orders");
+  const storeById = new Map(storeRows.map((row) => [row.id, row]));
+  const allowed = allowedStoreIds ? new Set(allowedStoreIds) : null;
+
+  return orderRows
+    .map((row) => {
+      const store = storeById.get(row.store_id);
+      const storeLegacyId = store?.legacy_id ?? row.store_id;
+      return {
+        id: row.legacy_id ?? row.id,
+        code: row.code,
+        storeId: storeLegacyId,
+        storeName: store?.name ?? "Loja",
+        deliveryDate: row.delivery_date,
+      };
+    })
+    .filter((order) => (allowed ? allowed.has(order.storeId) : true));
+}
+
 export async function updateStoreOrder(
   orderId: string,
   input: UpdateStoreOrderInput,

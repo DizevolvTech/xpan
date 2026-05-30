@@ -1,11 +1,45 @@
 import { NextResponse } from "next/server";
 
-import { authorizeApiRequest } from "@/lib/api-auth";
+import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { openStoreOrders } from "@/lib/supabase-data/store-orders";
+import { listOpenStoreOrders, openStoreOrders } from "@/lib/supabase-data/store-orders";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+
+// AJ-0009 Fase 4a: a loja lista os pedidos `aberto` (abertos pela fábrica) para preencher.
+export async function GET() {
+  const authorization = await authorizeApiRequest({
+    contextLabel: "GET /api/store-orders/open",
+    permission: "loja.pedidos",
+    minimumLevel: "operar",
+    includeStoreScope: true,
+    requireTenantContext: true,
+  });
+
+  if ("response" in authorization) {
+    return authorization.response;
+  }
+
+  if (!isFactoryOpensOrdersEnabled()) {
+    // Flag off: nenhum pedido aberto a preencher (fluxo legado: a loja cria).
+    return NextResponse.json([]);
+  }
+
+  try {
+    const supabase = createTenantScopedSupabaseClient(
+      authorization.effectiveTenantId,
+      createSupabaseAdminClient(),
+    );
+    const openOrders = await listOpenStoreOrders(supabase, getAllowedStoreIds(authorization));
+    return NextResponse.json(openOrders);
+  } catch (error) {
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Falha ao carregar pedidos abertos." },
+      { status: 500 },
+    );
+  }
+}
 
 // AJ-0009 Fase 4a: a fábrica abre pedidos (status `aberto`) para as lojas preencherem.
 export async function POST(request: Request) {
