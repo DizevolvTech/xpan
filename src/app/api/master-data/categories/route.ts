@@ -34,9 +34,9 @@ export async function POST(request: Request) {
       authorization.effectiveTenantId,
       createSupabaseAdminClient(),
     );
-    await createCategory(payload, { supabase });
+    const created = await createCategory(payload, { supabase });
     invalidateMasterDataCaches(authorization.effectiveTenantId);
-    return NextResponse.json({ ok: true }, { status: 201 });
+    return NextResponse.json({ ok: true, ...created }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to create category" },

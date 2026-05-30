@@ -270,10 +270,12 @@ export async function createCategory(input: CategoryInput, options: MutationOpti
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const existingCodesResult = await supabase.from("categories").select("code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load category codes");
+  const legacyId = buildGeneratedLegacyId("sector");
+  const code = buildNextCode(existingCodes.map((row) => row.code), "SE", 3);
 
   const result = await supabase.from("categories").insert({
-    legacy_id: buildGeneratedLegacyId("sector"),
-    code: buildNextCode(existingCodes.map((row) => row.code), "SE", 3),
+    legacy_id: legacyId,
+    code,
     name: input.name.trim(),
     responsible: input.responsible.trim(),
     status: input.status,
@@ -282,6 +284,13 @@ export async function createCategory(input: CategoryInput, options: MutationOpti
   if (result.error) {
     throw new Error(`Failed to create category: ${result.error.message}`);
   }
+
+  // AJ-0026: devolve o id para o fluxo de criação inline (modal "Nova Linha")
+  // poder selecionar a categoria recém-criada automaticamente.
+  return {
+    id: legacyId,
+    code,
+  };
 }
 
 export async function updateCategory(

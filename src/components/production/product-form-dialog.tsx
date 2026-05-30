@@ -128,6 +128,9 @@ export function ProductFormDialog({
   onRequestEdit,
 }: ProductFormDialogProps) {
   const [isLineDialogOpen, setIsLineDialogOpen] = useState(false);
+  // AJ-0026: criação inline de categoria sem sair do modal "Nova Linha".
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState({ name: "", responsible: "" });
   const [isIngredientDialogOpen, setIsIngredientDialogOpen] = useState(false);
   const [formState, setFormState] = useState<ProductFormState>(() =>
     buildProductFormState(snapshot.lines, product),
@@ -708,6 +711,55 @@ export function ProductFormDialog({
     }
   }
 
+  async function handleCreateCategory() {
+    if (!categoryDraft.name.trim() || !categoryDraft.responsible.trim()) {
+      setFormError(`Informe nome e responsável da nova ${hierarchyLabels.sector.toLowerCase()}.`);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormError(null);
+
+    try {
+      const response = await fetch("/api/master-data/categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: categoryDraft.name,
+          responsible: categoryDraft.responsible,
+          status: "ativo",
+        }),
+      });
+
+      const body = (await response.json().catch(() => null)) as {
+        message?: string;
+        id?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(body?.message ?? `Falha ao criar ${hierarchyLabels.sector.toLowerCase()}`);
+      }
+
+      const createdCategoryId = body?.id ?? null;
+      await refresh();
+      // Seleciona a categoria recém-criada no rascunho da linha (preserva o resto do form).
+      if (createdCategoryId) {
+        setLineDraft((current) => ({ ...current, sectorId: createdCategoryId }));
+      }
+      setIsCategoryDialogOpen(false);
+      setCategoryDraft({ name: "", responsible: "" });
+    } catch (saveError) {
+      setFormError(
+        saveError instanceof Error
+          ? saveError.message
+          : `Falha ao criar ${hierarchyLabels.sector.toLowerCase()}`,
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <>
       <Dialog
@@ -942,7 +994,19 @@ export function ProductFormDialog({
                           </div>
                           <div className="grid gap-2 md:grid-cols-2">
                             <div className="grid gap-2">
-                              <Label>{hierarchyLabels.sector} *</Label>
+                              <div className="flex items-center justify-between gap-2">
+                                <Label>{hierarchyLabels.sector} *</Label>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-auto px-1.5 py-0.5 text-xs"
+                                  onClick={() => setIsCategoryDialogOpen(true)}
+                                >
+                                  <Plus className="size-3.5" />
+                                  Nova {hierarchyLabels.sector.toLowerCase()}
+                                </Button>
+                              </div>
                               <Select
                                 value={lineDraft.sectorId}
                                 onValueChange={(value) =>
@@ -1025,6 +1089,74 @@ export function ProductFormDialog({
                             disabled={isSubmitting}
                           >
                             Criar {hierarchyLabels.line}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+
+                    {/* AJ-0026: criação inline de categoria — abre por cima do modal de
+                        linha, preserva o rascunho da linha e auto-seleciona ao criar. */}
+                    <Dialog
+                      open={isCategoryDialogOpen}
+                      onOpenChange={(nextOpen) => {
+                        setIsCategoryDialogOpen(nextOpen);
+                        if (!nextOpen) {
+                          setCategoryDraft({ name: "", responsible: "" });
+                        }
+                      }}
+                    >
+                      <DialogContent size="lg">
+                        <DialogHeader>
+                          <DialogTitle>Nova {hierarchyLabels.sector.toLowerCase()}</DialogTitle>
+                          <DialogDescription>
+                            Cadastre a nova {hierarchyLabels.sector.toLowerCase()} sem sair da{" "}
+                            {hierarchyLabels.line.toLowerCase()}.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-2">
+                          <div className="grid gap-2">
+                            <Label>Nome da {hierarchyLabels.sector.toLowerCase()} *</Label>
+                            <Input
+                              value={categoryDraft.name}
+                              onChange={(event) =>
+                                setCategoryDraft((current) => ({
+                                  ...current,
+                                  name: event.target.value,
+                                }))
+                              }
+                              placeholder="Ex: Confeitaria"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Responsável *</Label>
+                            <Input
+                              value={categoryDraft.responsible}
+                              onChange={(event) =>
+                                setCategoryDraft((current) => ({
+                                  ...current,
+                                  responsible: event.target.value,
+                                }))
+                              }
+                              placeholder="Ex: Maria Silva"
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setIsCategoryDialogOpen(false)}
+                            disabled={isSubmitting}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() => void handleCreateCategory()}
+                            disabled={isSubmitting}
+                          >
+                            Criar {hierarchyLabels.sector.toLowerCase()}
                           </Button>
                         </DialogFooter>
                       </DialogContent>

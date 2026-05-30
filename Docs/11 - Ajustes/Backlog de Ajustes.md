@@ -191,7 +191,16 @@ exibiam a data +7 como se a variante fosse produzir lá ("variante/data errada")
 **Testes (engine.test.ts):** "produz só sexta + entrega sexta + lead 1 → bloqueado, `productionDate:null`, não +7" + regressão "variante compatível (quinta) segue na quinta, não delayed". `server-data-cache.test.ts`: `forceRefresh` ignora cache fresco e reaquece. `tsc` limpo, 151/151, `eslint` 0 problemas.
 
 ### AJ-0026 — Criar categoria inline no modal "Nova Linha de produção"
-**Origem:** Trello 26/05 #1 (`cUKnjx9p`) · **Status:** A-fazer (ORDEM 3) · **Categoria:** UX
+**Concluído em:** 2026-05-30 (commit `feat(cadastro): AJ-0026 …`)
+**Origem:** Trello 26/05 #1 (`cUKnjx9p`) · **Status:** ✅ Concluído · **Categoria:** UX
+**Área:** `src/components/production/product-form-dialog.tsx` · `master-data-admin.ts` (`createCategory`) · `api/master-data/categories/route.ts`
+
+Botão "+ Nova categoria" no dropdown Categoria do modal "Nova Linha" (aberto de
+dentro do cadastro de produto). Reusa `POST /api/master-data/categories`. Ao criar,
+a categoria é selecionada automaticamente no rascunho da linha e o estado do
+formulário (produto + linha) é preservado — nenhum "cancelar e recomeçar".
+`createCategory` passou a devolver `{id, code}` (espelha `createSubcategory`) para o
+auto-select. `tsc` limpo, 151/151, `eslint` sem erro novo.
 
 ### AJ-0027 — Pedido: visualização do input numérico (só visual)
 **Origem:** Trello 26/05 #2 (`KiGOg0hB`) · **Status:** A-fazer (ORDEM 4) · **Categoria:** UX
