@@ -25,7 +25,6 @@ import { PageContainer } from "@/components/layout/page-container";
 import { InfoHint } from "@/components/shared/info-hint";
 import { DataTable } from "@/components/shared/data-table";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
-import { PaginatedSection } from "@/components/shared/paginated-section";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
@@ -1183,12 +1182,11 @@ export default function PedidosLojaPage() {
                 </div>
               </div>
 
-              <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
-                {(paginatedProducts) => (
-                  // Tabela enxuta (auditoria visível): 13 col → 10 col.
-                  // Código vira linha sub do Produto; Categoria já é filtro.
-                  <div className="max-h-[640px] overflow-auto rounded-lg border border-border/80">
-                    <table className="w-full min-w-[840px] border-collapse border-spacing-0">
+              {/* Sem paginação: todos os itens do catálogo numa tabela com scroll vertical
+                  interno e cabeçalho fixo (sticky) — mais fácil de varrer o catálogo de uma
+                  vez do que paginar de 8 em 8. */}
+              <div className="max-h-[60vh] overflow-auto rounded-lg border border-border/80">
+                <table className="w-full min-w-[840px] border-collapse border-spacing-0">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-secondary/85">
                           <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
@@ -1215,7 +1213,7 @@ export default function PedidosLojaPage() {
                             </td>
                           </tr>
                         ) : (
-                          paginatedProducts.map((product) => (
+                          filteredOrderProducts.map((product) => (
                             <tr
                               key={product.id}
                               className={cn(
@@ -1329,8 +1327,6 @@ export default function PedidosLojaPage() {
                       </tbody>
                     </table>
                   </div>
-                )}
-              </PaginatedSection>
 
               <div className="grid gap-2">
                 <Label htmlFor="order-note" className="text-xs text-muted-foreground">Observações do Pedido</Label>
