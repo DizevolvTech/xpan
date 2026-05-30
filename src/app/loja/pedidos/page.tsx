@@ -921,7 +921,9 @@ export default function PedidosLojaPage() {
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent size="3xl">
+          {/* size="full" (≈1400px): a grade de 7 dias + colunas não cabia no 3xl e
+              estourava em scroll lateral ao mostrar indisponíveis. */}
+          <DialogContent size="full">
             <DialogHeader>
               <DialogTitle>{editingOrderId ? "Editar Pedido" : "Novo Pedido"}</DialogTitle>
             </DialogHeader>
