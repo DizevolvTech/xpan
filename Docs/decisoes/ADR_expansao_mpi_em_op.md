@@ -276,3 +276,18 @@ quiser MPI em linha dedicada já consegue cadastrar — basta preencher
   na onda 3 — quando entrar [[Backlog de Ajustes#AJ-0021 — Armazenamento / produção sob estoque (shelf life)|AJ-0021]].
 - **Caminho B (`ingredients.type='misturado'`)** continua sem virar OP.
   Composição interna na folha de pré-pesagem, conforme decidido na fase 1.
+
+### Fase 3 — AJ-0008.1 (revisão da decisão, 2026-05-30)
+
+O **Caminho B foi reaberto e estendido** por decisão do Giuseppe (2026-05-30):
+ingrediente `type='misturado'` puro referenciado numa receita **passa a gerar OP
+separada**, herdando a rota do produto-pai (ingredientes não têm linha/dias/cronograma
+próprios — comportamento idêntico à Fase 1 do MPI). A **composição interna** do
+misturado **não** gera OPs recursivas — segue como detalhe de pré-pesagem.
+
+- Implementação: `expandRecipeIntoItems` ganhou a opção `expandMixedIngredients`
+  (`recipe-expansion.ts`) + `buildMixedIngredientPlannedItem`.
+- Flag de ambiente: `EXPAND_MIXED_INGREDIENT_INTO_OPS` (**default ON**, escape hatch),
+  só efetiva com `EXPAND_MPI_INTO_OPS` ligado.
+- Testes: 3 casos no `recipe-expansion.test.ts` (expande misturado / não expande puro /
+  legado sem a flag).

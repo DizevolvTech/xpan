@@ -283,6 +283,20 @@ Após o lote 26/05, o Giuseppe fechou as decisões pendentes:
 - **AJ-0008.1** — ingrediente `misturado` puro: **estender (Fase 3)** para gerar OP separada. → ver bloco AJ-0008.1.
 - **AJ-0009** — fábrica abre o pedido: **implementar (modelo C, Fase 4a)**. → ver bloco AJ-0009.
 
+#### AJ-0008.1 — Ingrediente `misturado` puro gera OP (Fase 3)
+**Concluído em:** 2026-05-30 (commit `feat(motor): AJ-0008.1 …`)
+**Origem:** Trello (`sodx77wP`) + [[decisoes/ADR_expansao_mpi_em_op]] · **Status:** ✅ Concluído · **Categoria:** Motor
+**Área:** `src/lib/factory-planning/recipe-expansion.ts` · `engine.ts`
+
+O ADR original decidiu que só produto-MPI (`is_mpi_ingredient`) virava OP; o ingrediente
+`type='misturado'` puro ficava só na pré-pesagem. O Giuseppe optou por **estender (Fase 3)**.
+Agora `expandRecipeIntoItems` (opção `expandMixedIngredients`) também expande refs de receita
+para ingredientes `misturado` em OP separada, **herdando a rota do produto-pai** (ingredientes
+não têm linha/setor/dias/cronograma próprios — estilo Fase 1 do MPI; `productId = ingredient.id`
+→ vira OP distinta). A composição do misturado **não** vira OPs recursivas (segue como pré-pesagem).
+Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes novos no
+`recipe-expansion.test.ts`. `tsc` limpo, 161/161, `eslint` 0.
+
 ---
 
 ## 🔴 Crítico (estrutural ou bloqueante)

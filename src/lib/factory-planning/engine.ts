@@ -415,6 +415,16 @@ function isMpiExpansionEnabled() {
   return process.env.EXPAND_MPI_INTO_OPS !== "false";
 }
 
+/**
+ * Feature flag para expansão de ingrediente `misturado` puro em OP separada (AJ-0008.1,
+ * Fase 3). **Default: ON** — decisão do Giuseppe (2026-05-30) estendendo o ADR original.
+ * Escape hatch: `EXPAND_MIXED_INGREDIENT_INTO_OPS=false`. Só tem efeito com a expansão de
+ * receita ligada (`isMpiExpansionEnabled`).
+ */
+function isMixedIngredientExpansionEnabled() {
+  return process.env.EXPAND_MIXED_INGREDIENT_INTO_OPS !== "false";
+}
+
 function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
   return {
     settings: input.settings,
@@ -1011,6 +1021,8 @@ export function buildFactoryPlanningData(
         // AJ-A4: fase 2 — passa os maps para que o MPI rode na linha/setor nativos.
         linesById: source.linesById,
         sectorsById: source.sectorsById,
+        // AJ-0008.1 (Fase 3): ingrediente misturado puro também vira OP (default ON).
+        expandMixedIngredients: isMixedIngredientExpansionEnabled(),
       })
     : orderItems;
 

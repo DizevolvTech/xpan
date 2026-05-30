@@ -230,6 +230,62 @@ void test("expandRecipeIntoItems gera 1 item extra para pizza com receita de mas
   assert.equal(mpi.productionItemKey, "2026-05-20|line-1|schedule-1|mpi-massa");
 });
 
+void test("AJ-0008.1: ingrediente misturado puro vira OP herdando a rota do pai", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const molho: ProductionIngredient = {
+    ...makeIngredient("molho", "Molho Especial"),
+    type: "misturado",
+  };
+  const pizza = makePizzaProduct(); // recipe: 0.6 farinha + 0.4 molho (total 1.0kg)
+  const productsById = new Map([[pizza.id, pizza]]);
+
+  const result = expandRecipeIntoItems([makePlannedItem()], productsById, [farinha, molho], [pizza], {
+    expandMixedIngredients: true,
+  });
+
+  assert.equal(result.length, 2, "item original + 1 OP do misturado");
+  const mixed = result.find((item) => item.productId === "molho");
+  assert.ok(mixed, "deve gerar item para o ingrediente misturado");
+  // 0.4kg molho / 1.0kg receita × 2kg pizza = 0.8kg
+  assert.equal(mixed!.internalKg, 0.8);
+  assert.equal(mixed!.requestedQuantity, 0.8);
+  // Ingredientes não têm linha própria → herdam a rota do pai (estilo Fase 1).
+  assert.equal(mixed!.productionDate, "2026-05-20");
+  assert.equal(mixed!.lineId, "line-1");
+  assert.equal(mixed!.scheduleId, "schedule-1");
+  assert.equal(mixed!.productCode, "MOLHO");
+  assert.equal(mixed!.productName, "Molho Especial");
+  assert.equal(mixed!.productionItemKey, "2026-05-20|line-1|schedule-1|molho");
+});
+
+void test("AJ-0008.1: ingrediente puro (não misturado) NÃO vira OP", () => {
+  const farinha = makeIngredient("farinha", "Farinha"); // puro
+  const molho = makeIngredient("molho", "Molho"); // puro
+  const pizza = makePizzaProduct();
+  const productsById = new Map([[pizza.id, pizza]]);
+
+  const result = expandRecipeIntoItems([makePlannedItem()], productsById, [farinha, molho], [pizza], {
+    expandMixedIngredients: true,
+  });
+
+  assert.equal(result.length, 1, "nenhum ingrediente puro deve virar OP");
+  assert.ok(!result.some((item) => item.productId === "farinha" || item.productId === "molho"));
+});
+
+void test("AJ-0008.1: sem a flag, misturado não vira OP (comportamento legado preservado)", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const molho: ProductionIngredient = {
+    ...makeIngredient("molho", "Molho Especial"),
+    type: "misturado",
+  };
+  const pizza = makePizzaProduct();
+  const productsById = new Map([[pizza.id, pizza]]);
+
+  const result = expandRecipeIntoItems([makePlannedItem()], productsById, [farinha, molho], [pizza]);
+
+  assert.equal(result.length, 1, "sem expandMixedIngredients, mantém só o item original");
+});
+
 void test("expandRecipeIntoItems com 5 pedidos da mesma pizza gera 5 itens de MPI com mesma planning key (Decisão 3)", () => {
   // Decisão 3: agrupamento de demanda acontece DEPOIS, em
   // `buildProductionOrdersFromPlannedItems` (que agrupa por (planningKey, productId)).
