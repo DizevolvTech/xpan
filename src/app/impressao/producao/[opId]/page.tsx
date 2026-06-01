@@ -27,29 +27,20 @@ function MetaCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RecipeTable({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: PrintIngredientRow[];
-}) {
+function RecipeTable({ rows }: { rows: (PrintIngredientRow & { isAdditional?: boolean })[] }) {
   if (rows.length === 0) {
     return null;
   }
 
   return (
     <section className="overflow-hidden border border-stone-300">
-      <header className="bg-stone-300 px-3 py-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-stone-700">{title}</p>
-      </header>
       <table className="w-full border-collapse">
-        <thead className="bg-white">
+        <thead className="bg-stone-300">
           <tr>
-            <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+            <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
               Pré pesagem
             </th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
               Ingredientes
             </th>
           </tr>
@@ -61,7 +52,14 @@ function RecipeTable({
                 {formatLocaleNumber(row.estimatedQuantity, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} {row.unit}
               </td>
               <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
-                <div>{row.label}</div>
+                <div className="flex items-baseline gap-2">
+                  <span>{row.label}</span>
+                  {row.isAdditional ? (
+                    <span className="shrink-0 border border-stone-400 px-1 text-[9px] font-semibold uppercase tracking-wide text-stone-500">
+                      Adic.
+                    </span>
+                  ) : null}
+                </div>
                 {row.notes ? <div className="mt-1 text-xs text-stone-500">{row.notes}</div> : null}
               </td>
             </tr>
@@ -152,12 +150,12 @@ export default function ProducaoPrintPage() {
 
             <div className="space-y-2 px-3 py-3">
               <RecipeTable
-                title="Ingredientes Base"
-                rows={section.items.filter((item) => item.sectionKind !== "additional")}
-              />
-              <RecipeTable
-                title="Ingredientes Adicionais"
-                rows={section.items.filter((item) => item.sectionKind === "additional")}
+                rows={[
+                  ...section.items.filter((item) => item.sectionKind !== "additional"),
+                  ...section.items
+                    .filter((item) => item.sectionKind === "additional")
+                    .map((item) => ({ ...item, isAdditional: true })),
+                ]}
               />
               {section.items.length === 0 ? (
                 <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">

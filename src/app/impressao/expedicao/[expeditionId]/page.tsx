@@ -2,10 +2,12 @@
 
 import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { CheckCircle2 } from "lucide-react";
 
 import { PrintDocument } from "@/components/printing/print-document";
-import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
+import {
+  aggregateExpeditionItems,
+  getAggregatedExpeditionItemKey,
+} from "@/lib/expedition-aggregation";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
@@ -28,7 +30,9 @@ function MetaCard({ label, value }: { label: string; value: string }) {
 }
 
 function getChecklistItemKey(item: ReturnType<typeof aggregateExpeditionItems>[number]) {
-  return `${item.productId}|${item.requestedUnit}|${item.expeditionUnit}`;
+  // Stable key (productId|requestedUnit) — must match the shared function exactly so
+  // check marks survive changes to the product's volatile expeditionUnit.
+  return getAggregatedExpeditionItemKey(item);
 }
 
 export default function ExpedicaoPrintPage() {
@@ -117,12 +121,9 @@ export default function ExpedicaoPrintPage() {
                 <td className="border-t border-stone-200 px-4 py-3 text-sm">
                   {execution?.status !== "aguardando_expedicao" ||
                   execution?.checklistState[getChecklistItemKey(item)] === true ? (
-                    <span className="inline-flex items-center gap-2 font-semibold text-emerald-700">
-                      <CheckCircle2 className="size-4" />
-                      Conferido
-                    </span>
+                    <span className="font-semibold text-emerald-700">✓ Conferido</span>
                   ) : (
-                    <span className="text-stone-400">______________________</span>
+                    <span className="inline-block h-3.5 w-3.5 border border-stone-400 align-middle" aria-hidden="true" />
                   )}
                 </td>
               </tr>
