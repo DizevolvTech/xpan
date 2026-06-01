@@ -28,6 +28,7 @@ Pré-req: `npm run dev` rodando. Não-headless = E2E_HEADLESS=0.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import re
@@ -141,6 +142,60 @@ def find_planning_items_for_order(ctx, order_id: str, reference_date: str) -> li
     return [it for it in items if it.get("orderId") == order_id]
 
 
+# Nomes dos produtos efetivamente pedidos (preenchido pela descoberta de catálogo).
+# Usado para detectar as OPs do pedido nas telas, em vez de um literal hardcoded.
+ordered_product_names: list[str] = []
+
+
+def discover_available_order_items(
+    loja_ctx, store_id: str, ordered_at: str, max_items: int = 2
+) -> list[dict]:
+    """Consulta o catálogo da loja e devolve itens de pedido para variantes
+    `available:true` na data corrente. Evita o drift de fixture: a UI só oferece
+    variantes disponíveis (esconde as bloqueadas por cronograma/lead), então o
+    teste tem de fazer o mesmo em vez de hardcodar IDs de produto."""
+    resp = api(
+        loja_ctx,
+        "GET",
+        f"/api/store-order-catalog?storeId={store_id}&orderedAt={ordered_at}",
+    )
+    if resp.status_code != 200:
+        return []
+    catalog = resp.json()
+    if not isinstance(catalog, list):
+        return []
+    picked: list[dict] = []
+    for entry in catalog:
+        if not entry.get("available"):
+            continue
+        product_id = entry.get("productId")
+        if not product_id:
+            continue
+        if entry.get("unitKind") == "discrete":
+            quantity: float = 6
+        else:
+            min_kg = entry.get("minimumProductionKg") or 0
+            quantity = max(1.0, round(float(min_kg) + 0.5, 3))
+        picked.append(
+            {"productId": product_id, "quantity": quantity, "unit": entry.get("unit")}
+        )
+        name = entry.get("name")
+        if name:
+            ordered_product_names.append(name)
+        if len(picked) >= max_items:
+            break
+    return picked
+
+
+def order_product_in_text(txt: str) -> bool:
+    """True se o texto da tela contém algum dos produtos efetivamente pedidos.
+    Sem nomes conhecidos (fixture antiga), não filtra — devolve True."""
+    if not ordered_product_names:
+        return True
+    low = txt.lower()
+    return any(name.lower() in low for name in ordered_product_names if name)
+
+
 def run() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=HEADLESS)
@@ -171,31 +226,56 @@ def run() -> None:
         loja_ctx, _ = ctxs["loja"]
         order_id: str | None = None
         order_code: str | None = None
-        try:
-            resp = api(
-                loja_ctx,
-                "POST",
-                "/api/store-orders",
-                {
-                    "storeId": STORE_EMPORIO_PAO,
-                    "items": [
-                        {"productId": PRODUCT_PUDIM_GRANDE, "quantity": 6, "unit": "Un"},
-                        {"productId": PRODUCT_PUDIM_MEDIO, "quantity": 4, "unit": "Un"},
-                    ],
-                    "note": "E2E full-flow A1-A8 (script)",
-                },
-            )
-            if resp.status_code == 201:
-                data = resp.json()
-                order_id = data.get("id") or data.get("orderId")
-                order_code = data.get("code")
-                mutations["orders_created"].append({"id": order_id, "code": order_code})
-                rec("F1-create-order", "PASS", f"{order_code} ({order_id})")
-            else:
-                rec("F1-create-order", "FAIL",
-                    f"POST /store-orders {resp.status_code}: {resp.text[:200]}")
-        except Exception as e:
-            rec("F1-create-order", "FAIL", f"{e}")
+        order_was_reused = False
+        ordered_at = datetime.date.today().isoformat()
+        order_items = discover_available_order_items(loja_ctx, STORE_EMPORIO_PAO, ordered_at)
+        if not order_items:
+            rec("F1-create-order", "SKIP",
+                f"catálogo sem variante disponível para {STORE_EMPORIO_PAO} em {ordered_at}")
+        else:
+            try:
+                resp = api(
+                    loja_ctx,
+                    "POST",
+                    "/api/store-orders",
+                    {
+                        "storeId": STORE_EMPORIO_PAO,
+                        "items": order_items,
+                        "note": "E2E full-flow A1-A8 (script)",
+                    },
+                )
+                if resp.status_code == 201:
+                    data = resp.json()
+                    order_id = data.get("id") or data.get("orderId")
+                    order_code = data.get("code")
+                    mutations["orders_created"].append({"id": order_id, "code": order_code})
+                    rec("F1-create-order", "PASS", f"{order_code} ({order_id})")
+                elif "já existe um pedido ativo" in resp.text.lower():
+                    # Idempotência: o full-flow é destrutivo e o dev DB persiste.
+                    # Numa re-execução no mesmo dia, a trava de duplicidade (AJ-0007)
+                    # barra um pedido novo para a mesma loja+data. Reusa o pedido
+                    # existente (cujo code vem na mensagem) e segue o pipeline.
+                    m = re.search(r"\(PD-[\d-]+\)", resp.text)
+                    existing_code = m.group(0).strip("()") if m else None
+                    listing = api(loja_ctx, "GET", "/api/store-orders")
+                    if existing_code and listing.status_code == 200:
+                        for o in listing.json():
+                            if o.get("code") == existing_code:
+                                order_id = o.get("id")
+                                order_code = existing_code
+                                break
+                    if order_id:
+                        order_was_reused = True
+                        rec("F1-create-order", "PASS",
+                            f"reusando pedido ativo existente {order_code} ({order_id})")
+                    else:
+                        rec("F1-create-order", "FAIL",
+                            f"duplicidade mas não localizei o pedido existente: {resp.text[:160]}")
+                else:
+                    rec("F1-create-order", "FAIL",
+                        f"POST /store-orders {resp.status_code}: {resp.text[:200]}")
+            except Exception as e:
+                rec("F1-create-order", "FAIL", f"{e}")
 
         # =========================================================
         # FASE 2 — Liberação manual via UI (A1)
@@ -350,7 +430,7 @@ def run() -> None:
                         chao_page.wait_for_timeout(1500)
                         continue
                     txt = body(chao_page)
-                    if "Pudim" not in txt:
+                    if not order_product_in_text(txt):
                         # Volta e tenta próxima
                         goto(chao_page, f"/chao-fabrica/ordens-producao?ref={production_date}")
                         chao_page.wait_for_timeout(1500)
@@ -389,7 +469,8 @@ def run() -> None:
                         "1 transição via UI (chao-fabrica) — hook funcionou")
                 else:
                     rec("F4-A5-ui-transition", "SKIP",
-                        f"OP do pedido com 'Pudim' não detectada em ref={production_date}")
+                        f"OP do pedido ({', '.join(ordered_product_names) or '?'}) "
+                        f"não detectada em ref={production_date}")
             except Exception as e:
                 rec("F4-A5-ui-transition", "FAIL", f"{e}")
         else:
@@ -473,7 +554,7 @@ def run() -> None:
                         fabrica_page.wait_for_timeout(1500)
                         continue
                     txt = body(fabrica_page)
-                    if "Pudim" not in txt:
+                    if not order_product_in_text(txt):
                         goto(fabrica_page, f"/gestor-fabrica/ordens-producao?ref={production_date}")
                         fabrica_page.wait_for_timeout(1500)
                         continue
@@ -499,7 +580,13 @@ def run() -> None:
         # Usa o pedido recém-criado (em aguardando_expedicao após avanços F4).
         # Pra ir aguardando_expedicao → pronto_coleta precisa checklist completo:
         #   key = `${productId}|${requestedUnit}|${expeditionUnit}`
-        if order_id:
+        # Pedido reusado de um run anterior pode já estar entregue/pós-rota — as
+        # transições de entrega seriam corretamente rejeitadas (400). Pula a fase
+        # nesse caso (re-exercitar exige DB limpo — AJ-0019).
+        if order_id and order_was_reused:
+            rec("F7-A3", "SKIP",
+                "pedido reusado (provável pós-entrega) — fase de entrega exige pedido fresco (AJ-0019)")
+        elif order_id:
             try:
                 # Descobrir expedition items via /api/factory-planning
                 expedition_items: list[dict] = []

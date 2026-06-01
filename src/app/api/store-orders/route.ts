@@ -26,6 +26,8 @@ function isClientValidationError(message: string) {
     normalized.includes("sublinha") ||
     normalized.includes("cronograma") ||
     normalized.includes("dia de entrega") ||
+    normalized.includes("só produz") ||
+    normalized.includes("já existe um pedido ativo") ||
     normalized.includes("whole numbers")
   );
 }
