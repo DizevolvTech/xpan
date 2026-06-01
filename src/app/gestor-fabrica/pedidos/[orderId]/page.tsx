@@ -14,6 +14,7 @@ import { useConfirm } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
 import { formatDateKeyBr } from "@/lib/order-planning";
 import { formatKgValue } from "@/lib/utils";
@@ -447,7 +448,7 @@ export default function PedidoDetailsPage() {
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.progress.toFixed(1)}%</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3">
                             <Button asChild type="button" size="sm" variant="ghost">
-                              <Link href={`/gestor-fabrica/ordens-producao/${op.id}?ref=${anchorDate}`}>Abrir</Link>
+                              <Link href={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}>Abrir</Link>
                             </Button>
                           </td>
                         </tr>

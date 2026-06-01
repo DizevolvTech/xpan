@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Factory, Printer, Truck } from "lucide-react";
 
 import { FactoryFlow } from "@/components/shared/factory-flow";
@@ -13,7 +13,11 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
+import {
+  aggregateExpeditionItems,
+  getAggregatedExpeditionItemKey,
+} from "@/lib/expedition-aggregation";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getExpeditionVisibleStatus } from "@/lib/delivery-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
@@ -25,12 +29,18 @@ function openPrintPage(pathname: string) {
 }
 
 function getChecklistItemKey(item: ReturnType<typeof aggregateExpeditionItems>[number]) {
-  return `${item.productId}|${item.requestedUnit}|${item.expeditionUnit}`;
+  // Stable key (productId|requestedUnit) — must match the shared function exactly so
+  // check marks survive changes to the product's volatile expeditionUnit.
+  return getAggregatedExpeditionItemKey(item);
 }
 
 export default function ExpedicaoDetailsPage() {
   const params = useParams<{ expeditionId: string }>();
-  const expeditionId = typeof params.expeditionId === "string" ? params.expeditionId : "";
+  const router = useRouter();
+  // O param pode chegar como id da expedição (ex. "exp-seed-order-006", vindo da
+  // fila de expedição) OU como id do pedido (ex. "seed-order-006", vindo do card
+  // do dashboard do chão). Decodificamos e resolvemos por ambos abaixo.
+  const expeditionId = typeof params.expeditionId === "string" ? decodeURIComponent(params.expeditionId) : "";
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isChecklistSaving, setIsChecklistSaving] = useState(false);
@@ -38,7 +48,10 @@ export default function ExpedicaoDetailsPage() {
   const deliveryExecutionState = useDeliveryExecution();
 
   const expedition = useMemo(
-    () => planningData.expedition.find((item) => item.id === expeditionId) ?? null,
+    () =>
+      planningData.expedition.find(
+        (item) => item.id === expeditionId || item.orderId === expeditionId,
+      ) ?? null,
     [expeditionId, planningData.expedition],
   );
   const relatedProductionOrders = useMemo(
@@ -94,14 +107,31 @@ export default function ExpedicaoDetailsPage() {
     [aggregatedItems, execution?.status, expeditionCheckedItems],
   );
   const allItemsChecked = aggregatedItems.length > 0 && checkedCount === aggregatedItems.length;
+  // Entregas em rota/pendentes — reusa o mesmo estado de execução das entregas,
+  // sem nova fonte de dados (espelha a derivação da própria tela de entregas).
+  const pendingDeliveriesCount = useMemo(
+    () =>
+      planningData.expedition.filter((item) => {
+        const exec = deliveryExecutionState.resolveExecution(
+          item.orderId,
+          item.status === "aguardando_expedicao",
+        );
+        return (
+          exec.status === "pronto_coleta" ||
+          exec.status === "em_rota" ||
+          exec.status === "no_destino"
+        );
+      }).length,
+    [deliveryExecutionState, planningData.expedition],
+  );
 
   async function persistChecklist(
     nextChecklistState: Record<string, boolean>,
     nextStatus = execution?.status ?? "aguardando_expedicao",
     nextChecklistCompletedAt = execution?.checklistCompletedAt ?? null,
-  ) {
+  ): Promise<boolean> {
     if (!expedition) {
-      return;
+      return false;
     }
 
     setActionError(null);
@@ -112,10 +142,12 @@ export default function ExpedicaoDetailsPage() {
         checklistState: nextChecklistState,
         checklistCompletedAt: nextChecklistCompletedAt,
       });
+      return true;
     } catch (error) {
       setActionError(
         error instanceof Error ? error.message : "Falha ao atualizar o checklist de expedição.",
       );
+      return false;
     } finally {
       setIsChecklistSaving(false);
     }
@@ -145,7 +177,12 @@ export default function ExpedicaoDetailsPage() {
       return;
     }
 
-    await persistChecklist(allCheckedState, "pronto_coleta", new Date().toISOString());
+    const ok = await persistChecklist(allCheckedState, "pronto_coleta", new Date().toISOString());
+
+    if (ok) {
+      // Handoff: checklist concluído leva o operador direto pra fila de entregas.
+      router.push("/chao-fabrica/entregas?status=pronto_coleta");
+    }
   }
 
   const flowSteps = [
@@ -163,6 +200,14 @@ export default function ExpedicaoDetailsPage() {
       helper: "Checklists",
       value: planningData.expedition.length,
       href: "/chao-fabrica/expedicao",
+      icon: Truck,
+    },
+    {
+      key: "entregas",
+      title: "Entregas",
+      helper: "Em rota / pendentes",
+      value: pendingDeliveriesCount,
+      href: "/chao-fabrica/entregas",
       icon: Truck,
     },
   ];
@@ -217,10 +262,19 @@ export default function ExpedicaoDetailsPage() {
           <Button type="button" variant="outline" disabled={!checklistEditable || allItemsChecked || isChecklistSaving} onClick={() => void handleMarkAll()}>
             Marcar tudo
           </Button>
-          <Button type="button" disabled={!checklistEditable || !allItemsChecked || isChecklistSaving} onClick={() => void handleCompleteChecklist()}>
-            <CheckCircle2 className="size-4" />
-            {execution?.status === "aguardando_expedicao" ? "Continuar para entregas" : "Checklist concluído"}
-          </Button>
+          {execution?.status === "aguardando_expedicao" ? (
+            <Button type="button" disabled={!checklistEditable || !allItemsChecked || isChecklistSaving} onClick={() => void handleCompleteChecklist()}>
+              <CheckCircle2 className="size-4" />
+              Continuar para entregas
+            </Button>
+          ) : (
+            <Button asChild type="button">
+              <Link href="/chao-fabrica/entregas?status=pronto_coleta">
+                <Truck className="size-4" />
+                Ir para entregas
+              </Link>
+            </Button>
+          )}
           <Button asChild type="button" variant="outline">
             <Link href="/chao-fabrica/expedicao">
               <ArrowLeft className="size-4" />
@@ -357,7 +411,7 @@ export default function ExpedicaoDetailsPage() {
                       </td>
                       <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
                         <Button asChild type="button" size="sm" variant="outline">
-                          <Link href={`/chao-fabrica/ordens-producao/${op.id}?ref=${anchorDate}`}>
+                          <Link href={`/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}>
                             <Factory className="size-4" />
                             Abrir OP
                           </Link>

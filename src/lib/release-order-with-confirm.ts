@@ -1,5 +1,6 @@
 "use client";
 
+import { buildReleaseBlockMessage } from "@/lib/release-block-message";
 import { ReleaseOrderBlockedError } from "@/lib/use-factory-planning";
 
 interface ConfirmFn {
@@ -48,14 +49,16 @@ export async function performReleaseOrderWithConfirm(
       return;
     }
 
+    const blockMessage = buildReleaseBlockMessage(error.reason, stripInvalidPrefix(error.message));
+
     if (!error.forceable) {
-      toast.error(`Pedido ${order.code} bloqueado: ${stripInvalidPrefix(error.message)}`);
+      toast.error(`Pedido ${order.code} bloqueado: ${blockMessage}`);
       return;
     }
 
     const confirmed = await confirm({
       title: `Liberar o pedido ${order.code} mesmo assim?`,
-      description: `${stripInvalidPrefix(error.message)}\n\nA liberação ficará registrada como exceção (liberação forçada) no histórico do pedido.`,
+      description: `${blockMessage}\n\nA liberação ficará registrada como exceção (liberação forçada) no histórico do pedido.`,
       tone: "destructive",
       confirmLabel: "Liberar mesmo assim",
       cancelLabel: "Voltar",

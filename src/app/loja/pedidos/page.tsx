@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   AlertCircle,
   AlertTriangle,
+  CalendarClock,
   CalendarRange,
   ChevronRight,
   Clock3,
@@ -24,7 +25,6 @@ import { PageContainer } from "@/components/layout/page-container";
 import { InfoHint } from "@/components/shared/info-hint";
 import { DataTable } from "@/components/shared/data-table";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
-import { PaginatedSection } from "@/components/shared/paginated-section";
 import { SearchableSelect } from "@/components/shared/searchable-select";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
@@ -49,7 +49,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { summarizeOperationalDates } from "@/lib/operational-sequence";
-import { cn } from "@/lib/utils";
+import { cn, formatLocaleNumber } from "@/lib/utils";
 import { filterStoreOrderSummariesByOperationalScope } from "@/lib/operational-date-scope";
 import {
   getBaseDateByCutoff,
@@ -69,6 +69,9 @@ import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
+import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
+import { findActiveWindowOrder } from "@/lib/store-order-window";
+import { buildCoveredDaysFill, sumOrderDayQuantities } from "@/lib/store-order-coverage";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
 type SelectedOrderItemSummary = {
@@ -104,6 +107,70 @@ function getDayFieldByDate(date: Date): EditableDayField {
 function rotateDays(startDay: EditableDayField): EditableDayField[] {
   const startIndex = WEEK_SEQUENCE.indexOf(startDay);
   return [...WEEK_SEQUENCE.slice(startIndex), ...WEEK_SEQUENCE.slice(0, startIndex)];
+}
+
+// AJ-0027: teto razoável por célula de pedido — evita números absurdos que
+// estouram a largura da célula e "duplicam dígito" visualmente.
+const MAX_ORDER_QUANTITY = 99999;
+
+/** Converte o texto digitado (pt-BR: "1.234,5") em número, tolerando formatos mistos. */
+function parseQuantityInput(raw: string): number {
+  const cleaned = raw
+    .replace(/\s/g, "")
+    .replace(/\.(?=\d{3}(\D|$))/g, "") // remove pontos de milhar
+    .replace(",", ".");
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * AJ-0027 — célula de quantidade do pedido (só visual).
+ * Alinhada à direita, `tabular-nums`, largura maior; ao desfocar formata o milhar
+ * em pt-BR; ao focar mostra o valor cru para edição natural. Teto = MAX_ORDER_QUANTITY.
+ */
+function OrderQuantityCell({
+  value,
+  unitKind,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  unitKind: StoreOrderCatalogProduct["unitKind"];
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const [isFocused, setIsFocused] = useState(false);
+  const [rawValue, setRawValue] = useState("");
+  const isDiscrete = unitKind === "discrete";
+
+  const formattedValue =
+    value > 0
+      ? formatLocaleNumber(value, {
+          maximumFractionDigits: isDiscrete ? 0 : 3,
+        })
+      : "";
+
+  return (
+    <Input
+      type="text"
+      inputMode={isDiscrete ? "numeric" : "decimal"}
+      className="h-8 min-w-[5.5rem] text-right tabular-nums"
+      value={isFocused ? rawValue : formattedValue}
+      placeholder="0"
+      disabled={disabled}
+      onFocus={() => {
+        setIsFocused(true);
+        setRawValue(value > 0 ? String(value) : "");
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setRawValue(next);
+        const parsed = Math.min(parseQuantityInput(next), MAX_ORDER_QUANTITY);
+        onChange(parsed);
+      }}
+      onBlur={() => setIsFocused(false)}
+    />
+  );
 }
 
 function formatDateWithWeekday(date: Date): string {
@@ -240,6 +307,12 @@ export default function PedidosLojaPage() {
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   // Indisponíveis ocultos por padrão; usuário pode desmarcar para ver tudo.
   const [hideUnavailable, setHideUnavailable] = useState(true);
+  // AJ-0009 Fase 4a: com a flag ligada, a loja preenche pedidos abertos pela fábrica
+  // em vez de criar do zero.
+  const factoryOpensOrders = isFactoryOpensOrdersEnabled();
+  const [openOrders, setOpenOrders] = useState<
+    Array<{ id: string; code: string; storeId: string; storeName: string; deliveryDate: string }>
+  >([]);
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
@@ -263,8 +336,24 @@ export default function PedidosLojaPage() {
     setEditingOrderId(null);
     setOrderNote("");
   });
+  const refreshOpenOrders = useCallback(() => {
+    if (!factoryOpensOrders) {
+      setOpenOrders([]);
+      return;
+    }
+    void fetch("/api/store-orders/open")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => setOpenOrders(Array.isArray(data) ? data : []))
+      .catch(() => setOpenOrders([]));
+  }, [factoryOpensOrders]);
+
+  useEffect(() => {
+    refreshOpenOrders();
+  }, [refreshOpenOrders]);
+
   const { updateOrder, isSubmitting: isUpdating } = useUpdateStoreOrder(() => {
     void refreshStoreOrders();
+    refreshOpenOrders();
     setIsNewOrderOpen(false);
     setEditingOrderId(null);
     setOrderNote("");
@@ -348,31 +437,13 @@ export default function PedidosLojaPage() {
       ) ?? null
     );
   }, [editingOrderId, selectedStoreId, storeOrderSummaries, deliveryDateKey]);
-  // Pedido em andamento na loja ativa: status entre lançamento e entrega
-  // (exclui cancelado/entregue/tentativa_falha). Usado para esconder o botão
-  // "Novo Pedido" — ajustes vão pelo fluxo "Editar pedido". Se houver mais de
-  // um (raro), pega o de entrega mais próxima.
-  const activeOrderInScope = useMemo(() => {
-    if (!selectedStoreId) {
-      return null;
-    }
-    const inProgressStatuses = new Set([
-      "em_espera",
-      "agendado",
-      "em_producao",
-      "aguardando_expedicao",
-      "pronto_coleta",
-      "em_rota",
-      "no_destino",
-    ]);
-    return (
-      storeOrderSummaries
-        .filter(
-          (order) => order.storeId === selectedStoreId && inProgressStatuses.has(order.status),
-        )
-        .sort((a, b) => a.deliveryDateKey.localeCompare(b.deliveryDateKey))[0] ?? null
-    );
-  }, [selectedStoreId, storeOrderSummaries]);
+  // Pedido em andamento da loja PARA A JANELA ATUAL — usado para trocar "Novo Pedido"
+  // por "Editar pedido". A regra é 1 pedido por janela (deliveryDateKey): um pedido em
+  // andamento de janela/dia ANTERIOR NÃO bloqueia um novo pedido para a janela de hoje.
+  const activeOrderInScope = useMemo(
+    () => findActiveWindowOrder(storeOrderSummaries, { storeId: selectedStoreId, deliveryDateKey }),
+    [storeOrderSummaries, selectedStoreId, deliveryDateKey],
+  );
   const saleDateLabel = useMemo(() => formatDateWithWeekday(saleDate), [saleDate]);
   const baseOperationalDateLabel = useMemo(
     () => formatDateKeyWithWeekday(effectiveBaseDateKey),
@@ -501,13 +572,15 @@ export default function PedidosLojaPage() {
   const selectedOrderItems = useMemo<SelectedOrderItemSummary[]>(
     () =>
       orderProducts
-        .filter((product) => product.available && product[highlightedDay] > 0)
-        .map((product) => ({
+        // Total do item = soma dos dias cobertos preenchidos (AJ — cobertura).
+        .map((product) => ({ product, quantity: sumOrderDayQuantities(product) }))
+        .filter(({ product, quantity }) => product.available && quantity > 0)
+        .map(({ product, quantity }) => ({
           productId: product.productId,
           code: product.code,
           name: product.name,
           category: product.category,
-          quantity: product[highlightedDay],
+          quantity,
           unit: product.unit,
           unitKind: product.unitKind,
           productionDate: product.productionDate,
@@ -515,19 +588,7 @@ export default function PedidosLojaPage() {
           saleDate: product.saleDate,
         }))
         .sort((left, right) => left.name.localeCompare(right.name)),
-    [highlightedDay, orderProducts],
-  );
-  const selectedProductionSummary = useMemo(
-    () =>
-      summarizeOperationalDates(
-        selectedOrderItems.map((item) => item.productionDate),
-        {
-          emptyValue: "Escolha os itens abaixo",
-          emptyHelper: "Cada produto mostra sua própria data de produção conforme o cronograma ativo.",
-          mixedValue: "Varia por item",
-        },
-      ),
-    [selectedOrderItems],
+    [orderProducts],
   );
   const selectedSaleSummary = useMemo(
     () =>
@@ -650,31 +711,48 @@ export default function PedidosLojaPage() {
     },
   ];
 
-  const handleQuantityChange = (productId: string, field: EditableDayField, value: number) => {
-    if (field !== highlightedDay) {
-      return;
-    }
+  const sanitizeQuantity = (value: number, unitKind: StoreOrderCatalogProduct["unitKind"]) => {
+    const numericValue = Number.isFinite(value) && value > 0 ? Math.min(value, MAX_ORDER_QUANTITY) : 0;
+    return unitKind === "discrete" ? Math.max(0, Math.round(numericValue)) : Number(numericValue.toFixed(3));
+  };
 
+  // AJ — cobertura: cada dia coberto (verde) é editável; o TOTAL do item é a SOMA dos dias.
+  // Serve para a loja se programar (informar o quanto precisa em cada dia até a próxima
+  // fabricação). Só o somatório é persistido no pedido.
+  const handleQuantityChange = (productId: string, field: EditableDayField, value: number) => {
     const product = orderProducts.find((entry) => entry.id === productId);
     if (!product || !product.available) {
       return;
     }
 
-    const numericValue = Number.isFinite(value) && value > 0 ? value : 0;
-    const sanitizedValue =
-      product.unitKind === "discrete"
-        ? Math.max(0, Math.round(numericValue))
-        : Number(numericValue.toFixed(3));
+    const sanitizedValue = sanitizeQuantity(value, product.unitKind);
 
     setOrderProducts((current) =>
-      current.map((product) => {
-        if (product.id !== productId) {
-          return product;
+      current.map((entry) => {
+        if (entry.id !== productId) {
+          return entry;
         }
 
-        const nextProduct = { ...product };
-        nextProduct[field] = sanitizedValue;
-        nextProduct.total = sanitizedValue;
+        const nextProduct = { ...entry, [field]: sanitizedValue };
+        nextProduct.total = sumOrderDayQuantities(nextProduct);
+        return nextProduct;
+      }),
+    );
+  };
+
+  // Mecânica de ajuda: replica a quantidade do 1º dia (coluna ativa) em todos os dias
+  // cobertos — "preciso de X por dia durante a cobertura". 1 clique evita digitar dia a dia.
+  const fillCoveredDays = (productId: string) => {
+    setOrderProducts((current) =>
+      current.map((entry) => {
+        if (entry.id !== productId || !entry.available) {
+          return entry;
+        }
+        const coverageDays = getCoverageDays(entry.productionDays);
+        const baseValue = sanitizeQuantity(entry[dayColumns[0]], entry.unitKind);
+        const fill = buildCoveredDaysFill(dayColumns, coverageDays, baseValue);
+        const nextProduct = { ...entry, ...fill };
+        nextProduct.total = sumOrderDayQuantities(nextProduct);
         return nextProduct;
       }),
     );
@@ -828,6 +906,12 @@ export default function PedidosLojaPage() {
                 Editar pedido
               </Button>
             </div>
+          ) : factoryOpensOrders ? (
+            // AJ-0009 Fase 4a: com a fábrica abrindo os pedidos, a loja não cria do
+            // zero — preenche os pedidos abertos (seção "Pedidos para preencher").
+            <p className="shrink-0 text-xs text-muted-foreground">
+              Os pedidos são abertos pela fábrica. Preencha-os na seção abaixo.
+            </p>
           ) : (
             <DialogTrigger asChild>
               <Button type="button" className="shrink-0">
@@ -836,7 +920,9 @@ export default function PedidosLojaPage() {
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent size="3xl">
+          {/* size="full" (≈1400px): a grade de 7 dias + colunas não cabia no 3xl e
+              estourava em scroll lateral ao mostrar indisponíveis. */}
+          <DialogContent size="full">
             <DialogHeader>
               <DialogTitle>{editingOrderId ? "Editar Pedido" : "Novo Pedido"}</DialogTitle>
             </DialogHeader>
@@ -968,7 +1054,7 @@ export default function PedidosLojaPage() {
                     label="Como funciona o pedido"
                     align="end"
                     side="bottom"
-                    contentClassName="w-[420px] max-w-[calc(100vw-2rem)]"
+                    contentClassName="w-[600px] max-w-[calc(100vw-2rem)]"
                     content={
                       <div className="space-y-3 text-xs">
                         <div>
@@ -1042,6 +1128,13 @@ export default function PedidosLojaPage() {
                               cadência de produção do produto (produz 1x/semana → cobre ~7 dias;
                               3x/semana → ~2; todo dia → 1). Cada coluna mostra a data real.
                             </p>
+                            <p>
+                              <strong className="text-foreground">Planeje por dia:</strong> preencha a
+                              quantidade que precisa em <em>cada dia verde</em> para se programar até a
+                              próxima fabricação — o <strong>Total</strong> do item é a soma desses dias.
+                              Use <em>&quot;Cobrir os N dias&quot;</em> para repetir a quantidade do 1º dia
+                              em todos os dias cobertos.
+                            </p>
                           </div>
                         }
                       />
@@ -1089,12 +1182,11 @@ export default function PedidosLojaPage() {
                 </div>
               </div>
 
-              <PaginatedSection items={filteredOrderProducts} label="itens do catálogo" initialPageSize={8}>
-                {(paginatedProducts) => (
-                  // Tabela enxuta (auditoria visível): 13 col → 10 col.
-                  // Código vira linha sub do Produto; Categoria já é filtro.
-                  <div className="max-h-[640px] overflow-auto rounded-lg border border-border/80">
-                    <table className="w-full min-w-[840px] border-collapse border-spacing-0">
+              {/* Sem paginação: todos os itens do catálogo numa tabela com scroll vertical
+                  interno e cabeçalho fixo (sticky) — mais fácil de varrer o catálogo de uma
+                  vez do que paginar de 8 em 8. */}
+              <div className="max-h-[60vh] overflow-auto rounded-lg border border-border/80">
+                <table className="w-full min-w-[840px] border-collapse border-spacing-0">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-secondary/85">
                           <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
@@ -1121,7 +1213,7 @@ export default function PedidosLojaPage() {
                             </td>
                           </tr>
                         ) : (
-                          paginatedProducts.map((product) => (
+                          filteredOrderProducts.map((product) => (
                             <tr
                               key={product.id}
                               className={cn(
@@ -1171,6 +1263,19 @@ export default function PedidosLojaPage() {
                                       <span className="opacity-50">·</span>
                                       <span className="truncate">{product.category}</span>
                                     </div>
+                                    {/* AJ — cobertura: atalho pra replicar a qtd do 1º dia em
+                                        todos os dias cobertos (1x/semana → cobre vários dias). */}
+                                    {product.available && getCoverageDays(product.productionDays) > 1 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => fillCoveredDays(product.id)}
+                                        className="mt-1 inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[10.5px] font-medium text-success-foreground transition-colors hover:bg-success/20"
+                                        title={`Repete a quantidade do 1º dia nos ${getCoverageDays(product.productionDays)} dias cobertos por esta produção.`}
+                                      >
+                                        <CalendarRange className="size-3" aria-hidden />
+                                        Cobrir os {getCoverageDays(product.productionDays)} dias
+                                      </button>
+                                    ) : null}
                                   </div>
                                 </div>
                               </td>
@@ -1181,8 +1286,10 @@ export default function PedidosLojaPage() {
                                 const coverageDays = getCoverageDays(product.productionDays);
                                 return dayColumns.map((dayField, index) => {
                                 const isActiveColumn = index === 0;
-                                const canEdit = isActiveColumn;
                                 const isCovered = product.available && index < coverageDays;
+                                // AJ — cobertura: todo dia coberto (verde) é editável,
+                                // não só a coluna ativa, para a loja se programar.
+                                const canEdit = isCovered;
 
                                 return (
                                   <td
@@ -1193,14 +1300,11 @@ export default function PedidosLojaPage() {
                                       isActiveColumn && isCovered && "bg-success/40",
                                     )}
                                   >
-                                    <Input
-                                      type="number"
-                                      className="h-8 w-16 text-center"
-                                      min="0"
-                                      step={product.unitKind === "discrete" ? "1" : "0.1"}
+                                    <OrderQuantityCell
                                       value={product[dayField]}
-                                      onChange={(e) => handleQuantityChange(product.id, dayField, Number(e.target.value))}
+                                      unitKind={product.unitKind}
                                       disabled={!canEdit || !product.available}
+                                      onChange={(next) => handleQuantityChange(product.id, dayField, next)}
                                     />
                                   </td>
                                 );
@@ -1208,8 +1312,8 @@ export default function PedidosLojaPage() {
                               })()}
                               <td className="px-2 py-2 text-sm font-semibold">
                                 {product.available ? (
-                                  <div>
-                                    {product[highlightedDay]} {product.unit}
+                                  <div className="tabular-nums">
+                                    {sumOrderDayQuantities(product)} {product.unit}
                                   </div>
                                 ) : (
                                   <div className="text-xs font-semibold text-danger-foreground">
@@ -1223,8 +1327,6 @@ export default function PedidosLojaPage() {
                       </tbody>
                     </table>
                   </div>
-                )}
-              </PaginatedSection>
 
               <div className="grid gap-2">
                 <Label htmlFor="order-note" className="text-xs text-muted-foreground">Observações do Pedido</Label>
@@ -1493,6 +1595,45 @@ export default function PedidosLojaPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* AJ-0009 Fase 4a: pedidos abertos pela fábrica, aguardando a loja preencher. */}
+          {factoryOpensOrders && openOrders.length > 0 ? (
+            <section className="space-y-2 rounded-xl border border-info/30 bg-info/[var(--opacity-subtle)] p-4">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="size-4 text-info" aria-hidden />
+                <h2 className="text-sm font-semibold text-foreground">
+                  Pedidos para preencher ({openOrders.length})
+                </h2>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A fábrica abriu estes pedidos. Clique em <strong>Preencher</strong> para informar as
+                quantidades antes do prazo.
+              </p>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {openOrders.map((order) => (
+                  <li
+                    key={order.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">{order.storeName}</p>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => handleOpenEditOrder({ id: order.id } as StoreOrderSummary)}
+                    >
+                      Preencher
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <SearchFilter
             searchPlaceholder="Buscar por código ou loja..."

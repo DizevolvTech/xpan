@@ -49,7 +49,7 @@ export function getNextDeliveryAction(status: DeliveryExecutionStatus) {
 }
 
 export function canRegisterDeliveryFailure(status: DeliveryExecutionStatus) {
-  return status === "em_rota" || status === "no_destino";
+  return status === "em_rota" || status === "no_destino" || status === "tentativa_falha";
 }
 
 export function isOrderReadyForDeliveryExecution(orderStatus: OrderStatus) {
@@ -60,10 +60,14 @@ export function resolveEffectiveDeliveryExecutionStatus(
   orderStatus: OrderStatus,
   executionStatus: DeliveryExecutionStatus | null | undefined,
 ) {
+  // Uma execução de entrega já avançada é a fonte da verdade — o orderStatus
+  // derivado da produção NÃO pode arrastá-la de volta para aguardando_expedicao.
+  if (executionStatus && executionStatus !== "aguardando_expedicao") {
+    return executionStatus;
+  }
   if (!isOrderReadyForDeliveryExecution(orderStatus)) {
     return "aguardando_expedicao";
   }
-
   return executionStatus ?? "aguardando_expedicao";
 }
 

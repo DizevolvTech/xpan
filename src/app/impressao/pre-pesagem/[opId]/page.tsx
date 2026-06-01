@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPreWeighingDocument } from "@/lib/printing-documents";
 import { formatKgValue, formatLocaleNumber } from "@/lib/utils";
@@ -27,29 +28,20 @@ function MetaCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RecipeTable({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: PrintIngredientRow[];
-}) {
+function RecipeTable({ rows }: { rows: (PrintIngredientRow & { isAdditional?: boolean })[] }) {
   if (rows.length === 0) {
     return null;
   }
 
   return (
     <section className="overflow-hidden border border-stone-300">
-      <header className="bg-stone-300 px-3 py-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-stone-700">{title}</p>
-      </header>
       <table className="w-full border-collapse">
-        <thead className="bg-white">
+        <thead className="bg-stone-300">
           <tr>
-            <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+            <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
               Pré pesagem
             </th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-500">
+            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
               Ingredientes
             </th>
           </tr>
@@ -61,7 +53,14 @@ function RecipeTable({
                 {formatLocaleNumber(row.estimatedQuantity, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} {row.unit}
               </td>
               <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
-                <div>{row.label}</div>
+                <div className="flex items-baseline gap-2">
+                  <span>{row.label}</span>
+                  {row.isAdditional ? (
+                    <span className="shrink-0 border border-stone-400 px-1 text-[9px] font-semibold uppercase tracking-wide text-stone-500">
+                      Adic.
+                    </span>
+                  ) : null}
+                </div>
                 {row.notes ? <div className="mt-1 text-xs text-stone-500">{row.notes}</div> : null}
               </td>
             </tr>
@@ -80,10 +79,14 @@ export default function PrePesagemPrintPage() {
   const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
 
-  const op = useMemo(
-    () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
-    [opId, planningData.productionOrders],
-  );
+  const op = useMemo(() => {
+    const decoded = decodeURIComponent(opId);
+    return (
+      planningData.productionOrders.find((item) => getProductionOrderNavKey(item) === decoded) ??
+      planningData.productionOrders.find((item) => item.id === opId) ??
+      null
+    );
+  }, [opId, planningData.productionOrders]);
   const document = useMemo(
     () =>
       op
@@ -150,7 +153,7 @@ export default function PrePesagemPrintPage() {
                 <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
                   Usado por: {section.usedBy.join(", ")}
                 </div>
-                <RecipeTable title="Ingredientes" rows={section.items} />
+                <RecipeTable rows={section.items} />
               </div>
             </article>
           ))}
@@ -179,8 +182,12 @@ export default function PrePesagemPrintPage() {
             </header>
 
             <div className="space-y-2 px-3 py-3">
-              <RecipeTable title="Ingredientes Base" rows={section.baseIngredients} />
-              <RecipeTable title="Ingredientes Adicionais" rows={section.additionalIngredients} />
+              <RecipeTable
+                rows={[
+                  ...section.baseIngredients,
+                  ...section.additionalIngredients.map((row) => ({ ...row, isAdditional: true })),
+                ]}
+              />
               {section.baseIngredients.length === 0 && section.additionalIngredients.length === 0 ? (
                 <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
                   Este produto consome somente produto ingrediente destacado abaixo.

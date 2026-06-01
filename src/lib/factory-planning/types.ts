@@ -71,6 +71,9 @@ export interface PlannedOrderItem {
   requestedQuantity: number;
   requestedUnit: OrderUnit;
   internalKg: number;
+  // AJ-0006.1: lote mínimo de produção do produto (kg) — carregado para a OP
+  // consolidar a demanda da fábrica e sinalizar quando ficar abaixo do mínimo.
+  minimumProductionKg: number;
   expeditionUnit: OrderUnit;
   expeditionQuantityRaw: number;
   expeditionQuantity: number;
@@ -78,6 +81,10 @@ export interface PlannedOrderItem {
   scheduleDayPriority: number | null;
   availableForRelease: boolean;
   releasedToProduction: boolean;
+  // Produção iniciada pelo gestor ("Iniciar produção do dia"). Estado separado de
+  // releasedToProduction: liberar coloca a OP na coluna do gestor; iniciar é o que
+  // a manda para o quadro do Chão (1ª coluna), mantendo o item em `nao_iniciado`.
+  productionStarted: boolean;
   productionItemKey: string | null;
   productionItemStatus: ProductionItemStatus | null;
   preparationStages: ProductPreparationStageKey[];
@@ -112,6 +119,10 @@ export interface ProductionOrderItem {
   productName: string;
   productionItemKey: string;
   totalKg: number;
+  // AJ-0006.1: lote mínimo de produção da fábrica e flag de demanda consolidada
+  // (soma de todas as lojas neste run) abaixo do mínimo — alerta para o gestor.
+  minimumProductionKg: number;
+  belowMinimum: boolean;
   productionSequence: number | null;
   progress: number;
   status: ProductionItemStatus;
@@ -159,6 +170,9 @@ export interface ProductionOrderRow {
   ordersCount: number;
   totalKg: number;
   releasedToProduction: boolean;
+  // OP iniciada (≥1 item com produção iniciada). É o filtro de visibilidade do
+  // quadro do Chão: liberada mas não iniciada NÃO aparece para o operário.
+  productionStarted: boolean;
   progress: number;
   status: OrderStatus;
   orderCodes: string[];

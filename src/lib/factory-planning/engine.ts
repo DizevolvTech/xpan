@@ -284,14 +284,22 @@ export function resolveScheduledProductAvailability(
   }
 
   if (productionWindow.delayed) {
+    // AJ-0024: a busca regressiva não achou dia de produção que entregue na data
+    // pedida; a próxima produção possível (`productionWindow.date`) cai DEPOIS da
+    // entrega. NÃO devolvemos essa data como `productionDate` — senão o catálogo e
+    // o planejamento "agendam" a variante +7 dias como se fosse válida. O item fica
+    // bloqueado (available:false) com o motivo explicando a data inviável.
+    const soonestProduction = productionWindow.date
+      ? formatDateKeyBr(productionWindow.date)
+      : "depois do horizonte de planejamento";
     return {
       baseDate,
       deliveryDate,
       deliveryWeekDay,
-      productionDate: productionWindow.date,
+      productionDate: null,
       available: false,
       delayed: true,
-      blockedReason: `Produção em ${formatDateKeyBr(productionWindow.date)} + ${options.productExpeditionLeadDays} dia(s) cai após a entrega prevista (${formatDateKeyBr(deliveryDate)}).`,
+      blockedReason: `Esta variante só produz em dias que não entregam ${formatDateKeyBr(deliveryDate)} com ${options.productExpeditionLeadDays} dia(s) de lead — a próxima produção possível seria ${soonestProduction}, após a entrega. Escolha a variante que produz no dia compatível.`,
       matchingDays,
       scheduleItemId: options.scheduleItem.id,
     };
@@ -407,6 +415,16 @@ function isMpiExpansionEnabled() {
   return process.env.EXPAND_MPI_INTO_OPS !== "false";
 }
 
+/**
+ * Feature flag para expansão de ingrediente `misturado` puro em OP separada (AJ-0008.1,
+ * Fase 3). **Default: ON** — decisão do Giuseppe (2026-05-30) estendendo o ADR original.
+ * Escape hatch: `EXPAND_MIXED_INGREDIENT_INTO_OPS=false`. Só tem efeito com a expansão de
+ * receita ligada (`isMpiExpansionEnabled`).
+ */
+function isMixedIngredientExpansionEnabled() {
+  return process.env.EXPAND_MIXED_INGREDIENT_INTO_OPS !== "false";
+}
+
 function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
   return {
     settings: input.settings,
@@ -429,11 +447,15 @@ function getPotentialItemStatus(productionDate: string | null, canPlan: boolean,
   return compareDateKeys(productionDate, referenceDate) > 0 ? "agendado" : "em_espera";
 }
 
-function getProductionItemKey(item: Pick<PlannedOrderItem, "productionDate" | "lineId" | "scheduleId" | "productId">) {
+function getProductionItemKey(item: Pick<PlannedOrderItem, "productionDate" | "lineId" | "productId">) {
   if (!item.productionDate) {
     return null;
   }
-  return [item.productionDate, item.lineId, item.scheduleId ?? "sem-linha", item.productId].join("|");
+  // Chave CANÔNICA e ESTÁVEL (3 partes — SEM scheduleId). O scheduleId mudava a
+  // cada revisão de cronograma e órfã o status persistido, fazendo a OP
+  // reaparecer como `nao_iniciado`. Status gravados sob a chave antiga (4 partes)
+  // são recuperados na leitura via `canonicalProductionItemKey` (workflow.ts).
+  return [item.productionDate, item.lineId, item.productId].join("|");
 }
 
 function getPlanningKey(item: Pick<PlannedOrderItem, "productionDate" | "sectorId" | "lineId" | "scheduleId">) {
@@ -582,7 +604,6 @@ function buildPlannedItems(
           ? getProductionItemKey({
               productionDate: availability.productionDate,
               lineId: line.id,
-              scheduleId: schedule?.id ?? null,
               productId: product.id,
             })
           : null;
@@ -613,6 +634,7 @@ function buildPlannedItems(
           requestedQuantity: orderItem.quantity,
           requestedUnit: orderItem.unit,
           internalKg,
+          minimumProductionKg: product.minimumProductionKg,
           expeditionUnit: product.expeditionUnit,
           expeditionQuantityRaw,
           expeditionQuantity,
@@ -620,6 +642,7 @@ function buildPlannedItems(
           scheduleDayPriority,
           availableForRelease: canPlan,
           releasedToProduction: false,
+          productionStarted: false,
           productionItemKey,
           productionItemStatus: canPlan ? "nao_iniciado" : null,
           preparationStages: normalizeProductPreparationStages(product.preparationStages),
@@ -660,6 +683,7 @@ export function buildProductionOrdersFromPlannedItems(
       sourceItems: ProductionOrderSourceItem[];
       totalKg: number;
       releasedToProduction: boolean;
+      productionStarted: boolean;
     }
   >();
 
@@ -688,6 +712,7 @@ export function buildProductionOrdersFromPlannedItems(
           sourceItems: [],
           totalKg: 0,
           releasedToProduction: false,
+          productionStarted: false,
         });
       }
 
@@ -696,6 +721,7 @@ export function buildProductionOrdersFromPlannedItems(
       group.orderIds.add(item.orderId);
       group.totalKg = round2(group.totalKg + item.internalKg);
       group.releasedToProduction = group.releasedToProduction || item.releasedToProduction;
+      group.productionStarted = group.productionStarted || item.productionStarted;
 
       if (!group.items.has(item.productId)) {
         group.items.set(item.productId, {
@@ -704,6 +730,10 @@ export function buildProductionOrdersFromPlannedItems(
           productName: item.productName,
           productionItemKey: item.productionItemKey ?? `${planningKey}|${item.productId}`,
           totalKg: 0,
+          // AJ-0006.1: mínimo da fábrica; belowMinimum é recomputado após somar a
+          // demanda consolidada de todas as lojas deste run de produção.
+          minimumProductionKg: item.minimumProductionKg,
+          belowMinimum: false,
           productionSequence: item.scheduleDayPriority,
           progress: item.workflowProgress,
           status: item.productionItemStatus ?? "nao_iniciado",
@@ -788,18 +818,25 @@ export function buildProductionOrdersFromPlannedItems(
       ordersCount: group.orderIds.size,
       totalKg: round2(group.totalKg),
       releasedToProduction: group.releasedToProduction,
+      productionStarted: group.productionStarted,
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),
-      items: Array.from(group.items.values()).sort((a, b) => {
-        const bySequence =
-          (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
-          (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
-        if (bySequence !== 0) {
-          return bySequence;
-        }
-        return a.productCode.localeCompare(b.productCode);
-      }),
+      items: Array.from(group.items.values())
+        .map((opItem) => ({
+          ...opItem,
+          // AJ-0006.1: demanda consolidada (soma de todas as lojas) abaixo do lote mínimo.
+          belowMinimum: opItem.minimumProductionKg > 0 && opItem.totalKg < opItem.minimumProductionKg,
+        }))
+        .sort((a, b) => {
+          const bySequence =
+            (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
+            (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
+          if (bySequence !== 0) {
+            return bySequence;
+          }
+          return a.productCode.localeCompare(b.productCode);
+        }),
       sourceItems: group.sourceItems.sort((a, b) => {
         const bySequence =
           (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
@@ -992,6 +1029,8 @@ export function buildFactoryPlanningData(
         // AJ-A4: fase 2 — passa os maps para que o MPI rode na linha/setor nativos.
         linesById: source.linesById,
         sectorsById: source.sectorsById,
+        // AJ-0008.1 (Fase 3): ingrediente misturado puro também vira OP (default ON).
+        expandMixedIngredients: isMixedIngredientExpansionEnabled(),
       })
     : orderItems;
 

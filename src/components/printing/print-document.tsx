@@ -101,7 +101,7 @@ export function PrintDocument({
       <style jsx global>{`
         @page {
           size: auto;
-          margin: 7mm 7mm;
+          margin: 6mm 6mm;
         }
 
         @media print {
@@ -136,6 +136,40 @@ export function PrintDocument({
           .print-doc .space-y-3 > :not([hidden]) ~ :not([hidden]),
           .print-doc .space-y-2 > :not([hidden]) ~ :not([hidden]) {
             margin-top: 3px !important;
+          }
+
+          /* AJ — economia de papel: o padding generoso de cards, cabeçalhos de
+             seção e blocos por produto é o maior consumidor de altura por folha.
+             A tela mantém o respiro; só a impressão fica densa. Escopo .print-doc. */
+          .print-doc .py-5,
+          .print-doc .py-4 {
+            padding-top: 4px !important;
+            padding-bottom: 4px !important;
+          }
+          .print-doc .py-3 {
+            padding-top: 2.5px !important;
+            padding-bottom: 2.5px !important;
+          }
+          .print-doc .py-2 {
+            padding-top: 1.5px !important;
+            padding-bottom: 1.5px !important;
+          }
+          .print-doc .px-4 {
+            padding-left: 6px !important;
+            padding-right: 6px !important;
+          }
+          .print-doc .px-3 {
+            padding-left: 5px !important;
+            padding-right: 5px !important;
+          }
+          .print-doc .mt-1 {
+            margin-top: 1px !important;
+          }
+          /* Cantos arredondados não economizam tinta nem papel — achata na folha. */
+          .print-doc .rounded-2xl,
+          .print-doc .rounded-xl,
+          .print-doc .rounded-lg {
+            border-radius: 0 !important;
           }
         }
       `}</style>

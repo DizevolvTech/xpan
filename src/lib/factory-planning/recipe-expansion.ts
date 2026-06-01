@@ -32,6 +32,13 @@ export interface ExpandRecipeOptions {
    */
   linesById?: Map<string, ProductionLine>;
   sectorsById?: Map<string, ProductionSector>;
+  /**
+   * Fase 3 (AJ-0008.1): se `true`, ingredientes `type='misturado'` referenciados na
+   * receita também viram OP (item planejado) separada, herdando a rota do produto-pai
+   * (ingredientes não têm linha/dias próprios). Default `false` (ADR original: misturado
+   * puro fica só na pré-pesagem).
+   */
+  expandMixedIngredients?: boolean;
 }
 
 /**
@@ -72,6 +79,8 @@ export function expandRecipeIntoItems(
 ): PlannedOrderItem[] {
   const maxDepth = options.maxDepth ?? MAX_EXPANSION_DEPTH;
   const warn = options.onWarn ?? ((message) => console.warn(message));
+  const expandMixedIngredients = options.expandMixedIngredients ?? false;
+  const ingredientsById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
 
   const expanded: PlannedOrderItem[] = [];
   let mpiSequence = 0;
@@ -95,6 +104,29 @@ export function expandRecipeIntoItems(
       }
 
       for (const recipeRef of parentProduct.recipe) {
+        // AJ-0008.1 (Fase 3): ingrediente misturado puro referenciado na receita
+        // vira OP separada, herdando a rota do pai (ingredientes não têm linha própria).
+        if (recipeRef.sourceType === "ingrediente") {
+          if (!expandMixedIngredients) continue;
+          const mixedIngredient = ingredientsById.get(recipeRef.sourceId);
+          if (!mixedIngredient || mixedIngredient.type !== "misturado") continue;
+
+          expanded.push(
+            buildMixedIngredientPlannedItem({
+              parent,
+              originItem,
+              mixedIngredient,
+              parentProduct,
+              recipeQuantity: recipeRef.quantity,
+              ingredients,
+              products,
+              sequence: ++mpiSequence,
+            }),
+          );
+          // Não recursamos na composição do misturado: sub-ingredientes seguem
+          // como detalhe de pré-pesagem, não geram OPs adicionais (escopo da Fase 3).
+          continue;
+        }
         if (recipeRef.sourceType !== "produto") continue;
         const mpiProduct = productsById.get(recipeRef.sourceId);
         if (!mpiProduct || !mpiProduct.canBeIngredient) continue;
@@ -214,6 +246,7 @@ function buildMpiPlannedItem(params: {
     requestedQuantity,
     requestedUnit: mpiProduct.productionUnit,
     internalKg,
+    minimumProductionKg: mpiProduct.minimumProductionKg,
     expeditionUnit: mpiProduct.expeditionUnit,
     expeditionQuantityRaw: internalKg,
     expeditionQuantity: internalKg,
@@ -221,9 +254,89 @@ function buildMpiPlannedItem(params: {
     scheduleDayPriority: resolvedScheduleDayPriority,
     availableForRelease: parent.availableForRelease,
     releasedToProduction: parent.releasedToProduction,
+    productionStarted: parent.productionStarted,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
     preparationStages: normalizeProductPreparationStages(mpiProduct.preparationStages),
+    workflowProgress: 0,
+    opCode: null,
+    status: parent.status,
+  } satisfies PlannedOrderItem;
+}
+
+/**
+ * AJ-0008.1 (Fase 3): item planejado para um ingrediente `type='misturado'` puro.
+ * Ingredientes não têm linha/setor/dias/cronograma próprios, então o item herda
+ * INTEGRALMENTE a rota do produto-pai (estilo Fase 1 do MPI). O `productId` recebe o
+ * id do ingrediente para virar uma OP distinta no agrupamento por (planningKey, productId).
+ */
+function buildMixedIngredientPlannedItem(params: {
+  parent: PlannedOrderItem;
+  originItem: PlannedOrderItem;
+  mixedIngredient: ProductionIngredient;
+  parentProduct: ProductionProduct;
+  recipeQuantity: number;
+  ingredients: ProductionIngredient[];
+  products: ProductionProduct[];
+  sequence: number;
+}): PlannedOrderItem {
+  const { parent, originItem, mixedIngredient, parentProduct, recipeQuantity, ingredients, products, sequence } =
+    params;
+
+  // Quantidade do misturado necessária para produzir `parent.internalKg` do pai
+  // (mesma escala da receita usada no MPI). Tratado em kg internamente.
+  const requestedQuantity = scaleRecipeQuantity(
+    parent.internalKg,
+    parentProduct,
+    ingredients,
+    products,
+    recipeQuantity,
+  );
+  const internalKg = requestedQuantity;
+
+  const productionItemKey = parent.productionDate
+    ? [parent.productionDate, parent.lineId, parent.scheduleId ?? "sem-linha", mixedIngredient.id].join("|")
+    : null;
+
+  return {
+    id: `mix:${mixedIngredient.id}:${originItem.id}:${sequence}`,
+    orderId: parent.orderId,
+    orderCode: parent.orderCode,
+    storeId: parent.storeId,
+    storeName: parent.storeName,
+    orderedAt: parent.orderedAt,
+    baseDate: parent.baseDate,
+    deliveryDate: parent.deliveryDate,
+    saleDate: parent.saleDate,
+    productionDate: parent.productionDate,
+    delayed: parent.delayed,
+    productId: mixedIngredient.id,
+    productCode: mixedIngredient.code,
+    productName: mixedIngredient.name,
+    lineId: parent.lineId,
+    lineName: parent.lineName,
+    sectorId: parent.sectorId,
+    sectorName: parent.sectorName,
+    scheduleId: parent.scheduleId,
+    scheduleCode: parent.scheduleCode,
+    scheduleName: parent.scheduleName,
+    requestedQuantity,
+    requestedUnit: mixedIngredient.unit,
+    internalKg,
+    // Ingredientes não têm lote mínimo de produção próprio.
+    minimumProductionKg: 0,
+    expeditionUnit: mixedIngredient.unit,
+    expeditionQuantityRaw: internalKg,
+    expeditionQuantity: internalKg,
+    canPlan: parent.canPlan,
+    scheduleDayPriority: parent.scheduleDayPriority,
+    availableForRelease: parent.availableForRelease,
+    releasedToProduction: parent.releasedToProduction,
+    productionStarted: parent.productionStarted,
+    productionItemKey,
+    productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
+    // Ingredientes não definem etapas de preparo → usa o default normalizado.
+    preparationStages: normalizeProductPreparationStages(undefined),
     workflowProgress: 0,
     opCode: null,
     status: parent.status,

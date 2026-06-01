@@ -39,7 +39,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from("product_changelog")
-    .select("id, version_number, change_description, changed_by_name, created_at")
+    .select("id, version_number, change_description, changed_by_name, created_at, snapshot_data")
     .eq("product_id", productResult.data.id)
     .order("version_number", { ascending: false });
 

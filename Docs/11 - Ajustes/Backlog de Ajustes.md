@@ -131,11 +131,202 @@ loja). Hoje OTIF considera "fim do dia D" como prazo.
 
 ---
 
+## 🔧 Ajustes do board 26/05 (Sprint 23) — em execução
+
+Lote derivado do [[Brief Claude Code — Ajustes 26-05 + gaps 13-05]] (estudo de
+origem: [[Estudo Trello — Analise 26-05 + Reuniao 13-05]]). Execução um item por
+vez, na ordem ORDEM 1 → 8, com `tsc`/`npm test`/`eslint` após cada item.
+
+### AJ-0025 — Editar receita não pode zerar o cronograma silenciosamente
+**Concluído em:** 2026-05-29 (commit `fix(cronograma): AJ-0025 …`)
+**Origem:** Trello 26/05 #5 (`ltvmA8RE`) + [[Dívida Técnica#D14]] · **Status:** ✅ Concluído · **Categoria:** Bug crítico (Motor/UX)
+**Área:** `src/lib/supabase-data/schedule-revision-plan.ts` (novo) · `master-data-admin.ts` · `release-block-message.ts` (novo) · `release-order-with-confirm.ts` · `product-form-dialog.tsx` · `api/master-data/products/[productId]/route.ts`
+
+**Causa-raiz confirmada:** `rebuildPendingScheduleRevisionForSubcategoryDbId`
+deletava a revisão `pendente` e recriava outra com `legacy_id` novo. Como o id
+da revisão entra no `planning_key` (`productionDate|sectorId|lineId|scheduleId`,
+ver [[Backlog de Ajustes#AJ-A5]]), recriar mudava a chave → cronograma ativo
+desativado (engine só planeja `status='ativo'`) + OPs/statuses órfãos →
+`OrderReleaseValidationError` → HTTP 400 silencioso.
+
+**O que mudou:**
+1. **Motor:** reaproveita a revisão pendente existente (id estável → `planning_key`
+   estável) em vez de delete+recriar; só recria quando NÃO há pendente (aí desativa
+   o ativo e devolve metadados de impacto). Lógica pura em `schedule-revision-plan.ts`.
+2. **UX (aviso):** banner no diálogo de commit do produto operacional avisando que
+   salvar reconstrói a revisão pendente e exige reauditoria/reliberação.
+3. **UX (erro 400):** `buildReleaseBlockMessage` traduz o `reason` para mensagem
+   acionável ("reaudite o cronograma e tente liberar de novo").
+4. **Impacto:** API devolve `scheduleRevisionImpact`; o form mostra toast orientando
+   reauditoria após o save.
+
+**a11y:** o diálogo de liberação já usava o `confirm-dialog` com `AlertDialogTitle` +
+`aria-describedby` (UX-0002) — o warning de console citado no card já estava resolvido.
+
+**Testes:** `schedule-revision-plan.test.ts` (3 casos: reaproveita pendente / recria
+sem pendente + impacto / consolida múltiplas pendentes) + `release-block-message.test.ts`
+(4 casos). `tsc` limpo, 148/148 testes, `eslint` sem erro novo (só o warning pré-existente [[#AJ-0023 — Dead code descoberto durante a Onda 1|AJ-0023]]).
+
+### AJ-0024 — Cronograma escolhe variante/data errada + falha no 1º salvamento
+**Concluído em:** 2026-05-30 (commit `fix(motor): AJ-0024 …`)
+**Origem:** Trello 26/05 #4 (`Xc8jwCfH`) · **Status:** ✅ Concluído · **Categoria:** Bug crítico (Motor)
+**Área:** `src/lib/factory-planning/engine.ts` · `src/lib/server-data-cache.ts` · `master-data.ts` · `store-orders.ts`
+
+**Causa-raiz confirmada:** em `resolveScheduledProductAvailability`, quando a busca
+regressiva (`resolveProductionDateInWindow`) não achava dia de produção que entregue
+na data pedida, o branch `delayed` avançava até 14 dias e devolvia essa data futura
+como `productionDate`. O item ficava `available:false` (correto), mas o catálogo/UI
+exibiam a data +7 como se a variante fosse produzir lá ("variante/data errada").
+
+**O que mudou:**
+1. **Motor:** o branch `delayed` agora devolve `productionDate: null` + `blockedReason`
+   acionável ("escolha a variante que produz no dia compatível"). Nunca mais agenda +7.
+2. **Entrada do pedido:** a variante incompatível já era `available:false` e o
+   `handleQuantityChange` já bloqueia edição de linha indisponível + `validateStoreOrderItems`
+   já lança no save — confirmado, sem regressão.
+3. **1º salvamento:** `getCachedServerData` ganhou `forceRefresh`; o caminho de
+   escrita do pedido (`validateStoreOrderItems` → `getMasterDataSnapshot`) força dados
+   frescos, eliminando o "salvou com 0 itens" causado pelo cache de 15s defasado.
+
+**Testes (engine.test.ts):** "produz só sexta + entrega sexta + lead 1 → bloqueado, `productionDate:null`, não +7" + regressão "variante compatível (quinta) segue na quinta, não delayed". `server-data-cache.test.ts`: `forceRefresh` ignora cache fresco e reaquece. `tsc` limpo, 151/151, `eslint` 0 problemas.
+
+### AJ-0026 — Criar categoria inline no modal "Nova Linha de produção"
+**Concluído em:** 2026-05-30 (commit `feat(cadastro): AJ-0026 …`)
+**Origem:** Trello 26/05 #1 (`cUKnjx9p`) · **Status:** ✅ Concluído · **Categoria:** UX
+**Área:** `src/components/production/product-form-dialog.tsx` · `master-data-admin.ts` (`createCategory`) · `api/master-data/categories/route.ts`
+
+Botão "+ Nova categoria" no dropdown Categoria do modal "Nova Linha" (aberto de
+dentro do cadastro de produto). Reusa `POST /api/master-data/categories`. Ao criar,
+a categoria é selecionada automaticamente no rascunho da linha e o estado do
+formulário (produto + linha) é preservado — nenhum "cancelar e recomeçar".
+`createCategory` passou a devolver `{id, code}` (espelha `createSubcategory`) para o
+auto-select. `tsc` limpo, 151/151, `eslint` sem erro novo.
+
+### AJ-0027 — Pedido: visualização do input numérico (só visual)
+**Concluído em:** 2026-05-30 (commit `fix(pedidos): AJ-0027 …`)
+**Origem:** Trello 26/05 #2 (`KiGOg0hB`) · **Status:** ✅ Concluído (parte visual) · **Categoria:** UX
+**Área:** `src/app/loja/pedidos/page.tsx`
+> Multi-dia (preencher outras colunas) está amarrado ao **AJ-0009** (⛔ decisão de cliente) — fora do escopo desta onda.
+
+Célula de quantidade reescrita (`OrderQuantityCell`): alinhada à direita, `tabular-nums`,
+largura maior (`min-w-[5.5rem]`), milhar pt-BR formatado ao desfocar (valor cru ao focar
+para edição natural) e teto `MAX_ORDER_QUANTITY` (99.999) — clampado também em
+`handleQuantityChange` — para não induzir duplicação de dígito. 1ª coluna segue editável.
+`tsc` limpo, 151/151, `eslint` sem erro novo. **Validação visual recomendada antes do deploy.**
+
+### AJ-0028 — Tooltip "Sequência Operacional" bugado (layout)
+**Concluído em:** 2026-05-30 (commit `fix(pedidos): AJ-0028 …`)
+**Origem:** Trello 26/05 #3 (`hQn2Z2YC`) · **Status:** ✅ Concluído · **Categoria:** Bug visual
+**Área:** `src/components/shared/operational-sequence-card.tsx` · `src/app/loja/pedidos/page.tsx`
+
+**Causa-raiz:** o `OperationalSequenceCard` usava `lg:grid-cols-4` (breakpoint de
+**viewport**) dentro de um popover de 420px. No desktop (viewport ≥1024px) ele forçava
+4 colunas em 420px → datas sobrepunham os rótulos das etapas.
+
+**Fix (só CSS/layout):** o grid passou a usar **container queries** (Tailwind v4,
+`@container` + `@md`/`@lg`) — responde à largura do próprio card, não do viewport.
+Dentro do popover estreito quebra em 2/1 colunas; num container largo segue 4/5.
+Adicionado `tabular-nums` + `break-words` no valor da etapa e `min-w-0` nas células.
+Popover do "Como funciona" alargado para `w-[600px]` (cap `max-w-[calc(100vw-2rem)]`)
+para caber as 4 colunas iguais no desktop. Beneficia os 3 usos do card sem tocar regra.
+`tsc` limpo, 151/151, `eslint` 0 erros. **Validação visual (desktop + mobile) recomendada.**
+
+### Gaps 13/05 (após os de 26/05)
+
+#### AJ-0003.1 — Justificativa (motivo + campos alterados) da edição visível na auditoria
+**Concluído em:** 2026-05-30 (commit `feat(auditoria): AJ-0003.1 …`)
+**Origem:** Trello (`QW11M8T0`, ps2) + [[Dívida Técnica#D20]] · **Status:** ✅ Concluído · **Categoria:** Auditoria
+**Área:** `src/lib/supabase-data/product-changelog-diff.ts` (novo) · `master-data-admin.ts` · `changelog/route.ts` · `gestor-fabrica/sublinhas-producao/page.tsx`
+
+Campo "motivo da alteração" já era obrigatório no salvar produto. Agora o
+`product_changelog.snapshot_data` registra também **quais campos mudaram (de/para)**
+via `diffProductFields` (lógica pura, 5 testes). O endpoint de changelog passou a
+devolver `snapshot_data`; a **auditoria de cronograma** (grade auditável) busca a
+última edição de cada produto e mostra um bloco destacado "Última edição" com o
+motivo, autor e a lista de campos alterados (de → para). `tsc` limpo, 156/156, `eslint` 0.
+
+#### AJ-0004.1 — Decimal preciso das frações finais propagado a jusante
+**Concluído em:** 2026-05-30 (commit `fix(receita): AJ-0004.1 …`)
+**Origem:** Trello (`ZcZQpu9D`) · **Status:** ✅ Concluído · **Categoria:** Cálculo
+**Área:** `src/lib/production-data-utils.ts` · `src/components/production/product-form-dialog.tsx`
+
+**Auditoria:** `recipe-expansion.ts` (`scaleRecipeQuantity`, `round3`) e a pré-pesagem
+(`printing-documents.ts`, `round3`) já propagam quantidades com 3 casas — sem
+truncamento para inteiro/2 casas a jusante. O gap era pontual: o **rendimento preciso
+das frações finais** (ex.: `8,542857` = 2,99 kg ÷ 0,35) era recomputado **só na UI**
+(`recipeFinalQuantityPrecise`), enquanto o data layer só expunha o valor arredondado
+para unidade inteira (`finalFractionsQuantity`, `Math.ceil`).
+
+**Fix:** `getProductRecipeTotalsFromData` ganhou `finalFractionsQuantityPrecise` (fonte
+única, sem arredondar); a UI passou a consumi-lo. `finalFractionsQuantity` (ceil) segue
+para ordenar unidade inteira. Teste de propagação em `production-data-utils.test.ts`.
+`tsc` limpo, 157/157, `eslint` sem erro novo.
+
+#### AJ-0006.1 — Lote mínimo consolidado na fábrica + validação server-side
+**Concluído em:** 2026-05-30 (commit `feat(fabrica): AJ-0006.1 …`)
+**Origem:** Trello (`c8HOkNBG`) + [[Dívida Técnica#D09]] · **Status:** ✅ Concluído · **Categoria:** Regra/API
+**Área:** `src/lib/factory-planning/engine.ts` · `types.ts` · `recipe-expansion.ts` · `gestor-fabrica/ordens-producao/page.tsx`
+
+A noção de lote mínimo deixou de ser por loja (AJ-0006 já removeu a exposição na
+loja — confirmado, sem resquícios) e passou a ser **consolidada na fábrica**: o motor
+carrega `minimumProductionKg` no `PlannedOrderItem` e, ao montar a OP, compara a
+**demanda somada de todas as lojas** (`totalKg` consolidado por planning_key) contra
+o mínimo, marcando `belowMinimum` no `ProductionOrderItem`. A flag é **derivada
+server-side no snapshot de planejamento** — não depende de `window.confirm` do front.
+O gestor vê um alerta "Abaixo do lote mínimo" na "Demanda por produto (batelada)" em
+`gestor-fabrica/ordens-producao`. Teste no `engine.test.ts` (consolidado < mínimo →
+flag; ≥ mínimo → limpo). `tsc` limpo, 158/158, `eslint` 0.
+
+#### Decisões de cliente — RESOLVIDAS (Giuseppe, 2026-05-30)
+Após o lote 26/05, o Giuseppe fechou as decisões pendentes:
+- **AJ-0005.1** — itens inativos: **manter o toggle** (oculto por padrão, com opção de revelar). ✅ Já era o comportamento; sem mudança de código, só confirmação.
+- **AJ-0008.1** — ingrediente `misturado` puro: **estender (Fase 3)** para gerar OP separada. → ver bloco AJ-0008.1.
+- **AJ-0009** — fábrica abre o pedido: **implementar (modelo C, Fase 4a)**. → fundação entregue atrás de flag; rollout (UI + migration aplicada) pendente. Ver bloco AJ-0009.
+
+#### AJ-0008.1 — Ingrediente `misturado` puro gera OP (Fase 3)
+**Concluído em:** 2026-05-30 (commit `feat(motor): AJ-0008.1 …`)
+**Origem:** Trello (`sodx77wP`) + [[decisoes/ADR_expansao_mpi_em_op]] · **Status:** ✅ Concluído · **Categoria:** Motor
+**Área:** `src/lib/factory-planning/recipe-expansion.ts` · `engine.ts`
+
+O ADR original decidiu que só produto-MPI (`is_mpi_ingredient`) virava OP; o ingrediente
+`type='misturado'` puro ficava só na pré-pesagem. O Giuseppe optou por **estender (Fase 3)**.
+Agora `expandRecipeIntoItems` (opção `expandMixedIngredients`) também expande refs de receita
+para ingredientes `misturado` em OP separada, **herdando a rota do produto-pai** (ingredientes
+não têm linha/setor/dias/cronograma próprios — estilo Fase 1 do MPI; `productId = ingredient.id`
+→ vira OP distinta). A composição do misturado **não** vira OPs recursivas (segue como pré-pesagem).
+Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes novos no
+`recipe-expansion.test.ts`. `tsc` limpo, 161/161, `eslint` 0.
+
+---
+
 ## 🔴 Crítico (estrutural ou bloqueante)
 
 ### AJ-0009 — Mudar modelo: fábrica abre pedido → loja preenche
-**Onda 4 preparada em:** 2026-05-19 — ADR escrito, **aguardando decisão do cliente** (sem código)
-**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** Aguardando decisão (ADR) · **Categoria:** Modelo
+**Decisão tomada em:** 2026-05-30 (Giuseppe) — **Opção C (híbrido faseado), Fase 4a.** Fundação implementada (commit `feat(pedido): AJ-0009 Fase 4a …`).
+**Origem:** Call 2026-05-13 (Bloco 9) · **Status:** ⏸️ Fase 4a CODADA mas **PARADA atrás da flag (NÃO ativar)** — decisão do Giuseppe (2026-05-30): a loja continua criando os pedidos · **Categoria:** Modelo
+
+> [!warning] Decisão 2026-05-30 — NÃO ligar `FACTORY_OPENS_ORDERS`
+> Ao validar, ficou claro que **a LOJA é quem faz os pedidos** (1 por janela). A inversão "fábrica abre → loja só preenche" trancava a loja quando a fábrica não havia aberto nada. Decisão: **manter a flag OFF** (a loja cria). O código da Fase 4a fica como recurso **opcional/parqueado** atrás da flag — não ativar sem redesenhar o fluxo (ex.: modelo híbrido onde a loja também cria). A regra que vale é **1 pedido por janela** (ver `store-order-window.ts` + índice `UNIQUE`), que já está ativa independente da flag.
+
+> **Resolução (2026-05-30):** ADR [[decisoes/ADR_modelo_fabrica_abre_pedido]] passou a **Aceito (Opção C, Fase 4a)**. Tudo atrás da flag `FACTORY_OPENS_ORDERS` (default OFF) — produção intocada.
+>
+> **✅ Entregue:**
+> - Migration `20260530120000` **aplicada na base** (verificada): `store_orders.status` (`aberto`/`preenchido`/`enviado`, default `preenchido`) + `opened_by_profile_id`/`opened_at` + **índice `UNIQUE` parcial** `(tenant_id, store_id, delivery_date)` ativo → **fecha D03 / bônus AJ-0007**. Linhas legadas viraram `preenchido`.
+> - `store-order-lifecycle.ts` (puro, 6 testes) + `store-order-open-plan.ts` (puro, 4 testes) + `feature-flags.ts`.
+> - `openStoreOrders` (fábrica cria linhas `aberto`, pula duplicadas, grava evento) + endpoint `POST /api/store-orders/open` (409 se flag off).
+> - `updateStoreOrder` transiciona `aberto`→`preenchido` ao preencher.
+> - **UI gestor:** botão + dialog "Abrir pedidos" (data + multi-loja) em `gestor-fabrica/pedidos` (gated pela flag).
+> - `tsc` limpo, 171/171, `eslint` 0.
+>
+> **✅ Entregue também (UI da loja):**
+> - `GET /api/store-orders/open` (escopo de loja) + `listOpenStoreOrders` (data fn).
+> - `loja/pedidos`: seção **"Pedidos para preencher"** (gated pela flag) listando os pedidos `aberto` com botão **Preencher** que reusa o fluxo de edição existente (`useUpdateStoreOrder` → transição aberto→preenchido). Com a flag ligada, o botão livre "Novo Pedido" some (a loja só preenche). *(O `startEditing` do AJ-0023 era do detalhe `[orderId]`; a lista usa outro fluxo de edição, intacto.)*
+> - `tsc` limpo, 171/171, `eslint` 0.
+>
+> **⏳ Falta (ativação):**
+> - **Validação visual** (desktop + mobile) com a flag ligada em dev — escolha do Giuseppe foi "construir agora, validar depois".
+> - Ligar `FACTORY_OPENS_ORDERS=true` em produção e validar com cliente real.
+> - **Fase 4b** (`order_windows`, multi-dia → fecha AJ-0014) aguarda confirmação da granularidade (8 perguntas do ADR).
 
 > 📄 **Documento de decisão:** [[decisoes/ADR_modelo_fabrica_abre_pedido]] — opções de modelo (A: `order_windows`; B: estado em `store_orders`; **C: híbrido faseado — recomendada**), trade-offs, mapa de impacto (DB/API/UI/docs/migração) e **8 perguntas abertas** a levar para Daniel + Adriano + Leonora antes de codar. Conforme o plano: "Não fazer no calor da hora."
 **Área:** [[Jornada — Pedido da Loja]] · [[Regra — Pedido da Loja]] · `src/lib/supabase-data/store-orders.ts` · `src/app/loja/pedidos/page.tsx`
@@ -219,8 +410,10 @@ loja). Hoje OTIF considera "fim do dia D" como prazo.
 
 ### AJ-0001 — Kanban acionável (substitui read-only)
 **Revisado em:** 2026-05-20 — **diretriz original SUBSTITUÍDA por decisão do cliente** (Daniel, sessão 2026-05-20)
-**Concluído em:** 2026-05-19 (commit 9027976) — Onda 3 *(implementação inicial read-only — superada pela nova diretriz)*
-**Origem:** Call 2026-05-13 (Bloco 1) + Revisão cliente 2026-05-20 · **Status:** Ativo (re-aberto para Onda 5) · **Categoria:** UX
+**Concluído em:** 2026-05-30 (badge PRÓXIMA: commit `feat(gestor): AJ-0001 …`) — a parte acionável (inline + batch) já havia sido entregue antes; faltava só o badge PRÓXIMA.
+**Origem:** Call 2026-05-13 (Bloco 1) + Revisão cliente 2026-05-20 · **Status:** ✅ Concluído · **Categoria:** UX
+
+> **Resolução (2026-05-30):** auditado o `gestor-fabrica/page.tsx` — o Kanban já era **acionável**: ações inline `Liberar` + `Abrir checklist` por card, batch `Liberar tudo do dia` / `Liberar todos em espera` no header (com confirmação p/ lotes >10 e toast de progresso), colunas terminais (`Em rota`/`Entregue`) read-only, sem drag-and-drop, tudo via `PATCH /api/factory-planning/workflow`. **Faltava o badge `PRÓXIMA`** na 1ª OP da fila (coluna "Em produção", já ordenada por `productionDate` = proxy de SLA) — **adicionado agora**. Ações `Marcar concluída` / `Reportar problema` pertencem ao chão-de-fábrica (outra superfície), fora deste dashboard. `tsc` limpo, 161/161, `eslint` 0.
 
 > [!warning] Substituição de diretriz — 2026-05-20
 > A diretriz original ("Kanban é só visualização; não manipular status pelo Kanban") **foi revogada pelo cliente final** na sessão de 2026-05-20. O texto histórico abaixo (escopo Giuseppe, implementação read-only de 2026-05-19) está preservado para registro, mas **não é mais a regra vigente**.
@@ -413,8 +606,11 @@ loja). Hoje OTIF considera "fim do dia D" como prazo.
 ---
 
 ### AJ-0023 — Dead code descoberto durante a Onda 1
-**Origem:** Implementação Onda 1 (2026-05-19, Giuseppe) · **Status:** A-fazer · **Categoria:** Dívida Técnica
+**Concluído em:** 2026-05-30 (commit `chore(lint): AJ-0023 …`) — removido após confirmação do Giuseppe
+**Origem:** Implementação Onda 1 (2026-05-19, Giuseppe) · **Status:** ✅ Concluído · **Categoria:** Dívida Técnica
 **Área:** `src/app/loja/pedidos/[orderId]/page.tsx` · `src/app/loja/pedidos/page.tsx` · `src/components/production/product-form-dialog.tsx`
+
+> **Resolução (2026-05-30):** removidos os 3 pontos — `startEditing` (edição já inalcançável, único caller de `setIsEditing(true)`; setters reutilizados em outros lugares, sem órfãos), `selectedProductionSummary` (memo não consumido) e a diretiva `eslint-disable` (deps já completas, virou comentário simples). Rota `aggregated-quantities` **mantida** (reservada p/ consolidação da fábrica). `eslint .` sem os 3 warnings; 158/158, `tsc` limpo.
 
 **O quê:** Três pontos de código morto detectados pelo lint (pré-existentes, não introduzidos pela Onda 1):
 - `startEditing` definido e nunca usado em `loja/pedidos/[orderId]/page.tsx`.

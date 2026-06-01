@@ -267,10 +267,11 @@ export async function registerDeliveryAttempt(
     supabase,
   });
 
-  if (!isOrderReadyForDeliveryExecution(orderStatus)) {
-    throw new Error("O pedido ainda não está em fluxo de entrega.");
-  }
-
+  // NÃO bloquear aqui por orderStatus derivado da produção: uma execução de
+  // entrega já avançada é a fonte da verdade. O gate correto é
+  // `canRegisterDeliveryFailure(currentStatus)` logo abaixo — registrar falha só
+  // faz sentido em em_rota/no_destino/tentativa_falha, o que já exclui um pedido
+  // que ainda não entrou no fluxo de entrega.
   const currentExecutionResult = await supabase
     .from("delivery_executions")
     .select("status")
@@ -391,10 +392,6 @@ export async function updateDeliveryExecution(
     supabase,
   });
 
-  if (!isOrderReadyForDeliveryExecution(orderStatus)) {
-    throw new Error("O pedido ainda não está pronto para expedição.");
-  }
-
   const currentExecutionResult = await supabase
     .from("delivery_executions")
     .select("status, checklist_state, checklist_completed_at")
@@ -426,6 +423,14 @@ export async function updateDeliveryExecution(
   const resolvedCurrentExecution = usingLegacyDeliverySchema ? currentLegacyExecution : currentModernExecution;
   const currentStatus = resolveEffectiveDeliveryExecutionStatus(orderStatus, resolvedCurrentExecution?.status);
 
+  // A produção concluída só é exigida para ENTRAR na entrega (quando ainda não
+  // há execução avançada). Uma vez em fluxo (pronto_coleta+), a execução
+  // persistida é a fonte da verdade e não pode ser bloqueada por recomputo do
+  // status derivado da produção.
+  if (currentStatus === "aguardando_expedicao" && !isOrderReadyForDeliveryExecution(orderStatus)) {
+    throw new Error("O pedido ainda não está pronto para expedição.");
+  }
+
   if (!canTransitionDeliveryStatus(currentStatus, status)) {
     throw new Error("Invalid delivery status transition");
   }
@@ -443,7 +448,11 @@ export async function updateDeliveryExecution(
     ? currentStatus !== "aguardando_expedicao"
     : areAllChecklistItemsChecked(checklistItemKeys, checklistState);
 
-  if (status !== "aguardando_expedicao" && !checklistIsComplete) {
+  // O gate do checklist só faz sentido na transição de ENTRADA na entrega
+  // (aguardando_expedicao → pronto_coleta). Uma vez liberada, as transições
+  // seguintes (em_rota, no_destino, entregue) não devem reexigir o checklist.
+  const isEnteringDelivery = currentStatus === "aguardando_expedicao" && status === "pronto_coleta";
+  if (isEnteringDelivery && !checklistIsComplete) {
     throw new Error("Conclua o checklist de todos os itens antes de avançar para entrega.");
   }
 

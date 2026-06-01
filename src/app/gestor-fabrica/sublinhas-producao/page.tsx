@@ -67,6 +67,17 @@ type ScheduleDayBoard = {
   plannedKg: number;
 };
 
+// AJ-0003.1: entrada do histórico de edições de produto (product_changelog).
+type ProductChangelogFieldChange = { field: string; label: string; from: string; to: string };
+type ProductChangelogEntry = {
+  id: string;
+  version_number: number;
+  change_description: string | null;
+  changed_by_name: string | null;
+  created_at: string;
+  snapshot_data: { name?: string; description?: string; changedFields?: ProductChangelogFieldChange[] } | null;
+};
+
 type SublinhaRow = WeeklyProductionSchedule & {
   lineName: string;
   sectorName: string;
@@ -490,6 +501,53 @@ export default function SublinhasProducaoPage() {
     () => selectedSchedule?.snapshotProducts ?? [],
     [selectedSchedule],
   );
+
+  // AJ-0003.1: ao abrir a auditoria, carrega a última edição (motivo + campos
+  // alterados) de cada produto da revisão, do product_changelog, para destacar
+  // na grade auditável o que mudou e por quê.
+  const [productChangelogById, setProductChangelogById] = useState<
+    Map<string, ProductChangelogEntry>
+  >(new Map());
+
+  useEffect(() => {
+    if (!isDetailsOpen || selectedLineProducts.length === 0) {
+      setProductChangelogById(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    const productIds = Array.from(new Set(selectedLineProducts.map((product) => product.productId)));
+
+    void Promise.allSettled(
+      productIds.map(async (productId) => {
+        const response = await fetch(
+          `/api/master-data/products/${encodeURIComponent(productId)}/changelog`,
+        );
+        if (!response.ok) {
+          return null;
+        }
+        const entries = (await response.json().catch(() => null)) as ProductChangelogEntry[] | null;
+        // O endpoint devolve em ordem decrescente de versão — a primeira é a última edição.
+        const latest = Array.isArray(entries) && entries.length > 0 ? entries[0] : null;
+        return latest ? ([productId, latest] as const) : null;
+      }),
+    ).then((results) => {
+      if (cancelled) {
+        return;
+      }
+      const next = new Map<string, ProductChangelogEntry>();
+      for (const result of results) {
+        if (result.status === "fulfilled" && result.value) {
+          next.set(result.value[0], result.value[1]);
+        }
+      }
+      setProductChangelogById(next);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isDetailsOpen, selectedLineProducts]);
   const selectedDayBoards = useMemo(
     () => {
       const orderedDays = [
@@ -1355,6 +1413,40 @@ export default function SublinhasProducaoPage() {
                                 <td className="border-t border-border/70 bg-card px-4 py-3 align-top">
                                   <div className="font-medium text-foreground">{product.name}</div>
                                   <div className="text-xs text-muted-foreground">{product.code}</div>
+                                  {(() => {
+                                    // AJ-0003.1: justificativa + campos alterados da última edição.
+                                    const changelog = productChangelogById.get(product.productId);
+                                    if (!changelog?.change_description?.trim()) {
+                                      return null;
+                                    }
+                                    const changedFields = changelog.snapshot_data?.changedFields ?? [];
+                                    return (
+                                      <div className="mt-2 rounded-lg border border-info/30 bg-info/10 px-2.5 py-1.5">
+                                        <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-info">
+                                          <History className="size-3" aria-hidden />
+                                          Última edição
+                                          {changelog.changed_by_name ? ` · ${changelog.changed_by_name}` : ""}
+                                        </div>
+                                        <p className="mt-1 text-xs text-foreground">
+                                          {changelog.change_description}
+                                        </p>
+                                        {changedFields.length > 0 ? (
+                                          <ul className="mt-1.5 space-y-0.5">
+                                            {changedFields.map((change) => (
+                                              <li
+                                                key={`${product.snapshotId}-${change.field}`}
+                                                className="text-[11px] text-muted-foreground"
+                                              >
+                                                <span className="font-semibold text-foreground">{change.label}:</span>{" "}
+                                                <span className="line-through opacity-70">{change.from}</span>{" "}
+                                                → <span className="font-medium text-foreground">{change.to}</span>
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        ) : null}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="border-t border-border/70 bg-card px-4 py-3 align-top text-sm text-muted-foreground">
                                   {product.masterLineName}

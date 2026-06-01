@@ -48,12 +48,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       authorization.effectiveTenantId,
       createSupabaseAdminClient(),
     );
-    await updateProduct(productId, payload, {
+    const { scheduleRevisionImpact } = await updateProduct(productId, payload, {
       supabase,
       actingProfileId: authorization.user.id,
     });
     invalidateMasterDataCaches(authorization.effectiveTenantId);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, scheduleRevisionImpact });
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to update product" },

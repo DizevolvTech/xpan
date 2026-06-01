@@ -37,19 +37,23 @@ export function OperationalSequenceCard({
   footer,
   className,
 }: OperationalSequenceCardProps) {
+  // AJ-0028: usa container queries (Tailwind v4) — o grid responde à largura do
+  // próprio card, não do viewport. Dentro de um popover estreito (loja/pedidos) as
+  // etapas quebram em 2/1 colunas em vez de espremer 4 e sobrepor as datas; num
+  // container largo (dashboard) continua 4/5 colunas. Colunas de largura igual.
   const gridColsClass =
     steps.length <= 2
-      ? "md:grid-cols-2"
+      ? "@md:grid-cols-2"
       : steps.length === 3
-        ? "lg:grid-cols-3"
+        ? "@md:grid-cols-2 @xl:grid-cols-3"
         : steps.length === 4
-          ? "lg:grid-cols-4"
-          : "xl:grid-cols-5";
+          ? "@md:grid-cols-2 @lg:grid-cols-4"
+          : "@md:grid-cols-2 @2xl:grid-cols-5";
 
   return (
     <div
       className={cn(
-        "rounded-xl border border-border/70 bg-card p-5 shadow-[var(--shadow-card)]",
+        "@container rounded-xl border border-border/70 bg-card p-5 shadow-[var(--shadow-card)]",
         className,
       )}
     >
@@ -66,7 +70,7 @@ export function OperationalSequenceCard({
           <div
             key={step.key}
             className={cn(
-              "relative rounded-xl border p-4 transition-colors duration-200 hover:border-border-strong/40",
+              "relative min-w-0 rounded-xl border p-4 transition-colors duration-200 hover:border-border-strong/40",
               toneClassNames[step.tone ?? "neutral"],
             )}
           >
@@ -74,12 +78,12 @@ export function OperationalSequenceCard({
               <span className="inline-flex size-5 items-center justify-center rounded-full bg-background text-[10px] font-bold text-foreground tabular-nums shadow-[0_1px_0_0_color-mix(in_oklch,var(--foreground)_8%,transparent),inset_0_0_0_1px_color-mix(in_oklch,var(--border-strong)_22%,transparent)]">
                 {index + 1}
               </span>
-              <p className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              <p className="min-w-0 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
                 {step.label}
               </p>
               {step.helper ? <InfoHint content={step.helper} size="xs" /> : null}
             </div>
-            <p className="mt-2.5 font-heading text-[0.95rem] font-semibold leading-tight text-foreground">
+            <p className="mt-2.5 font-heading text-[0.95rem] font-semibold leading-tight text-foreground tabular-nums break-words">
               {step.value}
             </p>
           </div>

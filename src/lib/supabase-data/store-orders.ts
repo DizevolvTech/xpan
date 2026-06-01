@@ -7,6 +7,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import { allocateBusinessCode } from "@/lib/supabase-data/business-codes";
 import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
+import { planStoreOrdersToOpen } from "@/lib/store-order-open-plan";
+import { resolveFilledStatus, type StoreOrderLifecycleStatus } from "@/lib/store-order-lifecycle";
 import {
   assertSupabaseResult,
   isUuid,
@@ -59,6 +61,7 @@ type ResolvedStoreOrderRow = {
   ordered_at: string;
   management_status: "ativo" | "cancelado";
   note: string;
+  status: StoreOrderLifecycleStatus;
 };
 
 type ValidatedStoreOrderItem = {
@@ -85,7 +88,7 @@ async function resolveStoreOrderRow(
 ): Promise<ResolvedStoreOrderRow> {
   const query = supabase
     .from("store_orders")
-    .select("id, legacy_id, code, store_id, ordered_at, management_status, note");
+    .select("id, legacy_id, code, store_id, ordered_at, management_status, note, status");
   const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
 
   return assertSupabaseResult(
@@ -156,6 +159,9 @@ async function validateStoreOrderItems(
     supabase: options.supabase,
     includeProfileNames: false,
     tenantId: options.tenantId,
+    // AJ-0024: valida/salva pedido sempre contra dados frescos — o snapshot tem
+    // TTL de 15s e o 1º pedido de um tenant novo caía num cache vazio/defasado.
+    forceRefresh: true,
   });
   const store = snapshot.stores.find((row) => row.id === options.storeId);
 
@@ -394,6 +400,10 @@ export async function createStoreOrder(
       receive_window_snapshot: store.receiveWindow,
       expedition_lead_days_snapshot: snapshot.operationalSettings.expeditionLeadDays,
       note: input.note ?? "",
+      // AJ-0009 Fase 4a: pedido criado pela loja nasce "preenchido". Deixamos o
+      // DEFAULT da coluna (migration 20260530120000) cuidar disso — assim o código é
+      // forward-compatible (funciona antes E depois da migration). O ciclo
+      // aberto→preenchido só vale com a flag FACTORY_OPENS_ORDERS ligada (rollout gated).
     })
     .select("id, legacy_id, code")
     .single();
@@ -428,6 +438,164 @@ export async function createStoreOrder(
   };
 }
 
+export interface OpenStoreOrdersInput {
+  /** Data de entrega-alvo (YYYY-MM-DD) para a qual a fábrica está abrindo os pedidos. */
+  deliveryDate: string;
+  /** Lojas (legacy ids) para as quais abrir pedido. */
+  storeIds: string[];
+  openedByProfileId?: string | null;
+  tenantId?: string | null;
+  orderedAt?: string;
+}
+
+/**
+ * AJ-0009 Fase 4a: a fábrica "abre" pedidos vazios (status `aberto`) para as lojas
+ * preencherem. Pula lojas que já têm pedido ativo na data (o índice UNIQUE também barra).
+ * O pedido vazio nasce com `base_date = deliveryDate` (refinado quando a loja preenche).
+ */
+export async function openStoreOrders(
+  input: OpenStoreOrdersInput,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+): Promise<{ opened: Array<{ storeId: string; code: string }>; skipped: string[] }> {
+  const orderedAt = input.orderedAt ?? new Date().toISOString();
+  const snapshot = await getMasterDataSnapshot({
+    supabase,
+    includeProfileNames: false,
+    tenantId: input.tenantId,
+    forceRefresh: true,
+  });
+  const openedByProfileDatabaseId = await resolveProfileDatabaseId(
+    supabase,
+    input.openedByProfileId ?? null,
+    { tenantId: input.tenantId },
+  );
+
+  const requestedStoreIds = Array.from(new Set(input.storeIds));
+  const storeByLegacyId = new Map(snapshot.stores.map((store) => [store.id, store]));
+  // Resolve db ids das lojas pedidas (ignora ids inexistentes).
+  const storeDbIdByLegacy = new Map<string, string>();
+  for (const legacyId of requestedStoreIds) {
+    if (!storeByLegacyId.has(legacyId)) continue;
+    storeDbIdByLegacy.set(legacyId, await resolveStoreDatabaseId(legacyId, supabase));
+  }
+
+  // Lojas que já têm pedido ATIVO na data de entrega-alvo → pular.
+  const dbIds = Array.from(storeDbIdByLegacy.values());
+  const dbIdToLegacy = new Map(Array.from(storeDbIdByLegacy.entries()).map(([legacy, db]) => [db, legacy]));
+  const storeIdsWithActiveOrder: string[] = [];
+  if (dbIds.length > 0) {
+    const existingResult = await supabase
+      .from("store_orders")
+      .select("store_id")
+      .eq("delivery_date", input.deliveryDate)
+      .eq("management_status", "ativo")
+      .in("store_id", dbIds);
+    const existing = assertSupabaseResult(existingResult, "Failed to load existing orders for open");
+    for (const row of existing) {
+      const legacy = dbIdToLegacy.get(row.store_id);
+      if (legacy) storeIdsWithActiveOrder.push(legacy);
+    }
+  }
+
+  const plan = planStoreOrdersToOpen({
+    requestedStoreIds: requestedStoreIds.filter((id) => storeDbIdByLegacy.has(id)),
+    storeIdsWithActiveOrder,
+  });
+  // Lojas pedidas mas inexistentes também contam como "puladas" (transparência).
+  const unknownStores = requestedStoreIds.filter((id) => !storeByLegacyId.has(id));
+  const skipped = [...plan.skipped, ...unknownStores];
+
+  const opened: Array<{ storeId: string; code: string }> = [];
+  for (const legacyStoreId of plan.toOpen) {
+    const store = storeByLegacyId.get(legacyStoreId)!;
+    const storeDatabaseId = storeDbIdByLegacy.get(legacyStoreId)!;
+    const legacyId = `order-${crypto.randomUUID()}`;
+    const code = await allocateBusinessCode("PD", orderedAt, supabase);
+
+    const insertResult = await supabase
+      .from("store_orders")
+      .insert({
+        legacy_id: legacyId,
+        code,
+        store_id: storeDatabaseId,
+        opened_by_profile_id: openedByProfileDatabaseId,
+        opened_at: orderedAt,
+        ordered_at: orderedAt,
+        base_date: input.deliveryDate,
+        delivery_date: input.deliveryDate,
+        receive_window_snapshot: store.receiveWindow,
+        expedition_lead_days_snapshot: snapshot.operationalSettings.expeditionLeadDays,
+        note: "",
+        status: "aberto",
+      })
+      .select("legacy_id, code")
+      .single();
+    const inserted = assertSupabaseResult(insertResult, "Failed to open store order");
+
+    await appendStoreOrderEvent(
+      {
+        orderId: inserted.legacy_id ?? legacyId,
+        type: "criacao",
+        title: "Pedido aberto pela fábrica",
+        description: `Pedido ${inserted.code} aberto para a loja ${store.name} preencher (entrega ${input.deliveryDate}).`,
+        createdByProfileId: input.openedByProfileId ?? null,
+        metadata: { origin: "fabrica", deliveryDate: input.deliveryDate },
+      },
+      supabase,
+    );
+
+    opened.push({ storeId: legacyStoreId, code: inserted.code });
+  }
+
+  return { opened, skipped };
+}
+
+export interface OpenStoreOrderSummary {
+  id: string;
+  code: string;
+  storeId: string;
+  storeName: string;
+  deliveryDate: string;
+}
+
+/**
+ * AJ-0009 Fase 4a: pedidos `aberto` (abertos pela fábrica, ainda não preenchidos),
+ * para a loja ver e preencher. `allowedStoreIds` (legacy) restringe ao escopo do usuário.
+ */
+export async function listOpenStoreOrders(
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  allowedStoreIds?: string[] | null,
+): Promise<OpenStoreOrderSummary[]> {
+  const [ordersResult, storesResult] = await Promise.all([
+    supabase
+      .from("store_orders")
+      .select("id, legacy_id, code, store_id, delivery_date")
+      .eq("status", "aberto")
+      .eq("management_status", "ativo")
+      .order("delivery_date", { ascending: true }),
+    supabase.from("stores").select("id, legacy_id, name"),
+  ]);
+
+  const orderRows = assertSupabaseResult(ordersResult, "Failed to load open store orders");
+  const storeRows = assertSupabaseResult(storesResult, "Failed to load stores for open orders");
+  const storeById = new Map(storeRows.map((row) => [row.id, row]));
+  const allowed = allowedStoreIds ? new Set(allowedStoreIds) : null;
+
+  return orderRows
+    .map((row) => {
+      const store = storeById.get(row.store_id);
+      const storeLegacyId = store?.legacy_id ?? row.store_id;
+      return {
+        id: row.legacy_id ?? row.id,
+        code: row.code,
+        storeId: storeLegacyId,
+        storeName: store?.name ?? "Loja",
+        deliveryDate: row.delivery_date,
+      };
+    })
+    .filter((order) => (allowed ? allowed.has(order.storeId) : true));
+}
+
 export async function updateStoreOrder(
   orderId: string,
   input: UpdateStoreOrderInput,
@@ -455,6 +623,9 @@ export async function updateStoreOrder(
     .from("store_orders")
     .update({
       note: input.note ?? "",
+      // AJ-0009 Fase 4a: preencher um pedido aberto pela fábrica o transiciona para
+      // 'preenchido' (legado/'preenchido'/'enviado' permanecem como estão).
+      status: resolveFilledStatus(orderRow.status),
       updated_at: new Date().toISOString(),
     })
     .eq("id", orderRow.id);

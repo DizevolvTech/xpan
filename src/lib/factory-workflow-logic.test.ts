@@ -54,6 +54,7 @@ test("cancelled orders remain visible in pedidos and leave production/expedition
         requestedQuantity: 12,
         requestedUnit: "Kg",
         internalKg: 12,
+        minimumProductionKg: 0,
         expeditionUnit: "Kg",
         expeditionQuantityRaw: 12,
         expeditionQuantity: 12,
@@ -61,6 +62,7 @@ test("cancelled orders remain visible in pedidos and leave production/expedition
         scheduleDayPriority: null,
         availableForRelease: true,
         releasedToProduction: false,
+        productionStarted: false,
         productionItemKey: "2026-03-19|sector-1|line-1|schedule-1|product-1",
         productionItemStatus: null,
         preparationStages: [...defaultProductPreparationStages],
@@ -191,6 +193,7 @@ test("multiple orders on the same line and day collapse into one production orde
         requestedQuantity: 10,
         requestedUnit: "Kg",
         internalKg: 10,
+        minimumProductionKg: 0,
         expeditionUnit: "Kg",
         expeditionQuantityRaw: 10,
         expeditionQuantity: 10,
@@ -198,6 +201,7 @@ test("multiple orders on the same line and day collapse into one production orde
         scheduleDayPriority: null,
         availableForRelease: true,
         releasedToProduction: false,
+        productionStarted: false,
         productionItemKey: "2026-03-20|line-pan|schedule-pan|product-pan",
         productionItemStatus: null,
         preparationStages: [...defaultProductPreparationStages],
@@ -230,6 +234,7 @@ test("multiple orders on the same line and day collapse into one production orde
         requestedQuantity: 12,
         requestedUnit: "Kg",
         internalKg: 12,
+        minimumProductionKg: 0,
         expeditionUnit: "Kg",
         expeditionQuantityRaw: 12,
         expeditionQuantity: 12,
@@ -237,6 +242,7 @@ test("multiple orders on the same line and day collapse into one production orde
         scheduleDayPriority: null,
         availableForRelease: true,
         releasedToProduction: false,
+        productionStarted: false,
         productionItemKey: "2026-03-20|line-pan|schedule-pan|product-pan-2",
         productionItemStatus: null,
         preparationStages: [...defaultProductPreparationStages],
@@ -337,4 +343,118 @@ test("multiple orders on the same line and day collapse into one production orde
     result.expedition.map((row) => row.orderCode).sort((a, b) => a.localeCompare(b)),
     ["PD-0009", "PD-0010"],
   );
+});
+
+test("productionStarted gates chão visibility: started OR advanced status, never when not released", () => {
+  const buildPlanning = (): FactoryPlanningData => ({
+    referenceDate: "2026-03-18",
+    orders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        dPlusLabel: "D+1",
+        deliveryDate: "2026-03-19",
+        deliveryDateLabel: "19/03/2026",
+        productionDateLabel: "19/03/2026",
+        itemsCount: 1,
+        totalKg: 12,
+        opsLabel: "-",
+        releasedToProduction: false,
+        availableForRelease: true,
+        workflowProgress: 0,
+        status: "em_espera",
+      },
+    ],
+    orderItems: [
+      {
+        id: "item-1",
+        orderId: "order-1",
+        orderCode: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        baseDate: "2026-03-18",
+        deliveryDate: "2026-03-19",
+        saleDate: "2026-03-19",
+        productionDate: "2026-03-19",
+        delayed: false,
+        productId: "product-1",
+        productCode: "PR-0001",
+        productName: "Produto A",
+        lineId: "line-1",
+        lineName: "Linha A",
+        sectorId: "sector-1",
+        sectorName: "Setor A",
+        scheduleId: "schedule-1",
+        scheduleCode: "SL-0001",
+        scheduleName: "Linha Executora",
+        requestedQuantity: 12,
+        requestedUnit: "Kg",
+        internalKg: 12,
+        minimumProductionKg: 0,
+        expeditionUnit: "Kg",
+        expeditionQuantityRaw: 12,
+        expeditionQuantity: 12,
+        canPlan: true,
+        scheduleDayPriority: null,
+        availableForRelease: true,
+        releasedToProduction: false,
+        productionStarted: false,
+        productionItemKey: "2026-03-19|line-1|product-1",
+        productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
+        workflowProgress: 0,
+        opCode: null,
+        status: "em_espera",
+      },
+    ],
+    productionOrders: [],
+    expedition: [],
+    expeditionItems: [],
+    productionDates: ["2026-03-19"],
+    deliveryDates: ["2026-03-19"],
+  });
+
+  // Liberado mas NÃO iniciado (status nao_iniciado) → fora do chão.
+  const releasedOnly = applyFactoryWorkflowState(buildPlanning(), {
+    isReleased: () => true,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "nao_iniciado",
+    isProductionStarted: () => false,
+  });
+  assert.equal(releasedOnly.orderItems[0]?.productionStarted, false);
+  assert.equal(releasedOnly.productionOrders[0]?.productionStarted, false);
+
+  // Liberado E iniciado pelo gestor, ainda nao_iniciado → entra no chão (1ª coluna).
+  const started = applyFactoryWorkflowState(buildPlanning(), {
+    isReleased: () => true,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "nao_iniciado",
+    isProductionStarted: () => true,
+  });
+  assert.equal(started.orderItems[0]?.productionStarted, true);
+  assert.equal(started.productionOrders[0]?.productionStarted, true);
+  assert.equal(started.productionOrders[0]?.items[0]?.status, "nao_iniciado");
+
+  // Compat: status já avançou sem registro de início → conta como iniciado.
+  const advanced = applyFactoryWorkflowState(buildPlanning(), {
+    isReleased: () => true,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "em_preparacao",
+    isProductionStarted: () => false,
+  });
+  assert.equal(advanced.orderItems[0]?.productionStarted, true);
+  assert.equal(advanced.productionOrders[0]?.productionStarted, true);
+
+  // Não liberado → nunca iniciado, mesmo com registro de início.
+  const notReleased = applyFactoryWorkflowState(buildPlanning(), {
+    isReleased: () => false,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "nao_iniciado",
+    isProductionStarted: () => true,
+  });
+  assert.equal(notReleased.orderItems[0]?.productionStarted, false);
 });

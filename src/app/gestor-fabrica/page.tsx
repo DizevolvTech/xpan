@@ -54,7 +54,24 @@ import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import {
+  getProductionOrderNavKey,
+  isOpInProductionColumn,
+  isOrderAwaitingAcceptance,
+} from "@/lib/factory-kanban";
 import { formatKgLabel } from "@/lib/utils";
+
+// Erro de liberação que o servidor marcou como overridable (400 + forceable=true).
+// Permite ao caller oferecer "liberar mesmo assim" (refetch com force: true).
+class OrderReleaseForceableError extends Error {
+  readonly forceable = true;
+  readonly reason?: string;
+  constructor(message: string, reason?: string) {
+    super(message);
+    this.name = "OrderReleaseForceableError";
+    this.reason = reason;
+  }
+}
 
 type KanbanTone = "warning" | "info" | "primary" | "success";
 
@@ -132,6 +149,7 @@ export default function GestorFabricaPage() {
     columnKey: string;
     current: number;
     total: number;
+    label: string;
   } | null>(null);
 
   const toast = useToast();
@@ -144,19 +162,36 @@ export default function GestorFabricaPage() {
   // Chama direto o endpoint (não o hook), porque o hook faz refresh por
   // chamada — em batch isso seria N refreshes seriais. Aqui paralelizamos e
   // refreshamos uma vez no fim.
-  const releaseOrderRequest = useCallback(async (orderId: string) => {
-    const response = await fetch("/api/factory-planning/workflow", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "release-order", orderId }),
-    });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as
-        | { message?: string }
-        | null;
-      throw new Error(payload?.message ?? `Falha ao liberar (status ${response.status}).`);
-    }
-  }, []);
+  const releaseOrderRequest = useCallback(
+    async (orderId: string, force = false) => {
+      const response = await fetch("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        // AJ-A1: enviar referenceDate = âncora da página; sem ele o servidor
+        // valida a liberação contra HOJE e quebra ao operar uma janela passada/futura.
+        body: JSON.stringify({
+          action: "release-order",
+          orderId,
+          referenceDate: anchorDate,
+          ...(force ? { force: true } : {}),
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { message?: string; reason?: string; forceable?: boolean }
+          | null;
+        const message =
+          payload?.message ?? `Falha ao liberar (status ${response.status}).`;
+        // Bloqueio overridable: o 400 traz `forceable === true`. Sinaliza para o
+        // caller poder oferecer "liberar mesmo assim" (refazendo com force: true).
+        if (response.status === 400 && payload?.forceable === true) {
+          throw new OrderReleaseForceableError(message, payload.reason);
+        }
+        throw new Error(message);
+      }
+    },
+    [anchorDate],
+  );
 
   const runSingleRelease = useCallback(
     async (order: PlannedOrderRow) => {
@@ -171,11 +206,35 @@ export default function GestorFabricaPage() {
         toast.success(`Pedido ${order.code} liberado para produção.`);
         await refreshPlanning(true);
       } catch (releaseError) {
-        toast.error(
-          releaseError instanceof Error
-            ? releaseError.message
-            : `Falha ao liberar o pedido ${order.code}.`,
-        );
+        // Bloqueio overridable: oferecer "liberar mesmo assim" e refazer com force.
+        if (releaseError instanceof OrderReleaseForceableError) {
+          const confirmed = await confirm({
+            title: `Liberar ${order.code} mesmo assim?`,
+            description: releaseError.message,
+            tone: "default",
+            confirmLabel: "Liberar mesmo assim",
+            cancelLabel: "Cancelar",
+          });
+          if (confirmed) {
+            try {
+              await releaseOrderRequest(order.id, true);
+              toast.success(`Pedido ${order.code} liberado para produção.`);
+              await refreshPlanning(true);
+            } catch (forceError) {
+              toast.error(
+                forceError instanceof Error
+                  ? forceError.message
+                  : `Falha ao liberar o pedido ${order.code}.`,
+              );
+            }
+          }
+        } else {
+          toast.error(
+            releaseError instanceof Error
+              ? releaseError.message
+              : `Falha ao liberar o pedido ${order.code}.`,
+          );
+        }
       } finally {
         setPendingOrderIds((current) => {
           const next = new Set(current);
@@ -184,7 +243,7 @@ export default function GestorFabricaPage() {
         });
       }
     },
-    [batchProgress, pendingOrderIds, refreshPlanning, releaseOrderRequest, toast],
+    [batchProgress, confirm, pendingOrderIds, refreshPlanning, releaseOrderRequest, toast],
   );
 
   const runBatchRelease = useCallback(
@@ -205,7 +264,7 @@ export default function GestorFabricaPage() {
         if (!confirmed) return;
       }
 
-      setBatchProgress({ columnKey, current: 0, total: orders.length });
+      setBatchProgress({ columnKey, current: 0, total: orders.length, label: "Liberando" });
       const progressToastId = toast.info(`Liberando 0/${orders.length} pedidos…`, {
         title: "Liberação em lote",
         duration: 60_000,
@@ -258,6 +317,93 @@ export default function GestorFabricaPage() {
       await refreshPlanning(true).catch(() => undefined);
     },
     [batchProgress, confirm, refreshPlanning, releaseOrderRequest, toast],
+  );
+
+  // AJ — "iniciar produção" em lote: avança os itens `nao_iniciado` da OP para o
+  // 1º estágio (mesma transição que o chão usa), via o mesmo endpoint do release.
+  const startProductionItemRequest = useCallback(
+    async (productionItemKey: string) => {
+      const response = await fetch("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start-production-item", productionItemKey }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? `Falha ao iniciar produção (status ${response.status}).`);
+      }
+    },
+    [],
+  );
+
+  const runBatchStartProduction = useCallback(
+    async (columnKey: string, ops: ProductionOrderRow[]) => {
+      if (batchProgress) return;
+      // "Iniciar produção do dia" = mandar para o Chão as OPs liberadas ainda NÃO
+      // iniciadas. NÃO avança o status (o item segue `nao_iniciado` / 1ª coluna do
+      // Chão = pré-pesagem); apenas marca a produção como iniciada. Trabalhamos por
+      // OP (todas as suas chaves de item) e ignoramos OPs já iniciadas.
+      const startableOps = ops.filter((op) => !op.productionStarted);
+      const startableKeys = startableOps.flatMap((op) =>
+        op.items.map((item) => item.productionItemKey),
+      );
+
+      if (startableKeys.length === 0) {
+        toast.info("Nenhuma OP pendente de início nesta etapa.");
+        return;
+      }
+
+      if (startableOps.length > 10) {
+        const confirmed = await confirm({
+          title: `Iniciar a produção de ${startableOps.length} OP(s)?`,
+          description:
+            "Esta ação envia para o chão de fábrica todas as OPs liberadas ainda não iniciadas do dia. Falhas são reportadas ao final.",
+          confirmLabel: `Iniciar ${startableOps.length}`,
+          cancelLabel: "Cancelar",
+        });
+        if (!confirmed) return;
+      }
+
+      setBatchProgress({ columnKey, current: 0, total: startableKeys.length, label: "Iniciando" });
+      let succeeded = 0;
+      let failed = 0;
+      let firstError: string | null = null;
+      let completed = 0;
+
+      await Promise.allSettled(
+        startableKeys.map(async (productionItemKey) => {
+          try {
+            await startProductionItemRequest(productionItemKey);
+            succeeded += 1;
+          } catch (startError) {
+            failed += 1;
+            if (!firstError) {
+              firstError =
+                startError instanceof Error ? startError.message : "Falha ao iniciar a produção.";
+            }
+          } finally {
+            completed += 1;
+            setBatchProgress((current) =>
+              current && current.columnKey === columnKey ? { ...current, current: completed } : current,
+            );
+          }
+        }),
+      );
+
+      if (failed === 0) {
+        toast.success(`${startableOps.length} OP(s) enviada(s) para o chão.`);
+      } else if (succeeded === 0) {
+        toast.error(firstError ?? `Falha ao iniciar ${failed} item(ns).`);
+      } else {
+        toast.warning(
+          `${succeeded} iniciados · ${failed} com falha${firstError ? `. Primeiro erro: ${firstError}` : "."}`,
+        );
+      }
+
+      setBatchProgress(null);
+      await refreshPlanning(true).catch(() => undefined);
+    },
+    [batchProgress, confirm, refreshPlanning, startProductionItemRequest, toast],
   );
 
   useEffect(() => {
@@ -434,7 +580,13 @@ export default function GestorFabricaPage() {
       tone: column.tone,
       statuses: column.statuses,
       items: planningData.orders
-        .filter((order) => column.statuses.includes(order.status))
+        // "Aberto" = aguardando aceite (não liberado), dirigido pelo estado, não pela data.
+        // As demais colunas seguem por status de workflow (expedição / rota).
+        .filter((order) =>
+          column.key === "aberto"
+            ? isOrderAwaitingAcceptance(order)
+            : column.statuses.includes(order.status),
+        )
         .sort(
           (a, b) =>
             a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
@@ -447,8 +599,10 @@ export default function GestorFabricaPage() {
       title: "Em produção",
       tone: "info",
       statuses: ["em_producao"],
+      // "Em produção" = OPs LIBERADAS e ainda não prontas (independe da data). Ao liberar
+      // na coluna anterior, a OP aparece aqui; "Iniciar produção do dia" começa o trabalho.
       items: planningData.productionOrders
-        .filter((op) => op.status === "em_producao")
+        .filter((op) => isOpInProductionColumn(op))
         .sort(
           (a, b) =>
             a.productionDate.localeCompare(b.productionDate) || a.code.localeCompare(b.code),
@@ -474,6 +628,20 @@ export default function GestorFabricaPage() {
     const today = all.filter((order) => order.deliveryDate === anchorDate);
     return { all, today };
   }, [anchorDate, kanbanColumns]);
+
+  // OPs da coluna "Em produção" liberadas e ainda NÃO iniciadas (pendentes de
+  // mandar para o chão). Contamos OPs (não itens): "Iniciar produção do dia"
+  // envia a OP inteira para o quadro do chão.
+  const productionColumn = useMemo(
+    () => kanbanColumns.find((column) => column.key === "producao") ?? null,
+    [kanbanColumns],
+  );
+  const productionStartableCount = useMemo(() => {
+    if (!productionColumn || productionColumn.kind !== "ops") {
+      return 0;
+    }
+    return productionColumn.items.filter((op) => !op.productionStarted).length;
+  }, [productionColumn]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -898,6 +1066,7 @@ export default function GestorFabricaPage() {
           const tone = KANBAN_TONE_STYLES[column.tone];
           const isEmpty = column.items.length === 0;
           const isOpenColumn = column.key === "aberto";
+          const isProductionColumn = column.key === "producao";
           const isExpedColumn = column.key === "expedicao";
           const columnBatchActive =
             batchProgress?.columnKey === column.key ? batchProgress : null;
@@ -947,7 +1116,7 @@ export default function GestorFabricaPage() {
                   • "do dia"  = deliveryDate === anchorDate
                   • "em espera" = todos com availableForRelease no scope visível.
                   Confirmação via useConfirm para batches >10 (no runBatchRelease). */}
-              {isOpenColumn ? (
+              {isOpenColumn || isProductionColumn ? (
                 <div className="flex flex-col gap-1.5 pl-2">
                   {columnBatchActive ? (
                     <div
@@ -957,10 +1126,10 @@ export default function GestorFabricaPage() {
                     >
                       <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
                       <span className="tabular-nums">
-                        Liberando {columnBatchActive.current}/{columnBatchActive.total}…
+                        {columnBatchActive.label} {columnBatchActive.current}/{columnBatchActive.total}…
                       </span>
                     </div>
-                  ) : (
+                  ) : isOpenColumn ? (
                     <>
                       <Button
                         type="button"
@@ -998,6 +1167,26 @@ export default function GestorFabricaPage() {
                         </Button>
                       ) : null}
                     </>
+                  ) : (
+                    // AJ — coluna "Em produção": inicia as OPs do dia em lote (mesma pegada
+                    // do "Liberar tudo", mas avançando os itens não iniciados para produção).
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="min-h-11 w-full justify-start gap-2"
+                      disabled={productionStartableCount === 0 || batchProgress !== null}
+                      onClick={() => {
+                        if (column.kind === "ops") {
+                          void runBatchStartProduction(column.key, column.items);
+                        }
+                      }}
+                    >
+                      <Play className="size-3.5" aria-hidden />
+                      Iniciar produção do dia
+                      <span className="ms-auto tabular-nums opacity-80">
+                        ({productionStartableCount})
+                      </span>
+                    </Button>
                   )}
                 </div>
               ) : null}
@@ -1073,13 +1262,16 @@ export default function GestorFabricaPage() {
                     );
                   })
                 ) : (
-                  column.items.map((op) => {
+                  column.items.map((op, opIndex) => {
                     const isOpen = !!expandedOpIds[op.id];
                     const progress = Math.max(0, Math.min(100, op.progress));
                     const progressLabel =
                       progress <= 0
                         ? "iniciada"
                         : `${progress.toFixed(progress < 10 ? 1 : 0)}%`;
+                    // AJ-0001: a coluna já vem ordenada por productionDate (proxy de SLA),
+                    // então a 1ª OP da fila é a próxima a trabalhar → badge "PRÓXIMA".
+                    const isNextInQueue = opIndex === 0;
                     return (
                       <div
                         key={op.id}
@@ -1093,8 +1285,15 @@ export default function GestorFabricaPage() {
                           className="block w-full rounded-md px-2 py-1.5 text-left leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <div className="flex items-baseline justify-between gap-2">
-                            <span className="truncate font-mono text-xs font-semibold text-foreground">
-                              {op.code}
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              {isNextInQueue ? (
+                                <span className="shrink-0 rounded-full bg-info px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-info-foreground">
+                                  Próxima
+                                </span>
+                              ) : null}
+                              <span className="truncate font-mono text-xs font-semibold text-foreground">
+                                {op.code}
+                              </span>
                             </span>
                             <span className="shrink-0 truncate text-[10px] text-muted-foreground">
                               {op.lineName} · {op.sectorName}
@@ -1169,7 +1368,7 @@ export default function GestorFabricaPage() {
                                   Sem mutation (apenas navegação), por isso só link. */}
                               <div className="mt-1 ms-3 ps-2">
                                 <Link
-                                  href={`/gestor-fabrica/ordens-producao/${op.id}`}
+                                  href={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}
                                   className="inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-[11px] font-semibold text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   aria-label={`Auditar ordem de produção ${op.code}`}
                                 >

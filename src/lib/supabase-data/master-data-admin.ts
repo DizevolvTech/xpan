@@ -21,6 +21,11 @@ import {
   isUuid,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
+import {
+  planScheduleRevisionRebuild,
+  type ScheduleRevisionRebuildImpact,
+} from "@/lib/supabase-data/schedule-revision-plan";
+import { diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 type RecordStatus = "ativo" | "inativo";
@@ -266,10 +271,12 @@ export async function createCategory(input: CategoryInput, options: MutationOpti
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const existingCodesResult = await supabase.from("categories").select("code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load category codes");
+  const legacyId = buildGeneratedLegacyId("sector");
+  const code = buildNextCode(existingCodes.map((row) => row.code), "SE", 3);
 
   const result = await supabase.from("categories").insert({
-    legacy_id: buildGeneratedLegacyId("sector"),
-    code: buildNextCode(existingCodes.map((row) => row.code), "SE", 3),
+    legacy_id: legacyId,
+    code,
     name: input.name.trim(),
     responsible: input.responsible.trim(),
     status: input.status,
@@ -278,6 +285,13 @@ export async function createCategory(input: CategoryInput, options: MutationOpti
   if (result.error) {
     throw new Error(`Failed to create category: ${result.error.message}`);
   }
+
+  // AJ-0026: devolve o id para o fluxo de criação inline (modal "Nova Linha")
+  // poder selecionar a categoria recém-criada automaticamente.
+  return {
+    id: legacyId,
+    code,
+  };
 }
 
 export async function updateCategory(
@@ -962,73 +976,109 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
     });
   }
 
-  if (pendingSchedules.length > 0) {
-    const deleteResult = await supabase
+  // AJ-0025: reaproveitar a revisão pendente existente (id estável) em vez de
+  // deletar e recriar com legacy_id novo. O id da revisão entra no planning_key
+  // (productionDate|sectorId|lineId|scheduleId); recriar órfã as OPs/statuses já
+  // persistidos e zera o cronograma silenciosamente. Só recriamos quando NÃO há
+  // pendente — e aí o cronograma ativo é desativado para nova auditoria.
+  const plan = planScheduleRevisionRebuild({
+    pendingSchedules: pendingSchedules.map((row) => ({ id: row.id, created_at: row.created_at })),
+    activeScheduleId: activeSchedule?.id ?? null,
+    productCount: products.length,
+  });
+
+  // Consolida pendentes excedentes numa única revisão (mantém só a reaproveitada).
+  if (plan.staleScheduleLineIds.length > 0) {
+    const removeStaleResult = await supabase
       .from("schedule_lines")
       .delete()
-      .in("id", pendingSchedules.map((row) => row.id));
+      .in("id", plan.staleScheduleLineIds);
 
-    if (deleteResult.error) {
-      throw new Error(`Failed to reset pending schedule revisions: ${deleteResult.error.message}`);
+    if (removeStaleResult.error) {
+      throw new Error(`Failed to reset pending schedule revisions: ${removeStaleResult.error.message}`);
     }
   }
 
-  const insertScheduleResult = await supabase
-    .from("schedule_lines")
-    .insert({
-      legacy_id: buildGeneratedLegacyId("schedule"),
-      code: buildNextCode(existingCodes.map((row) => row.code), "SL", 4),
-      name: buildScheduleRevisionName(subcategory.name, activeSchedule?.name),
-      subcategory_id: subcategoryId,
-      revision_of_id: activeSchedule?.id ?? null,
-      status: "pendente",
-      created_at: timestamp,
-      created_by_profile_id: actingProfileDbId,
-      audited_at: null,
-      audited_by_profile_id: null,
-      audit_notes: null,
-      deactivated_at: null,
-      deactivated_by_profile_id: null,
-    })
-    .select("id")
-    .single();
-
-  const scheduleRevision = assertSupabaseResult(
-    insertScheduleResult,
-    "Failed to create pending schedule revision",
-  );
-
-  if (products.length > 0) {
+  const buildScheduleItems = (scheduleLineId: string) => {
     const fallbackDayPriorities = buildDefaultScheduleDayPriorities(
       products.map((product) => ({
         productionDays: (product.production_days ?? []) as ProductionWeekDay[],
       })),
     );
 
-    const insertItemsResult = await supabase.from("schedule_line_item_snapshots").insert(
-      products.map((product, index) => {
-        const productionDays = (product.production_days ?? []) as ProductionWeekDay[];
+    return products.map((product, index) => {
+      const productionDays = (product.production_days ?? []) as ProductionWeekDay[];
 
-        return {
-          schedule_line_id: scheduleRevision.id,
-          product_id: product.id,
-          minimum_production: Number(product.minimum_production_kg),
-          production_days: productionDays,
-          day_priorities: normalizeScheduleDayPriorities(
-            prioritySourceItemsByProductId.get(product.id),
-            productionDays,
-            fallbackDayPriorities[index],
-          ),
-        };
-      }),
+      return {
+        schedule_line_id: scheduleLineId,
+        product_id: product.id,
+        minimum_production: Number(product.minimum_production_kg),
+        production_days: productionDays,
+        day_priorities: normalizeScheduleDayPriorities(
+          prioritySourceItemsByProductId.get(product.id),
+          productionDays,
+          fallbackDayPriorities[index],
+        ),
+      };
+    });
+  };
+
+  let targetScheduleLineId: string;
+
+  if (plan.reuseScheduleLineId) {
+    // Reaproveita a revisão pendente — preserva o id (e o planning_key) e apenas
+    // recompõe os itens com os produtos/prioridades atuais.
+    targetScheduleLineId = plan.reuseScheduleLineId;
+
+    const clearItemsResult = await supabase
+      .from("schedule_line_item_snapshots")
+      .delete()
+      .eq("schedule_line_id", targetScheduleLineId);
+
+    if (clearItemsResult.error) {
+      throw new Error(
+        `Failed to refresh pending schedule revision items: ${clearItemsResult.error.message}`,
+      );
+    }
+  } else {
+    const insertScheduleResult = await supabase
+      .from("schedule_lines")
+      .insert({
+        legacy_id: buildGeneratedLegacyId("schedule"),
+        code: buildNextCode(existingCodes.map((row) => row.code), "SL", 4),
+        name: buildScheduleRevisionName(subcategory.name, activeSchedule?.name),
+        subcategory_id: subcategoryId,
+        revision_of_id: activeSchedule?.id ?? null,
+        status: "pendente",
+        created_at: timestamp,
+        created_by_profile_id: actingProfileDbId,
+        audited_at: null,
+        audited_by_profile_id: null,
+        audit_notes: null,
+        deactivated_at: null,
+        deactivated_by_profile_id: null,
+      })
+      .select("id")
+      .single();
+
+    const scheduleRevision = assertSupabaseResult(
+      insertScheduleResult,
+      "Failed to create pending schedule revision",
     );
+    targetScheduleLineId = scheduleRevision.id;
+  }
+
+  if (products.length > 0) {
+    const insertItemsResult = await supabase
+      .from("schedule_line_item_snapshots")
+      .insert(buildScheduleItems(targetScheduleLineId));
 
     if (insertItemsResult.error) {
       throw new Error(`Failed to save pending schedule revision items: ${insertItemsResult.error.message}`);
     }
   }
 
-  if (activeSchedule?.id) {
+  if (plan.deactivateActiveScheduleId) {
     const deactivateActiveResult = await supabase
       .from("schedule_lines")
       .update({
@@ -1036,7 +1086,7 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
         deactivated_at: timestamp,
         deactivated_by_profile_id: actingProfileDbId,
       })
-      .eq("id", activeSchedule.id)
+      .eq("id", plan.deactivateActiveScheduleId)
       .eq("status", "ativo");
 
     if (deactivateActiveResult.error) {
@@ -1045,6 +1095,8 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
       );
     }
   }
+
+  return plan.impact;
 }
 
 export async function assignProductToOperationalSubcategory(
@@ -1225,6 +1277,11 @@ export async function updateProduct(
       ? ((await supabase.from("profiles").select("name").eq("id", options.actingProfileId).maybeSingle()).data as { name: string } | null)?.name ?? ""
       : "";
 
+    // AJ-0003.1: registra também QUAIS campos mudaram (de/para), além do motivo,
+    // para a auditoria de cronograma destacar o que foi alterado. `row` é a versão
+    // anterior (carregada antes do update); diffamos contra o payload normalizado.
+    const changedFields = diffProductFields(row, normalizeProductPayload(input));
+
     await supabase.from("product_changelog").insert({
       tenant_id: row.tenant_id,
       product_id: productId,
@@ -1232,7 +1289,7 @@ export async function updateProduct(
       change_description: input.changeDescription.trim(),
       changed_by_profile_id: options.actingProfileId ?? null,
       changed_by_name: actingProfileName,
-      snapshot_data: { name: input.name, description: input.description },
+      snapshot_data: { name: input.name, description: input.description, changedFields },
     });
   }
 
@@ -1244,12 +1301,26 @@ export async function updateProduct(
     ),
   ];
 
+  // AJ-0025: agrega o impacto da reconstrução para a UI avisar o usuário
+  // (quantos produtos foram afetados e se uma nova revisão precisou ser aberta).
+  let scheduleRevisionImpact: ScheduleRevisionRebuildImpact | null = null;
+
   for (const affectedOperationalSubcategoryId of affectedOperationalSubcategoryIds) {
-    await rebuildPendingScheduleRevisionForSubcategoryDbId(affectedOperationalSubcategoryId, {
-      supabase,
-      actingProfileId: options.actingProfileId,
-    });
+    const impact = await rebuildPendingScheduleRevisionForSubcategoryDbId(
+      affectedOperationalSubcategoryId,
+      {
+        supabase,
+        actingProfileId: options.actingProfileId,
+      },
+    );
+
+    // Mantém o impacto mais relevante para o aviso: prioriza uma revisão recriada.
+    if (!scheduleRevisionImpact || (impact.recreated && !scheduleRevisionImpact.recreated)) {
+      scheduleRevisionImpact = impact;
+    }
   }
+
+  return { scheduleRevisionImpact };
 }
 
 export async function cloneProduct(

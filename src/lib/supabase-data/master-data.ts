@@ -40,6 +40,12 @@ type MasterDataSnapshotOptions = {
   supabase?: SupabaseDataClient;
   includeProfileNames?: boolean;
   tenantId?: string | null;
+  /**
+   * AJ-0024: força recarga ignorando o cache (TTL 15s). Caminhos de escrita de
+   * pedido usam isso para validar contra dados frescos logo após o cronograma
+   * virar ativo (evita o "1º salvamento com 0 itens").
+   */
+  forceRefresh?: boolean;
 };
 
 const MASTER_DATA_CACHE_TTL_MS = 15_000;
@@ -435,5 +441,7 @@ export async function getMasterDataSnapshot(
     includeProfileNames ? "with-profiles" : "without-profiles",
   );
 
-  return getCachedServerData(cacheKey, MASTER_DATA_CACHE_TTL_MS, () => loadMasterDataSnapshot(options));
+  return getCachedServerData(cacheKey, MASTER_DATA_CACHE_TTL_MS, () => loadMasterDataSnapshot(options), {
+    forceRefresh: options.forceRefresh,
+  });
 }

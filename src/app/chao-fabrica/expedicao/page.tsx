@@ -194,6 +194,15 @@ export default function ExpedicaoPage() {
     prontos: orderRows.filter((item) => item.checklistReady && item.checklistStatus === "aguardando_expedicao").length,
   };
 
+  // Entregas em rota/pendentes — reusa o checklistStatus já resolvido por pedido,
+  // sem nova fonte de dados.
+  const pendingDeliveriesCount = orderRows.filter(
+    (item) =>
+      item.checklistStatus === "pronto_coleta" ||
+      item.checklistStatus === "em_rota" ||
+      item.checklistStatus === "no_destino",
+  ).length;
+
   // Stats secundárias: dado útil mas não compete com os 3 KPIs primários.
   const secondaryStats = [
     { label: "Itens", value: kpis.itens },
@@ -221,6 +230,14 @@ export default function ExpedicaoPage() {
       helper: "Checklists",
       value: planningData.expedition.length,
       href: "/chao-fabrica/expedicao",
+      icon: Truck,
+    },
+    {
+      key: "entregas",
+      title: "Entregas",
+      helper: "Em rota / pendentes",
+      value: pendingDeliveriesCount,
+      href: "/chao-fabrica/entregas",
       icon: Truck,
     },
   ];

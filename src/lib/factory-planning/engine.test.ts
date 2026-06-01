@@ -229,6 +229,64 @@ test("availability blocks product when production day + gap > deliveryDate (bolo
   assert.equal(availability.deliveryDate, "2026-05-01");
 });
 
+test("AJ-0024: variante incompatível (produz só sexta, entrega sexta, lead 1) não agenda produção +7", () => {
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["sexta"],
+      productExpeditionLeadDays: 1,
+      scheduleItem: { id: "schedule-bolo6", productionDays: ["sexta"] },
+    },
+  );
+
+  // Bloqueado (já era), mas o ponto do AJ-0024: NÃO pode devolver a sexta seguinte
+  // (+7) como `productionDate`. Caía no branch delayed e "agendava" 08/05 — a UI/o
+  // catálogo mostravam essa data futura como se o pedido fosse produzir lá.
+  assert.equal(availability.available, false);
+  assert.equal(availability.delayed, true);
+  assert.equal(availability.productionDate, null);
+});
+
+test("AJ-0024: branch delayed não rouba a janela válida — variante compatível (quinta) segue na quinta", () => {
+  // Regressão: a correção de +7 não pode empurrar uma variante VÁLIDA para delayed.
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  const availability = resolveScheduledProductAvailability(
+    "2026-04-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["quinta"],
+      productExpeditionLeadDays: 1,
+      scheduleItem: { id: "schedule-bolo5", productionDays: ["quinta"] },
+    },
+  );
+
+  assert.equal(availability.available, true);
+  assert.equal(availability.delayed, false);
+  assert.equal(availability.productionDate, "2026-04-30");
+});
+
 test("availability allows fresh bread when gap = 0 (produz e entrega no mesmo dia)", () => {
   const breadStore: StoreProfile = {
     id: "store-bread",
@@ -377,6 +435,120 @@ test("factory planning uses operational subcategory instead of cadastral subcate
   assert.equal(planning.orderItems[0]?.lineId, "line-operational");
   assert.equal(planning.orderItems[0]?.lineName, "Carteira Operacional");
   assert.equal(planning.orderItems[0]?.scheduleId, "schedule-1");
+});
+
+test("AJ-0006.1: OP sinaliza demanda consolidada abaixo do lote mínimo da fábrica", () => {
+  const sectors: ProductionSector[] = [
+    { id: "sector-1", code: "SE-001", name: "Panificacao", responsible: "Maria", status: "ativo" },
+  ];
+  const lines: ProductionLine[] = [
+    {
+      id: "line-operational",
+      code: "LP-002",
+      name: "Carteira Operacional",
+      sectorId: "sector-1",
+      type: "Seco",
+      operatingHours: "05:00 - 14:00",
+      capacityPerDayKg: 1000,
+      status: "ativo",
+    },
+  ];
+  const buildProduct = (): ProductionProduct => ({
+    id: "product-1",
+    code: "PR-0001",
+    name: "Pao Frances",
+    description: "",
+    lineId: "line-operational",
+    masterLineId: "line-operational",
+    operationalLineId: "line-operational",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 2,
+    minimumProductionKg: 15,
+    economicProductionKg: 15,
+    allowsStorage: false,
+    productionDays: ["quinta"],
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.1 },
+      production: { unit: "Kg", description: "Kg", weightKg: 1 },
+      expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+    },
+    packagingProfile: undefined,
+    isSoldLoose: true,
+    recipe: [],
+    preparationStages: [...defaultProductPreparationStages],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: "",
+    productionUnit: "Kg",
+    salesUnit: "Un",
+    salesToKgFactor: 0.1,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 1,
+    expeditionLeadDays: 0,
+    isMpiIngredient: false,
+  });
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-17T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["quinta"], minimumProduction: 15 }],
+    },
+  ];
+
+  // 10 Un × 0,1 kg = 1 kg de demanda consolidada — abaixo do lote mínimo (15 kg).
+  const below = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-1", quantity: 10, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products: [buildProduct()],
+    schedules,
+  });
+
+  const belowItem = below.productionOrders[0]?.items[0];
+  assert.equal(belowItem?.minimumProductionKg, 15);
+  assert.equal(belowItem?.belowMinimum, true);
+
+  // 200 Un × 0,1 kg = 20 kg — acima do lote mínimo: não sinaliza.
+  const above = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-2",
+        code: "PD-0002",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [{ id: "item-2", productId: "product-1", quantity: 200, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products: [buildProduct()],
+    schedules,
+  });
+
+  const aboveItem = above.productionOrders[0]?.items[0];
+  assert.equal(aboveItem?.belowMinimum, false);
 });
 
 test("production orders keep the daily schedule priority when listing products", () => {
@@ -831,10 +1003,11 @@ test("workflow recognizes orders as ready for expedition when items finish on di
     isReleased: () => true,
     isCancelled: () => false,
     resolveProductionItemStatus: (itemKey) => {
-      if (itemKey === "2026-03-10|line-1|schedule-1|product-1") {
+      // Chave canônica estável (3 partes, sem scheduleId) — ver getProductionItemKey.
+      if (itemKey === "2026-03-10|line-1|product-1") {
         return "concluido";
       }
-      if (itemKey === "2026-03-11|line-1|schedule-1|product-2") {
+      if (itemKey === "2026-03-11|line-1|product-2") {
         return "concluido";
       }
       return null;

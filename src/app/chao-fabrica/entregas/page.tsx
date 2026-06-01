@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, MapPinned, Navigation, Package, Truck, XCircle } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
@@ -27,6 +27,7 @@ import {
   getNextDeliveryAction,
   type DeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import { formatDateKeyBr, type ExpeditionRow } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
@@ -117,6 +118,30 @@ export default function EntregasPage() {
   const deliveryExecutionState = useDeliveryExecution();
   const toast = useToast();
   const [attemptDialogRow, setAttemptDialogRow] = useState<DeliveryRow | null>(null);
+  // Linha com transição de entrega em voo — desabilita o botão e evita
+  // disparos concorrentes. Chave: orderId.
+  const [pendingTransitionOrderId, setPendingTransitionOrderId] = useState<string | null>(null);
+
+  // Executa a transição de status de entrega com await + loading por linha +
+  // toast em caso de erro (espelha o tratamento de `registerAttempt`).
+  const handleDeliveryTransition = useCallback(
+    async (orderId: string, nextStatus: DeliveryExecutionStatus) => {
+      if (pendingTransitionOrderId) return; // evita corrida com outra em voo
+      setPendingTransitionOrderId(orderId);
+      try {
+        await deliveryExecutionState.updateExecution(orderId, nextStatus);
+      } catch (transitionError) {
+        const message =
+          transitionError instanceof Error
+            ? transitionError.message
+            : "Falha ao atualizar a entrega.";
+        toast.error(message, { title: "Não foi possível atualizar a entrega" });
+      } finally {
+        setPendingTransitionOrderId(null);
+      }
+    },
+    [deliveryExecutionState, pendingTransitionOrderId, toast],
+  );
 
   // AJ-A8: roteirização real. Constrói StoreProfile[] a partir do master-data
   // (que já traz deliveryZone) + calcula rotas via helper compartilhado.
@@ -145,12 +170,14 @@ export default function EntregasPage() {
 
   // AJ-0017: mapa pedido → OP (primeira OP encontrada) para deep-link da
   // entrega que ainda está "aguardando produção" direto na ordem de produção.
-  const opIdByOrderId = useMemo(() => {
+  // Guarda a CHAVE ESTÁVEL de navegação (não `op.id`, que é índice posicional)
+  // para o detalhe da OP resolver corretamente.
+  const opNavKeyByOrderId = useMemo(() => {
     const map = new Map<string, string>();
     planningData.productionOrders.forEach((op) => {
       op.sourceItems.forEach((source) => {
         if (!map.has(source.orderId)) {
-          map.set(source.orderId, op.id);
+          map.set(source.orderId, getProductionOrderNavKey(op));
         }
       });
     });
@@ -325,7 +352,7 @@ export default function EntregasPage() {
         const canMarkFailure = canRegisterDeliveryFailure(item.executionStatus);
 
         if (item.executionStatus === "aguardando_expedicao") {
-          const opId = opIdByOrderId.get(item.orderId);
+          const opNavKey = opNavKeyByOrderId.get(item.orderId);
           return (
             <div className="flex flex-wrap items-center gap-1.5">
               <Button
@@ -341,10 +368,10 @@ export default function EntregasPage() {
               >
                 {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
               </Button>
-              {!item.expeditionReady && opId ? (
+              {!item.expeditionReady && opNavKey ? (
                 <Button asChild type="button" variant="ghost" size="sm">
                   <Link
-                    href={`/chao-fabrica/ordens-producao/${opId}?ref=${anchorDate}`}
+                    href={`/chao-fabrica/ordens-producao/${encodeURIComponent(opNavKey)}?ref=${anchorDate}`}
                     title="Abrir a ordem de produção deste pedido"
                   >
                     <Package className="size-4" />
@@ -367,7 +394,9 @@ export default function EntregasPage() {
                 type="button"
                 variant="default"
                 size="sm"
-                onClick={() => void deliveryExecutionState.updateExecution(item.orderId, mainAction.nextStatus)}
+                isLoading={pendingTransitionOrderId === item.orderId}
+                disabled={pendingTransitionOrderId !== null}
+                onClick={() => void handleDeliveryTransition(item.orderId, mainAction.nextStatus)}
               >
                 <mainAction.icon className="size-4" />
                 {mainAction.label}
@@ -378,6 +407,7 @@ export default function EntregasPage() {
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={pendingTransitionOrderId !== null}
                 onClick={() => setAttemptDialogRow(item)}
               >
                 <XCircle className="size-4" />
@@ -559,10 +589,10 @@ export default function EntregasPage() {
                         >
                           {item.expeditionReady ? "Aguardando checklist" : "Aguardando expedição"}
                         </Button>
-                        {!item.expeditionReady && opIdByOrderId.get(item.orderId) ? (
+                        {!item.expeditionReady && opNavKeyByOrderId.get(item.orderId) ? (
                           <Button asChild type="button" variant="ghost" size="sm">
                             <Link
-                              href={`/chao-fabrica/ordens-producao/${opIdByOrderId.get(item.orderId)}?ref=${anchorDate}`}
+                              href={`/chao-fabrica/ordens-producao/${encodeURIComponent(opNavKeyByOrderId.get(item.orderId)!)}?ref=${anchorDate}`}
                             >
                               <Package className="size-4" />
                               Ver OP em produção
@@ -580,7 +610,9 @@ export default function EntregasPage() {
                           <Button
                             type="button"
                             size="sm"
-                            onClick={() => void deliveryExecutionState.updateExecution(item.orderId, mainAction.nextStatus)}
+                            isLoading={pendingTransitionOrderId === item.orderId}
+                            disabled={pendingTransitionOrderId !== null}
+                            onClick={() => void handleDeliveryTransition(item.orderId, mainAction.nextStatus)}
                           >
                             <mainAction.icon className="size-4" />
                             {mainAction.label}
@@ -591,6 +623,7 @@ export default function EntregasPage() {
                             type="button"
                             variant="outline"
                             size="sm"
+                            disabled={pendingTransitionOrderId !== null}
                             onClick={() => setAttemptDialogRow(item)}
                           >
                             <XCircle className="size-4" />
