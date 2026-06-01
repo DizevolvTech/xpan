@@ -85,6 +85,11 @@ export interface PlannedOrderItem {
   // releasedToProduction: liberar coloca a OP na coluna do gestor; iniciar é o que
   // a manda para o quadro do Chão (1ª coluna), mantendo o item em `nao_iniciado`.
   productionStarted: boolean;
+  // Batidas: capacidade + fator/unidade p/ derivar o plano após consolidar o totalKg.
+  capacityPerBatch: number | null;
+  salesToKgFactor: number;
+  salesUnit: OrderUnit;
+  batchesDone: number;
   productionItemKey: string | null;
   productionItemStatus: ProductionItemStatus | null;
   preparationStages: ProductPreparationStageKey[];
@@ -126,6 +131,11 @@ export interface ProductionOrderItem {
   productionSequence: number | null;
   progress: number;
   status: ProductionItemStatus;
+  // Plano de batidas derivado (planBatches) + progresso.
+  batchCount: number;
+  batchSizes: number[];
+  batchUnitLabel: string;
+  batchesDone: number;
   preparationStages: ProductPreparationStageKey[];
   sourceItemsCount: number;
 }

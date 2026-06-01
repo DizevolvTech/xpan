@@ -553,6 +553,102 @@ test("AJ-0006.1: OP sinaliza demanda consolidada abaixo do lote mínimo da fábr
   assert.equal(aboveItem?.belowMinimum, false);
 });
 
+test("OP de produto batido divide a demanda em batidas (enche + sobra na última)", () => {
+  const sectors: ProductionSector[] = [
+    { id: "sector-1", code: "SE-001", name: "Panificacao", responsible: "Maria", status: "ativo" },
+  ];
+  const lines: ProductionLine[] = [
+    {
+      id: "line-operational",
+      code: "LP-002",
+      name: "Carteira Operacional",
+      sectorId: "sector-1",
+      type: "Seco",
+      operatingHours: "05:00 - 14:00",
+      capacityPerDayKg: 1000,
+      status: "ativo",
+    },
+  ];
+  const product: ProductionProduct = {
+    id: "product-1",
+    code: "PR-0001",
+    name: "Pao Batido",
+    description: "",
+    lineId: "line-operational",
+    masterLineId: "line-operational",
+    operationalLineId: "line-operational",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 2,
+    minimumProductionKg: 0,
+    economicProductionKg: 0,
+    allowsStorage: false,
+    productionDays: ["quinta"],
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.11 },
+      production: { unit: "Kg", description: "Kg", weightKg: 1 },
+      expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+    },
+    packagingProfile: undefined,
+    isSoldLoose: true,
+    recipe: [],
+    preparationStages: [...defaultProductPreparationStages],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: "",
+    productionUnit: "Kg",
+    salesUnit: "Un",
+    salesToKgFactor: 0.11,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 1,
+    expeditionLeadDays: 0,
+    isMpiIngredient: false,
+    capacityPerBatch: 100,
+  };
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-17T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["quinta"], minimumProduction: 0 }],
+    },
+  ];
+
+  // 456 Un × 0,11 kg ≈ 50,16 kg → 456 Un / capacidade 100 = 5 batidas [100,100,100,100,56].
+  const planning = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-1", quantity: 456, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products: [product],
+    schedules,
+  });
+
+  const opItem = planning.productionOrders[0]?.items[0];
+  assert.equal(opItem?.batchCount, 5);
+  assert.deepEqual(opItem?.batchSizes, [100, 100, 100, 100, 56]);
+  assert.equal(opItem?.batchUnitLabel, "Un");
+  assert.equal(opItem?.batchesDone, 0);
+  assert.equal(opItem?.status, "nao_iniciado");
+});
+
 test("production orders keep the daily schedule priority when listing products", () => {
   const sectors: ProductionSector[] = [
     {
