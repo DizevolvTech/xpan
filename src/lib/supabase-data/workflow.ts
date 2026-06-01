@@ -28,6 +28,11 @@ export interface PersistedWorkflowState {
   releasedOrders: string[];
   cancelledOrders: string[];
   productionItemStatuses: Record<string, ProductionItemStatus>;
+  // Chaves canônicas de itens cuja PRODUÇÃO foi iniciada pelo gestor ("Iniciar
+  // produção do dia"). Estado separado de "liberado": liberar coloca o pedido na
+  // coluna "Em produção" do gestor; iniciar é o que faz a OP aparecer no quadro
+  // do Chão (1ª coluna), mantendo o item em `nao_iniciado`.
+  productionStartedKeys: string[];
 }
 
 /**
@@ -85,9 +90,10 @@ export function foldProductionItemStatuses(
 export async function getPersistedWorkflowState(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<PersistedWorkflowState> {
-  const [releasesResult, statusesResult, ordersResult] = await Promise.all([
+  const [releasesResult, statusesResult, startsResult, ordersResult] = await Promise.all([
     supabase.from("workflow_order_releases").select("order_id"),
     supabase.from("workflow_production_items").select("production_item_key, status"),
+    supabase.from("workflow_production_starts").select("production_item_key"),
     supabase.from("store_orders").select("id, legacy_id, management_status"),
   ]);
 
@@ -106,6 +112,9 @@ export async function getPersistedWorkflowState(
   const statusRows = isSupabaseMissingSchemaError(statusesResult.error, ["workflow_production_items"])
     ? []
     : assertSupabaseResult(statusesResult, "Failed to load workflow statuses");
+  const startRows = isSupabaseMissingSchemaError(startsResult.error, ["workflow_production_starts"])
+    ? []
+    : assertSupabaseResult(startsResult, "Failed to load workflow production starts");
 
   const orderLegacyById = new Map(orderRows.map((row) => [row.id, row.legacy_id ?? row.id]));
 
@@ -117,6 +126,10 @@ export async function getPersistedWorkflowState(
       .filter((row) => row.management_status === "cancelado")
       .map((row) => row.legacy_id ?? row.id),
     productionItemStatuses: foldProductionItemStatuses(statusRows),
+    // Canonicaliza (chaves legadas de 4 partes → 3) e deduplica, igual ao fold de status.
+    productionStartedKeys: startRows
+      .map((row) => canonicalProductionItemKey(row.production_item_key))
+      .filter((value, index, all) => all.indexOf(value) === index),
   };
 }
 
@@ -208,6 +221,8 @@ async function appendOrderEventsForProductionItem(
     isCancelled: (id) => workflowState.cancelledOrders.includes(id),
     resolveProductionItemStatus: (itemKey) =>
       itemKey ? workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado" : null,
+    isProductionStarted: (itemKey) =>
+      itemKey ? workflowState.productionStartedKeys.includes(canonicalProductionItemKey(itemKey)) : false,
   });
 
   const ordersReadyForExpedition = uniqueOrders.filter((orderId) => {
@@ -539,6 +554,41 @@ export async function updateProductionItemStatus(
   }
 }
 
+/**
+ * Marca a PRODUÇÃO de um item de OP como INICIADA (estado separado de "liberado"
+ * e de "status do item"). Não avança o status — o item segue em `nao_iniciado`;
+ * apenas passa a aparecer no quadro do Chão (1ª coluna). Idempotente: o upsert
+ * por chave canônica não duplica nem falha se já estiver iniciada.
+ *
+ * Sem validação de transição: iniciar é só um marcador. A chave é canonicalizada
+ * (3 partes) para nunca orfanar ao mudar a revisão do cronograma.
+ */
+export async function startProductionItem(
+  productionItemKey: string,
+  startedByProfileId?: string | null,
+  tenantId?: string | null,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const startedByDatabaseId = await resolveProfileDatabaseId(supabase, startedByProfileId ?? null);
+  const canonicalKey = canonicalProductionItemKey(productionItemKey);
+
+  const upsertResult = await supabase.from("workflow_production_starts").upsert(
+    {
+      production_item_key: canonicalKey,
+      started_at: new Date().toISOString(),
+      started_by_profile_id: startedByDatabaseId,
+      updated_at: new Date().toISOString(),
+    },
+    {
+      onConflict: "production_item_key",
+    },
+  );
+
+  if (upsertResult.error) {
+    throw new Error(`Failed to start production item: ${upsertResult.error.message}`);
+  }
+}
+
 export interface AutoReleaseResult {
   released: Array<{ orderId: string; orderCode: string }>;
   skipped: Array<{ orderId: string; orderCode: string; reason: string }>;
@@ -582,6 +632,8 @@ export async function autoReleaseEligibleOrders(
     isCancelled: (id) => workflowState.cancelledOrders.includes(id),
     resolveProductionItemStatus: (itemKey) =>
       itemKey ? workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado" : null,
+    isProductionStarted: (itemKey) =>
+      itemKey ? workflowState.productionStartedKeys.includes(canonicalProductionItemKey(itemKey)) : false,
   });
 
   const result: AutoReleaseResult = { released: [], skipped: [], failed: [] };

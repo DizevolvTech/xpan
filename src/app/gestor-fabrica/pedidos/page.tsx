@@ -35,6 +35,8 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { useToast } from "@/components/shared/toast";
 import { useConfirm } from "@/components/shared/confirm-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { getExpeditionVisibleStatus, isOrderReadyForDeliveryExecution } from "@/lib/delivery-workflow";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
@@ -88,6 +90,9 @@ export default function PedidosFabricaPage() {
   const [openStoreIds, setOpenStoreIds] = useState<string[]>([]);
   const [isOpeningOrders, setIsOpeningOrders] = useState(false);
   const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder, refresh } = useFactoryPlanningSnapshot(anchorDate);
+  // Merge do status derivado da produção com a execução de entrega (mesmo padrão
+  // da tela de expedição): uma entrega já avançada vence o status defasado.
+  const deliveryExecutionState = useDeliveryExecution();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -608,6 +613,11 @@ export default function PedidosFabricaPage() {
                   const items = orderItemsByOrderId.get(order.id) ?? [];
                   const aggregatedItems = aggregateOrderItems(items);
                   const isExpanded = expandedOrderIds.includes(order.id);
+                  // Status visível = status derivado da produção mesclado com a
+                  // execução de entrega (entregue/em_rota/etc. vencem o defasado).
+                  const expeditionReady = isOrderReadyForDeliveryExecution(order.status);
+                  const execution = deliveryExecutionState.resolveExecution(order.id, expeditionReady);
+                  const visibleStatus = getExpeditionVisibleStatus(order.status, execution.status);
                   return (
                     <Fragment key={order.id}>
                       <tr className="hover:bg-panel/30">
@@ -629,7 +639,7 @@ export default function PedidosFabricaPage() {
                           <p className="mt-1 text-[11px] text-muted-foreground">{order.dPlusLabel}</p>
                         </td>
                         <td className="min-w-[190px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <StatusBadge status={order.status} />
+                          <StatusBadge status={visibleStatus} />
                         </td>
                         <td className="min-w-[360px] align-top border-t border-border/70 bg-card px-4 py-3 text-right">
                           <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">

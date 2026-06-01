@@ -81,6 +81,10 @@ export interface PlannedOrderItem {
   scheduleDayPriority: number | null;
   availableForRelease: boolean;
   releasedToProduction: boolean;
+  // Produção iniciada pelo gestor ("Iniciar produção do dia"). Estado separado de
+  // releasedToProduction: liberar coloca a OP na coluna do gestor; iniciar é o que
+  // a manda para o quadro do Chão (1ª coluna), mantendo o item em `nao_iniciado`.
+  productionStarted: boolean;
   productionItemKey: string | null;
   productionItemStatus: ProductionItemStatus | null;
   preparationStages: ProductPreparationStageKey[];
@@ -166,6 +170,9 @@ export interface ProductionOrderRow {
   ordersCount: number;
   totalKg: number;
   releasedToProduction: boolean;
+  // OP iniciada (≥1 item com produção iniciada). É o filtro de visibilidade do
+  // quadro do Chão: liberada mas não iniciada NÃO aparece para o operário.
+  productionStarted: boolean;
   progress: number;
   status: OrderStatus;
   orderCodes: string[];

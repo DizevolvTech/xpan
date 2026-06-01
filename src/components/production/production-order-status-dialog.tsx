@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { type ProductionItemStatus, type ProductionOrderRow } from "@/lib/order-planning";
 import {
   getNextProductionActionLabel,
@@ -183,7 +184,7 @@ export function ProductionOrderStatusDialog({
                 Fechar
               </Button>
               <Button asChild type="button">
-                <Link href={`${detailHrefBase}/${op.id}?ref=${referenceDate}`}>Abrir detalhe completo</Link>
+                <Link href={`${detailHrefBase}/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${referenceDate}`}>Abrir detalhe completo</Link>
               </Button>
             </DialogFooter>
           </>

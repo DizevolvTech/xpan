@@ -38,3 +38,26 @@ export function isOpInProductionColumn(op: {
 }): boolean {
   return op.releasedToProduction && op.status !== "aguardando_expedicao";
 }
+
+/**
+ * Chave de navegação ESTÁVEL de uma OP (`productionDate|sectorId|lineId|scheduleId`).
+ *
+ * O `id`/`code` da OP são posicionais (`op-${index}` / `OP-...-NNN`) e mudam quando
+ * o conjunto de OPs do snapshot reindexa (novo pedido, troca de janela, refresh) —
+ * abrindo a OP errada num deep-link. Esta chave deriva da identidade real do
+ * agrupamento (mesma forma do planningKey do engine) e não reindexa. Usar para
+ * navegar/resolver o detalhe da OP em vez do id posicional.
+ */
+export function getProductionOrderNavKey(op: {
+  productionDate: string | null;
+  sectorId: string;
+  lineId: string;
+  scheduleId: string | null;
+}): string {
+  return [
+    op.productionDate ?? "sem-data",
+    op.sectorId,
+    op.lineId,
+    op.scheduleId ?? "sem-schedule",
+  ].join("|");
+}

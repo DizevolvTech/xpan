@@ -44,7 +44,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import type { PlannedOrderRow, ProductionItemStatus, ProductionOrderRow } from "@/lib/factory-planning/types";
+import type { PlannedOrderRow, ProductionOrderRow } from "@/lib/factory-planning/types";
 import {
   filterFactoryPlanningDataByOperationalScope,
   type OperationalDateScopeMode,
@@ -54,9 +54,24 @@ import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
-import { getNextProductionItemStatus } from "@/lib/production-workflow";
-import { isOpInProductionColumn, isOrderAwaitingAcceptance } from "@/lib/factory-kanban";
+import {
+  getProductionOrderNavKey,
+  isOpInProductionColumn,
+  isOrderAwaitingAcceptance,
+} from "@/lib/factory-kanban";
 import { formatKgLabel } from "@/lib/utils";
+
+// Erro de liberação que o servidor marcou como overridable (400 + forceable=true).
+// Permite ao caller oferecer "liberar mesmo assim" (refetch com force: true).
+class OrderReleaseForceableError extends Error {
+  readonly forceable = true;
+  readonly reason?: string;
+  constructor(message: string, reason?: string) {
+    super(message);
+    this.name = "OrderReleaseForceableError";
+    this.reason = reason;
+  }
+}
 
 type KanbanTone = "warning" | "info" | "primary" | "success";
 
@@ -147,19 +162,36 @@ export default function GestorFabricaPage() {
   // Chama direto o endpoint (não o hook), porque o hook faz refresh por
   // chamada — em batch isso seria N refreshes seriais. Aqui paralelizamos e
   // refreshamos uma vez no fim.
-  const releaseOrderRequest = useCallback(async (orderId: string) => {
-    const response = await fetch("/api/factory-planning/workflow", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "release-order", orderId }),
-    });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => null)) as
-        | { message?: string }
-        | null;
-      throw new Error(payload?.message ?? `Falha ao liberar (status ${response.status}).`);
-    }
-  }, []);
+  const releaseOrderRequest = useCallback(
+    async (orderId: string, force = false) => {
+      const response = await fetch("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        // AJ-A1: enviar referenceDate = âncora da página; sem ele o servidor
+        // valida a liberação contra HOJE e quebra ao operar uma janela passada/futura.
+        body: JSON.stringify({
+          action: "release-order",
+          orderId,
+          referenceDate: anchorDate,
+          ...(force ? { force: true } : {}),
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { message?: string; reason?: string; forceable?: boolean }
+          | null;
+        const message =
+          payload?.message ?? `Falha ao liberar (status ${response.status}).`;
+        // Bloqueio overridable: o 400 traz `forceable === true`. Sinaliza para o
+        // caller poder oferecer "liberar mesmo assim" (refazendo com force: true).
+        if (response.status === 400 && payload?.forceable === true) {
+          throw new OrderReleaseForceableError(message, payload.reason);
+        }
+        throw new Error(message);
+      }
+    },
+    [anchorDate],
+  );
 
   const runSingleRelease = useCallback(
     async (order: PlannedOrderRow) => {
@@ -174,11 +206,35 @@ export default function GestorFabricaPage() {
         toast.success(`Pedido ${order.code} liberado para produção.`);
         await refreshPlanning(true);
       } catch (releaseError) {
-        toast.error(
-          releaseError instanceof Error
-            ? releaseError.message
-            : `Falha ao liberar o pedido ${order.code}.`,
-        );
+        // Bloqueio overridable: oferecer "liberar mesmo assim" e refazer com force.
+        if (releaseError instanceof OrderReleaseForceableError) {
+          const confirmed = await confirm({
+            title: `Liberar ${order.code} mesmo assim?`,
+            description: releaseError.message,
+            tone: "default",
+            confirmLabel: "Liberar mesmo assim",
+            cancelLabel: "Cancelar",
+          });
+          if (confirmed) {
+            try {
+              await releaseOrderRequest(order.id, true);
+              toast.success(`Pedido ${order.code} liberado para produção.`);
+              await refreshPlanning(true);
+            } catch (forceError) {
+              toast.error(
+                forceError instanceof Error
+                  ? forceError.message
+                  : `Falha ao liberar o pedido ${order.code}.`,
+              );
+            }
+          }
+        } else {
+          toast.error(
+            releaseError instanceof Error
+              ? releaseError.message
+              : `Falha ao liberar o pedido ${order.code}.`,
+          );
+        }
       } finally {
         setPendingOrderIds((current) => {
           const next = new Set(current);
@@ -187,7 +243,7 @@ export default function GestorFabricaPage() {
         });
       }
     },
-    [batchProgress, pendingOrderIds, refreshPlanning, releaseOrderRequest, toast],
+    [batchProgress, confirm, pendingOrderIds, refreshPlanning, releaseOrderRequest, toast],
   );
 
   const runBatchRelease = useCallback(
@@ -266,11 +322,11 @@ export default function GestorFabricaPage() {
   // AJ — "iniciar produção" em lote: avança os itens `nao_iniciado` da OP para o
   // 1º estágio (mesma transição que o chão usa), via o mesmo endpoint do release.
   const startProductionItemRequest = useCallback(
-    async (productionItemKey: string, status: ProductionItemStatus) => {
+    async (productionItemKey: string) => {
       const response = await fetch("/api/factory-planning/workflow", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "update-production-item-status", productionItemKey, status }),
+        body: JSON.stringify({ action: "start-production-item", productionItemKey }),
       });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -283,45 +339,41 @@ export default function GestorFabricaPage() {
   const runBatchStartProduction = useCallback(
     async (columnKey: string, ops: ProductionOrderRow[]) => {
       if (batchProgress) return;
-      // Itens ainda não iniciados → próximo estágio (1º da ficha do produto).
-      const startable = ops.flatMap((op) =>
-        op.items
-          .filter((item) => item.status === "nao_iniciado")
-          .map((item) => ({
-            productionItemKey: item.productionItemKey,
-            next: getNextProductionItemStatus("nao_iniciado", item.preparationStages),
-          }))
-          .filter((entry): entry is { productionItemKey: string; next: ProductionItemStatus } =>
-            Boolean(entry.next),
-          ),
+      // "Iniciar produção do dia" = mandar para o Chão as OPs liberadas ainda NÃO
+      // iniciadas. NÃO avança o status (o item segue `nao_iniciado` / 1ª coluna do
+      // Chão = pré-pesagem); apenas marca a produção como iniciada. Trabalhamos por
+      // OP (todas as suas chaves de item) e ignoramos OPs já iniciadas.
+      const startableOps = ops.filter((op) => !op.productionStarted);
+      const startableKeys = startableOps.flatMap((op) =>
+        op.items.map((item) => item.productionItemKey),
       );
 
-      if (startable.length === 0) {
+      if (startableKeys.length === 0) {
         toast.info("Nenhuma OP pendente de início nesta etapa.");
         return;
       }
 
-      if (startable.length > 10) {
+      if (startableOps.length > 10) {
         const confirmed = await confirm({
-          title: `Iniciar a produção de ${startable.length} item(ns) de OP?`,
+          title: `Iniciar a produção de ${startableOps.length} OP(s)?`,
           description:
-            "Esta ação coloca em produção todos os itens ainda não iniciados das OPs do dia. Itens com falha são reportados ao final.",
-          confirmLabel: `Iniciar ${startable.length}`,
+            "Esta ação envia para o chão de fábrica todas as OPs liberadas ainda não iniciadas do dia. Falhas são reportadas ao final.",
+          confirmLabel: `Iniciar ${startableOps.length}`,
           cancelLabel: "Cancelar",
         });
         if (!confirmed) return;
       }
 
-      setBatchProgress({ columnKey, current: 0, total: startable.length, label: "Iniciando" });
+      setBatchProgress({ columnKey, current: 0, total: startableKeys.length, label: "Iniciando" });
       let succeeded = 0;
       let failed = 0;
       let firstError: string | null = null;
       let completed = 0;
 
       await Promise.allSettled(
-        startable.map(async (entry) => {
+        startableKeys.map(async (productionItemKey) => {
           try {
-            await startProductionItemRequest(entry.productionItemKey, entry.next);
+            await startProductionItemRequest(productionItemKey);
             succeeded += 1;
           } catch (startError) {
             failed += 1;
@@ -339,7 +391,7 @@ export default function GestorFabricaPage() {
       );
 
       if (failed === 0) {
-        toast.success(`${succeeded} item(ns) de OP em produção.`);
+        toast.success(`${startableOps.length} OP(s) enviada(s) para o chão.`);
       } else if (succeeded === 0) {
         toast.error(firstError ?? `Falha ao iniciar ${failed} item(ns).`);
       } else {
@@ -577,7 +629,9 @@ export default function GestorFabricaPage() {
     return { all, today };
   }, [anchorDate, kanbanColumns]);
 
-  // OPs da coluna "Em produção" com itens ainda não iniciados (pendentes de começar).
+  // OPs da coluna "Em produção" liberadas e ainda NÃO iniciadas (pendentes de
+  // mandar para o chão). Contamos OPs (não itens): "Iniciar produção do dia"
+  // envia a OP inteira para o quadro do chão.
   const productionColumn = useMemo(
     () => kanbanColumns.find((column) => column.key === "producao") ?? null,
     [kanbanColumns],
@@ -586,10 +640,7 @@ export default function GestorFabricaPage() {
     if (!productionColumn || productionColumn.kind !== "ops") {
       return 0;
     }
-    return productionColumn.items.reduce(
-      (total, op) => total + op.items.filter((item) => item.status === "nao_iniciado").length,
-      0,
-    );
+    return productionColumn.items.filter((op) => !op.productionStarted).length;
   }, [productionColumn]);
 
   const settingsSummary = useMemo(() => {
@@ -1317,7 +1368,7 @@ export default function GestorFabricaPage() {
                                   Sem mutation (apenas navegação), por isso só link. */}
                               <div className="mt-1 ms-3 ps-2">
                                 <Link
-                                  href={`/gestor-fabrica/ordens-producao/${op.id}`}
+                                  href={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}
                                   className="inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-[11px] font-semibold text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                   aria-label={`Auditar ordem de produção ${op.code}`}
                                 >

@@ -17,6 +17,7 @@ import {
   aggregateExpeditionItems,
   getAggregatedExpeditionItemKey,
 } from "@/lib/expedition-aggregation";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getExpeditionVisibleStatus } from "@/lib/delivery-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
@@ -35,7 +36,9 @@ function getChecklistItemKey(item: ReturnType<typeof aggregateExpeditionItems>[n
 
 export default function ExpedicaoDetailsPage() {
   const params = useParams<{ expeditionId: string }>();
-  const expeditionId = typeof params.expeditionId === "string" ? params.expeditionId : "";
+  // O param pode chegar como id da expedição (ex. "exp-seed-order-006") OU como
+  // id do pedido (ex. "seed-order-006"). Decodificamos e resolvemos por ambos.
+  const expeditionId = typeof params.expeditionId === "string" ? decodeURIComponent(params.expeditionId) : "";
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isChecklistSaving, setIsChecklistSaving] = useState(false);
@@ -43,7 +46,10 @@ export default function ExpedicaoDetailsPage() {
   const deliveryExecutionState = useDeliveryExecution();
 
   const expedition = useMemo(
-    () => planningData.expedition.find((item) => item.id === expeditionId) ?? null,
+    () =>
+      planningData.expedition.find(
+        (item) => item.id === expeditionId || item.orderId === expeditionId,
+      ) ?? null,
     [expeditionId, planningData.expedition],
   );
   const relatedProductionOrders = useMemo(
@@ -370,7 +376,7 @@ export default function ExpedicaoDetailsPage() {
                       </td>
                       <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
                         <Button asChild type="button" size="sm" variant="outline">
-                          <Link href={`/gestor-fabrica/ordens-producao/${op.id}?ref=${anchorDate}`}>
+                          <Link href={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}>
                             <Factory className="size-4" />
                             Abrir OP
                           </Link>

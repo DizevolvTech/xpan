@@ -642,6 +642,7 @@ function buildPlannedItems(
           scheduleDayPriority,
           availableForRelease: canPlan,
           releasedToProduction: false,
+          productionStarted: false,
           productionItemKey,
           productionItemStatus: canPlan ? "nao_iniciado" : null,
           preparationStages: normalizeProductPreparationStages(product.preparationStages),
@@ -682,6 +683,7 @@ export function buildProductionOrdersFromPlannedItems(
       sourceItems: ProductionOrderSourceItem[];
       totalKg: number;
       releasedToProduction: boolean;
+      productionStarted: boolean;
     }
   >();
 
@@ -710,6 +712,7 @@ export function buildProductionOrdersFromPlannedItems(
           sourceItems: [],
           totalKg: 0,
           releasedToProduction: false,
+          productionStarted: false,
         });
       }
 
@@ -718,6 +721,7 @@ export function buildProductionOrdersFromPlannedItems(
       group.orderIds.add(item.orderId);
       group.totalKg = round2(group.totalKg + item.internalKg);
       group.releasedToProduction = group.releasedToProduction || item.releasedToProduction;
+      group.productionStarted = group.productionStarted || item.productionStarted;
 
       if (!group.items.has(item.productId)) {
         group.items.set(item.productId, {
@@ -814,6 +818,7 @@ export function buildProductionOrdersFromPlannedItems(
       ordersCount: group.orderIds.size,
       totalKg: round2(group.totalKg),
       releasedToProduction: group.releasedToProduction,
+      productionStarted: group.productionStarted,
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),

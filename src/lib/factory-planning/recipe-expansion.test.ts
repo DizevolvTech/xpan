@@ -186,6 +186,7 @@ function makePlannedItem(overrides: Partial<PlannedOrderItem> = {}): PlannedOrde
     scheduleDayPriority: 1,
     availableForRelease: true,
     releasedToProduction: false,
+    productionStarted: false,
     productionItemKey: "2026-05-20|line-1|schedule-1|pizza",
     productionItemStatus: "nao_iniciado",
     preparationStages: [],

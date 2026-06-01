@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPreWeighingDocument } from "@/lib/printing-documents";
 import { formatKgValue, formatLocaleNumber } from "@/lib/utils";
@@ -78,10 +79,14 @@ export default function PrePesagemPrintPage() {
   const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
 
-  const op = useMemo(
-    () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
-    [opId, planningData.productionOrders],
-  );
+  const op = useMemo(() => {
+    const decoded = decodeURIComponent(opId);
+    return (
+      planningData.productionOrders.find((item) => getProductionOrderNavKey(item) === decoded) ??
+      planningData.productionOrders.find((item) => item.id === opId) ??
+      null
+    );
+  }, [opId, planningData.productionOrders]);
   const document = useMemo(
     () =>
       op

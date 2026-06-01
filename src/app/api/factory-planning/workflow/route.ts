@@ -9,6 +9,7 @@ import {
   cancelOrder,
   releaseOrder,
   reopenOrder,
+  startProductionItem,
   updateProductionItemStatus,
 } from "@/lib/supabase-data/workflow";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
@@ -34,6 +35,10 @@ export async function PATCH(request: Request) {
           action: "update-production-item-status";
           productionItemKey: string;
           status: ProductionItemStatus;
+        }
+      | {
+          action: "start-production-item";
+          productionItemKey: string;
         };
 
     if (body.action === "release-order") {
@@ -113,6 +118,35 @@ export async function PATCH(request: Request) {
       await updateProductionItemStatus(
         body.productionItemKey,
         body.status,
+        authorization.user.id,
+        authorization.effectiveTenantId,
+        supabase,
+      );
+      invalidatePlanningCaches(authorization.effectiveTenantId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === "start-production-item") {
+      // "Iniciar produção do dia" (gestor): manda a OP para o quadro do Chão sem
+      // avançar o status do item. Apenas o gestor inicia o dia de produção.
+      const authorization = await authorizeApiRequest({
+        contextLabel: "PATCH /api/factory-planning/workflow start-production-item",
+        permission: "gestor-fabrica.ops",
+        minimumLevel: "operar",
+        requireTenantContext: true,
+        requireWritableTenant: true,
+      });
+
+      if ("response" in authorization) {
+        return authorization.response;
+      }
+
+      const supabase = createTenantScopedSupabaseClient(
+        authorization.effectiveTenantId,
+        createSupabaseAdminClient(),
+      );
+      await startProductionItem(
+        body.productionItemKey,
         authorization.user.id,
         authorization.effectiveTenantId,
         supabase,

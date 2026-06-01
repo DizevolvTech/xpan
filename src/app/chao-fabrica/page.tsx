@@ -7,94 +7,73 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
-  ClipboardCheck,
+  Circle,
   Factory,
-  Inbox,
   ListChecks,
   PackageCheck,
-  Truck,
+  Soup,
   Zap,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
-import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
-import type { OrderStatus, PlannedOrderRow, ProductionOrderItem, ProductionOrderRow } from "@/lib/factory-planning";
+import {
+  getProductionOrderNavKey,
+  isOpInProductionColumn,
+} from "@/lib/factory-kanban";
+import type {
+  ProductionItemStatus,
+  ProductionOrderRow,
+} from "@/lib/factory-planning";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
-import { getNextProductionItemStatus } from "@/lib/production-workflow";
+import { getNextProductionActionLabel } from "@/lib/production-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 
-/**
- * Status visual map para os chips do dashboard.
- * Chips altos (px-3 py-1.5) — operário lê de longe, mãos sujas.
- */
-const STATUS_VISUAL: Record<OrderStatus, { label: string; chip: string; bar: string }> = {
-  em_producao: {
-    label: "Em produção",
-    chip: "bg-success/35 text-success-foreground",
-    bar: "bg-success",
-  },
-  agendado: {
-    label: "Agendado",
-    chip: "bg-info/35 text-info-foreground",
-    bar: "bg-info",
-  },
-  em_espera: {
-    label: "Em espera",
-    chip: "bg-warning/40 text-warning-foreground",
-    bar: "bg-warning",
-  },
-  aguardando_expedicao: {
-    label: "P/ expedir",
-    chip: "bg-secondary/60 text-secondary-foreground",
-    bar: "bg-secondary",
-  },
-  rota_entrega: {
-    label: "Em rota",
-    chip: "bg-info/35 text-info-foreground",
-    bar: "bg-info",
-  },
-  cancelado: {
-    label: "Cancelado",
-    chip: "bg-muted text-muted-foreground",
-    bar: "bg-muted",
-  },
-};
-
 // ============================================================
-// Kanban — espelha modelo do gestor, mas com cards "versão chão"
-// (glanceable, tablet, hit-targets ≥44px).
-// AJ-0001 REVOGADA: o Kanban é ACIONÁVEL pelo operário.
-//  - "Em produção"            → Marcar concluída (cascata de status)
-//  - "Aguardando expedição"   → Abrir checklist
-//  - "Aberto" / "Em rota"     → leitura (chão não libera nem entrega)
+// Kanban POR ETAPA DE PRODUÇÃO — o jeito que o operário pensa (SOMENTE LEITURA).
+// Em vez de colunas por ciclo do pedido (Aberto · Em produção · Expedição ·
+// Rota — 3 das quais o chão nem aciona), o board distribui cada OP pela sua
+// ETAPA ATUAL, colapsada em 4 colunas:
+//   1. Não iniciado  →  2. Em preparação  →  3. Produção  →  4. Expedição
+// "Produção" agrupa em produção / no forno / embalando. "Expedição" reúne as
+// OPs concluídas, APTAS a seguir para a conferência/checklist.
+// A liberação do pedido (gestor) e a roteirização (entrega) ficam fora do board:
+// viram KPI/linha informativa, não colunas. O caminho até a conferência é um
+// link no KPI "Prontos p/ expedir" e no selo de OP concluída.
 // ============================================================
 
-type KanbanTone = "warning" | "info" | "primary" | "success";
+type KanbanTone = "muted" | "warning" | "info" | "primary" | "success";
 
 type KanbanColumnBase = {
   key: string;
   title: string;
   tone: KanbanTone;
-  statuses: OrderStatus[];
-  icon: typeof Inbox;
+  icon: typeof Circle;
   emptyText: string;
   listHref: string;
   totalCount: number;
 };
 
-type KanbanColumn =
-  | (KanbanColumnBase & { kind: "orders"; items: PlannedOrderRow[] })
-  | (KanbanColumnBase & { kind: "ops"; items: ProductionOrderRow[] });
+// O board do chão é 100% produção: toda coluna é `kind: "ops"`. A antiga coluna
+// handoff de expedição (`kind: "orders"`) saiu — a saída para o checklist agora
+// é um link no KPI e no selo de OP concluída, não uma coluna.
+type KanbanColumn = KanbanColumnBase & { kind: "ops"; items: ProductionOrderRow[] };
 
 const KANBAN_TONE_STYLES: Record<
   KanbanTone,
   { bar: string; count: string; eyebrow: string; ring: string; iconWrap: string }
 > = {
+  muted: {
+    bar: "bg-muted-foreground/50",
+    count: "text-foreground",
+    eyebrow: "text-muted-foreground",
+    ring: "ring-1 ring-border/60",
+    iconWrap: "bg-muted/70 text-muted-foreground",
+  },
   warning: {
     bar: "bg-warning",
     count: "text-warning",
@@ -129,40 +108,62 @@ const KANBAN_TONE_STYLES: Record<
 // Operário não rola listas longas no tablet — 6 + "Ver todas".
 const CHAO_KANBAN_LIMIT = 6;
 
-// Ordem da fila do chão: "em produção" e "agendado" sobem; "em espera" depois; concluído nunca aparece.
-const QUEUE_PRIORITY: Record<OrderStatus, number> = {
-  em_producao: 0,
-  agendado: 1,
-  em_espera: 2,
-  aguardando_expedicao: 3,
-  rota_entrega: 4,
-  cancelado: 99,
+// ============================================================
+// Etapa atual de uma OP = o status MENOS avançado entre os itens NÃO
+// concluídos (o gargalo — o que falta fazer A SEGUIR). É essa etapa que decide
+// em qual coluna do board o card aparece.
+// ============================================================
+const STATUS_RANK: Record<ProductionItemStatus, number> = {
+  nao_iniciado: 0,
+  em_preparacao: 1,
+  em_producao: 2,
+  em_forno: 3,
+  embalando: 4,
+  concluido: 5,
 };
 
-/** Deep-link do card de pedido por status — leitura contextual no chão. */
-function getOrderHref(row: PlannedOrderRow): string {
-  switch (row.status) {
-    case "aguardando_expedicao":
-      return `/chao-fabrica/expedicao/${row.id}`;
-    case "rota_entrega":
-      return "/chao-fabrica/entregas?status=em_rota";
+function opCurrentStage(op: ProductionOrderRow): ProductionItemStatus {
+  const pend = op.items.filter((i) => i.status !== "concluido");
+  if (!pend.length) return "concluido";
+  return pend.reduce<ProductionItemStatus>(
+    (min, i) => (STATUS_RANK[i.status] < STATUS_RANK[min] ? i.status : min),
+    pend[0].status,
+  );
+}
+
+// O board do chão tem 4 colunas. "Produção" agrupa os 3 estágios intermediários
+// (em produção, no forno, embalando) — o chão só precisa enxergar "está sendo
+// produzido", sem o detalhe da sub-etapa. "Expedição" é a OP com todos os itens
+// concluídos: APTA a seguir para a conferência/checklist.
+type BoardColumnKey = "nao_iniciado" | "em_preparacao" | "producao" | "expedicao";
+
+// Mapeia a etapa-atual (gargalo) de uma OP para a coluna do board.
+function opBoardColumn(stage: ProductionItemStatus): BoardColumnKey {
+  switch (stage) {
+    case "nao_iniciado":
+      return "nao_iniciado";
+    case "em_preparacao":
+      return "em_preparacao";
+    case "concluido":
+      return "expedicao";
+    // em_producao | em_forno | embalando → tudo "Produção"
     default:
-      // em_espera / agendado / cancelado: lista de OPs do chão (operário não libera pedido)
-      return "/chao-fabrica/ordens-producao";
+      return "producao";
   }
 }
 
-/**
- * Retorna o conjunto de productionItemKeys de uma OP que ainda NÃO chegaram
- * em "concluido". O botão "Marcar concluída" no card do chão dispara, em
- * cascata, `updateProductionItemStatus` para cada item — usando apenas
- * `getNextProductionItemStatus` (idêntico ao fluxo do gestor, AJ-0006). Sem
- * endpoint novo. Cada item avança 1 estágio por chamada; a função abaixo
- * resolve a sequência completa até "concluido" client-side.
- */
-function getPendingProductionItems(op: ProductionOrderRow): ProductionOrderItem[] {
-  return op.items.filter((item) => item.status !== "concluido");
-}
+const BOARD_COLUMNS: {
+  key: BoardColumnKey;
+  title: string;
+  tone: KanbanTone;
+  icon: typeof Circle;
+}[] = [
+  { key: "nao_iniciado", title: "Não iniciado", tone: "muted", icon: Circle },
+  { key: "em_preparacao", title: "Em preparação", tone: "warning", icon: Soup },
+  { key: "producao", title: "Produção", tone: "info", icon: Factory },
+  // Apta à conferência: todos os itens concluídos, pronta p/ o checklist.
+  { key: "expedicao", title: "Expedição", tone: "success", icon: PackageCheck },
+];
 
 export default function ChaoFabricaPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
@@ -170,43 +171,71 @@ export default function ChaoFabricaPage() {
     planningData: planningSnapshot,
     isLoading,
     error,
-    updateProductionItemStatus,
   } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
   );
-  const toast = useToast();
 
-  // Estado de mutation por OP — bloqueia o botão e baixa opacidade do card.
-  // Chave: op.id. Não persistido — só durante a chamada em voo.
-  const [pendingOpId, setPendingOpId] = useState<string | null>(null);
+  // Lista canônica das OPs ATIVAS no chão — dirigida por ESTADO (produção
+  // iniciada pelo gestor, liberada e não-expedida), não por data. Reusada no
+  // KPI, no progresso do dia e no badge "PRÓXIMA" para que os números NUNCA se
+  // contradigam com o que o board mostra (só OPs iniciadas aparecem).
+  const productionOps = useMemo(
+    () =>
+      planningData.productionOrders.filter(
+        (op) => op.productionStarted && isOpInProductionColumn(op),
+      ),
+    [planningData.productionOrders],
+  );
 
-  const opsCount = planningData.productionOrders.length;
-  const productionKg = Number(planningData.productionOrders.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));
+  // O BOARD só mostra OPs cuja PRODUÇÃO FOI INICIADA pelo gestor ("Iniciar
+  // produção do dia"). Liberar (aceitar o pedido) coloca a OP na coluna do gestor,
+  // mas ela só chega ao chão quando o gestor inicia o dia — aí entra na 1ª coluna
+  // ("Não iniciado" / pré-pesagem). Inclui também as concluídas (terminais) para
+  // a OP migrar para "Expedição" em vez de sumir.
+  const boardOps = useMemo(
+    () =>
+      planningData.productionOrders.filter(
+        (op) => op.releasedToProduction && op.productionStarted,
+      ),
+    [planningData.productionOrders],
+  );
+
+  const opsCount = productionOps.length;
+  const productionKg = Number(productionOps.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));
   const releasedOrders = planningData.orders.filter((item) => item.releasedToProduction).length;
   const expeditionReady = planningData.expedition.filter((item) => item.status === "aguardando_expedicao").length;
   const awaitingRelease = planningData.orders.filter((item) => !item.releasedToProduction).length;
   const expeditionKg = Number(planningData.expedition.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2));
 
+  // Progresso médio do dia: média do `progress` das OPs em produção. Casa com a
+  // coluna — toda OP do board contribui; expedição/liberação ficam de fora.
+  const avgProgress =
+    productionOps.length === 0
+      ? 0
+      : Math.round(productionOps.reduce((sum, op) => sum + op.progress, 0) / productionOps.length);
+
   // Stats secundárias: dados que importam, mas não competem com os 3 KPIs primários.
+  // "Aguardando liberação" sai do board (não é etapa do chão) e vira linha informativa.
   const secondaryStats = [
     { label: "Carga de produção", value: formatKgLabel(productionKg, { maximumFractionDigits: 2 }) },
+    { label: "Aguardando liberação", value: awaitingRelease },
     { label: "Pedidos liberados", value: releasedOrders },
-    { label: "Carga total de expedição", value: formatKgLabel(expeditionKg, { maximumFractionDigits: 2 }) },
+    { label: "Carga de expedição", value: formatKgLabel(expeditionKg, { maximumFractionDigits: 2 }) },
   ];
 
   // Progresso do dia: OPs com progress=100 (ou status terminal) contam como concluídas.
   const dayProgress = useMemo(() => {
-    const total = planningData.productionOrders.length;
+    const total = boardOps.length;
     if (total === 0) {
       return { total: 0, done: 0, inProgress: 0, pending: 0, percent: 0 };
     }
     let done = 0;
     let inProgress = 0;
-    planningData.productionOrders.forEach((op) => {
-      if (op.progress >= 100) done += 1;
-      else if (op.status === "em_producao" || op.progress > 0) inProgress += 1;
+    boardOps.forEach((op) => {
+      if (opCurrentStage(op) === "concluido") done += 1;
+      else if (op.progress > 0) inProgress += 1;
     });
     const pending = Math.max(0, total - done - inProgress);
     return {
@@ -216,96 +245,43 @@ export default function ChaoFabricaPage() {
       pending,
       percent: Math.round((done / total) * 100),
     };
-  }, [planningData.productionOrders]);
+  }, [boardOps]);
 
-  // Kanban (4 colunas) — espelha o modelo do gestor.
-  //   1. Aberto                  — pedidos em_espera / agendado          (warning)
-  //   2. Em produção             — OPs em_producao (agrupa por OP)       (info)
-  //   3. Aguardando expedição    — pedidos aguardando_expedicao          (primary)
-  //   4. Em rota / entregue      — pedidos rota_entrega                  (success)
+  // Kanban de 4 colunas (Não iniciado · Em preparação · Produção · Expedição).
+  // Cada OP é alocada pela sua ETAPA ATUAL (gargalo), colapsada na coluna do
+  // board correspondente. A coluna "Expedição" reúne as OPs concluídas, aptas
+  // a seguir para a conferência.
   const kanbanColumns = useMemo<KanbanColumn[]>(() => {
-    const abertoItems = planningData.orders
-      .filter((order) => order.status === "em_espera" || order.status === "agendado")
-      .sort((a, b) => {
-        const ap = QUEUE_PRIORITY[a.status] ?? 50;
-        const bp = QUEUE_PRIORITY[b.status] ?? 50;
-        if (ap !== bp) return ap - bp;
-        return a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code);
-      });
+    // Pré-agrupa as OPs por coluna do board num único passo.
+    const byColumn = new Map<BoardColumnKey, ProductionOrderRow[]>();
+    for (const op of boardOps) {
+      const column = opBoardColumn(opCurrentStage(op));
+      const bucket = byColumn.get(column);
+      if (bucket) bucket.push(op);
+      else byColumn.set(column, [op]);
+    }
 
-    const producaoItems = [...planningData.productionOrders]
-      .filter((op) => op.status === "em_producao")
-      .sort((a, b) => {
-        // Mais "quentes" primeiro: maior progresso → maior carga
+    return BOARD_COLUMNS.map(({ key, title, tone, icon }) => {
+      const items = (byColumn.get(key) ?? []).sort((a, b) => {
+        // Dentro da coluna: entrega mais cedo primeiro, depois mais perto de fechar.
+        const byDate = a.productionDate.localeCompare(b.productionDate);
+        if (byDate !== 0) return byDate;
         if (b.progress !== a.progress) return b.progress - a.progress;
-        return b.totalKg - a.totalKg;
+        return a.code.localeCompare(b.code);
       });
-
-    const expedicaoItems = planningData.orders
-      .filter((order) => order.status === "aguardando_expedicao")
-      .sort(
-        (a, b) =>
-          a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
-      );
-
-    const rotaItems = planningData.orders
-      .filter((order) => order.status === "rota_entrega")
-      .sort(
-        (a, b) =>
-          a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
-      );
-
-    return [
-      {
-        kind: "orders",
-        key: "aberto",
-        title: "Aberto",
-        tone: "warning",
-        statuses: ["em_espera", "agendado"],
-        icon: Inbox,
-        emptyText: "Nenhum pedido aberto no período selecionado.",
-        listHref: "/chao-fabrica/ordens-producao",
-        items: abertoItems.slice(0, CHAO_KANBAN_LIMIT),
-        totalCount: abertoItems.length,
-      },
-      {
+      return {
         kind: "ops",
-        key: "producao",
-        title: "Em produção",
-        tone: "info",
-        statuses: ["em_producao"],
-        icon: Factory,
-        emptyText: "Nenhuma OP em produção agora.",
+        key,
+        title,
+        tone,
+        icon,
+        emptyText: "Nenhuma OP nesta etapa.",
         listHref: "/chao-fabrica/ordens-producao",
-        items: producaoItems.slice(0, CHAO_KANBAN_LIMIT),
-        totalCount: producaoItems.length,
-      },
-      {
-        kind: "orders",
-        key: "expedicao",
-        title: "Aguardando expedição",
-        tone: "primary",
-        statuses: ["aguardando_expedicao"],
-        icon: PackageCheck,
-        emptyText: "Nenhum pedido aguardando checklist.",
-        listHref: "/chao-fabrica/expedicao",
-        items: expedicaoItems.slice(0, CHAO_KANBAN_LIMIT),
-        totalCount: expedicaoItems.length,
-      },
-      {
-        kind: "orders",
-        key: "rota",
-        title: "Em rota / entregue",
-        tone: "success",
-        statuses: ["rota_entrega"],
-        icon: Truck,
-        emptyText: "Nenhum pedido em rota agora.",
-        listHref: "/chao-fabrica/entregas?status=em_rota",
-        items: rotaItems.slice(0, CHAO_KANBAN_LIMIT),
-        totalCount: rotaItems.length,
-      },
-    ];
-  }, [planningData.orders, planningData.productionOrders]);
+        items: items.slice(0, CHAO_KANBAN_LIMIT),
+        totalCount: items.length,
+      };
+    });
+  }, [boardOps]);
 
   // ============================================================
   // Priorização "PRÓXIMA": destaca a OP que o operário deve atacar primeiro.
@@ -316,87 +292,25 @@ export default function ChaoFabricaPage() {
   // Calculado sobre o conjunto VISÍVEL da coluna "Em produção".
   // ============================================================
   const nextOpId = useMemo<string | null>(() => {
-    const producaoColumn = kanbanColumns.find((column) => column.key === "producao");
-    if (!producaoColumn || producaoColumn.kind !== "ops" || producaoColumn.items.length === 0) {
-      return null;
-    }
-    const sorted = [...producaoColumn.items].sort((a, b) => {
+    if (productionOps.length === 0) return null;
+    const sorted = [...productionOps].sort((a, b) => {
       const byDate = a.productionDate.localeCompare(b.productionDate);
       if (byDate !== 0) return byDate;
       if (b.progress !== a.progress) return b.progress - a.progress;
       return a.code.localeCompare(b.code);
     });
     return sorted[0]?.id ?? null;
-  }, [kanbanColumns]);
+  }, [productionOps]);
 
   const totalKanbanItems = kanbanColumns.reduce((sum, col) => sum + col.totalCount, 0);
   const kanbanIsEmpty = totalKanbanItems === 0 && !isLoading && !error;
 
-  // ============================================================
-  // Ação: "Marcar concluída" (versão chão).
-  // Avança cada item pendente até `concluido`, em cascata. Usa SOMENTE a
-  // action `update-production-item-status` (única exposta pelo workflow para
-  // permissão `chao-fabrica.ops`). Sem endpoint novo. O hook já invalida o
-  // cache de planning ao final.
-  //
-  // Estratégia:
-  //  - Loop sobre os items pendentes; para cada um, avança 1 estágio.
-  //  - Repete até todos atingirem "concluido" (ou um erro interromper).
-  //  - Otimismo: setamos `pendingOpId` no início → card baixa opacidade,
-  //    botão entra em `isLoading`. Outras colunas/cards continuam clicáveis.
-  // ============================================================
-  const handleCompleteOp = useCallback(
-    async (op: ProductionOrderRow) => {
-      if (pendingOpId) return; // evita corrida com outra mutation em voo no mesmo card
-      setPendingOpId(op.id);
-      try {
-        // Trabalhamos sobre um snapshot local — cada chamada altera o servidor,
-        // mas o snapshot client só refresca ao final do hook. Iteramos
-        // calculando o próximo estágio com base no estado VISTO localmente.
-        const queue = getPendingProductionItems(op).map((item) => ({
-          key: item.productionItemKey,
-          status: item.status,
-          stages: item.preparationStages,
-        }));
-
-        if (queue.length === 0) {
-          toast.info("OP já está concluída.");
-          setPendingOpId(null);
-          return;
-        }
-
-        // Avança 1 estágio por iteração, item a item. Garante a transição
-        // exata de +1 (canTransitionProductionItemStatus é estrito).
-        let safety = 0;
-        const MAX_STEPS = queue.length * 8; // 6 estágios + folga
-        while (queue.some((entry) => entry.status !== "concluido")) {
-          safety += 1;
-          if (safety > MAX_STEPS) {
-            throw new Error("Limite de avanços excedido. Tente abrir a OP para concluir manualmente.");
-          }
-          for (const entry of queue) {
-            if (entry.status === "concluido") continue;
-            const next = getNextProductionItemStatus(entry.status, entry.stages);
-            if (!next) {
-              entry.status = "concluido";
-              continue;
-            }
-            await updateProductionItemStatus(entry.key, next);
-            entry.status = next;
-          }
-        }
-
-        toast.success(`OP ${op.code} concluída.`);
-      } catch (mutationError) {
-        const message =
-          mutationError instanceof Error ? mutationError.message : "Falha ao concluir a OP.";
-        toast.error(message, { title: "Não foi possível concluir" });
-      } finally {
-        setPendingOpId(null);
-      }
-    },
-    [pendingOpId, toast, updateProductionItemStatus],
-  );
+  // O board do chão é SOMENTE LEITURA: o operário acompanha o andamento, mas o
+  // fluxo (aceitar pedidos do dia + liberar para produção) é dirigido pelo
+  // Gestor de Fábrica. Antes daqui viviam `handleCompleteOp` e
+  // `handleAdvanceOpOneStage`, que mudavam o status dos itens direto do card —
+  // removidos porque adiantar/concluir OP fora do fluxo do gestor quebrava a
+  // ordem das etapas. A mudança de status continua disponível no detalhe da OP.
 
   return (
     <PageLayout
@@ -423,19 +337,27 @@ export default function ChaoFabricaPage() {
         transition={{ delay: 0.1 }}
         className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
       >
-        <KPICard title="OPs para produzir" value={opsCount} tone="info" icon={Factory} compactValue />
+        <KPICard title="OPs em produção" value={opsCount} tone="info" icon={Factory} compactValue />
+        {/* KPI navegável: a produção concluída sai do board → este é o caminho
+            do operário para o checklist de expedição (filtro aguardando_expedicao). */}
+        <Link
+          href="/chao-fabrica/expedicao?status=aguardando_expedicao"
+          aria-label={`Prontos p/ expedir: ${expeditionReady}. Abrir expedição`}
+          className="block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <KPICard
+            title="Prontos p/ expedir →"
+            value={expeditionReady}
+            tone="success"
+            icon={PackageCheck}
+            compactValue
+          />
+        </Link>
         <KPICard
-          title="Pedidos prontos p/ expedir"
-          value={expeditionReady}
-          tone="success"
-          icon={Truck}
-          compactValue
-        />
-        <KPICard
-          title="Pedidos aguardando liberação"
-          value={awaitingRelease}
-          tone="warning"
-          icon={ListChecks}
+          title="Progresso do dia"
+          value={`${avgProgress}%`}
+          tone="neutral"
+          icon={Zap}
           compactValue
         />
       </motion.div>
@@ -537,13 +459,15 @@ export default function ChaoFabricaPage() {
       </motion.section>
 
       {/* ============================================================
-          KANBAN — peça central do chão.
-          4 colunas, espelha o modelo conceitual do gestor:
-          Aberto · Em produção · Aguardando expedição · Em rota.
-          AÇÕES INLINE (1 toque, ≥44px):
-           - Em produção         → Marcar concluída
-           - Aguardando expedição → Abrir checklist
-          A 1ª OP da fila "Em produção" recebe badge PRÓXIMA.
+          KANBAN — peça central do chão (SOMENTE LEITURA).
+          4 colunas (scroll horizontal, colunas fixas de ≥280px):
+          Não iniciado → Em preparação → Produção → Expedição (apta à conferência).
+          O board acompanha o andamento; o avanço de etapa é dirigido pelo
+          Gestor (aceitar pedidos do dia + liberar p/ produção) e, item a item,
+          no detalhe da OP. Cada card mostra:
+           - próximo passo (indicador read-only)
+           - OP concluída → selo-link "ir para expedição" (saída p/ o checklist)
+          A OP de maior prioridade recebe o badge PRÓXIMA dentro da sua etapa.
          ============================================================ */}
       {error ? (
         <div
@@ -565,10 +489,10 @@ export default function ChaoFabricaPage() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.22 }}
-        aria-label="Quadro operacional do chão"
-        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        aria-label="Quadro de produção por etapa"
+        className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 [scrollbar-gutter:stable]"
       >
-        {kanbanColumns.map((column) => {
+        {kanbanColumns.map((column, columnIndex) => {
           const tone = KANBAN_TONE_STYLES[column.tone];
           const Icon = column.icon;
           const isEmpty = column.items.length === 0;
@@ -577,15 +501,15 @@ export default function ChaoFabricaPage() {
             <section
               key={column.key}
               aria-labelledby={`chao-kanban-${column.key}-title`}
-              className={`group relative flex min-h-[420px] flex-col gap-3 overflow-hidden rounded-2xl bg-card p-4 ${tone.ring}`}
+              className={`group relative flex min-h-[460px] w-[84vw] shrink-0 snap-start flex-col gap-3 overflow-hidden rounded-2xl bg-card p-4 sm:w-[300px] ${tone.ring}`}
             >
               <span
                 aria-hidden
                 className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${tone.bar}`}
               />
 
-              {/* Header — número GIGANTE + título uppercase + ícone à esquerda.
-                  Clicável: leva à lista filtrada. h-11 mínimo no link. */}
+              {/* Header — passo Nº + ícone + título da etapa + contagem.
+                  Clicável: leva à lista de OPs. h-11 mínimo no link. */}
               <header className="flex items-start justify-between gap-3 pl-2">
                 <Link
                   href={column.listHref}
@@ -595,21 +519,29 @@ export default function ChaoFabricaPage() {
                   <div className="flex items-center gap-3">
                     <span
                       aria-hidden
-                      className={`inline-flex size-11 shrink-0 items-center justify-center rounded-xl ${tone.iconWrap}`}
+                      className={`relative inline-flex size-11 shrink-0 items-center justify-center rounded-xl ${tone.iconWrap}`}
                     >
                       <Icon className="size-6" />
+                      <span className="absolute -right-1 -top-1 inline-flex size-5 items-center justify-center rounded-full bg-card text-[10px] font-bold tabular-nums text-muted-foreground ring-1 ring-border/70">
+                        {columnIndex + 1}
+                      </span>
                     </span>
                     <div className="min-w-0">
                       <span
-                        className={`font-heading text-4xl font-bold leading-none tabular-nums ${tone.count} sm:text-5xl`}
-                      >
-                        {column.totalCount}
-                      </span>
-                      <span
                         id={`chao-kanban-${column.key}-title`}
-                        className={`mt-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] ${tone.eyebrow}`}
+                        className={`block text-[11px] font-semibold uppercase tracking-[0.14em] ${tone.eyebrow}`}
                       >
-                        {column.title}
+                        {`Etapa ${columnIndex + 1}`}
+                      </span>
+                      <span className="mt-0.5 flex items-baseline gap-1.5">
+                        <span
+                          className={`font-heading text-3xl font-bold leading-none tabular-nums ${tone.count}`}
+                        >
+                          {column.totalCount}
+                        </span>
+                        <span className="truncate text-sm font-semibold text-foreground">
+                          {column.title}
+                        </span>
                       </span>
                     </div>
                   </div>
@@ -631,20 +563,15 @@ export default function ChaoFabricaPage() {
                     />
                     <p className="text-sm text-muted-foreground">{column.emptyText}</p>
                   </div>
-                ) : column.kind === "ops" ? (
+                ) : (
                   column.items.map((op) => (
                     <ChaoOpCard
                       key={op.id}
                       op={op}
                       tone={tone}
+                      anchorDate={anchorDate}
                       isNext={op.id === nextOpId}
-                      isPending={pendingOpId === op.id}
-                      onComplete={handleCompleteOp}
                     />
-                  ))
-                ) : (
-                  column.items.map((order) => (
-                    <ChaoOrderCard key={order.id} order={order} />
                   ))
                 )}
 
@@ -705,29 +632,43 @@ export default function ChaoFabricaPage() {
 
 /* ============================================================
  * Card de OP — coluna "Em produção" (versão chão).
+ * SOMENTE LEITURA: o card acompanha o andamento, não muda status. A mudança de
+ * etapa é feita pelo Gestor (aceitar/liberar) e, item a item, no detalhe da OP.
  * min-h 112, p-4, hit-targets ≥44px. Progress h-2.5.
  * - Badge "PRÓXIMA" visualmente destaca a OP de maior prioridade da fila.
- * - Header é um Link (leva à OP); o BOTÃO de ação é separado para evitar
- *   conflito de click-target (button-inside-anchor é inválido).
- * - Estado "pending": opacity reduzida + botão isLoading.
+ * - Header é um Link (leva à OP); o rodapé mostra o próximo passo (read-only).
  * ============================================================ */
 
 function ChaoOpCard({
   op,
   tone,
+  anchorDate,
   isNext,
-  isPending,
-  onComplete,
 }: {
   op: ProductionOrderRow;
   tone: (typeof KANBAN_TONE_STYLES)[KanbanTone];
+  anchorDate: string;
   isNext: boolean;
-  isPending: boolean;
-  onComplete: (op: ProductionOrderRow) => void | Promise<void>;
 }) {
-  const visual = STATUS_VISUAL[op.status] ?? STATUS_VISUAL.em_producao;
   const progress = Math.max(0, Math.min(100, Math.round(op.progress)));
   const orderCount = op.ordersCount;
+  // Deep-link estável para o detalhe da OP (a chave não reindexa) + âncora de
+  // data da janela operacional para o detalhe resolver o snapshot correto.
+  const opDetailHref = `/chao-fabrica/ordens-producao/${encodeURIComponent(
+    getProductionOrderNavKey(op),
+  )}?ref=${encodeURIComponent(anchorDate)}`;
+  // Itens ainda não concluídos da OP.
+  const pendingItems = op.items.filter((item) => item.status !== "concluido");
+  const hasPendingItems = pendingItems.length > 0;
+  // PRÓXIMO passo CONCRETO ("Iniciar produção", "Enviar para forno"…) quando todos
+  // os itens pendentes avançam para o mesmo passo; null se estiverem mistos (aí o
+  // indicador read-only mostra apenas "Em andamento").
+  const nextActionLabels = new Set(
+    pendingItems
+      .map((item) => getNextProductionActionLabel(item.status, item.preparationStages))
+      .filter((label): label is string => Boolean(label)),
+  );
+  const nextStepLabel = nextActionLabels.size === 1 ? [...nextActionLabels][0] : null;
 
   // "PRÓXIMA" gera um ring forte + faixa lateral expandida — sinal que o
   // operário identifica de 1m de distância. Sem animação distrativa.
@@ -738,11 +679,11 @@ function ChaoOpCard({
   return (
     <article
       aria-label={`OP ${op.code}${isNext ? " — próxima da fila" : ""}`}
-      className={`relative flex min-h-[140px] flex-col gap-2 rounded-xl bg-panel/40 p-4 transition-opacity ${containerClass} ${isPending ? "opacity-60" : ""}`}
+      className={`relative flex min-h-[140px] flex-col gap-2 rounded-xl bg-panel/40 p-4 ${containerClass}`}
     >
       {/* Header clicável — vai pra lista filtrada da OP (modo leitura). */}
       <Link
-        href={`/chao-fabrica/ordens-producao?op=${encodeURIComponent(op.code)}`}
+        href={opDetailHref}
         className="flex items-center justify-between gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Abrir OP ${op.code}`}
       >
@@ -756,14 +697,15 @@ function ChaoOpCard({
               Próxima
             </span>
           ) : (
-            <span
-              className={`inline-flex shrink-0 items-center rounded-full px-3 py-1.5 text-sm font-semibold ${visual.chip}`}
-            >
-              {visual.label}
+            // A coluna já indica a etapa — o card só precisa do código da OP.
+            <span className="truncate font-mono text-sm font-semibold text-foreground">
+              {op.code}
             </span>
           )}
         </div>
-        <span className="truncate font-mono text-sm text-muted-foreground">{op.code}</span>
+        {isNext ? (
+          <span className="truncate font-mono text-sm text-muted-foreground">{op.code}</span>
+        ) : null}
       </Link>
 
       <p className="truncate text-lg font-semibold leading-tight text-foreground">
@@ -796,108 +738,37 @@ function ChaoOpCard({
         entrega {op.productionDateLabel}
       </p>
 
-      {/* Ação primária do chão: "Marcar concluída". 1 toque, h-11, full-width.
-          Otimistic UI via `isLoading` (Button UX-0004 troca conteúdo por spinner). */}
-      <Button
-        type="button"
-        size="lg"
-        variant={isNext ? "default" : "outline"}
-        className="mt-1 h-11 w-full justify-center gap-2 text-base"
-        isLoading={isPending}
-        loadingText="Concluindo…"
-        onClick={() => void onComplete(op)}
-        aria-label={`Marcar OP ${op.code} como concluída`}
-      >
-        <Check className="size-5" aria-hidden />
-        Marcar concluída
-      </Button>
-    </article>
-  );
-}
-
-/* ============================================================
- * Card de pedido — colunas Aberto / Aguardando expedição / Em rota
- * (versão chão) — min-h 96, p-4.
- * "Aguardando expedição" ganha um BOTÃO explícito "Abrir checklist"
- * (operário no tablet com mãos sujas precisa de affordance, não de pista).
- * ============================================================ */
-
-function ChaoOrderCard({ order }: { order: PlannedOrderRow }) {
-  const visual = STATUS_VISUAL[order.status] ?? STATUS_VISUAL.em_espera;
-  const isExpedicao = order.status === "aguardando_expedicao";
-
-  // Em "Aguardando expedição" o card é um container neutro (não-link) com um
-  // BOTÃO "Abrir checklist" — evita duplicar affordance e dá hit-target claro.
-  // Nas demais colunas mantemos o card-link (leitura passiva).
-  if (isExpedicao) {
-    return (
-      <article
-        aria-label={`Pedido ${order.code} — ${order.storeName}`}
-        className="flex min-h-[112px] flex-col gap-2 rounded-xl bg-panel/40 p-4 ring-1 ring-border/60"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span
-            className={`inline-flex shrink-0 items-center rounded-full px-3 py-1.5 text-sm font-semibold ${visual.chip}`}
-          >
-            {visual.label}
+      {/* Indicador READ-ONLY do próximo passo. O board do chão é só leitura — o
+          avanço de etapa é dirigido pelo Gestor (aceitar/liberar) e, item a
+          item, pelo detalhe da OP. Sem botão de mutação aqui. */}
+      {hasPendingItems ? (
+        <div
+          className="mt-1 flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-panel/60 px-3 py-2.5 ring-1 ring-border/60"
+          aria-label={
+            nextStepLabel
+              ? `Próximo passo — ${nextStepLabel}`
+              : "Em andamento — itens em etapas diferentes"
+          }
+        >
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="truncate text-sm font-medium text-muted-foreground">
+            {nextStepLabel ? `Próximo: ${nextStepLabel}` : "Em andamento"}
           </span>
-          <span className="truncate font-mono text-sm text-muted-foreground">{order.code}</span>
         </div>
-
-        <p className="truncate text-lg font-semibold leading-tight text-foreground">
-          {order.storeName}
-        </p>
-
-        <p className="text-sm text-muted-foreground tabular-nums">
-          {formatKgValue(order.totalKg)} kg
-          <span className="mx-1.5 opacity-50">·</span>
-          {order.itemsCount} {order.itemsCount === 1 ? "item" : "itens"}
-          <span className="mx-1.5 opacity-50">·</span>
-          entrega {order.deliveryDateLabel}
-        </p>
-
-        <Button
-          asChild
-          size="lg"
-          className="mt-1 h-11 w-full justify-center gap-2 text-base"
+      ) : (
+        // OP concluída: nada a produzir no chão, mas o operário precisa de um
+        // caminho claro para o checklist (a coluna de expedição saiu do board).
+        // Selo verde VIROU AÇÃO: leva à Expedição filtrada por aguardando_expedicao.
+        <Link
+          href="/chao-fabrica/expedicao?status=aguardando_expedicao"
+          aria-label={`OP ${op.code} concluída — ir para a expedição`}
+          className="mt-1 flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 font-semibold text-emerald-700 outline-none transition-colors hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
-          <Link
-            href={`/chao-fabrica/expedicao/${order.id}`}
-            aria-label={`Abrir checklist do pedido ${order.code}`}
-          >
-            <ClipboardCheck className="size-5" aria-hidden />
-            Abrir checklist
-          </Link>
-        </Button>
-      </article>
-    );
-  }
-
-  return (
-    <Link
-      href={getOrderHref(order)}
-      className="group/order flex min-h-[96px] flex-col gap-2 rounded-xl bg-panel/40 p-4 ring-1 ring-border/60 transition-colors hover:bg-panel/70 focus-visible:bg-panel/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span
-          className={`inline-flex shrink-0 items-center rounded-full px-3 py-1.5 text-sm font-semibold ${visual.chip}`}
-        >
-          {visual.label}
-        </span>
-        <span className="truncate font-mono text-sm text-muted-foreground">{order.code}</span>
-      </div>
-
-      <p className="truncate text-lg font-semibold leading-tight text-foreground">
-        {order.storeName}
-      </p>
-
-      <p className="text-sm text-muted-foreground tabular-nums">
-        {formatKgValue(order.totalKg)} kg
-        <span className="mx-1.5 opacity-50">·</span>
-        {order.itemsCount} {order.itemsCount === 1 ? "item" : "itens"}
-        <span className="mx-1.5 opacity-50">·</span>
-        entrega {order.deliveryDateLabel}
-      </p>
-    </Link>
+          <Check className="size-5 shrink-0" aria-hidden />
+          <span className="text-sm">Concluída · ir para expedição</span>
+          <ArrowRight className="size-4 shrink-0" aria-hidden />
+        </Link>
+      )}
+    </article>
   );
 }

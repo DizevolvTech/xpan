@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import type { OperationalDateScopeMode } from "@/lib/operational-date-scope";
 import {
@@ -433,9 +434,9 @@ export default function OrdensProducaoPage() {
       header: "Ações",
       render: (item: OpQueueRow) => (
         <ProductionOrderActionsMenu
-          detailHref={`/gestor-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`}
-          preWeighingHref={`/impressao/pre-pesagem/${item.id}?ref=${anchorDate}`}
-          productionPrintHref={`/impressao/producao/${item.id}?ref=${anchorDate}`}
+          detailHref={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+          preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+          productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
           onOpenWorkflow={() => openWorkflowDialog(item.id)}
           onOpenPrint={openPrintPage}
         />
@@ -734,7 +735,7 @@ export default function OrdensProducaoPage() {
             {scheduledOps.slice(0, 12).map((op) => (
               <Link
                 key={op.id}
-                href={`/gestor-fabrica/ordens-producao/${op.id}?ref=${anchorDate}`}
+                href={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2 text-sm transition-colors hover:bg-panel/50"
               >
                 <span className="flex items-center gap-2">
@@ -769,7 +770,7 @@ export default function OrdensProducaoPage() {
             keyField="id"
             pagination={false}
             showFooterControls={false}
-            onRowClick={(item) => window.location.assign(`/gestor-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`)}
+            onRowClick={(item) => window.location.assign(`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)}
             emptyMessage="Nenhuma OP encontrada para os filtros"
             stickyHeader
           />

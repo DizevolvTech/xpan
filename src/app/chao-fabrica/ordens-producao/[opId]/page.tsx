@@ -12,6 +12,7 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { hierarchyLabels } from "@/lib/production-planning";
 import {
   getNextProductionActionLabel,
@@ -38,10 +39,14 @@ export default function OrdemProducaoDetailsPage() {
   const { planningData, isLoading, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
   const { snapshot } = useMasterDataSnapshot();
 
-  const op = useMemo(
-    () => planningData.productionOrders.find((item) => item.id === opId) ?? null,
-    [opId, planningData.productionOrders],
-  );
+  const op = useMemo(() => {
+    const decoded = decodeURIComponent(opId);
+    return (
+      planningData.productionOrders.find((item) => getProductionOrderNavKey(item) === decoded) ??
+      planningData.productionOrders.find((item) => item.id === opId) ??
+      null
+    );
+  }, [opId, planningData.productionOrders]);
 
   const lineCapacity = useMemo(() => {
     if (!op) {
@@ -127,11 +132,11 @@ export default function OrdemProducaoDetailsPage() {
       ]}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/pre-pesagem/${op.id}?ref=${anchorDate}`)}>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`)}>
             <Printer className="size-4" />
             Pré-pesagem
           </Button>
-          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${op.id}?ref=${anchorDate}`)}>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`)}>
             <Printer className="size-4" />
             Produção
           </Button>

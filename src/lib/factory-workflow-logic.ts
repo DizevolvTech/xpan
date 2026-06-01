@@ -68,13 +68,19 @@ export function applyFactoryWorkflowState(
     isReleased: (orderId: string) => boolean;
     isCancelled: (orderId: string) => boolean;
     resolveProductionItemStatus: (itemKey: string | null) => ProductionItemStatus | null;
+    // Opcional: callers que não alimentam o quadro do Chão (auto-release, métricas,
+    // testes do motor) podem omitir — `productionStarted` então só é true quando o
+    // status já avançou (compat: OPs em andamento nunca somem do Chão).
+    isProductionStarted?: (itemKey: string | null) => boolean;
   },
 ): FactoryPlanningData {
+  const isProductionStarted = workflow.isProductionStarted ?? (() => false);
   const orderItems = data.orderItems.map((item) => {
     if (workflow.isCancelled(item.orderId)) {
       return {
         ...item,
         releasedToProduction: false,
+        productionStarted: false,
         productionItemStatus: null,
         workflowProgress: 0,
         opCode: null,
@@ -86,6 +92,7 @@ export function applyFactoryWorkflowState(
       return {
         ...item,
         releasedToProduction: false,
+        productionStarted: false,
         productionItemStatus: null,
         workflowProgress: 0,
         opCode: null,
@@ -98,6 +105,7 @@ export function applyFactoryWorkflowState(
       return {
         ...item,
         releasedToProduction,
+        productionStarted: false,
         productionItemStatus: "nao_iniciado" as ProductionItemStatus,
         workflowProgress: 0,
         opCode: null,
@@ -110,6 +118,10 @@ export function applyFactoryWorkflowState(
       productionItemStatus,
       item.preparationStages,
     );
+    // Iniciada = marcada explicitamente pelo gestor OU já avançou de `nao_iniciado`
+    // (compat: OPs com trabalho em curso continuam visíveis no Chão).
+    const productionStarted =
+      isProductionStarted(item.productionItemKey) || productionItemStatus !== "nao_iniciado";
     const status: OrderStatus =
       productionItemStatus === "concluido"
         ? "aguardando_expedicao"
@@ -120,6 +132,7 @@ export function applyFactoryWorkflowState(
     return {
       ...item,
       releasedToProduction,
+      productionStarted,
       productionItemStatus,
       workflowProgress,
       status,

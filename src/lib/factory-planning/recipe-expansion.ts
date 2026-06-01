@@ -254,6 +254,7 @@ function buildMpiPlannedItem(params: {
     scheduleDayPriority: resolvedScheduleDayPriority,
     availableForRelease: parent.availableForRelease,
     releasedToProduction: parent.releasedToProduction,
+    productionStarted: parent.productionStarted,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
     preparationStages: normalizeProductPreparationStages(mpiProduct.preparationStages),
@@ -331,6 +332,7 @@ function buildMixedIngredientPlannedItem(params: {
     scheduleDayPriority: parent.scheduleDayPriority,
     availableForRelease: parent.availableForRelease,
     releasedToProduction: parent.releasedToProduction,
+    productionStarted: parent.productionStarted,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
     // Ingredientes não definem etapas de preparo → usa o default normalizado.

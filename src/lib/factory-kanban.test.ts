@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isOpInProductionColumn, isOrderAwaitingAcceptance } from "@/lib/factory-kanban";
+import {
+  getProductionOrderNavKey,
+  isOpInProductionColumn,
+  isOrderAwaitingAcceptance,
+} from "@/lib/factory-kanban";
 
 // Coluna "Aberto" = pedidos aguardando ACEITE (liberação) — independe da data.
 test("isOrderAwaitingAcceptance — pedido não liberado fica em Aberto (mesmo agendado p/ futuro)", () => {
@@ -34,4 +38,31 @@ test("isOpInProductionColumn — OP não liberada NÃO aparece em produção", (
 
 test("isOpInProductionColumn — OP concluída (aguardando expedição) sai de produção", () => {
   assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "aguardando_expedicao" }), false);
+});
+
+// Chave de navegação estável da OP — não depende de posição/index.
+test("getProductionOrderNavKey — deriva da identidade do agrupamento", () => {
+  assert.equal(
+    getProductionOrderNavKey({
+      productionDate: "2026-06-02",
+      sectorId: "setor-1",
+      lineId: "line-paes",
+      scheduleId: "schedule-x",
+    }),
+    "2026-06-02|setor-1|line-paes|schedule-x",
+  );
+});
+
+test("getProductionOrderNavKey — duas OPs distintas geram chaves distintas; iguais geram iguais", () => {
+  const a = { productionDate: "2026-06-02", sectorId: "s1", lineId: "l1", scheduleId: "sc1" };
+  const b = { productionDate: "2026-06-02", sectorId: "s1", lineId: "l1", scheduleId: "sc2" };
+  assert.notEqual(getProductionOrderNavKey(a), getProductionOrderNavKey(b));
+  assert.equal(getProductionOrderNavKey(a), getProductionOrderNavKey({ ...a }));
+});
+
+test("getProductionOrderNavKey — tolera campos nulos sem quebrar", () => {
+  assert.equal(
+    getProductionOrderNavKey({ productionDate: null, sectorId: "s1", lineId: "l1", scheduleId: null }),
+    "sem-data|s1|l1|sem-schedule",
+  );
 });

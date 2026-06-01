@@ -44,6 +44,7 @@ import {
   type ProductionItemStatus,
   type ProductionOrderRow,
 } from "@/lib/order-planning";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { hierarchyLabels } from "@/lib/production-planning";
@@ -271,6 +272,16 @@ export default function OrdensProducaoPage() {
       href: "/chao-fabrica/expedicao",
       icon: Truck,
     },
+    {
+      key: "entregas",
+      title: "Entregas",
+      helper: "Execução em campo",
+      // Esta tela não carrega o estado de execução de entregas; o detalhe vive
+      // na própria tela de Entregas. Mantemos o passo navegável sem inventar fonte.
+      value: 0,
+      href: "/chao-fabrica/entregas",
+      icon: Truck,
+    },
   ];
 
   // Tablet do chão: tipografia maior em código da OP (visível de longe) e progresso.
@@ -342,9 +353,9 @@ export default function OrdensProducaoPage() {
       header: "Ações",
       render: (item: OpQueueRow) => (
         <ProductionOrderActionsMenu
-          detailHref={`/chao-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`}
-          preWeighingHref={`/impressao/pre-pesagem/${item.id}?ref=${anchorDate}`}
-          productionPrintHref={`/impressao/producao/${item.id}?ref=${anchorDate}`}
+          detailHref={`/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+          preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+          productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
           onOpenWorkflow={() => openWorkflowDialog(item.id)}
           onOpenPrint={openPrintPage}
         />
@@ -580,7 +591,11 @@ export default function OrdensProducaoPage() {
             keyField="id"
             pagination={false}
             showFooterControls={false}
-            onRowClick={(item) => window.location.assign(`/chao-fabrica/ordens-producao/${item.id}?ref=${anchorDate}`)}
+            onRowClick={(item) =>
+              window.location.assign(
+                `/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`,
+              )
+            }
             rowClassName={() => "min-h-[44px]"}
             emptyMessage="Nenhuma OP encontrada para os filtros"
             stickyHeader

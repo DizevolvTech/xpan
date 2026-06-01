@@ -42,6 +42,8 @@ export async function getFactoryPlanningSnapshot(
 
     const basePlanning = buildFactoryPlanningData(referenceDate, factoryInput);
 
+    const startedKeys = new Set(workflowState.productionStartedKeys);
+
     return applyFactoryWorkflowState(basePlanning, {
       isReleased(orderId) {
         return workflowState.releasedOrders.includes(orderId);
@@ -54,6 +56,9 @@ export async function getFactoryPlanningSnapshot(
           return null;
         }
         return workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado";
+      },
+      isProductionStarted(itemKey) {
+        return itemKey ? startedKeys.has(itemKey) : false;
       },
     });
   });
