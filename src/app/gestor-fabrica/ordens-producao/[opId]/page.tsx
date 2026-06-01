@@ -268,6 +268,11 @@ export default function OrdemProducaoDetailsPage() {
                       <tr key={item.productId}>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.productCode} · {item.productName}
+                      {item.batchCount > 1 ? (
+                        <p className="text-sm text-muted-foreground tabular-nums">
+                          {item.batchesDone}/{item.batchCount} batidas · {item.batchSizes.join(" + ")} {item.batchUnitLabel}
+                        </p>
+                      ) : null}
                     </td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.totalKg)}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.progress.toFixed(1)}%</td>

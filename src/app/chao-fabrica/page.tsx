@@ -657,6 +657,12 @@ function ChaoOpCard({
   const opDetailHref = `/chao-fabrica/ordens-producao/${encodeURIComponent(
     getProductionOrderNavKey(op),
   )}?ref=${encodeURIComponent(anchorDate)}`;
+  // Agregado de batidas da OP (soma dos produtos batidos). Glanceable; detalhe na pré-pesagem.
+  const batchedItems = op.items.filter((it) => it.batchCount > 1);
+  const totalBatches = batchedItems.reduce((sum, it) => sum + it.batchCount, 0);
+  const doneBatches = batchedItems.reduce((sum, it) => sum + it.batchesDone, 0);
+  const hasBatches = batchedItems.length > 0;
+
   // Itens ainda não concluídos da OP.
   const pendingItems = op.items.filter((item) => item.status !== "concluido");
   const hasPendingItems = pendingItems.length > 0;
@@ -737,6 +743,12 @@ function ChaoOpCard({
         <span className="mx-1.5 opacity-50">·</span>
         entrega {op.productionDateLabel}
       </p>
+
+      {hasBatches ? (
+        <p className="text-sm font-semibold text-foreground">
+          Batidas: <span className="tabular-nums">{doneBatches}/{totalBatches}</span>
+        </p>
+      ) : null}
 
       {/* Indicador READ-ONLY do próximo passo. O board do chão é só leitura — o
           avanço de etapa é dirigido pelo Gestor (aceitar/liberar) e, item a
