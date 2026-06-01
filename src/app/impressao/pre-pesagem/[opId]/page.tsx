@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
 import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
@@ -76,8 +77,38 @@ export default function PrePesagemPrintPage() {
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
+  const { planningData, isLoading: isPlanningLoading, refresh } = useFactoryPlanningSnapshot(referenceDate);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+
+  const sendBatch = useCallback(
+    async (
+      productionItemKey: string,
+      action: "complete-production-batch" | "undo-production-batch",
+      batchCount: number,
+    ) => {
+      setPendingKey(productionItemKey);
+      try {
+        const res = await fetch("/api/factory-planning/workflow", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            action === "complete-production-batch"
+              ? { action, productionItemKey, batchCount }
+              : { action, productionItemKey },
+          ),
+        });
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as { message?: string } | null;
+          throw new Error(payload?.message ?? "Falha ao atualizar a batida.");
+        }
+        await refresh();
+      } finally {
+        setPendingKey(null);
+      }
+    },
+    [refresh],
+  );
 
   const op = useMemo(() => {
     const decoded = decodeURIComponent(opId);
@@ -97,6 +128,12 @@ export default function PrePesagemPrintPage() {
         : null,
     [op, snapshot.ingredients, snapshot.products],
   );
+  const itemByProduct = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof op>["items"][number]>();
+    op?.items.forEach((it) => map.set(it.productId, it));
+    return map;
+  }, [op]);
+
   const deliveryDateLabel = useMemo(() => {
     if (!op) {
       return "-";
@@ -180,6 +217,55 @@ export default function PrePesagemPrintPage() {
                 <div className="mt-1">Peso unitário: {formatKgValue(section.unitWeightKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</div>
               </div>
             </header>
+
+            {(() => {
+              const opItem = itemByProduct.get(section.productId);
+              if (!opItem || opItem.batchCount <= 1) return null;
+              const done = opItem.batchesDone;
+              const currentIdx = Math.min(done, opItem.batchCount - 1);
+              const currentSize = opItem.batchSizes[currentIdx] ?? 0;
+              const product = snapshot.products.find((p) => p.id === section.productId);
+              const currentKg = product ? currentSize * product.salesToKgFactor : 0;
+              const isDone = done >= opItem.batchCount;
+              const busy = pendingKey === opItem.productionItemKey;
+              return (
+                <div className="flex items-center justify-between gap-3 border-b border-stone-400 bg-stone-100 px-3 py-2 print:hidden">
+                  <div className="text-sm font-semibold text-stone-900">
+                    {isDone
+                      ? `Todas as ${opItem.batchCount} batidas concluídas`
+                      : `Batida ${done + 1} de ${opItem.batchCount}`}
+                    {!isDone ? (
+                      <span className="ml-2 font-normal text-stone-600">
+                        {currentSize} {opItem.batchUnitLabel} · {currentKg.toFixed(3)} kg
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="flex gap-2">
+                    {done > 0 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void sendBatch(opItem.productionItemKey, "undo-production-batch", opItem.batchCount)}
+                      >
+                        Desfazer
+                      </Button>
+                    ) : null}
+                    {!isDone ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void sendBatch(opItem.productionItemKey, "complete-production-batch", opItem.batchCount)}
+                      >
+                        Concluir batida {done + 1}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="space-y-2 px-3 py-3">
               <RecipeTable
