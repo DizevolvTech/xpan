@@ -9,7 +9,7 @@ import {
   buildTenantCacheKey,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
-import { getPersistedWorkflowState } from "@/lib/supabase-data/workflow";
+import { canonicalProductionItemKey, getPersistedWorkflowState } from "@/lib/supabase-data/workflow";
 
 const FACTORY_PLANNING_CACHE_TTL_MS = 10_000;
 
@@ -55,13 +55,14 @@ export async function getFactoryPlanningSnapshot(
         if (!itemKey) {
           return null;
         }
-        return workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado";
+        // Estado é keyed por chave CANÔNICA (3 partes); chaves MPI vêm com 4.
+        return workflowState.productionItemStatuses[canonicalProductionItemKey(itemKey)] ?? "nao_iniciado";
       },
       isProductionStarted(itemKey) {
-        return itemKey ? startedKeys.has(itemKey) : false;
+        return itemKey ? startedKeys.has(canonicalProductionItemKey(itemKey)) : false;
       },
       resolveBatchesDone(itemKey) {
-        return itemKey ? workflowState.productionBatchesDone[itemKey] ?? 0 : 0;
+        return itemKey ? workflowState.productionBatchesDone[canonicalProductionItemKey(itemKey)] ?? 0 : 0;
       },
     });
   });
