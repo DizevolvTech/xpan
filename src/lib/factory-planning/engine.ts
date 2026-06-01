@@ -874,6 +874,9 @@ export function buildProductionOrdersFromPlannedItems(
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),
+      // Remove os campos auxiliares de batida (só usados p/ derivar o plano) do
+      // ProductionOrderItem público.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       items: builtItems.map(({ capacityPerBatch, salesToKgFactor, ...rest }) => rest),
       sourceItems: group.sourceItems.sort((a, b) => {
         const bySequence =

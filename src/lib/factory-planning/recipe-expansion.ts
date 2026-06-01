@@ -256,8 +256,10 @@ function buildMpiPlannedItem(params: {
     releasedToProduction: parent.releasedToProduction,
     productionStarted: parent.productionStarted,
     capacityPerBatch: mpiProduct.capacityPerBatch,
-    salesToKgFactor: parent.salesToKgFactor,
-    salesUnit: parent.salesUnit,
+    // Fator/unidade do PRÓPRIO produto MPI (a capacidade acima é na unidade dele),
+    // senão o split usaria a conversão do pai e erraria a contagem de batidas.
+    salesToKgFactor: mpiProduct.salesToKgFactor,
+    salesUnit: mpiProduct.salesUnit,
     batchesDone: parent.batchesDone,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
