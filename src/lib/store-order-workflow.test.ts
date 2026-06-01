@@ -14,7 +14,10 @@ test("store visible order status follows delivery execution when delivery has ad
   assert.equal(resolveStoreVisibleOrderStatus("aguardando_expedicao", "pronto_coleta"), "pronto_coleta");
   assert.equal(resolveStoreVisibleOrderStatus("aguardando_expedicao", "em_rota"), "em_rota");
   assert.equal(resolveStoreVisibleOrderStatus("aguardando_expedicao", "entregue"), "entregue");
-  assert.equal(resolveStoreVisibleOrderStatus("em_producao", "entregue"), "em_producao");
+  // Comportamento corrigido (root cause da entrega que "resetava"): uma execução de
+  // entrega já avançada é a fonte da verdade. Mesmo que o orderStatus derivado da
+  // produção leia "em_producao" (recomputo/reset), a entrega não é arrastada de volta.
+  assert.equal(resolveStoreVisibleOrderStatus("em_producao", "entregue"), "entregue");
 });
 
 test("store order can only be edited or cancelled before release and while active", () => {
@@ -35,7 +38,9 @@ test("store occurrence action only opens for delivery-eligible execution statuse
   assert.equal(canOpenOccurrenceForOrderExecution("aguardando_expedicao", "no_destino"), true);
   assert.equal(canOpenOccurrenceForOrderExecution("aguardando_expedicao", "entregue"), true);
   assert.equal(canOpenOccurrenceForOrderExecution("aguardando_expedicao", "tentativa_falha"), false);
-  assert.equal(canOpenOccurrenceForOrderExecution("em_producao", "entregue"), false);
+  // Comportamento corrigido: a execução avançada (entregue) é a fonte da verdade e
+  // continua elegível mesmo que a produção recomputada leia "em_producao".
+  assert.equal(canOpenOccurrenceForOrderExecution("em_producao", "entregue"), true);
 });
 
 test("store order capabilities stay internally consistent", () => {

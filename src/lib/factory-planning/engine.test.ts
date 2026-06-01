@@ -1003,10 +1003,11 @@ test("workflow recognizes orders as ready for expedition when items finish on di
     isReleased: () => true,
     isCancelled: () => false,
     resolveProductionItemStatus: (itemKey) => {
-      if (itemKey === "2026-03-10|line-1|schedule-1|product-1") {
+      // Chave canônica estável (3 partes, sem scheduleId) — ver getProductionItemKey.
+      if (itemKey === "2026-03-10|line-1|product-1") {
         return "concluido";
       }
-      if (itemKey === "2026-03-11|line-1|schedule-1|product-2") {
+      if (itemKey === "2026-03-11|line-1|product-2") {
         return "concluido";
       }
       return null;

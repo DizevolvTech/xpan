@@ -13,7 +13,10 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { aggregateExpeditionItems } from "@/lib/expedition-aggregation";
+import {
+  aggregateExpeditionItems,
+  getAggregatedExpeditionItemKey,
+} from "@/lib/expedition-aggregation";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getExpeditionVisibleStatus } from "@/lib/delivery-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
@@ -25,7 +28,9 @@ function openPrintPage(pathname: string) {
 }
 
 function getChecklistItemKey(item: ReturnType<typeof aggregateExpeditionItems>[number]) {
-  return `${item.productId}|${item.requestedUnit}|${item.expeditionUnit}`;
+  // Stable key (productId|requestedUnit) — must match the shared function exactly so
+  // check marks survive changes to the product's volatile expeditionUnit.
+  return getAggregatedExpeditionItemKey(item);
 }
 
 export default function ExpedicaoDetailsPage() {

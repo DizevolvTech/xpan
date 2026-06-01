@@ -19,9 +19,13 @@ function round2(value: number) {
 export function getAggregatedExpeditionItemKey(input: {
   productId: string;
   requestedUnit: string;
-  expeditionUnit: string;
+  // expeditionUnit is intentionally accepted but ignored: it is read live from the
+  // product config and is therefore volatile. Including it in the checklist key made
+  // saved check marks go orphan whenever the product's expedition unit was edited.
+  // The key must stay stable, so it is derived only from the stable productId + requestedUnit.
+  expeditionUnit?: string;
 }) {
-  return `${input.productId}|${input.requestedUnit}|${input.expeditionUnit}`;
+  return `${input.productId}|${input.requestedUnit}`;
 }
 
 export function aggregateExpeditionItems(items: ExpeditionItem[]): AggregatedExpeditionItem[] {

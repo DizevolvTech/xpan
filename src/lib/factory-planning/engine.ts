@@ -447,11 +447,15 @@ function getPotentialItemStatus(productionDate: string | null, canPlan: boolean,
   return compareDateKeys(productionDate, referenceDate) > 0 ? "agendado" : "em_espera";
 }
 
-function getProductionItemKey(item: Pick<PlannedOrderItem, "productionDate" | "lineId" | "scheduleId" | "productId">) {
+function getProductionItemKey(item: Pick<PlannedOrderItem, "productionDate" | "lineId" | "productId">) {
   if (!item.productionDate) {
     return null;
   }
-  return [item.productionDate, item.lineId, item.scheduleId ?? "sem-linha", item.productId].join("|");
+  // Chave CANÔNICA e ESTÁVEL (3 partes — SEM scheduleId). O scheduleId mudava a
+  // cada revisão de cronograma e órfã o status persistido, fazendo a OP
+  // reaparecer como `nao_iniciado`. Status gravados sob a chave antiga (4 partes)
+  // são recuperados na leitura via `canonicalProductionItemKey` (workflow.ts).
+  return [item.productionDate, item.lineId, item.productId].join("|");
 }
 
 function getPlanningKey(item: Pick<PlannedOrderItem, "productionDate" | "sectorId" | "lineId" | "scheduleId">) {
@@ -600,7 +604,6 @@ function buildPlannedItems(
           ? getProductionItemKey({
               productionDate: availability.productionDate,
               lineId: line.id,
-              scheduleId: schedule?.id ?? null,
               productId: product.id,
             })
           : null;

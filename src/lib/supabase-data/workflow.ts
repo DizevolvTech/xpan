@@ -30,6 +30,58 @@ export interface PersistedWorkflowState {
   productionItemStatuses: Record<string, ProductionItemStatus>;
 }
 
+/**
+ * Ordem canônica de avanço dos status de produção (production-workflow.ts):
+ * `nao_iniciado < em_preparacao < em_producao < em_forno < embalando < concluido`.
+ * Usada para resolver colisões na canonicalização da chave (vence o mais
+ * avançado, para nunca perder trabalho já concluído).
+ */
+const STATUS_RANK: Record<ProductionItemStatus, number> = {
+  nao_iniciado: 0,
+  em_preparacao: 1,
+  em_producao: 2,
+  em_forno: 3,
+  embalando: 4,
+  concluido: 5,
+};
+
+/**
+ * Normaliza uma `production_item_key` persistida para a chave CANÔNICA estável.
+ *
+ * Raiz do bug "status volta a pendente": a chave antiga embutia o `scheduleId`
+ * (`date|line|schedule|product`), que muda a cada revisão de cronograma →
+ * o status gravado fica órfão e a OP reaparece como `nao_iniciado`. A chave
+ * canônica tem 3 partes (`date|line|product`, sem schedule). Esta função
+ * recupera retrocompatibilidade: chaves antigas de 4 partes viram canônicas;
+ * chaves já de 3 partes passam inalteradas; chaves menores são preservadas.
+ */
+export function canonicalProductionItemKey(key: string): string {
+  const parts = key.split("|");
+  if (parts.length >= 4) {
+    return [parts[0], parts[1], parts[parts.length - 1]].join("|");
+  }
+  return key;
+}
+
+/**
+ * Dobra (fold) as linhas de `workflow_production_items` por chave CANÔNICA.
+ * Em colisão (ex.: schedule antigo `concluido` + schedule novo `em_preparacao`
+ * → mesma canônica), mantém o status de MAIOR rank — o mais avançado vence,
+ * para nunca regredir trabalho já feito.
+ */
+export function foldProductionItemStatuses(
+  rows: { production_item_key: string; status: ProductionItemStatus }[],
+): Record<string, ProductionItemStatus> {
+  return rows.reduce<Record<string, ProductionItemStatus>>((acc, row) => {
+    const key = canonicalProductionItemKey(row.production_item_key);
+    const current = acc[key];
+    if (current === undefined || STATUS_RANK[row.status] > STATUS_RANK[current]) {
+      acc[key] = row.status;
+    }
+    return acc;
+  }, {});
+}
+
 export async function getPersistedWorkflowState(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<PersistedWorkflowState> {
@@ -64,10 +116,7 @@ export async function getPersistedWorkflowState(
     cancelledOrders: orderRows
       .filter((row) => row.management_status === "cancelado")
       .map((row) => row.legacy_id ?? row.id),
-    productionItemStatuses: statusRows.reduce<Record<string, ProductionItemStatus>>((acc, row) => {
-      acc[row.production_item_key] = row.status;
-      return acc;
-    }, {}),
+    productionItemStatuses: foldProductionItemStatuses(statusRows),
   };
 }
 
@@ -416,15 +465,23 @@ export async function updateProductionItemStatus(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
+  // Chave CANÔNICA (3 partes, sem scheduleId): persistimos e validamos sempre por
+  // ela para nunca orfanar status ao mudar a revisão do cronograma.
+  const canonicalKey = canonicalProductionItemKey(productionItemKey);
   const preparationStages = await resolvePreparationStagesForProductionItem(
-    productionItemKey,
+    canonicalKey,
     supabase,
   );
+  // Ler o status atual fazendo FOLD de eventuais rows legadas (chave antiga de
+  // 4 partes `date|line|schedule|product`) na canônica. Sem isto, avançar um
+  // item histórico era rejeitado com "Invalid production workflow transition":
+  // a UI mostra o status (via fold de leitura) mas o write não achava a row sob
+  // a canônica e assumia `nao_iniciado`, tornando a transição não-adjacente.
+  const [datePart, linePart] = canonicalKey.split("|");
   const currentResult = await supabase
     .from("workflow_production_items")
-    .select("status")
-    .eq("production_item_key", productionItemKey)
-    .maybeSingle();
+    .select("production_item_key, status")
+    .like("production_item_key", `${datePart}|${linePart}|%`);
 
   if (
     currentResult.error &&
@@ -433,7 +490,12 @@ export async function updateProductionItemStatus(
     throw new Error(`Failed to load current production item status: ${currentResult.error.message}`);
   }
 
-  const currentStatus = currentResult.data?.status ?? "nao_iniciado";
+  const currentStatus = (currentResult.data ?? [])
+    .filter((row) => canonicalProductionItemKey(row.production_item_key) === canonicalKey)
+    .reduce<ProductionItemStatus>((best, row) => {
+      const rowStatus = row.status as ProductionItemStatus;
+      return STATUS_RANK[rowStatus] > STATUS_RANK[best] ? rowStatus : best;
+    }, "nao_iniciado");
 
   if (!canTransitionProductionItemStatus(currentStatus, status, preparationStages)) {
     throw new Error("Invalid production workflow transition");
@@ -450,7 +512,7 @@ export async function updateProductionItemStatus(
 
   const upsertResult = await supabase.from("workflow_production_items").upsert(
     {
-      production_item_key: productionItemKey,
+      production_item_key: canonicalKey,
       status,
       progress: getProductionStatusProgress(status, preparationStages),
       updated_at: new Date().toISOString(),
@@ -467,7 +529,7 @@ export async function updateProductionItemStatus(
 
   if (tenantId) {
     await appendOrderEventsForProductionItem(
-      productionItemKey,
+      canonicalKey,
       status,
       currentStatus,
       updatedByProfileId,
