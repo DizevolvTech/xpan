@@ -384,6 +384,7 @@ test("factory planning uses operational subcategory instead of cadastral subcate
       expeditionToKgFactor: 1,
       expeditionLeadDays: 0,
       isMpiIngredient: false,
+      capacityPerBatch: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -491,6 +492,7 @@ test("AJ-0006.1: OP sinaliza demanda consolidada abaixo do lote mínimo da fábr
     expeditionToKgFactor: 1,
     expeditionLeadDays: 0,
     isMpiIngredient: false,
+    capacityPerBatch: null,
   });
   const schedules: WeeklyProductionSchedule[] = [
     {
@@ -612,6 +614,7 @@ test("production orders keep the daily schedule priority when listing products",
       expeditionToKgFactor: 1,
       expeditionLeadDays: 0,
       isMpiIngredient: false,
+      capacityPerBatch: null,
     },
     {
       id: "product-b",
@@ -651,6 +654,7 @@ test("production orders keep the daily schedule priority when listing products",
       expeditionToKgFactor: 1,
       expeditionLeadDays: 0,
       isMpiIngredient: false,
+      capacityPerBatch: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -789,6 +793,7 @@ test("factory planning keeps non-scheduled products out of production and expedi
       expeditionToKgFactor: 1,
       expeditionLeadDays: 0,
       isMpiIngredient: false,
+      capacityPerBatch: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -897,6 +902,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       expeditionToKgFactor: 1,
       expeditionLeadDays: 1,
       isMpiIngredient: false,
+      capacityPerBatch: null,
     },
     {
       id: "product-2",
@@ -936,6 +942,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       expeditionToKgFactor: 1,
       expeditionLeadDays: 0,
       isMpiIngredient: false,
+      capacityPerBatch: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -1102,6 +1109,7 @@ function buildPizzaScenario() {
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
     isMpiIngredient: true,
+    capacityPerBatch: null,
   };
   const pizza: ProductionProduct = {
     id: "pizza",
@@ -1142,6 +1150,7 @@ function buildPizzaScenario() {
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
     isMpiIngredient: false,
+    capacityPerBatch: null,
   };
   const schedules: WeeklyProductionSchedule[] = [
     {

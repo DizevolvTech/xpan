@@ -130,6 +130,7 @@ export function buildProductFormState(
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
     isMpiIngredient: false,
+    capacityPerBatch: null,
   };
 }
 

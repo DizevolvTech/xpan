@@ -64,6 +64,7 @@ function buildBaseProduct(): ProductionProduct {
     expeditionToKgFactor: 1,
       expeditionLeadDays: 1,
     isMpiIngredient: false,
+    capacityPerBatch: null,
   };
 }
 

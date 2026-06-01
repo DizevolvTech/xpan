@@ -843,6 +843,7 @@ function normalizeProductPayload(input: ProductInput) {
     validity_days: input.validityDays,
     minimum_production_kg: input.minimumProductionKg,
     economic_production_kg: input.economicProductionKg,
+    capacity_per_batch: input.capacityPerBatch ?? null,
     allows_storage: input.allowsStorage,
     production_days: input.productionDays,
     // sale_lead_days é deprecated por produto (atributo global em operational_settings).

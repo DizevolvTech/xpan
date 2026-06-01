@@ -72,6 +72,7 @@ function makePizzaProduct(): ProductionProduct {
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
     isMpiIngredient: false,
+    capacityPerBatch: null,
   } as ProductionProduct;
 }
 
@@ -148,6 +149,7 @@ function makeMpiProduct(overrides: Partial<ProductionProduct> = {}): ProductionP
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
     isMpiIngredient: true,
+    capacityPerBatch: null,
     ...overrides,
   } as ProductionProduct;
 }
