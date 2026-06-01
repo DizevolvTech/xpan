@@ -72,9 +72,11 @@ export function applyFactoryWorkflowState(
     // testes do motor) podem omitir — `productionStarted` então só é true quando o
     // status já avançou (compat: OPs em andamento nunca somem do Chão).
     isProductionStarted?: (itemKey: string | null) => boolean;
+    resolveBatchesDone?: (itemKey: string | null) => number;
   },
 ): FactoryPlanningData {
   const isProductionStarted = workflow.isProductionStarted ?? (() => false);
+  const resolveBatchesDone = workflow.resolveBatchesDone ?? (() => 0);
   const orderItems = data.orderItems.map((item) => {
     if (workflow.isCancelled(item.orderId)) {
       return {
@@ -83,6 +85,7 @@ export function applyFactoryWorkflowState(
         productionStarted: false,
         productionItemStatus: null,
         workflowProgress: 0,
+        batchesDone: 0,
         opCode: null,
         status: "cancelado" as OrderStatus,
       };
@@ -95,6 +98,7 @@ export function applyFactoryWorkflowState(
         productionStarted: false,
         productionItemStatus: null,
         workflowProgress: 0,
+        batchesDone: 0,
         opCode: null,
         status: "em_espera" as OrderStatus,
       };
@@ -108,6 +112,7 @@ export function applyFactoryWorkflowState(
         productionStarted: false,
         productionItemStatus: "nao_iniciado" as ProductionItemStatus,
         workflowProgress: 0,
+        batchesDone: 0,
         opCode: null,
         status: "em_espera" as OrderStatus,
       };
@@ -135,6 +140,7 @@ export function applyFactoryWorkflowState(
       productionStarted,
       productionItemStatus,
       workflowProgress,
+      batchesDone: resolveBatchesDone(item.productionItemKey),
       status,
     };
   });

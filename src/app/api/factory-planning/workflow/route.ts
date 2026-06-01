@@ -7,9 +7,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { OrderReleaseValidationError } from "@/lib/supabase-data/release-validation";
 import {
   cancelOrder,
+  completeProductionBatch,
   releaseOrder,
   reopenOrder,
   startProductionItem,
+  undoProductionBatch,
   updateProductionItemStatus,
 } from "@/lib/supabase-data/workflow";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
@@ -38,6 +40,15 @@ export async function PATCH(request: Request) {
         }
       | {
           action: "start-production-item";
+          productionItemKey: string;
+        }
+      | {
+          action: "complete-production-batch";
+          productionItemKey: string;
+          batchCount: number;
+        }
+      | {
+          action: "undo-production-batch";
           productionItemKey: string;
         };
 
@@ -151,6 +162,41 @@ export async function PATCH(request: Request) {
         authorization.effectiveTenantId,
         supabase,
       );
+      invalidatePlanningCaches(authorization.effectiveTenantId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === "complete-production-batch" || body.action === "undo-production-batch") {
+      const authorization = await authorizeApiRequest({
+        contextLabel: `PATCH /api/factory-planning/workflow ${body.action}`,
+        anyOfPermissions: ["gestor-fabrica.ops", "chao-fabrica.ops"],
+        minimumLevel: "operar",
+        requireTenantContext: true,
+        requireWritableTenant: true,
+      });
+      if ("response" in authorization) {
+        return authorization.response;
+      }
+      const supabase = createTenantScopedSupabaseClient(
+        authorization.effectiveTenantId,
+        createSupabaseAdminClient(),
+      );
+      if (body.action === "complete-production-batch") {
+        await completeProductionBatch(
+          body.productionItemKey,
+          body.batchCount,
+          authorization.user.id,
+          authorization.effectiveTenantId,
+          supabase,
+        );
+      } else {
+        await undoProductionBatch(
+          body.productionItemKey,
+          authorization.user.id,
+          authorization.effectiveTenantId,
+          supabase,
+        );
+      }
       invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
     }

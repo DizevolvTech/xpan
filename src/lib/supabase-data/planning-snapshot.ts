@@ -60,6 +60,9 @@ export async function getFactoryPlanningSnapshot(
       isProductionStarted(itemKey) {
         return itemKey ? startedKeys.has(itemKey) : false;
       },
+      resolveBatchesDone(itemKey) {
+        return itemKey ? workflowState.productionBatchesDone[itemKey] ?? 0 : 0;
+      },
     });
   });
 }
