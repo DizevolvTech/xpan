@@ -23,6 +23,7 @@ import {
   assertPlanningAllowsRelease,
 } from "@/lib/supabase-data/release-validation";
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
+import { deriveBatchStatus } from "@/lib/production-batches";
 
 export interface PersistedWorkflowState {
   releasedOrders: string[];
@@ -643,9 +644,25 @@ export async function completeProductionBatch(
   if (upsertResult.error) {
     throw new Error(`Failed to complete production batch: ${upsertResult.error.message}`);
   }
+
+  // Produtos batidos não escrevem em workflow_production_items, então a transição
+  // do status DERIVADO (das batidas) precisa disparar os mesmos eventos que o
+  // updateProductionItemStatus dispara: timeline da OP, evento de loja e — quando
+  // o pedido fecha 100% (concluido → aguardando_expedicao) — seed de
+  // delivery_executions + aviso "produção finalizada". Só dispara em transições
+  // reais: 1ª batida (nao_iniciado→em_producao) e última (em_producao→concluido);
+  // batidas intermediárias mantêm "em_producao" → sem ruído.
+  const before = deriveBatchStatus(current, cap);
+  const after = deriveBatchStatus(next, cap);
+  if (tenantId && before !== after) {
+    await appendOrderEventsForProductionItem(canonicalKey, after, before, updatedByProfileId, tenantId, supabase);
+  }
 }
 
-/** Desfaz uma batida (decrementa, piso 0). Para corrigir engano. */
+/**
+ * Desfaz uma batida (decrementa, piso 0). Para corrigir engano.
+ * NÃO dispara seeding/eventos: desfazer é uma correção, mantém-se contador-only.
+ */
 export async function undoProductionBatch(
   productionItemKey: string,
   updatedByProfileId?: string | null,
