@@ -43,4 +43,10 @@ next-env.d.ts
 
 
 
-.skills 
+.skills
+
+# Claude Code — estado local por desenvolvedor (settings, worktrees, cache, locks)
+.claude/
+
+# artefato/manifesto gerado
+xpan-software.xml 
