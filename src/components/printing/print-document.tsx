@@ -120,9 +120,41 @@ export function PrintDocument({
             font-size: 17px !important;
             margin: 0 !important;
           }
+
+          /* AJ — economia de papel: os utilitários de fonte do Tailwind
+             (text-sm/base/lg/xl) trazem font-size próprio e venciam o
+             .print-doc base (10.5px), mantendo o conteúdo grande na folha.
+             Reduzimos SÓ na impressão, com piso de legibilidade pro chão e
+             line-height apertado. Negrito/cor/bordas permanecem intactos. */
+          .print-doc .text-sm {
+            font-size: 10.5px !important;
+            line-height: 1.15 !important;
+          }
+          .print-doc .text-base {
+            font-size: 11.5px !important;
+            line-height: 1.15 !important;
+          }
+          .print-doc .text-lg {
+            font-size: 13px !important;
+            line-height: 1.1 !important;
+          }
+          .print-doc .text-xl {
+            font-size: 14px !important;
+            line-height: 1.1 !important;
+          }
+          .print-doc .text-2xl {
+            font-size: 15px !important;
+            line-height: 1.1 !important;
+          }
+
+          /* As linhas de ingrediente são o maior volume da folha: densamente
+             apertadas (10.5px legível, padding mínimo). Sobrepõe o text-sm dos
+             <td> e o padding 2px 6px anterior. */
           .print-doc table th,
           .print-doc table td {
-            padding: 2px 6px !important;
+            font-size: 10.5px !important;
+            line-height: 1.15 !important;
+            padding: 1px 5px !important;
           }
           .print-doc table {
             font-size: 10.5px;
@@ -136,6 +168,9 @@ export function PrintDocument({
           .print-doc .space-y-3 > :not([hidden]) ~ :not([hidden]),
           .print-doc .space-y-2 > :not([hidden]) ~ :not([hidden]) {
             margin-top: 3px !important;
+          }
+          .print-doc .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) {
+            margin-top: 2px !important;
           }
 
           /* AJ — economia de papel: o padding generoso de cards, cabeçalhos de

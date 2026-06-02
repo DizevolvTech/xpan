@@ -189,7 +189,7 @@ export default function PrePesagemPrintPage() {
       }
     >
       {document.ingredientProducts.length > 0 ? (
-        <section className="space-y-3">
+        <section className="space-y-3 print:space-y-1.5">
           {document.ingredientProducts.map((section) => (
             <article key={section.productId} className="overflow-hidden border border-stone-400">
               <header className="grid grid-cols-[132px_84px_1fr_180px] border-b border-stone-400 bg-stone-300 text-stone-900">
@@ -214,7 +214,7 @@ export default function PrePesagemPrintPage() {
         </section>
       ) : null}
 
-      <section className="space-y-3">
+      <section className="space-y-3 print:space-y-1.5">
         {document.productSections.map((section) => (
           <article key={section.productId} className="overflow-hidden border border-stone-400">
             <header className="grid grid-cols-[96px_84px_1fr_120px_160px] border-b border-stone-400 bg-stone-300 text-stone-900">

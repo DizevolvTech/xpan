@@ -132,7 +132,7 @@ export default function ProducaoPrintPage() {
         </>
       }
     >
-      <section className="space-y-4">
+      <section className="space-y-4 print:space-y-1.5">
         {document.productSections.map((section) => (
           <article key={section.productId} className="overflow-hidden border border-stone-400">
             <header className="grid grid-cols-[96px_84px_1fr_120px_160px] border-b border-stone-400 bg-stone-300 text-stone-900">
