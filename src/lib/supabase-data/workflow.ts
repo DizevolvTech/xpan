@@ -555,6 +555,8 @@ export async function updateProductionItemStatus(
   updatedByProfileId?: string | null,
   tenantId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  // Override de gestor: pula a trava de data futura (autorização de role é no route).
+  force = false,
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   // Chave CANÔNICA (3 partes, sem scheduleId): persistimos e validamos sempre por
@@ -605,7 +607,8 @@ export async function updateProductionItemStatus(
   // Trava de DATA FUTURA: não permitir marcar produção como CONCLUÍDA antes da
   // data de produção chegar (a data é a 1ª parte da chave canônica). Evita que um
   // `concluido` adiantado jogue o pedido direto para "Aguardando expedição".
-  if (status === "concluido") {
+  // `force` (override de gestor, autorizado no route) pula a trava.
+  if (status === "concluido" && !force) {
     assertProductionNotInFuture(canonicalKey);
   }
 
@@ -683,6 +686,8 @@ export async function completeProductionBatch(
   updatedByProfileId?: string | null,
   tenantId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  // Override de gestor: pula a trava de data futura (autorização de role é no route).
+  force = false,
 ) {
   const updatedBy = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   const canonicalKey = canonicalProductionItemKey(productionItemKey);
@@ -704,7 +709,8 @@ export async function completeProductionBatch(
 
   // Trava de DATA FUTURA: a batida que FECHA a produção (next >= cap → status
   // derivado `concluido`) não pode ser registrada antes da data de produção chegar.
-  if (next >= cap) {
+  // `force` (override de gestor, autorizado no route) pula a trava.
+  if (next >= cap && !force) {
     assertProductionNotInFuture(canonicalKey);
   }
 

@@ -407,7 +407,8 @@ export async function updateDeliveryExecution(
 
   // Trava de DATA FUTURA: não permitir marcar como ENTREGUE antes da data de
   // entrega agendada do pedido (evita entregas registradas em data futura).
-  if (status === "entregue") {
+  // `options.force` (override de gestor/admin, autorizado no route) pula a trava.
+  if (status === "entregue" && !options.force) {
     assertDeliveryNotInFuture(orderRow.delivery_date);
   }
 

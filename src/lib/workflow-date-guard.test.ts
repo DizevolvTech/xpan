@@ -5,6 +5,7 @@ import {
   FutureWorkflowDateError,
   assertDeliveryNotInFuture,
   assertProductionNotInFuture,
+  canOverrideFutureWorkflowDate,
   getOperationalTodayKey,
   getProductionDateFromKey,
 } from "@/lib/workflow-date-guard";
@@ -62,4 +63,13 @@ test("FutureWorkflowDateError carrega reason e mensagem amigável (DD/MM/AAAA)",
 
 test("getOperationalTodayKey retorna uma data YYYY-MM-DD", () => {
   assert.match(getOperationalTodayKey(), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("canOverrideFutureWorkflowDate: só gestor de fábrica e administrador forçam", () => {
+  assert.equal(canOverrideFutureWorkflowDate("administrador"), true);
+  assert.equal(canOverrideFutureWorkflowDate("gestor-fabrica"), true);
+  assert.equal(canOverrideFutureWorkflowDate("chao-fabrica"), false);
+  assert.equal(canOverrideFutureWorkflowDate("loja"), false);
+  assert.equal(canOverrideFutureWorkflowDate(null), false);
+  assert.equal(canOverrideFutureWorkflowDate(undefined), false);
 });

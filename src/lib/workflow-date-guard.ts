@@ -25,6 +25,16 @@ export class FutureWorkflowDateError extends Error {
 
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Quem pode FORÇAR a conclusão/entrega em data futura (override da trava).
+ * Só gestor de fábrica e administrador — o chão nunca força (a decisão de role é
+ * SEMPRE no servidor; nunca confiar no cliente). Mesmo critério do override de
+ * checklist na entrega.
+ */
+export function canOverrideFutureWorkflowDate(role: string | null | undefined): boolean {
+  return role === "administrador" || role === "gestor-fabrica";
+}
+
 /** "Hoje" no fuso operacional (America/Sao_Paulo), como `YYYY-MM-DD`. */
 export function getOperationalTodayKey(): string {
   // en-CA formata como ISO `YYYY-MM-DD`; timeZone fixo evita depender do TZ do
