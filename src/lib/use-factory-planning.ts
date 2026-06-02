@@ -221,11 +221,17 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
   );
 
   const completeProductionBatch = useCallback(
-    async (productionItemKey: string, batchCount: number) => {
+    async (productionItemKey: string, batchCount: number, options: { force?: boolean } = {}) => {
       await readJson("/api/factory-planning/workflow", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "complete-production-batch", productionItemKey, batchCount }),
+        body: JSON.stringify({
+          action: "complete-production-batch",
+          productionItemKey,
+          batchCount,
+          // Override da trava de data futura (gestor/admin); servidor devolve 403 se não puder.
+          force: options.force === true,
+        }),
       });
       await refresh();
     },

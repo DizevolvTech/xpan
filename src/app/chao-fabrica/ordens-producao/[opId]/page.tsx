@@ -5,11 +5,13 @@ import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Factory, Printer, Truck } from "lucide-react";
 
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
@@ -23,7 +25,7 @@ import {
 } from "@/lib/production-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
-import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { ReleaseOrderBlockedError, useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 function openPrintPage(pathname: string) {
@@ -39,6 +41,42 @@ export default function OrdemProducaoDetailsPage() {
   const { planningData, isLoading, updateProductionItemStatus, completeProductionBatch, undoProductionBatch } =
     useFactoryPlanningSnapshot(anchorDate);
   const { snapshot } = useMasterDataSnapshot();
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  // Trava de data futura: se o servidor bloquear (400 + reason=production_in_future)
+  // e o papel puder forçar (forceable), oferece "concluir mesmo assim" e refaz a ação
+  // com force: true — espelha o override de liberação. Outros erros caem no padrão.
+  async function handleForceableDateError(
+    error: unknown,
+    retryForced: () => Promise<void>,
+    fallbackMessage: string,
+  ) {
+    if (
+      error instanceof ReleaseOrderBlockedError &&
+      error.forceable &&
+      error.reason === "production_in_future"
+    ) {
+      const confirmed = await confirm({
+        title: "Concluir produção em data futura?",
+        description: error.message,
+        tone: "default",
+        confirmLabel: "Concluir mesmo assim",
+        cancelLabel: "Cancelar",
+      });
+      if (confirmed) {
+        try {
+          await retryForced();
+        } catch (forceError) {
+          const message = forceError instanceof Error ? forceError.message : fallbackMessage;
+          setWorkflowError(message);
+          toast.error(message);
+        }
+      }
+      return;
+    }
+    setWorkflowError(error instanceof Error ? error.message : fallbackMessage);
+  }
 
   const op = useMemo(() => {
     const decoded = decodeURIComponent(opId);
@@ -113,8 +151,10 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      setWorkflowError(
-        error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+      await handleForceableDateError(
+        error,
+        () => updateProductionItemStatus(productionItemKey, status, { force: true }),
+        "Falha ao atualizar o estágio operacional.",
       );
     } finally {
       setPendingItemKey(null);
@@ -127,7 +167,11 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await completeProductionBatch(productionItemKey, batchCount);
     } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : "Falha ao concluir a batida.");
+      await handleForceableDateError(
+        error,
+        () => completeProductionBatch(productionItemKey, batchCount, { force: true }),
+        "Falha ao concluir a batida.",
+      );
     } finally {
       setPendingItemKey(null);
     }
