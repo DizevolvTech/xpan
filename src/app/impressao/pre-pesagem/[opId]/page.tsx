@@ -1,13 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
-import { useConfirm } from "@/components/shared/confirm-dialog";
-import { useToast } from "@/components/shared/toast";
-import { Button } from "@/components/ui/button";
 import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
+import type { PreWeighBatchSplit } from "@/lib/production-batches";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPreWeighingDocument } from "@/lib/printing-documents";
@@ -22,9 +20,73 @@ function sanitizeDateKey(raw: string | null) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
 }
 
-function RecipeTable({ rows }: { rows: (PrintIngredientRow & { isAdditional?: boolean })[] }) {
+type RecipeTableRow = PrintIngredientRow & { isAdditional?: boolean };
+
+function IngredientCell({ row }: { row: RecipeTableRow }) {
+  return (
+    <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
+      <div className="flex items-baseline gap-2">
+        <span>{row.label}</span>
+        {row.isAdditional ? (
+          <span className="shrink-0 border border-stone-400 px-1 text-[9px] font-semibold uppercase tracking-wide text-stone-500">
+            Adic.
+          </span>
+        ) : null}
+      </div>
+      {row.notes ? <div className="mt-1 text-xs text-stone-500">{row.notes}</div> : null}
+    </td>
+  );
+}
+
+function formatWeightCell(value: number | undefined, unit: string) {
+  if (value == null) {
+    return "—";
+  }
+  return `${formatLocaleNumber(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ${unit}`;
+}
+
+function RecipeTable({
+  rows,
+  batchSplit,
+}: {
+  rows: RecipeTableRow[];
+  batchSplit?: PreWeighBatchSplit | null;
+}) {
   if (rows.length === 0) {
     return null;
+  }
+
+  const isBatched = Boolean(batchSplit?.batched);
+  const showBatchColumn = isBatched && (batchSplit?.fullBatchCount ?? 0) > 0;
+  const showPartialColumn = isBatched && (batchSplit?.partialUnits ?? 0) > 0;
+
+  if (!isBatched) {
+    return (
+      <section className="overflow-hidden border border-stone-300">
+        <table className="w-full border-collapse">
+          <thead className="bg-stone-300">
+            <tr>
+              <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+                Pré pesagem
+              </th>
+              <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+                Ingredientes
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
+                  {formatLocaleNumber(row.estimatedQuantity, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} {row.unit}
+                </td>
+                <IngredientCell row={row} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    );
   }
 
   return (
@@ -32,31 +94,35 @@ function RecipeTable({ rows }: { rows: (PrintIngredientRow & { isAdditional?: bo
       <table className="w-full border-collapse">
         <thead className="bg-stone-300">
           <tr>
-            <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-              Pré pesagem
-            </th>
             <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
               Ingredientes
             </th>
+            {showBatchColumn ? (
+              <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+                Batida ×{batchSplit?.fullBatchCount}
+              </th>
+            ) : null}
+            {showPartialColumn ? (
+              <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+                Parcial
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.key}>
-              <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                {formatLocaleNumber(row.estimatedQuantity, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} {row.unit}
-              </td>
-              <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
-                <div className="flex items-baseline gap-2">
-                  <span>{row.label}</span>
-                  {row.isAdditional ? (
-                    <span className="shrink-0 border border-stone-400 px-1 text-[9px] font-semibold uppercase tracking-wide text-stone-500">
-                      Adic.
-                    </span>
-                  ) : null}
-                </div>
-                {row.notes ? <div className="mt-1 text-xs text-stone-500">{row.notes}</div> : null}
-              </td>
+              <IngredientCell row={row} />
+              {showBatchColumn ? (
+                <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
+                  {formatWeightCell(row.batchQuantity, row.unit)}
+                </td>
+              ) : null}
+              {showPartialColumn ? (
+                <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
+                  {formatWeightCell(row.partialQuantity, row.unit)}
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -65,81 +131,29 @@ function RecipeTable({ rows }: { rows: (PrintIngredientRow & { isAdditional?: bo
   );
 }
 
+function formatBatchLegend(split: PreWeighBatchSplit) {
+  const fullKg = formatKgValue(split.fullBatchKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const partialKg = formatKgValue(split.partialKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const hasPartial = split.partialUnits > 0;
+
+  if (split.fullBatchCount === 0) {
+    return `1 parcial de ${partialKg} kg`;
+  }
+
+  const fullPart = `${split.fullBatchCount} ${split.fullBatchCount === 1 ? "cheia" : "cheias"} de ${fullKg} kg`;
+  if (!hasPartial) {
+    return fullPart;
+  }
+  return `${fullPart} + 1 parcial de ${partialKg} kg`;
+}
+
 export default function PrePesagemPrintPage() {
   const params = useParams<{ opId: string }>();
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { planningData, isLoading: isPlanningLoading, refresh } = useFactoryPlanningSnapshot(referenceDate);
+  const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const toast = useToast();
-  const confirm = useConfirm();
-
-  const sendBatch = useCallback(
-    async (
-      productionItemKey: string,
-      action: "complete-production-batch" | "undo-production-batch",
-      batchCount: number,
-    ) => {
-      setPendingKey(productionItemKey);
-      try {
-        // force=true reenvia a mesma chamada pulando a trava de data futura (override
-        // do gestor) — espelha o padrão de "forçar" da liberação de pedidos.
-        const postBatch = (force: boolean) =>
-          fetch("/api/factory-planning/workflow", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              action === "complete-production-batch"
-                ? { action, productionItemKey, batchCount, ...(force ? { force: true } : {}) }
-                : { action, productionItemKey, ...(force ? { force: true } : {}) },
-            ),
-          });
-
-        const res = await postBatch(false);
-        if (!res.ok) {
-          const payload = (await res.json().catch(() => null)) as
-            | { message?: string; reason?: string; forceable?: boolean }
-            | null;
-          const message = payload?.message ?? "Falha ao atualizar a batida.";
-          // Trava de data futura overridable (gestor/admin): oferecer "concluir mesmo
-          // assim" e refazer com force: true. Qualquer outro erro mantém o throw.
-          if (
-            res.status === 400 &&
-            payload?.reason === "production_in_future" &&
-            payload?.forceable === true
-          ) {
-            const confirmed = await confirm({
-              title: "Concluir produção em data futura?",
-              description: message,
-              tone: "default",
-              confirmLabel: "Concluir mesmo assim",
-              cancelLabel: "Cancelar",
-            });
-            if (!confirmed) {
-              return;
-            }
-            const forceRes = await postBatch(true);
-            if (!forceRes.ok) {
-              const forcePayload = (await forceRes.json().catch(() => null)) as
-                | { message?: string }
-                | null;
-              throw new Error(forcePayload?.message ?? "Falha ao atualizar a batida.");
-            }
-          } else {
-            throw new Error(message);
-          }
-        }
-        await refresh();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Falha ao atualizar a batida.");
-      } finally {
-        setPendingKey(null);
-      }
-    },
-    [confirm, refresh, toast],
-  );
 
   const op = useMemo(() => {
     const decoded = decodeURIComponent(opId);
@@ -149,38 +163,14 @@ export default function PrePesagemPrintPage() {
       null
     );
   }, [opId, planningData.productionOrders]);
-  const batchKgByProductId = useMemo(() => {
-    const map: Record<string, number> = {};
-    if (!op) return map;
-    for (const item of op.items) {
-      // Só produto batido e ainda não concluído: escala a receita pela batida atual.
-      if (item.batchCount <= 1 || item.batchesDone >= item.batchCount) continue;
-      const currentIdx = Math.min(item.batchesDone, item.batchCount - 1);
-      const currentSize = item.batchSizes[currentIdx] ?? 0;
-      const product = snapshot.products.find((p) => p.id === item.productId);
-      if (product) {
-        map[item.productId] = currentSize * product.salesToKgFactor;
-      }
-    }
-    return map;
-  }, [op, snapshot.products]);
 
   const document = useMemo(
     () =>
       op
-        ? buildPreWeighingDocument(
-            op,
-            { products: snapshot.products, ingredients: snapshot.ingredients },
-            batchKgByProductId,
-          )
+        ? buildPreWeighingDocument(op, { products: snapshot.products, ingredients: snapshot.ingredients })
         : null,
-    [op, snapshot.ingredients, snapshot.products, batchKgByProductId],
+    [op, snapshot.ingredients, snapshot.products],
   );
-  const itemByProduct = useMemo(() => {
-    const map = new Map<string, NonNullable<typeof op>["items"][number]>();
-    op?.items.forEach((it) => map.set(it.productId, it));
-    return map;
-  }, [op]);
 
   const deliveryDateLabel = useMemo(() => {
     if (!op) {
@@ -259,61 +249,18 @@ export default function PrePesagemPrintPage() {
               </div>
             </header>
 
-            {(() => {
-              const opItem = itemByProduct.get(section.productId);
-              if (!opItem || opItem.batchCount <= 1) return null;
-              const done = opItem.batchesDone;
-              const currentIdx = Math.min(done, opItem.batchCount - 1);
-              const currentSize = opItem.batchSizes[currentIdx] ?? 0;
-              const product = snapshot.products.find((p) => p.id === section.productId);
-              const currentKg = product ? currentSize * product.salesToKgFactor : 0;
-              const isDone = done >= opItem.batchCount;
-              const busy = pendingKey === opItem.productionItemKey;
-              return (
-                <div className="flex items-center justify-between gap-3 border-b border-stone-400 bg-stone-100 px-3 py-2 print:hidden">
-                  <div className="text-sm font-semibold text-stone-900">
-                    {isDone
-                      ? `Todas as ${opItem.batchCount} batidas concluídas`
-                      : `Batida ${done + 1} de ${opItem.batchCount}`}
-                    {!isDone ? (
-                      <span className="ml-2 font-normal text-stone-600">
-                        {currentSize} {opItem.batchUnitLabel} · {currentKg.toFixed(3)} kg
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex gap-2">
-                    {done > 0 ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => void sendBatch(opItem.productionItemKey, "undo-production-batch", opItem.batchCount)}
-                      >
-                        Desfazer
-                      </Button>
-                    ) : null}
-                    {!isDone ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => void sendBatch(opItem.productionItemKey, "complete-production-batch", opItem.batchCount)}
-                      >
-                        Concluir batida {done + 1}
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })()}
-
             <div className="space-y-2 px-3 py-3">
+              {section.batchSplit?.batched ? (
+                <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
+                  {formatBatchLegend(section.batchSplit)}
+                </div>
+              ) : null}
               <RecipeTable
                 rows={[
                   ...section.baseIngredients,
                   ...section.additionalIngredients.map((row) => ({ ...row, isAdditional: true })),
                 ]}
+                batchSplit={section.batchSplit}
               />
               {section.baseIngredients.length === 0 && section.additionalIngredients.length === 0 ? (
                 <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">

@@ -36,7 +36,8 @@ export default function OrdemProducaoDetailsPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
-  const { planningData, isLoading, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData, isLoading, updateProductionItemStatus, completeProductionBatch, undoProductionBatch } =
+    useFactoryPlanningSnapshot(anchorDate);
   const { snapshot } = useMasterDataSnapshot();
 
   const op = useMemo(() => {
@@ -115,6 +116,30 @@ export default function OrdemProducaoDetailsPage() {
       setWorkflowError(
         error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
       );
+    } finally {
+      setPendingItemKey(null);
+    }
+  }
+
+  async function handleCompleteBatch(productionItemKey: string, batchCount: number) {
+    setWorkflowError(null);
+    setPendingItemKey(productionItemKey);
+    try {
+      await completeProductionBatch(productionItemKey, batchCount);
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "Falha ao concluir a batida.");
+    } finally {
+      setPendingItemKey(null);
+    }
+  }
+
+  async function handleUndoBatch(productionItemKey: string) {
+    setWorkflowError(null);
+    setPendingItemKey(productionItemKey);
+    try {
+      await undoProductionBatch(productionItemKey);
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "Falha ao desfazer a batida.");
     } finally {
       setPendingItemKey(null);
     }
@@ -269,45 +294,105 @@ export default function OrdemProducaoDetailsPage() {
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       <div className="space-y-2">
                         <StatusBadge status={item.status} />
-                        <div className="flex flex-wrap gap-2">
-                          {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={pendingItemKey === item.productionItemKey}
-                              onClick={() =>
-                                void handleWorkflowAction(
-                                  item.productionItemKey,
-                                  getPreviousProductionItemStatus(item.status, item.preparationStages)!,
-                                )
-                              }
-                            >
-                              {getPreviousProductionActionLabel(item.status, item.preparationStages) ??
-                                `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status, item.preparationStages)!)}`}
-                            </Button>
-                          ) : null}
-                          {getNextProductionItemStatus(item.status, item.preparationStages) ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={pendingItemKey === item.productionItemKey}
-                              onClick={() =>
-                                void handleWorkflowAction(
-                                  item.productionItemKey,
-                                  getNextProductionItemStatus(item.status, item.preparationStages)!,
-                                )
-                              }
-                            >
-                              {getNextProductionActionLabel(item.status, item.preparationStages) ??
-                                `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
-                            </Button>
-                          ) : (
-                            <span className="text-xs font-semibold text-success-foreground">
-                              Fluxo concluído
-                            </span>
-                          )}
-                        </div>
+                        {item.batchCount > 1 ? (
+                          (() => {
+                            const done = item.batchesDone;
+                            const isDone = done >= item.batchCount;
+                            const currentIdx = Math.min(done, item.batchCount - 1);
+                            const currentSize = item.batchSizes[currentIdx] ?? 0;
+                            const fullCap = Math.max(...item.batchSizes);
+                            const isPartial = !isDone && currentSize < fullCap;
+                            const busy = pendingItemKey === item.productionItemKey;
+                            return (
+                              <div className="space-y-2">
+                                <div className="text-sm font-semibold text-foreground">
+                                  {isDone ? (
+                                    `Todas as ${item.batchCount} batidas concluídas`
+                                  ) : (
+                                    <>
+                                      Batida {done + 1} de {item.batchCount}
+                                      <span
+                                        className={`ml-2 inline-block border px-1 text-[10px] font-semibold uppercase ${
+                                          isPartial
+                                            ? "border-foreground bg-foreground text-background"
+                                            : "border-border text-muted-foreground"
+                                        }`}
+                                      >
+                                        {isPartial ? "Parcial" : "Cheia"}
+                                      </span>
+                                      <span className="ml-2 font-normal text-muted-foreground">
+                                        · {currentSize} {item.batchUnitLabel}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {done > 0 ? (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => void handleUndoBatch(item.productionItemKey)}
+                                    >
+                                      Desfazer
+                                    </Button>
+                                  ) : null}
+                                  {!isDone ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => void handleCompleteBatch(item.productionItemKey, item.batchCount)}
+                                    >
+                                      Concluir batida {done + 1}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={pendingItemKey === item.productionItemKey}
+                                onClick={() =>
+                                  void handleWorkflowAction(
+                                    item.productionItemKey,
+                                    getPreviousProductionItemStatus(item.status, item.preparationStages)!,
+                                  )
+                                }
+                              >
+                                {getPreviousProductionActionLabel(item.status, item.preparationStages) ??
+                                  `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status, item.preparationStages)!)}`}
+                              </Button>
+                            ) : null}
+                            {getNextProductionItemStatus(item.status, item.preparationStages) ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={pendingItemKey === item.productionItemKey}
+                                onClick={() =>
+                                  void handleWorkflowAction(
+                                    item.productionItemKey,
+                                    getNextProductionItemStatus(item.status, item.preparationStages)!,
+                                  )
+                                }
+                              >
+                                {getNextProductionActionLabel(item.status, item.preparationStages) ??
+                                  `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
+                              </Button>
+                            ) : (
+                              <span className="text-xs font-semibold text-success-foreground">
+                                Fluxo concluído
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.sourceItemsCount}</td>
