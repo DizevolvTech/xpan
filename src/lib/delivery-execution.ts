@@ -35,6 +35,8 @@ export type DeliveryExecutionEntry = {
   updatedAt: string;
   attemptsCount: number;
   lastAttempt: DeliveryAttemptInfo | null;
+  pendingReleaseReason: string | null;
+  pendingReleasedAt: string | null;
 };
 
 type DeliveryExecutionState = Record<string, DeliveryExecutionEntry>;
@@ -152,6 +154,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
           updatedAt: new Date().toISOString(),
           attemptsCount: 0,
           lastAttempt: null,
+          pendingReleaseReason: null,
+          pendingReleasedAt: null,
         };
       }
 
@@ -162,6 +166,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
         updatedAt: new Date().toISOString(),
         attemptsCount: 0,
         lastAttempt: null,
+        pendingReleaseReason: null,
+        pendingReleasedAt: null,
       };
     },
     [executionState],
@@ -174,6 +180,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
       options?: {
         checklistState?: DeliveryChecklistState;
         checklistCompletedAt?: string | null;
+        force?: boolean;
+        releaseReason?: string | null;
       },
     ) => {
       const updatedAt = new Date().toISOString();
@@ -184,6 +192,9 @@ export function useDeliveryExecution(_referenceDate?: string) {
         throw new Error("Transição de entrega inválida");
       }
 
+      const forcedReleaseReason = options?.force
+        ? options.releaseReason?.trim() ?? null
+        : null;
       const nextEntry: DeliveryExecutionEntry = {
         status,
         checklistState: options?.checklistState ?? previousEntry?.checklistState ?? {},
@@ -192,6 +203,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
         updatedAt,
         attemptsCount: previousEntry?.attemptsCount ?? 0,
         lastAttempt: previousEntry?.lastAttempt ?? null,
+        pendingReleaseReason: forcedReleaseReason ?? previousEntry?.pendingReleaseReason ?? null,
+        pendingReleasedAt: forcedReleaseReason ? updatedAt : previousEntry?.pendingReleasedAt ?? null,
       };
 
       setExecutionState((current) => {
@@ -213,6 +226,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
           status,
           checklistState: options?.checklistState,
           checklistCompletedAt: options?.checklistCompletedAt,
+          force: options?.force,
+          releaseReason: options?.force ? options.releaseReason : undefined,
         }),
       });
 

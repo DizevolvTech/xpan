@@ -83,6 +83,8 @@ export interface FactoryMetricsResult {
   };
   // 2.6-D: lojas que pedem nesse dia e ainda não têm pedido para a data.
   storesWithoutOrder: number;
+  // Lista das lojas sem pedido (id/código/nome) — abre num modal a partir do alerta.
+  storesWithoutOrderList: { id: string; code: string; name: string }[];
   // 2.3-D: alertas de divergência (computeFactoryAlerts — também usado em 2.6-F).
   alerts: FactoryAlert[];
 }
@@ -399,8 +401,14 @@ export async function computeFactoryMetrics(
     factoryInput.lines.map((line) => [line.id, line.capacityPerDayKg ?? 0]),
   );
 
+  // FASE 2 (blindagem): OPs de esqueleto (cronograma, totalKg 0, hasDemand false)
+  // são só visão de planejamento — não entram na ocupação. Mesmo já não chegando
+  // aqui (applyFactoryWorkflowState reconstrói só de itens liberados, e esqueleto
+  // nunca é liberado), filtramos por hasDemand para não diluir a média de ocupação
+  // com linhas a 0% caso uma OP de esqueleto vaze numa regressão futura.
+  const opsWithDemand = planning.productionOrders.filter((op) => op.hasDemand);
   const scheduledKgByLine = new Map<string, number>();
-  planning.productionOrders
+  opsWithDemand
     .filter((op) => op.productionDate === input.referenceDate)
     .forEach((op) => {
       scheduledKgByLine.set(op.lineId, (scheduledKgByLine.get(op.lineId) ?? 0) + op.totalKg);
@@ -447,7 +455,7 @@ export async function computeFactoryMetrics(
       .toFixed(2),
   );
   let producedKg = 0;
-  planning.productionOrders
+  opsWithDemand
     .filter((op) => op.productionDate === input.referenceDate)
     .forEach((op) => {
       op.items.forEach((item) => {
@@ -468,12 +476,16 @@ export async function computeFactoryMetrics(
       .filter((order) => order.deliveryDate === input.referenceDate)
       .map((order) => order.storeId),
   );
-  const storesWithoutOrder = factoryInput.stores.filter(
-    (store) =>
-      store.orderingDays.includes(referenceWeekday) &&
-      !store.orderingBlockedDays.includes(referenceWeekday) &&
-      !storeIdsWithOrderForDate.has(store.id),
-  ).length;
+  const storesWithoutOrderList = factoryInput.stores
+    .filter(
+      (store) =>
+        store.orderingDays.includes(referenceWeekday) &&
+        !store.orderingBlockedDays.includes(referenceWeekday) &&
+        !storeIdsWithOrderForDate.has(store.id),
+    )
+    .map((store) => ({ id: store.id, code: store.code, name: store.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const storesWithoutOrder = storesWithoutOrderList.length;
 
   // -------------------------------------------------------------------------
   // Falhas de entrega: count por motivo no período.
@@ -535,6 +547,7 @@ export async function computeFactoryMetrics(
       producedKg,
     },
     storesWithoutOrder,
+    storesWithoutOrderList,
     alerts,
   };
 }

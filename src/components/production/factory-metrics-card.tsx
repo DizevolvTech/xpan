@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, AlertOctagon, Boxes, Gauge, TrendingUp } from "lucide-react";
+import { Activity, Boxes, TrendingUp } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/shared/info-hint";
@@ -76,17 +76,6 @@ const STAGE_LABELS: Record<string, string> = {
   concluido: "Concluído",
 };
 
-const FAILURE_REASON_LABELS: Record<string, string> = {
-  cliente_ausente: "Cliente ausente",
-  endereco_errado: "Endereço errado",
-  recusa_cliente: "Recusa do cliente",
-  estabelecimento_fechado: "Estabelecimento fechado",
-  veiculo_avaria: "Avaria no veículo",
-  acesso_bloqueado: "Acesso bloqueado",
-  documentacao_pendente: "Documentação pendente",
-  outro: "Outro motivo",
-};
-
 function formatMinutes(minutes: number): string {
   if (minutes < 60) return `${Math.round(minutes)} min`;
   const hours = Math.floor(minutes / 60);
@@ -143,7 +132,7 @@ export function FactoryMetricsCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <CardTitle>Métricas operacionais</CardTitle>
-            <InfoHint content="Lead time vem dos eventos de OP (A5). OTIF compara entregas vs delivery_date no período. Ocupação cruza demanda agendada com capacidade da linha." />
+            <InfoHint content="Tempo médio de produção vem dos eventos de cada ordem. Entregas no prazo comparam o que foi entregue na data combinada. Produção por etapa conta os itens que passaram em cada fase no período." />
           </div>
           {state.kind === "ready" ? (
             <span className="text-xs text-muted-foreground">
@@ -166,16 +155,14 @@ export function FactoryMetricsCard({
 }
 
 function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
-  const { leadTime, throughput, otif, occupancy, deliveryFailures } = metrics;
+  const { leadTime, throughput, otif } = metrics;
   const totalThroughput = throughput.perStage.reduce((sum, row) => sum + row.itemsCount, 0);
   const concluidoThroughput =
     throughput.perStage.find((row) => row.stage === "concluido") ?? null;
   // Sem amostras → tom NEUTRO. Evita pintar de vermelho um KPI que só está sem
-  // dados (ex.: OTIF "—" sem entregas no período não é "ruim", é ausência de dado).
-  const hasLeadTime = leadTime.samples > 0;
+  // dados (ex.: entregas "—" sem entregas no período não é "ruim", é ausência de dado).
   const hasOtif = otif.deliveredOnTime + otif.deliveredLate > 0;
-  const hasOccupancy = occupancy.lines.length > 0;
-  const leadTimeTone = hasLeadTime ? "info" : "neutral";
+  const leadTimeTone = leadTime.samples > 0 ? "info" : "neutral";
   const otifTone = !hasOtif
     ? "neutral"
     : otif.otifPercent >= 95
@@ -183,43 +170,31 @@ function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
       : otif.otifPercent >= 80
         ? "warning"
         : "danger";
-  const occupancyTone = !hasOccupancy
-    ? "neutral"
-    : occupancy.averageOccupancyPercent >= 90
-      ? "danger"
-      : occupancy.averageOccupancyPercent >= 70
-        ? "warning"
-        : "info";
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <MetricTile
         icon={Activity}
-        title="Lead time médio"
+        title="Tempo médio de produção"
         value={leadTime.samples > 0 ? formatMinutes(leadTime.averageTotalMinutes) : "—"}
-        helper={leadTime.samples > 0 ? `${leadTime.samples} item(ns) com >1 evento` : "Sem amostras no período"}
+        helper={leadTime.samples > 0 ? `Baseado em ${leadTime.samples} ordem(ns)` : "Sem dados no período"}
         tone={leadTimeTone}
       >
         {leadTime.perStage.length > 0 ? (
-          <>
-            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-              {leadTime.perStage.map((row) => (
-                <li key={row.stage} className="flex justify-between gap-2">
-                  <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
-                  <span className="font-medium text-foreground/80">{formatMinutes(row.averageMinutes)}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-1 text-[11px] text-muted-foreground/80">
-              Médias por etapa — não somam o total.
-            </p>
-          </>
+          <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+            {leadTime.perStage.map((row) => (
+              <li key={row.stage} className="flex justify-between gap-2">
+                <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
+                <span className="font-medium text-foreground/80">{formatMinutes(row.averageMinutes)}</span>
+              </li>
+            ))}
+          </ul>
         ) : null}
       </MetricTile>
 
       <MetricTile
         icon={Boxes}
-        title="Throughput por etapa"
+        title="Produção por etapa"
         value={
           concluidoThroughput
             ? `${concluidoThroughput.perDay}/dia`
@@ -229,62 +204,20 @@ function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
         }
         helper={
           concluidoThroughput
-            ? `${concluidoThroughput.itemsCount} concluído(s) na janela`
+            ? `${concluidoThroughput.itemsCount} concluído(s) no período`
             : totalThroughput > 0
-              ? "Transições de itens por etapa"
+              ? "Itens movimentados por etapa"
               : "Sem movimentações no período"
         }
         tone={totalThroughput > 0 ? "info" : "neutral"}
       >
         {throughput.perStage.length > 0 ? (
-          <>
-            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-              {throughput.perStage.map((row) => (
-                <li key={row.stage} className="flex justify-between gap-2">
-                  <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
-                  <span className="font-medium text-foreground/80">
-                    {row.itemsCount} · {row.perDay}/dia
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-1 text-[11px] text-muted-foreground/80">
-              Itens que entraram em cada etapa na janela.
-            </p>
-          </>
-        ) : null}
-      </MetricTile>
-
-      <MetricTile
-        icon={TrendingUp}
-        title="OTIF"
-        value={otif.deliveredOnTime + otif.deliveredLate > 0 ? `${otif.otifPercent.toFixed(1)}%` : "—"}
-        helper={
-          otif.deliveredOnTime + otif.deliveredLate > 0
-            ? `${otif.deliveredOnTime} no prazo · ${otif.deliveredLate} atrasada(s) · ${otif.pending} pendente(s)`
-            : "Sem entregas no período"
-        }
-        tone={otifTone}
-      />
-
-      <MetricTile
-        icon={Gauge}
-        title="Ocupação média"
-        value={occupancy.lines.length > 0 ? `${occupancy.averageOccupancyPercent.toFixed(1)}%` : "—"}
-        helper={
-          occupancy.busiestLine
-            ? `Pico: ${occupancy.busiestLine.lineName} (${occupancy.busiestLine.occupancyPercent.toFixed(1)}%)`
-            : "Sem linhas com carga hoje"
-        }
-        tone={occupancyTone}
-      >
-        {occupancy.lines.length > 0 ? (
-          <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-            {occupancy.lines.slice(0, 3).map((line) => (
-              <li key={line.lineId} className="flex justify-between gap-2">
-                <span className="truncate">{line.lineName}</span>
+          <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+            {throughput.perStage.map((row) => (
+              <li key={row.stage} className="flex justify-between gap-2">
+                <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
                 <span className="font-medium text-foreground/80">
-                  {line.occupancyPercent.toFixed(0)}%
+                  {row.itemsCount} · {row.perDay}/dia
                 </span>
               </li>
             ))}
@@ -293,27 +226,16 @@ function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
       </MetricTile>
 
       <MetricTile
-        icon={AlertOctagon}
-        title="Falhas de entrega"
-        value={String(deliveryFailures.total)}
+        icon={TrendingUp}
+        title="Entregas no prazo"
+        value={hasOtif ? `${otif.otifPercent.toFixed(1)}%` : "—"}
         helper={
-          deliveryFailures.breakdown.length > 0
-            ? `${deliveryFailures.breakdown.length} motivo(s) distintos`
-            : "Sem tentativas falhadas no período"
+          hasOtif
+            ? `${otif.deliveredOnTime} no prazo · ${otif.deliveredLate} atrasada(s) · ${otif.pending} pendente(s)`
+            : "Sem entregas no período"
         }
-        tone={deliveryFailures.total === 0 ? "success" : "warning"}
-      >
-        {deliveryFailures.breakdown.length > 0 ? (
-          <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-            {deliveryFailures.breakdown.slice(0, 3).map((row) => (
-              <li key={row.reason} className="flex justify-between gap-2">
-                <span className="truncate">{FAILURE_REASON_LABELS[row.reason] ?? row.reason}</span>
-                <span className="font-medium text-foreground/80">{row.count}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </MetricTile>
+        tone={otifTone}
+      />
     </div>
   );
 }

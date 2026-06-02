@@ -169,6 +169,7 @@ function makePlannedItem(overrides: Partial<PlannedOrderItem> = {}): PlannedOrde
     saleDate: "2026-05-21",
     productionDate: "2026-05-20",
     delayed: false,
+    demandSource: "pedido",
     productId: "pizza",
     productCode: "PZ-001",
     productName: "Pizza Margherita",

@@ -27,9 +27,43 @@ import type * as WorkflowModule from "@/lib/supabase-data/workflow";
 // Synchronous require (CJS) so the `server-only` resolver patch above takes
 // effect before the module graph is loaded; a top-level dynamic import isn't
 // available under tsx's CJS transform.
-const { canonicalProductionItemKey, foldProductionItemStatuses } = require(
+const { canonicalProductionItemKey, foldProductionItemStatuses, releaseOrder } = require(
   "@/lib/supabase-data/workflow",
 ) as typeof WorkflowModule;
+
+import { isSkeletonOrderId } from "@/lib/supabase-data/release-validation";
+
+// Stub mínimo: o guard de esqueleto rejeita ANTES de tocar o banco, então
+// qualquer acesso a `supabase` neste teste é, por si só, uma falha de blindagem.
+function failingSupabase() {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw new Error("supabase não deve ser tocado para um orderId de esqueleto");
+      },
+    },
+  ) as never;
+}
+
+test("Fase 2: isSkeletonOrderId reconhece o prefixo skeleton:", () => {
+  assert.equal(isSkeletonOrderId("skeleton:schedule-1"), true);
+  assert.equal(isSkeletonOrderId("order-1"), false);
+  assert.equal(isSkeletonOrderId(null), false);
+  assert.equal(isSkeletonOrderId(undefined), false);
+});
+
+test("Fase 2: releaseOrder rejeita orderId de esqueleto sem tocar o banco", async () => {
+  await assert.rejects(
+    releaseOrder("skeleton:schedule-1", null, failingSupabase()),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Invalid release/);
+      assert.equal((error as { reason?: string }).reason, "order_not_real");
+      return true;
+    },
+  );
+});
 
 test("canonicalProductionItemKey — drops the schedule segment from a 4-part key", () => {
   assert.equal(

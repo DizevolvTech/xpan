@@ -21,6 +21,7 @@ import {
 import {
   OrderReleaseValidationError,
   assertPlanningAllowsRelease,
+  isSkeletonOrderId,
 } from "@/lib/supabase-data/release-validation";
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
 import { recordProductionLeftover } from "@/lib/supabase-data/production-leftovers";
@@ -449,6 +450,16 @@ export async function releaseOrder(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
   options: ReleaseOrderOptions = {},
 ) {
+  // FASE 2 (blindagem): um slot de esqueleto do cronograma (orderId `skeleton:…`,
+  // qtd 0) não é um pedido real — não tem o que liberar. Rejeita ANTES de tocar
+  // o banco, para não criar release órfão (não existe store_orders correspondente).
+  if (isSkeletonOrderId(orderId)) {
+    throw new OrderReleaseValidationError(
+      "order_not_real",
+      "slot do cronograma (sem pedido) não é liberável — é apenas visão de planejamento.",
+    );
+  }
+
   const releasedByDatabaseId = await resolveProfileDatabaseId(supabase, releasedByProfileId ?? null);
   const orderRow = await resolveOrderRow(orderId, supabase);
 
@@ -805,6 +816,14 @@ export async function autoReleaseEligibleOrders(
   for (const order of planning.orders) {
     const id = order.id;
     const code = order.code;
+
+    // FASE 2 (blindagem): defensivo. `planning.orders` vem de StoreOrders reais,
+    // então um id de esqueleto não deveria aparecer aqui — mas se aparecer (regressão
+    // futura), ignora com segurança em vez de criar release órfão.
+    if (isSkeletonOrderId(id)) {
+      result.skipped.push({ orderId: id, orderCode: code, reason: "not_real" });
+      continue;
+    }
 
     if (order.releasedToProduction) {
       result.skipped.push({ orderId: id, orderCode: code, reason: "already_released" });
