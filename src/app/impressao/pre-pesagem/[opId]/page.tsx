@@ -118,15 +118,32 @@ export default function PrePesagemPrintPage() {
       null
     );
   }, [opId, planningData.productionOrders]);
+  const batchKgByProductId = useMemo(() => {
+    const map: Record<string, number> = {};
+    if (!op) return map;
+    for (const item of op.items) {
+      // Só produto batido e ainda não concluído: escala a receita pela batida atual.
+      if (item.batchCount <= 1 || item.batchesDone >= item.batchCount) continue;
+      const currentIdx = Math.min(item.batchesDone, item.batchCount - 1);
+      const currentSize = item.batchSizes[currentIdx] ?? 0;
+      const product = snapshot.products.find((p) => p.id === item.productId);
+      if (product) {
+        map[item.productId] = currentSize * product.salesToKgFactor;
+      }
+    }
+    return map;
+  }, [op, snapshot.products]);
+
   const document = useMemo(
     () =>
       op
-        ? buildPreWeighingDocument(op, {
-            products: snapshot.products,
-            ingredients: snapshot.ingredients,
-          })
+        ? buildPreWeighingDocument(
+            op,
+            { products: snapshot.products, ingredients: snapshot.ingredients },
+            batchKgByProductId,
+          )
         : null,
-    [op, snapshot.ingredients, snapshot.products],
+    [op, snapshot.ingredients, snapshot.products, batchKgByProductId],
   );
   const itemByProduct = useMemo(() => {
     const map = new Map<string, NonNullable<typeof op>["items"][number]>();

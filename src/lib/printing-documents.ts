@@ -220,6 +220,7 @@ export function buildPreWeighingDocument(
     products: ProductionProduct[];
     ingredients: ProductionIngredient[];
   },
+  batchKgByProductId?: Record<string, number>,
 ) {
   const { productsById, ingredientsById } = buildSourceMaps(source);
   const ingredientProductMap = new Map<
@@ -234,6 +235,7 @@ export function buildPreWeighingDocument(
   >();
 
   const productSections: PreWeighingProductSection[] = op.items.map((item) => {
+    const outputKg = batchKgByProductId?.[item.productId] ?? item.totalKg;
     const product = productsById.get(item.productId);
     const requestedSummary = buildRequestedSummary(op, item.productId);
     const baseIngredients: PrintIngredientRow[] = [];
@@ -244,7 +246,7 @@ export function buildPreWeighingDocument(
         productId: item.productId,
         productCode: item.productCode,
         productName: item.productName,
-        plannedKg: item.totalKg,
+        plannedKg: outputKg,
         requestedQuantity: requestedSummary.requestedQuantity,
         requestedUnit: requestedSummary.requestedUnit,
         unitWeightKg: 0,
@@ -253,7 +255,7 @@ export function buildPreWeighingDocument(
       };
     }
 
-    buildScaledRecipeRowsForProduct(product, item.totalKg, source).forEach((row, index) => {
+    buildScaledRecipeRowsForProduct(product, outputKg, source).forEach((row, index) => {
       const recipeItem = product.recipe[index];
       const ingredient = recipeItem?.sourceType === "ingrediente" ? ingredientsById.get(recipeItem.sourceId) : undefined;
       const sourceProduct = recipeItem?.sourceType === "produto" ? productsById.get(recipeItem.sourceId) : undefined;
@@ -306,7 +308,7 @@ export function buildPreWeighingDocument(
       productId: item.productId,
       productCode: item.productCode,
       productName: item.productName,
-      plannedKg: item.totalKg,
+      plannedKg: outputKg,
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg: getOperationalUnitWeight(product),
