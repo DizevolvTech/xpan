@@ -210,6 +210,30 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     [refresh],
   );
 
+  const completeProductionBatch = useCallback(
+    async (productionItemKey: string, batchCount: number) => {
+      await readJson("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "complete-production-batch", productionItemKey, batchCount }),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const undoProductionBatch = useCallback(
+    async (productionItemKey: string) => {
+      await readJson("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "undo-production-batch", productionItemKey }),
+      });
+      await refresh();
+    },
+    [refresh],
+  );
+
   return useMemo(
     () => ({
       planningData,
@@ -220,7 +244,20 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
       cancelOrder,
       reopenOrder,
       updateProductionItemStatus,
+      completeProductionBatch,
+      undoProductionBatch,
     }),
-    [cancelOrder, error, isLoading, planningData, refresh, releaseOrder, reopenOrder, updateProductionItemStatus],
+    [
+      cancelOrder,
+      completeProductionBatch,
+      error,
+      isLoading,
+      planningData,
+      refresh,
+      releaseOrder,
+      reopenOrder,
+      undoProductionBatch,
+      updateProductionItemStatus,
+    ],
   );
 }

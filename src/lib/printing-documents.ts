@@ -6,6 +6,7 @@ import type {
 import type { ProductionOrderRow } from "@/lib/order-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { round3, scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
+import { computePreWeighBatchSplit, type PreWeighBatchSplit } from "@/lib/production-batches";
 
 type PrintIngredientKind = "ingrediente" | "ingrediente_misturado" | "produto_mpi";
 type PrintIngredientSectionKind = "base" | "additional";
@@ -18,6 +19,10 @@ export type PrintIngredientRow = {
   label: string;
   unit: UnitCode;
   estimatedQuantity: number;
+  /** Quantidade para UMA batida cheia (só quando o produto é batido). */
+  batchQuantity?: number;
+  /** Quantidade para a parcial/extra (só quando há parcial). */
+  partialQuantity?: number;
   notes?: string;
 };
 
@@ -29,6 +34,8 @@ export type PreWeighingProductSection = {
   requestedQuantity: number;
   requestedUnit: UnitCode;
   unitWeightKg: number;
+  /** Desdobramento de batidas (cheia ×N + parcial). null = não batido. */
+  batchSplit: PreWeighBatchSplit | null;
   baseIngredients: PrintIngredientRow[];
   additionalIngredients: PrintIngredientRow[];
 };
@@ -153,6 +160,7 @@ function buildScaledRecipeRowsForProduct(
     products: ProductionProduct[];
     ingredients: ProductionIngredient[];
   },
+  batchKgs?: { fullBatchKg?: number; partialKg?: number },
 ) {
   if (!product) {
     return [] as PrintIngredientRow[];
@@ -171,6 +179,15 @@ function buildScaledRecipeRowsForProduct(
       recipeItem.quantity,
     );
 
+    const batchQuantity =
+      batchKgs?.fullBatchKg != null && batchKgs.fullBatchKg > 0
+        ? scaleRecipeQuantity(batchKgs.fullBatchKg, product, source.ingredients, source.products, recipeItem.quantity)
+        : undefined;
+    const partialQuantity =
+      batchKgs?.partialKg != null && batchKgs.partialKg > 0
+        ? scaleRecipeQuantity(batchKgs.partialKg, product, source.ingredients, source.products, recipeItem.quantity)
+        : undefined;
+
     return {
       key: `${product.id}-${recipeItem.id}-${outputKg}`,
       sourceType: recipeItem.sourceType,
@@ -184,6 +201,8 @@ function buildScaledRecipeRowsForProduct(
       label: recipeItem.label,
       unit: recipeItem.unit,
       estimatedQuantity,
+      batchQuantity,
+      partialQuantity,
       notes: buildRowNotes(recipeItem, ingredient, sourceProduct),
     };
   });
@@ -220,7 +239,6 @@ export function buildPreWeighingDocument(
     products: ProductionProduct[];
     ingredients: ProductionIngredient[];
   },
-  batchKgByProductId?: Record<string, number>,
 ) {
   const { productsById, ingredientsById } = buildSourceMaps(source);
   const ingredientProductMap = new Map<
@@ -235,8 +253,14 @@ export function buildPreWeighingDocument(
   >();
 
   const productSections: PreWeighingProductSection[] = op.items.map((item) => {
-    const outputKg = batchKgByProductId?.[item.productId] ?? item.totalKg;
     const product = productsById.get(item.productId);
+    const split = computePreWeighBatchSplit({
+      totalKg: item.totalKg,
+      capacityPerBatch: product?.capacityPerBatch ?? null,
+      salesToKgFactor: product?.salesToKgFactor ?? 1,
+      salesUnit: item.batchUnitLabel,
+    });
+    const outputKg = item.totalKg;
     const requestedSummary = buildRequestedSummary(op, item.productId);
     const baseIngredients: PrintIngredientRow[] = [];
     const additionalIngredients: PrintIngredientRow[] = [];
@@ -246,16 +270,22 @@ export function buildPreWeighingDocument(
         productId: item.productId,
         productCode: item.productCode,
         productName: item.productName,
-        plannedKg: outputKg,
+        plannedKg: item.totalKg,
         requestedQuantity: requestedSummary.requestedQuantity,
         requestedUnit: requestedSummary.requestedUnit,
         unitWeightKg: 0,
+        batchSplit: null,
         baseIngredients,
         additionalIngredients,
       };
     }
 
-    buildScaledRecipeRowsForProduct(product, outputKg, source).forEach((row, index) => {
+    buildScaledRecipeRowsForProduct(
+      product,
+      outputKg,
+      source,
+      split.batched ? { fullBatchKg: split.fullBatchKg, partialKg: split.partialKg } : undefined,
+    ).forEach((row, index) => {
       const recipeItem = product.recipe[index];
       const ingredient = recipeItem?.sourceType === "ingrediente" ? ingredientsById.get(recipeItem.sourceId) : undefined;
       const sourceProduct = recipeItem?.sourceType === "produto" ? productsById.get(recipeItem.sourceId) : undefined;
@@ -308,10 +338,11 @@ export function buildPreWeighingDocument(
       productId: item.productId,
       productCode: item.productCode,
       productName: item.productName,
-      plannedKg: outputKg,
+      plannedKg: item.totalKg,
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg: getOperationalUnitWeight(product),
+      batchSplit: split.batched ? split : null,
       baseIngredients,
       additionalIngredients,
     };
