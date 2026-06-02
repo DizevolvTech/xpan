@@ -582,11 +582,30 @@ export default function GestorFabricaPage() {
       items: planningData.orders
         // "Aberto" = aguardando aceite (não liberado), dirigido pelo estado, não pela data.
         // As demais colunas seguem por status de workflow (expedição / rota).
-        .filter((order) =>
-          column.key === "aberto"
-            ? isOrderAwaitingAcceptance(order)
-            : column.statuses.includes(order.status),
-        )
+        .filter((order) => {
+          if (column.key === "aberto") {
+            return isOrderAwaitingAcceptance(order);
+          }
+          // Expedição vs. Em rota/entregue: o status de planning para em
+          // "aguardando_expedicao"; o avanço real (rota → destino → entregue) vive
+          // no delivery_executions. Por isso consultamos a execução de entrega.
+          if (column.key === "expedicao") {
+            return (
+              order.status === "aguardando_expedicao" &&
+              deliveryExecution.resolveExecution(order.id, true).status === "aguardando_expedicao"
+            );
+          }
+          if (column.key === "rota") {
+            if (order.status === "rota_entrega") {
+              return true;
+            }
+            return (
+              order.status === "aguardando_expedicao" &&
+              deliveryExecution.resolveExecution(order.id, true).status !== "aguardando_expedicao"
+            );
+          }
+          return column.statuses.includes(order.status);
+        })
         .sort(
           (a, b) =>
             a.deliveryDate.localeCompare(b.deliveryDate) || a.code.localeCompare(b.code),
@@ -611,7 +630,7 @@ export default function GestorFabricaPage() {
 
     // Ordem visual: Aberto → Em produção → Aguardando expedição → Em rota.
     return [mapped[0], producaoColumn, mapped[1], mapped[2]];
-  }, [planningData.orders, planningData.productionOrders]);
+  }, [planningData.orders, planningData.productionOrders, deliveryExecution]);
 
   // Subconjuntos liberáveis da coluna "Aberto" (em_espera + agendado &
   // availableForRelease) — usados pelos botões de batch no header da coluna.
