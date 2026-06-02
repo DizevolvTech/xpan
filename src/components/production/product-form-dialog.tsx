@@ -772,8 +772,9 @@ export function ProductFormDialog({
       >
         <DialogContent
           size="3xl"
-          className="max-h-[92vh] overflow-y-auto rounded-[28px] bg-white p-5 sm:max-w-[1080px]"
+          className="flex max-h-[92vh] flex-col overflow-hidden rounded-[28px] bg-white p-0 sm:max-w-[1080px]"
         >
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <DialogHeader>
           <DialogTitle className="text-xl">
             {!product
@@ -2119,8 +2120,9 @@ export function ProductFormDialog({
             </fieldset>
           </TabsContent>
         </Tabs>
+        </div>
 
-        <DialogFooter className="-mx-5 sticky bottom-0 z-20 border-t border-border/80 bg-white/95 px-5 py-4 backdrop-blur supports-[backdrop-filter]:bg-white/90">
+        <DialogFooter className="shrink-0 border-t border-border/80 bg-white px-5 py-4">
           <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             {formError && !isReadOnly ? (
               <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground sm:max-w-xl">
