@@ -10,6 +10,7 @@ import {
   type DeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
 import { aggregateExpeditionItems, getAggregatedExpeditionItemKey } from "@/lib/expedition-aggregation";
+import { assertDeliveryNotInFuture } from "@/lib/workflow-date-guard";
 import { getCachedServerData } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
@@ -403,6 +404,12 @@ export async function updateDeliveryExecution(
     tenantId,
     supabase,
   });
+
+  // Trava de DATA FUTURA: não permitir marcar como ENTREGUE antes da data de
+  // entrega agendada do pedido (evita entregas registradas em data futura).
+  if (status === "entregue") {
+    assertDeliveryNotInFuture(orderRow.delivery_date);
+  }
 
   const currentExecutionResult = await supabase
     .from("delivery_executions")

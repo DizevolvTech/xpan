@@ -26,6 +26,7 @@ import {
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
 import { recordProductionLeftover } from "@/lib/supabase-data/production-leftovers";
 import { deriveBatchStatus } from "@/lib/production-batches";
+import { assertProductionNotInFuture } from "@/lib/workflow-date-guard";
 
 export interface PersistedWorkflowState {
   releasedOrders: string[];
@@ -601,6 +602,13 @@ export async function updateProductionItemStatus(
     return;
   }
 
+  // Trava de DATA FUTURA: não permitir marcar produção como CONCLUÍDA antes da
+  // data de produção chegar (a data é a 1ª parte da chave canônica). Evita que um
+  // `concluido` adiantado jogue o pedido direto para "Aguardando expedição".
+  if (status === "concluido") {
+    assertProductionNotInFuture(canonicalKey);
+  }
+
   const upsertResult = await supabase.from("workflow_production_items").upsert(
     {
       production_item_key: canonicalKey,
@@ -693,6 +701,12 @@ export async function completeProductionBatch(
   const cap = Math.max(1, Math.floor(batchCount));
   const next = Math.min(cap, current + 1);
   if (next === current) return;
+
+  // Trava de DATA FUTURA: a batida que FECHA a produção (next >= cap → status
+  // derivado `concluido`) não pode ser registrada antes da data de produção chegar.
+  if (next >= cap) {
+    assertProductionNotInFuture(canonicalKey);
+  }
 
   const upsertResult = await supabase.from("workflow_production_batches").upsert(
     {

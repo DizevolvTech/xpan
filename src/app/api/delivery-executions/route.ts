@@ -6,6 +6,7 @@ import { invalidateDeliveryExecutionCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions, updateDeliveryExecution } from "@/lib/supabase-data/delivery";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { FutureWorkflowDateError } from "@/lib/workflow-date-guard";
 
 function isClientValidationError(message: string) {
   const normalized = message.toLowerCase();
@@ -115,6 +116,10 @@ export async function PATCH(request: Request) {
     invalidateDeliveryExecutionCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof FutureWorkflowDateError) {
+      // Trava de data futura: regra de negócio → 400.
+      return NextResponse.json({ message: error.message, reason: error.reason }, { status: 400 });
+    }
     console.error("Failed to update delivery execution", error);
     const message =
       error instanceof Error ? error.message : "Failed to update delivery execution";

@@ -5,6 +5,7 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { OrderReleaseValidationError } from "@/lib/supabase-data/release-validation";
+import { FutureWorkflowDateError } from "@/lib/workflow-date-guard";
 import {
   cancelOrder,
   completeProductionBatch,
@@ -214,6 +215,10 @@ export async function PATCH(request: Request) {
         },
         { status: 400 },
       );
+    }
+    if (error instanceof FutureWorkflowDateError) {
+      // Trava de data futura: regra de negócio → 400 (não é erro de servidor).
+      return NextResponse.json({ message: error.message, reason: error.reason }, { status: 400 });
     }
     console.error("Failed to update factory workflow", error);
     const message = error instanceof Error ? error.message : "Failed to update workflow";
