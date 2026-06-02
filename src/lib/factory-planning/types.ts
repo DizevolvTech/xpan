@@ -150,6 +150,10 @@ export interface ProductionOrderItem {
   batchSizes: number[];
   batchUnitLabel: string;
   batchesDone: number;
+  // Capacidade por batida (>0 = produto BATIDO: status vem das batidas, geridas no
+  // Chão; null/0 = não batido, status pelos botões de avançar/voltar). O motor
+  // sempre propaga este campo do item de planejamento (ver engine buildProductionOrders).
+  capacityPerBatch: number | null;
   preparationStages: ProductPreparationStageKey[];
   sourceItemsCount: number;
 }

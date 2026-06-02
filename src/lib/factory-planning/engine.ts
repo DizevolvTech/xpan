@@ -1031,10 +1031,11 @@ export function buildProductionOrdersFromPlannedItems(
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),
-      // Remove os campos auxiliares de batida + hasPedidoSource (só usados p/
-      // derivar plano/demandSource) do ProductionOrderItem público.
+      // Remove só os campos auxiliares (usados p/ derivar plano/demandSource) do
+      // ProductionOrderItem público. `capacityPerBatch` agora É público (distingue
+      // produto batido — status pelas batidas vs botões de status), então fica.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      items: builtItems.map(({ capacityPerBatch, salesToKgFactor, hasPedidoSource, ...rest }) => rest),
+      items: builtItems.map(({ salesToKgFactor, hasPedidoSource, ...rest }) => rest),
       sourceItems: group.sourceItems.sort((a, b) => {
         const bySequence =
           (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -

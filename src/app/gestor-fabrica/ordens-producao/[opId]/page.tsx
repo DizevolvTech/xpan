@@ -289,45 +289,53 @@ export default function OrdemProducaoDetailsPage() {
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       <div className="space-y-2">
                         <StatusBadge status={item.status} />
-                        <div className="flex flex-wrap gap-2">
-                          {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={pendingItemKey === item.productionItemKey}
-                              onClick={() =>
-                                void handleWorkflowAction(
-                                  item.productionItemKey,
-                                  getPreviousProductionItemStatus(item.status, item.preparationStages)!,
-                                )
-                              }
-                            >
-                              {getPreviousProductionActionLabel(item.status, item.preparationStages) ??
-                                `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status, item.preparationStages)!)}`}
-                            </Button>
-                          ) : null}
-                          {getNextProductionItemStatus(item.status, item.preparationStages) ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={pendingItemKey === item.productionItemKey}
-                              onClick={() =>
-                                void handleWorkflowAction(
-                                  item.productionItemKey,
-                                  getNextProductionItemStatus(item.status, item.preparationStages)!,
-                                )
-                              }
-                            >
-                              {getNextProductionActionLabel(item.status, item.preparationStages) ??
-                                `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
-                            </Button>
-                          ) : (
-                            <span className="text-xs font-semibold text-success-foreground">
-                              Fluxo concluído
-                            </span>
-                          )}
-                        </div>
+                        {item.capacityPerBatch != null && item.capacityPerBatch > 0 ? (
+                          // Item BATIDO: status vem das batidas (geridas no Chão);
+                          // os botões de avançar/voltar seriam no-op aqui.
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {item.batchesDone}/{item.batchCount} batidas · geridas no Chão
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={pendingItemKey === item.productionItemKey}
+                                onClick={() =>
+                                  void handleWorkflowAction(
+                                    item.productionItemKey,
+                                    getPreviousProductionItemStatus(item.status, item.preparationStages)!,
+                                  )
+                                }
+                              >
+                                {getPreviousProductionActionLabel(item.status, item.preparationStages) ??
+                                  `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status, item.preparationStages)!)}`}
+                              </Button>
+                            ) : null}
+                            {getNextProductionItemStatus(item.status, item.preparationStages) ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={pendingItemKey === item.productionItemKey}
+                                onClick={() =>
+                                  void handleWorkflowAction(
+                                    item.productionItemKey,
+                                    getNextProductionItemStatus(item.status, item.preparationStages)!,
+                                  )
+                                }
+                              >
+                                {getNextProductionActionLabel(item.status, item.preparationStages) ??
+                                  `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
+                              </Button>
+                            ) : (
+                              <span className="text-xs font-semibold text-success-foreground">
+                                Fluxo concluído
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.sourceItemsCount}</td>

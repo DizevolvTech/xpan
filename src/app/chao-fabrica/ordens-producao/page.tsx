@@ -14,7 +14,6 @@ import {
 
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
-import { useConfirm } from "@/components/shared/confirm-dialog";
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
@@ -51,10 +50,8 @@ import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { hierarchyLabels } from "@/lib/production-planning";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
-import {
-  ReleaseOrderBlockedError,
-  useFactoryPlanningSnapshot,
-} from "@/lib/use-factory-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 
@@ -108,7 +105,7 @@ export default function OrdensProducaoPage() {
   );
   const { snapshot } = useMasterDataSnapshot();
   const toast = useToast();
-  const confirm = useConfirm();
+  const tryFutureDateOverride = useFutureDateOverride();
 
   const capacityByLineId = useMemo(
     () => new Map(snapshot.lines.map((line) => [line.id, line.capacityPerDayKg])),
@@ -407,34 +404,16 @@ export default function OrdensProducaoPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      // Trava de data futura: o servidor manda 400 + reason=production_in_future.
-      // Se forceable (papel gestor/admin), oferecer "concluir mesmo assim" e refazer
-      // com force: true — espelha o override de liberação em gestor-fabrica.
-      if (
-        error instanceof ReleaseOrderBlockedError &&
-        error.forceable &&
-        error.reason === "production_in_future"
-      ) {
-        const confirmed = await confirm({
-          title: "Concluir produção em data futura?",
-          description: error.message,
-          tone: "default",
-          confirmLabel: "Concluir mesmo assim",
-          cancelLabel: "Cancelar",
-        });
-        if (confirmed) {
-          try {
-            await updateProductionItemStatus(productionItemKey, status, { force: true });
-          } catch (forceError) {
-            const message =
-              forceError instanceof Error
-                ? forceError.message
-                : "Falha ao atualizar o estágio operacional.";
-            setWorkflowError(message);
-            toast.error(message);
-          }
-        }
-      } else {
+      // Trava de data futura: gestor/admin podem forçar (forceable do servidor).
+      const handled = await tryFutureDateOverride(
+        error,
+        () => updateProductionItemStatus(productionItemKey, status, { force: true }),
+        (message) => {
+          setWorkflowError(message);
+          toast.error(message);
+        },
+      );
+      if (!handled) {
         setWorkflowError(
           error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
         );

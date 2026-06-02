@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Factory, Printer, Truck } from "lucide-react";
 
-import { useConfirm } from "@/components/shared/confirm-dialog";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
@@ -25,8 +24,10 @@ import {
 } from "@/lib/production-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
-import { ReleaseOrderBlockedError, useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { getOperationalTodayKey } from "@/lib/workflow-date-guard";
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -42,41 +43,7 @@ export default function OrdemProducaoDetailsPage() {
     useFactoryPlanningSnapshot(anchorDate);
   const { snapshot } = useMasterDataSnapshot();
   const toast = useToast();
-  const confirm = useConfirm();
-
-  // Trava de data futura: se o servidor bloquear (400 + reason=production_in_future)
-  // e o papel puder forçar (forceable), oferece "concluir mesmo assim" e refaz a ação
-  // com force: true — espelha o override de liberação. Outros erros caem no padrão.
-  async function handleForceableDateError(
-    error: unknown,
-    retryForced: () => Promise<void>,
-    fallbackMessage: string,
-  ) {
-    if (
-      error instanceof ReleaseOrderBlockedError &&
-      error.forceable &&
-      error.reason === "production_in_future"
-    ) {
-      const confirmed = await confirm({
-        title: "Concluir produção em data futura?",
-        description: error.message,
-        tone: "default",
-        confirmLabel: "Concluir mesmo assim",
-        cancelLabel: "Cancelar",
-      });
-      if (confirmed) {
-        try {
-          await retryForced();
-        } catch (forceError) {
-          const message = forceError instanceof Error ? forceError.message : fallbackMessage;
-          setWorkflowError(message);
-          toast.error(message);
-        }
-      }
-      return;
-    }
-    setWorkflowError(error instanceof Error ? error.message : fallbackMessage);
-  }
+  const tryFutureDateOverride = useFutureDateOverride();
 
   const op = useMemo(() => {
     const decoded = decodeURIComponent(opId);
@@ -151,11 +118,19 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      await handleForceableDateError(
+      const handled = await tryFutureDateOverride(
         error,
         () => updateProductionItemStatus(productionItemKey, status, { force: true }),
-        "Falha ao atualizar o estágio operacional.",
+        (message) => {
+          setWorkflowError(message);
+          toast.error(message);
+        },
       );
+      if (!handled) {
+        setWorkflowError(
+          error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+        );
+      }
     } finally {
       setPendingItemKey(null);
     }
@@ -167,11 +142,17 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await completeProductionBatch(productionItemKey, batchCount);
     } catch (error) {
-      await handleForceableDateError(
+      const handled = await tryFutureDateOverride(
         error,
         () => completeProductionBatch(productionItemKey, batchCount, { force: true }),
-        "Falha ao concluir a batida.",
+        (message) => {
+          setWorkflowError(message);
+          toast.error(message);
+        },
       );
+      if (!handled) {
+        setWorkflowError(error instanceof Error ? error.message : "Falha ao concluir a batida.");
+      }
     } finally {
       setPendingItemKey(null);
     }
@@ -234,6 +215,14 @@ export default function OrdemProducaoDetailsPage() {
         title="Janela da OP"
         description="A OP permanece aberta pelo código, enquanto o contexto temporal acompanha o mesmo recorte global do chão de fábrica."
       />
+
+      {op.productionDate > getOperationalTodayKey() ? (
+        <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
+          Produção agendada para <strong>{op.productionDateLabel}</strong> (data futura). A conclusão
+          de batidas/produção só é liberada quando a data chegar — antes disso depende de override do
+          gestor.
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>
