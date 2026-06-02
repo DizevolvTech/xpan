@@ -14,6 +14,7 @@ import {
 
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
@@ -22,6 +23,7 @@ import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,7 +51,10 @@ import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
 import { hierarchyLabels } from "@/lib/production-planning";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
-import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import {
+  ReleaseOrderBlockedError,
+  useFactoryPlanningSnapshot,
+} from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 
@@ -102,6 +107,8 @@ export default function OrdensProducaoPage() {
     [planningSnapshot, scope],
   );
   const { snapshot } = useMasterDataSnapshot();
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const capacityByLineId = useMemo(
     () => new Map(snapshot.lines.map((line) => [line.id, line.capacityPerDayKg])),
@@ -400,9 +407,38 @@ export default function OrdensProducaoPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      setWorkflowError(
-        error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
-      );
+      // Trava de data futura: o servidor manda 400 + reason=production_in_future.
+      // Se forceable (papel gestor/admin), oferecer "concluir mesmo assim" e refazer
+      // com force: true — espelha o override de liberação em gestor-fabrica.
+      if (
+        error instanceof ReleaseOrderBlockedError &&
+        error.forceable &&
+        error.reason === "production_in_future"
+      ) {
+        const confirmed = await confirm({
+          title: "Concluir produção em data futura?",
+          description: error.message,
+          tone: "default",
+          confirmLabel: "Concluir mesmo assim",
+          cancelLabel: "Cancelar",
+        });
+        if (confirmed) {
+          try {
+            await updateProductionItemStatus(productionItemKey, status, { force: true });
+          } catch (forceError) {
+            const message =
+              forceError instanceof Error
+                ? forceError.message
+                : "Falha ao atualizar o estágio operacional.";
+            setWorkflowError(message);
+            toast.error(message);
+          }
+        }
+      } else {
+        setWorkflowError(
+          error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+        );
+      }
     } finally {
       setPendingItemKey(null);
     }

@@ -3,6 +3,8 @@
 import { useCallback, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
+import { useConfirm } from "@/components/shared/confirm-dialog";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
@@ -71,6 +73,8 @@ export default function PrePesagemPrintPage() {
   const { planningData, isLoading: isPlanningLoading, refresh } = useFactoryPlanningSnapshot(referenceDate);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const sendBatch = useCallback(
     async (
@@ -80,25 +84,61 @@ export default function PrePesagemPrintPage() {
     ) => {
       setPendingKey(productionItemKey);
       try {
-        const res = await fetch("/api/factory-planning/workflow", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            action === "complete-production-batch"
-              ? { action, productionItemKey, batchCount }
-              : { action, productionItemKey },
-          ),
-        });
+        // force=true reenvia a mesma chamada pulando a trava de data futura (override
+        // do gestor) — espelha o padrão de "forçar" da liberação de pedidos.
+        const postBatch = (force: boolean) =>
+          fetch("/api/factory-planning/workflow", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              action === "complete-production-batch"
+                ? { action, productionItemKey, batchCount, ...(force ? { force: true } : {}) }
+                : { action, productionItemKey, ...(force ? { force: true } : {}) },
+            ),
+          });
+
+        const res = await postBatch(false);
         if (!res.ok) {
-          const payload = (await res.json().catch(() => null)) as { message?: string } | null;
-          throw new Error(payload?.message ?? "Falha ao atualizar a batida.");
+          const payload = (await res.json().catch(() => null)) as
+            | { message?: string; reason?: string; forceable?: boolean }
+            | null;
+          const message = payload?.message ?? "Falha ao atualizar a batida.";
+          // Trava de data futura overridable (gestor/admin): oferecer "concluir mesmo
+          // assim" e refazer com force: true. Qualquer outro erro mantém o throw.
+          if (
+            res.status === 400 &&
+            payload?.reason === "production_in_future" &&
+            payload?.forceable === true
+          ) {
+            const confirmed = await confirm({
+              title: "Concluir produção em data futura?",
+              description: message,
+              tone: "default",
+              confirmLabel: "Concluir mesmo assim",
+              cancelLabel: "Cancelar",
+            });
+            if (!confirmed) {
+              return;
+            }
+            const forceRes = await postBatch(true);
+            if (!forceRes.ok) {
+              const forcePayload = (await forceRes.json().catch(() => null)) as
+                | { message?: string }
+                | null;
+              throw new Error(forcePayload?.message ?? "Falha ao atualizar a batida.");
+            }
+          } else {
+            throw new Error(message);
+          }
         }
         await refresh();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Falha ao atualizar a batida.");
       } finally {
         setPendingKey(null);
       }
     },
-    [refresh],
+    [confirm, refresh, toast],
   );
 
   const op = useMemo(() => {

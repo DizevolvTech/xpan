@@ -140,14 +140,30 @@ export async function PATCH(request: Request) {
           { status: 403 },
         );
       }
-      await updateProductionItemStatus(
-        body.productionItemKey,
-        body.status,
-        authorization.user.id,
-        authorization.effectiveTenantId,
-        supabase,
-        body.force === true,
-      );
+      try {
+        await updateProductionItemStatus(
+          body.productionItemKey,
+          body.status,
+          authorization.user.id,
+          authorization.effectiveTenantId,
+          supabase,
+          body.force === true,
+        );
+      } catch (error) {
+        if (error instanceof FutureWorkflowDateError) {
+          // `forceable` reflete o papel: só gestor/admin recebem a opção de forçar
+          // (o chão vê só o aviso). A UI usa isso para oferecer "forçar mesmo assim".
+          return NextResponse.json(
+            {
+              message: error.message,
+              reason: error.reason,
+              forceable: canOverrideFutureWorkflowDate(authorization.user.role),
+            },
+            { status: 400 },
+          );
+        }
+        throw error;
+      }
       invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
     }
@@ -206,14 +222,28 @@ export async function PATCH(request: Request) {
             { status: 403 },
           );
         }
-        await completeProductionBatch(
-          body.productionItemKey,
-          body.batchCount,
-          authorization.user.id,
-          authorization.effectiveTenantId,
-          supabase,
-          body.force === true,
-        );
+        try {
+          await completeProductionBatch(
+            body.productionItemKey,
+            body.batchCount,
+            authorization.user.id,
+            authorization.effectiveTenantId,
+            supabase,
+            body.force === true,
+          );
+        } catch (error) {
+          if (error instanceof FutureWorkflowDateError) {
+            return NextResponse.json(
+              {
+                message: error.message,
+                reason: error.reason,
+                forceable: canOverrideFutureWorkflowDate(authorization.user.role),
+              },
+              { status: 400 },
+            );
+          }
+          throw error;
+        }
       } else {
         await undoProductionBatch(
           body.productionItemKey,

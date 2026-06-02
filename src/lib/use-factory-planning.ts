@@ -29,7 +29,10 @@ const factoryPlanningInflight = new Map<string, Promise<FactoryPlanningData>>();
 export type ReleaseBlockReason =
   | "order_cancelled"
   | "order_not_planned"
-  | "order_not_releasable";
+  | "order_not_releasable"
+  // Trava de data futura: o servidor responde 400 + reason ao tentar concluir
+  // produção (ou bater a última batida) em data futura. forceable=true só p/ gestor.
+  | "production_in_future";
 
 export class ReleaseOrderBlockedError extends Error {
   readonly reason: ReleaseBlockReason;
@@ -195,7 +198,11 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
   );
 
   const updateProductionItemStatus = useCallback(
-    async (productionItemKey: string, status: ProductionItemStatus) => {
+    async (
+      productionItemKey: string,
+      status: ProductionItemStatus,
+      options: { force?: boolean } = {},
+    ) => {
       await readJson("/api/factory-planning/workflow", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -203,6 +210,9 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
           action: "update-production-item-status",
           productionItemKey,
           status,
+          // Override da trava de data futura: o servidor pula a trava (ou devolve
+          // 403 se o papel não puder). Mesmo estilo do releaseOrder acima.
+          force: options.force === true,
         }),
       });
       await refresh();
