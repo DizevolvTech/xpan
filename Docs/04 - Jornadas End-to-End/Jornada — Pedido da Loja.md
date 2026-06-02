@@ -3,8 +3,10 @@
 > Loja monta pedido D+X → envia → Gestor de Fábrica audita e libera → cronograma é impactado.
 
 > [!note] Atualizado em 2026-05-21 — iniciativa A1-A8
-> A jornada manteve toda a estrutura (modelo "loja cria" segue valendo — AJ-0009
-> continua aguardando decisão), mas o **passo 5 (liberação)** ganhou camadas:
+> A jornada manteve toda a estrutura (modelo "loja cria" segue valendo — **AJ-0009
+> decidido em 2026-05-30: a loja cria os pedidos; o modelo "fábrica abre" fica
+> parqueado atrás da flag `NEXT_PUBLIC_FACTORY_OPENS_ORDERS` OFF**, ver
+> [[decisoes/ADR_modelo_fabrica_abre_pedido]]), mas o **passo 5 (liberação)** ganhou camadas:
 >
 > - **Validação server-side com override (A1):** `releaseOrder` valida via
 >   `assertPlanningAllowsRelease`. Pode bloquear com `order_cancelled` (não

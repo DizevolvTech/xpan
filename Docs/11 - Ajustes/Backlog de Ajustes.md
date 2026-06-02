@@ -2,7 +2,7 @@
 
 > Lista única, numerada, com status. Atualizar conforme cada ajuste é trabalhado.
 
-**Última revisão:** 2026-05-21
+**Última revisão:** 2026-05-30 (Sprint 23 — ajustes Trello 26/05 + gaps 13/05 — fechada)
 
 ---
 
@@ -131,7 +131,11 @@ loja). Hoje OTIF considera "fim do dia D" como prazo.
 
 ---
 
-## 🔧 Ajustes do board 26/05 (Sprint 23) — em execução
+## 🔧 Ajustes do board 26/05 (Sprint 23) — concluída
+
+> ✅ **Sprint fechada em 2026-05-30** — branch `fix/ajustes-trello-sprint-23`, **PR #1 → `develop`**,
+> 25 commits, **188/188 testes**, `tsc`/`eslint` limpos. Resumo de fechamento no
+> [[10 - Changelog Vivo/2026-05#2026-05-30 — 📦 Sprint 23 (ajustes Trello 26/05 + gaps 13/05) — fechada (PR #1 → develop)|Changelog · Sprint 23]] + tabela em [[#2026-05-30 — Sprint 23 (Trello 26/05 + gaps 13/05) — fechada (PR #1)|Histórico de resoluções]].
 
 Lote derivado do [[Brief Claude Code — Ajustes 26-05 + gaps 13-05]] (estudo de
 origem: [[Estudo Trello — Analise 26-05 + Reuniao 13-05]]). Execução um item por
@@ -325,7 +329,7 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 >
 > **⏳ Falta (ativação):**
 > - **Validação visual** (desktop + mobile) com a flag ligada em dev — escolha do Giuseppe foi "construir agora, validar depois".
-> - Ligar `FACTORY_OPENS_ORDERS=true` em produção e validar com cliente real.
+> - Ligar a flag em produção (env var real: `NEXT_PUBLIC_FACTORY_OPENS_ORDERS=true`, ver `src/lib/feature-flags.ts`) e validar com cliente real. **Só fazer se/quando o fluxo for redesenhado** — a decisão vigente (2026-05-30) é manter OFF.
 > - **Fase 4b** (`order_windows`, multi-dia → fecha AJ-0014) aguarda confirmação da granularidade (8 perguntas do ADR).
 
 > 📄 **Documento de decisão:** [[decisoes/ADR_modelo_fabrica_abre_pedido]] — opções de modelo (A: `order_windows`; B: estado em `store_orders`; **C: híbrido faseado — recomendada**), trade-offs, mapa de impacto (DB/API/UI/docs/migração) e **8 perguntas abertas** a levar para Daniel + Adriano + Leonora antes de codar. Conforme o plano: "Não fazer no calor da hora."
@@ -433,7 +437,7 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 > - Toda mutation **passa pelo endpoint existente** `PATCH /api/factory-planning/workflow` — sem novo endpoint backend.
 > - **Batch = loop client-side** com toast de progresso (sem endpoint dedicado).
 >
-> **Implementação:** pendente — abrir UX-spec em `Docs/12 - Iniciativa UX/specs/` na próxima onda. Não regredir os deep-links do AJ-0002 (card → lista filtrada continua disponível como ação secundária).
+> **Implementação:** ✅ concluída (2026-05-30, Sprint 23). A parte acionável (inline `Liberar` + batch `Liberar tudo do dia` / `Liberar todos em espera` + checklist, tudo via `PATCH /api/factory-planning/workflow`) já estava entregue; o **badge `PRÓXIMA`** na 1ª OP da fila fechou a diretriz. Deep-links do AJ-0002 preservados (card → lista filtrada segue como ação secundária). Não foi necessária UX-spec dedicada — reconciliado direto no código.
 
 ---
 
@@ -642,6 +646,32 @@ Flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` (default ON, escape hatch). 3 testes nov
 ---
 
 ## Histórico de resoluções
+
+### 2026-05-30 — Sprint 23 (Trello 26/05 + gaps 13/05) — fechada (PR #1)
+
+Lote do board 26/05 + gaps 13/05. Branch `fix/ajustes-trello-sprint-23`, **PR #1 → `develop`**, 25 commits, **188/188 testes**, `tsc` limpo, `eslint` 0. Detalhe por item nas seções acima e no [[10 - Changelog Vivo/2026-05#2026-05-30 — 📦 Sprint 23 (ajustes Trello 26/05 + gaps 13/05) — fechada (PR #1 → develop)|Changelog]].
+
+| ID | Resultado | Arquivos principais |
+|---|---|---|
+| AJ-0025 | Editar receita reaproveita revisão pendente (id estável → `planning_key` estável); 400 acionável | `schedule-revision-plan.ts` · `master-data-admin.ts` · `release-block-message.ts` · `release-order-with-confirm.ts` |
+| AJ-0024 | Branch atrasado devolve `productionDate:null` (sem +7); `forceRefresh` no 1º salvamento | `engine.ts` · `server-data-cache.ts` · `store-orders.ts` |
+| AJ-0027 | Input de quantidade alinhado, milhar pt-BR, teto `MAX_ORDER_QUANTITY` (`OrderQuantityCell`) | `loja/pedidos/page.tsx` |
+| AJ-0028 | Sequência operacional com container queries (sem sobreposição de datas) | `operational-sequence-card.tsx` · `loja/pedidos/page.tsx` |
+| AJ-0026 | Criar categoria inline no modal "Nova Linha"; `createCategory` devolve `{id,code}` | `product-form-dialog.tsx` · `master-data-admin.ts` |
+| AJ-0003.1 | Bloco "Última edição" (motivo + campos de/para) na auditoria de cronograma | `product-changelog-diff.ts` · `changelog/route.ts` · `sublinhas-producao/page.tsx` |
+| AJ-0004.1 | `finalFractionsQuantityPrecise` (fonte única do rendimento preciso) | `production-data-utils.ts` · `product-form-dialog.tsx` |
+| AJ-0006.1 | Lote mínimo consolidado na fábrica (`minimumProductionKg`/`belowMinimum`, server-side) | `engine.ts` · `recipe-expansion.ts` · `ordens-producao/page.tsx` |
+| AJ-0008.1 | Ingrediente `misturado` puro vira OP (Fase 3, flag `EXPAND_MIXED_INGREDIENT_INTO_OPS` default ON) | `recipe-expansion.ts` · `engine.ts` |
+| AJ-0001 | Badge `PRÓXIMA` fecha o Kanban acionável (inline + batch já existiam) | `gestor-fabrica/page.tsx` |
+| AJ-0005.1 | Decisão: manter toggle de itens inativos (sem código) | — |
+| AJ-0023 | Dead code removido (`startEditing`, `selectedProductionSummary`, `eslint-disable`) | `loja/pedidos/[orderId]/page.tsx` · `loja/pedidos/page.tsx` · `product-form-dialog.tsx` |
+| — | Limite de pedido **por janela** (`findActiveWindowOrder`) — não trava por dia anterior | `store-order-window.ts` · `loja/pedidos/page.tsx` |
+| — | Preenchimento por cobertura de dias + atalho "Cobrir os N dias" | `store-order-coverage.ts` · `loja/pedidos/page.tsx` |
+| — | Popup do pedido `size="full"` + grade com scroll interno (sem paginação) | `loja/pedidos/page.tsx` |
+| — | Kanban dirigido por estado (`isOrderAwaitingAcceptance` / `isOpInProductionColumn`) + batch "Iniciar produção do dia" | `factory-kanban.ts` · `gestor-fabrica/page.tsx` |
+| AJ-0009 | Modelo "fábrica abre pedido" — fundação + UI + migration **codados e aplicados**, mas **PARQUEADOS atrás de `NEXT_PUBLIC_FACTORY_OPENS_ORDERS` = OFF** (decisão de cliente: a loja cria) | `store-order-lifecycle.ts` · `store-order-open-plan.ts` · `feature-flags.ts` · `store-orders.ts` · [[decisoes/ADR_modelo_fabrica_abre_pedido]] |
+
+> **Decisão-chave da sprint:** **AJ-0009 fica desligado** — na validação ficou claro que a LOJA é quem cria os pedidos (1 por janela). O código da Fase 4a permanece como recurso opcional atrás da flag; não ativar sem redesenhar o fluxo. A regra vigente "1 pedido por janela" (`store-order-window.ts` + índice `UNIQUE`) está ativa independente da flag.
 
 ### 2026-05-19 — Onda 3 (cobertura + sincronia) — fechada (4 AJs)
 

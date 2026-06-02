@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "11 - Ajustes/Backlog de Ajustes.md",
+                "file": "README.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Backlog de Ajustes"
+              "title": "README"
             }
           }
         ]
@@ -183,11 +183,36 @@
       "bases:Criar nova base": false
     }
   },
-  "active": "03cec7e971c1c275",
+  "active": "49bd97b02c870cd6",
   "lastOpenFiles": [
+    "02 - Personas/Gestor de Fábrica.md",
+    "02 - Personas/Gestor de Dados.md",
+    "02 - Personas/Chão de Fábrica.md",
+    "02 - Personas/Administrador Master.md",
+    "02 - Personas/Administrador.md",
+    "11 - Ajustes/Backlog de Ajustes.md",
+    "decisoes/ADR_expansao_mpi_em_op.md",
+    "12 - Iniciativa UX/Backlog UX (RICE).md.tmp.747.78961faf7812",
+    "12 - Iniciativa UX/Auditoria Visivel — Sistema.md",
+    "12 - Iniciativa UX/specs/UX-0006 — contraste-wcag-aa.md",
+    "12 - Iniciativa UX/specs/UX-0010 — densidade-shell.md",
+    "12 - Iniciativa UX/specs/UX-0009 — normalizacao-shared-layout.md",
+    "12 - Iniciativa UX/specs/UX-0008 — terminologia-categorias.md",
+    "12 - Iniciativa UX/specs/UX-0001 — datatable-responsivo.md",
+    "12 - Iniciativa UX/specs/UX-0007 — empty-state.md",
+    "12 - Iniciativa UX/specs/UX-0004 — botao-enviando.md",
+    "12 - Iniciativa UX/specs/UX-0003 — skeleton-loading.md",
+    "12 - Iniciativa UX/specs/UX-0002 — sistema-toast-feedback.md",
+    "12 - Iniciativa UX/specs/UX-0005 — escala-espacamento-opacidade.md",
+    "12 - Iniciativa UX/specs",
+    "12 - Iniciativa UX/UX PRD.md",
+    "12 - Iniciativa UX/Backlog UX (RICE).md",
+    "12 - Iniciativa UX/Persona-Impact Matrix.md",
+    "12 - Iniciativa UX/UX Audit — Sistema.md",
+    "12 - Iniciativa UX/README.md",
+    "12 - Iniciativa UX",
     "06 - Permissões e Segurança/Credenciais de Desenvolvimento.md",
     "decisoes/ADR_modelo_fabrica_abre_pedido.md",
-    "decisoes/ADR_navegacao_orientada_por_permissoes.md",
-    "README.md"
+    "decisoes/ADR_navegacao_orientada_por_permissoes.md"
   ]
 }

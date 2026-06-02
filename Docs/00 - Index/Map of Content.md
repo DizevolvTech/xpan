@@ -47,5 +47,5 @@
 ### Decisões (ADR)
 - [[decisoes/ADR_iniciativa_automacao_pedido_entrega]] — automação fim a fim do fluxo pedido → entrega (A1-A8 · 2026-05-21)
 - [[decisoes/ADR_expansao_mpi_em_op]] — MPI/produto-MPI gera OP separada (AJ-0008 fase 1+2)
-- [[decisoes/ADR_modelo_fabrica_abre_pedido]] — modelo "fábrica abre pedido" (AJ-0009 · aguardando decisão)
+- [[decisoes/ADR_modelo_fabrica_abre_pedido]] — modelo "fábrica abre pedido" (AJ-0009 · Aceito 2026-05-30, mas **parqueado** atrás da flag `NEXT_PUBLIC_FACTORY_OPENS_ORDERS` OFF — a loja cria)
 - [[decisoes/ADR_navegacao_orientada_por_permissoes]] — navegação derivada das permissões (legado pré-vault)
