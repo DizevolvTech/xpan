@@ -233,6 +233,8 @@ function buildMpiPlannedItem(params: {
     saleDate: parent.saleDate,
     productionDate: parent.productionDate,
     delayed: parent.delayed,
+    // Item derivado herda a origem do pai (pedido → MPI de pedido; esqueleto → MPI de esqueleto).
+    demandSource: parent.demandSource,
     productId: mpiProduct.id,
     productCode: mpiProduct.code,
     productName: mpiProduct.name,
@@ -316,6 +318,7 @@ function buildMixedIngredientPlannedItem(params: {
     saleDate: parent.saleDate,
     productionDate: parent.productionDate,
     delayed: parent.delayed,
+    demandSource: parent.demandSource,
     productId: mixedIngredient.id,
     productCode: mixedIngredient.code,
     productName: mixedIngredient.name,

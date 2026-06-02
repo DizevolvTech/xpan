@@ -21,8 +21,10 @@ import {
 import {
   OrderReleaseValidationError,
   assertPlanningAllowsRelease,
+  isSkeletonOrderId,
 } from "@/lib/supabase-data/release-validation";
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
+import { recordProductionLeftover } from "@/lib/supabase-data/production-leftovers";
 import { deriveBatchStatus } from "@/lib/production-batches";
 
 export interface PersistedWorkflowState {
@@ -198,6 +200,56 @@ async function appendOrderEventsForProductionItem(
       },
       supabase,
     );
+
+    // 2.3-B: REGISTRAR + RELATAR APENAS. Quando o item atinge `concluido`,
+    // gravamos um snapshot de sobra para o relatório do gestor. NÃO realimenta
+    // o planejamento nem deduz de pedidos futuros.
+    //
+    // Cálculo (tudo na UNIDADE DE VENDA, batchUnitLabel) com o que está
+    // confiavelmente disponível no item de OP na conclusão
+    // (ProductionOrderItem.batchSizes — o plano de batidas do planBatches):
+    //   demandado (planejado) = soma dos tamanhos das batidas (batchSizes) — a
+    //                           necessidade real vinda dos pedidos.
+    //   produzido             = quando a produção é batida (batchCount > 1), a
+    //                           padaria assa FORMAS/MACEIRAS INTEIRAS (não dá
+    //                           pra assar meia forma). Logo o que sai do forno é
+    //                           a capacidade cheia × nº de batidas (a 1ª batida
+    //                           está sempre cheia = capacidade da forma). Sem
+    //                           batida (1 lote) não há arredondamento:
+    //                           produzido = demandado.
+    //   sobra (leftover)      = produzido - demandado ( >= 0 ): excedente gerado
+    //                           ao arredondar a última batida para uma forma
+    //                           inteira — insumo para "ajustes em pedidos futuros".
+    if (status === "concluido") {
+      const opItem = owningOp.items.find(
+        (item) => item.productionItemKey === productionItemKey,
+      );
+      if (opItem) {
+        const demandedQuantity = opItem.batchSizes.reduce(
+          (sum, size) => sum + size,
+          0,
+        );
+        const fullBatchSize = opItem.batchSizes[0] ?? 0;
+        const producedQuantity =
+          opItem.batchSizes.length > 1
+            ? fullBatchSize * opItem.batchSizes.length
+            : demandedQuantity;
+        await recordProductionLeftover(
+          {
+            tenantId,
+            planningKey: productionItemKey,
+            productId: opItem.productId,
+            productName: opItem.productName,
+            productionDate: owningOp.productionDate,
+            plannedQuantity: demandedQuantity,
+            producedQuantity,
+            unit: opItem.batchUnitLabel,
+            recordedByProfileId: updatedByProfileId ?? null,
+          },
+          supabase,
+        );
+      }
+    }
   }
 
   await Promise.all(
@@ -398,6 +450,16 @@ export async function releaseOrder(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
   options: ReleaseOrderOptions = {},
 ) {
+  // FASE 2 (blindagem): um slot de esqueleto do cronograma (orderId `skeleton:…`,
+  // qtd 0) não é um pedido real — não tem o que liberar. Rejeita ANTES de tocar
+  // o banco, para não criar release órfão (não existe store_orders correspondente).
+  if (isSkeletonOrderId(orderId)) {
+    throw new OrderReleaseValidationError(
+      "order_not_real",
+      "slot do cronograma (sem pedido) não é liberável — é apenas visão de planejamento.",
+    );
+  }
+
   const releasedByDatabaseId = await resolveProfileDatabaseId(supabase, releasedByProfileId ?? null);
   const orderRow = await resolveOrderRow(orderId, supabase);
 
@@ -754,6 +816,14 @@ export async function autoReleaseEligibleOrders(
   for (const order of planning.orders) {
     const id = order.id;
     const code = order.code;
+
+    // FASE 2 (blindagem): defensivo. `planning.orders` vem de StoreOrders reais,
+    // então um id de esqueleto não deveria aparecer aqui — mas se aparecer (regressão
+    // futura), ignora com segurança em vez de criar release órfão.
+    if (isSkeletonOrderId(id)) {
+      result.skipped.push({ orderId: id, orderCode: code, reason: "not_real" });
+      continue;
+    }
 
     if (order.releasedToProduction) {
       result.skipped.push({ orderId: id, orderCode: code, reason: "already_released" });

@@ -7,7 +7,8 @@ export type OrderStatus =
   | "em_espera"
   | "aguardando_expedicao"
   | "cancelado"
-  | "rota_entrega";
+  | "rota_entrega"
+  | "entregue";
 export type ProductionItemStatus =
   | "nao_iniciado"
   | "em_preparacao"
@@ -58,6 +59,12 @@ export interface PlannedOrderItem {
   saleDate: string;
   productionDate: string | null;
   delayed: boolean;
+  // FASE 1 (esqueleto do cronograma): origem da demanda do item.
+  // - "pedido": item nascido de um StoreOrder (comportamento legado, quantidade real).
+  // - "cronograma": slot produto×linha×dia derivado do cronograma ATIVO sem pedido
+  //   correspondente — aparece com quantidade/kg 0 para que a produção do dia mostre
+  //   o que o cronograma prevê, mesmo sem demanda.
+  demandSource: "pedido" | "cronograma";
   productId: string;
   productCode: string;
   productName: string;
@@ -123,6 +130,13 @@ export interface ProductionOrderItem {
   productCode: string;
   productName: string;
   productionItemKey: string;
+  // FASE 2 (blindagem): origem da demanda agregada do item da OP.
+  // - "pedido": ao menos um source item nasceu de um StoreOrder (demanda real) OU
+  //   o item consolidou kg > 0.
+  // - "cronograma": todos os source items são slots de esqueleto (qtd 0) — item
+  //   de planejamento, sem demanda. A UI (Fase 3) e a métrica usam isto para
+  //   distinguir o que é só previsão do cronograma.
+  demandSource: "pedido" | "cronograma";
   totalKg: number;
   // AJ-0006.1: lote mínimo de produção da fábrica e flag de demanda consolidada
   // (soma de todas as lojas neste run) abaixo do mínimo — alerta para o gestor.
@@ -179,6 +193,10 @@ export interface ProductionOrderRow {
   itemsCount: number;
   ordersCount: number;
   totalKg: number;
+  // FASE 2 (blindagem): existe demanda real (algum item com totalKg > 0). Uma OP
+  // cujos itens são todos cronograma/0 é uma "OP de esqueleto" — só visão de
+  // planejamento, não desce pro chão nem conta em métrica.
+  hasDemand: boolean;
   releasedToProduction: boolean;
   // OP iniciada (≥1 item com produção iniciada). É o filtro de visibilidade do
   // quadro do Chão: liberada mas não iniciada NÃO aparece para o operário.

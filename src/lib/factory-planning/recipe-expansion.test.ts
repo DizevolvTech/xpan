@@ -73,6 +73,7 @@ function makePizzaProduct(): ProductionProduct {
     expeditionToKgFactor: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   } as ProductionProduct;
 }
 
@@ -150,6 +151,7 @@ function makeMpiProduct(overrides: Partial<ProductionProduct> = {}): ProductionP
     expeditionToKgFactor: 1,
     isMpiIngredient: true,
     capacityPerBatch: null,
+    economicBatchUnit: null,
     ...overrides,
   } as ProductionProduct;
 }
@@ -167,6 +169,7 @@ function makePlannedItem(overrides: Partial<PlannedOrderItem> = {}): PlannedOrde
     saleDate: "2026-05-21",
     productionDate: "2026-05-20",
     delayed: false,
+    demandSource: "pedido",
     productId: "pizza",
     productCode: "PZ-001",
     productName: "Pizza Margherita",

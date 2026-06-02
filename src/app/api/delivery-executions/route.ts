@@ -74,7 +74,30 @@ export async function PATCH(request: Request) {
       status: DeliveryExecutionStatus;
       checklistState?: DeliveryChecklistState;
       checklistCompletedAt?: string | null;
+      force?: boolean;
+      releaseReason?: string | null;
     };
+
+    const wantsForce = body.force === true;
+    if (wantsForce) {
+      // Override de segurança: liberar a entrada na entrega com checklist
+      // incompleto é um AFROUXAMENTO de trava. A decisão de QUEM pode forçar é
+      // SEMPRE no servidor — nunca confiar no cliente. Só administrador e
+      // gestor-fabrica podem forçar.
+      const role = authorization.user.role;
+      if (role !== "administrador" && role !== "gestor-fabrica") {
+        return NextResponse.json(
+          { message: "Apenas gestor de fábrica ou administrador podem liberar com itens pendentes." },
+          { status: 403 },
+        );
+      }
+      if (!body.releaseReason || body.releaseReason.trim().length === 0) {
+        return NextResponse.json(
+          { message: "Informe o motivo da liberação com itens pendentes." },
+          { status: 400 },
+        );
+      }
+    }
 
     await updateDeliveryExecution(
       body.orderId,
@@ -83,6 +106,8 @@ export async function PATCH(request: Request) {
         checklistState: body.checklistState,
         checklistCompletedAt: body.checklistCompletedAt,
         tenantId: authorization.effectiveTenantId,
+        force: wantsForce,
+        releaseReason: wantsForce ? body.releaseReason : null,
       },
       authorization.user.id,
       supabase,

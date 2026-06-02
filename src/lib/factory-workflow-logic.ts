@@ -7,6 +7,43 @@ import type {
   ProductionItemStatus,
 } from "@/lib/order-planning";
 import { getProductionStatusProgress } from "@/lib/production-workflow";
+import type { DeliveryExecutionStatus } from "@/lib/delivery-workflow";
+
+// Ordem canônica do fluxo (cancelado fica à parte). O "elo mais fraco" agrega
+// uma OP pelo MENOR estágio entre seus pedidos.
+const ORDER_STATUS_STAGE: Record<OrderStatus, number> = {
+  em_espera: 0,
+  agendado: 1,
+  em_producao: 2,
+  aguardando_expedicao: 3,
+  rota_entrega: 4,
+  entregue: 5,
+  // `cancelado` é tratado à parte (curto-circuito antes da agregação) — nunca
+  // entra no cálculo de elo mais fraco; valor só satisfaz a exaustividade do tipo.
+  cancelado: -1,
+};
+
+// Mapeia o status de execução de entrega (por pedido) → OrderStatus. Uma entrega
+// que ainda está em `aguardando_expedicao` (ou ausente) NÃO sobrepõe a produção:
+// retorna null para o caller cair de volta no status de produção da OP.
+function mapDeliveryStatusToOrderStatus(
+  deliveryStatus: DeliveryExecutionStatus | null,
+): OrderStatus | null {
+  switch (deliveryStatus) {
+    case "entregue":
+      return "entregue";
+    case "pronto_coleta":
+    case "em_rota":
+    case "no_destino":
+    case "tentativa_falha":
+      return "rota_entrega";
+    case "aguardando_expedicao":
+    case null:
+    case undefined:
+    default:
+      return null;
+  }
+}
 
 function getWorkflowOrderStatus(items: PlannedOrderItem[]): OrderStatus {
   if (items.length === 0) {
@@ -73,6 +110,10 @@ export function applyFactoryWorkflowState(
     // status já avançou (compat: OPs em andamento nunca somem do Chão).
     isProductionStarted?: (itemKey: string | null) => boolean;
     resolveBatchesDone?: (itemKey: string | null) => number;
+    // Opcional: status de execução de entrega por pedido (mesmo espaço de id de
+    // `isReleased`). Quando omitido, o status da OP fica só na produção (compat:
+    // chamadas de teste/motor/métricas inalteradas).
+    resolveDeliveryStatus?: (orderId: string) => DeliveryExecutionStatus | null;
   },
 ): FactoryPlanningData {
   const isProductionStarted = workflow.isProductionStarted ?? (() => false);
@@ -146,10 +187,38 @@ export function applyFactoryWorkflowState(
   });
 
   const releasedItems = orderItems.filter((item) => item.releasedToProduction);
-  const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(
-    releasedItems,
-    data.referenceDate,
-  );
+  const { productionOrders: baseProductionOrders, opsByOrderId, opCodeByPlanningKey } =
+    buildProductionOrdersFromPlannedItems(releasedItems, data.referenceDate);
+
+  // Status EFETIVO da OP: dobra a ENTREGA por cima do status de produção (que
+  // satura em aguardando_expedicao). Agrega por ELO MAIS FRACO entre os pedidos
+  // da OP — só sobe pra `entregue` se TODOS entregues; se algum ainda está em
+  // produção/aguardando, reporta esse estágio anterior; entrega em andamento
+  // (sem todos entregues) reporta rota_entrega. Slots de esqueleto (`skeleton:`)
+  // não têm entrega (resolver retorna null) → mantêm o status de produção.
+  const resolveDeliveryStatus = workflow.resolveDeliveryStatus;
+  const productionOrders = resolveDeliveryStatus
+    ? baseProductionOrders.map((op) => {
+        if (op.status === "cancelado") {
+          return op;
+        }
+        const orderIds = Array.from(new Set(op.sourceItems.map((sourceItem) => sourceItem.orderId)));
+        if (orderIds.length === 0) {
+          return op;
+        }
+        const effective = orderIds.reduce<OrderStatus>((weakest, orderId) => {
+          const mapped = mapDeliveryStatusToOrderStatus(resolveDeliveryStatus(orderId));
+          // Sem entrega (ou entrega ainda em aguardando) → status de produção da OP.
+          const perOrder: OrderStatus = mapped ?? op.status;
+          return ORDER_STATUS_STAGE[perOrder] < ORDER_STATUS_STAGE[weakest] ? perOrder : weakest;
+        }, "entregue");
+        if (effective === op.status) {
+          return op;
+        }
+        // Não mexe em progress — produção continua 100%.
+        return { ...op, status: effective };
+      })
+    : baseProductionOrders;
 
   // O motor já derivou status/progress por batida (batchesDone vs batchCount) em
   // cada ProductionOrderItem. Indexa por productionItemKey para propagar de volta

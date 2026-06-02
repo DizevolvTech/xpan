@@ -385,6 +385,7 @@ test("factory planning uses operational subcategory instead of cadastral subcate
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -493,6 +494,7 @@ test("AJ-0006.1: OP sinaliza demanda consolidada abaixo do lote mínimo da fábr
     expeditionLeadDays: 0,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   });
   const schedules: WeeklyProductionSchedule[] = [
     {
@@ -608,6 +610,7 @@ test("OP de produto batido divide a demanda em batidas (enche + sobra na última
     expeditionLeadDays: 0,
     isMpiIngredient: false,
     capacityPerBatch: 100,
+    economicBatchUnit: null,
   };
   const schedules: WeeklyProductionSchedule[] = [
     {
@@ -711,6 +714,7 @@ test("production orders keep the daily schedule priority when listing products",
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
     {
       id: "product-b",
@@ -751,6 +755,7 @@ test("production orders keep the daily schedule priority when listing products",
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -890,6 +895,7 @@ test("factory planning keeps non-scheduled products out of production and expedi
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -999,6 +1005,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       expeditionLeadDays: 1,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
     {
       id: "product-2",
@@ -1039,6 +1046,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -1206,6 +1214,7 @@ function buildPizzaScenario() {
     expeditionToKgFactor: 1,
     isMpiIngredient: true,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   };
   const pizza: ProductionProduct = {
     id: "pizza",
@@ -1247,6 +1256,7 @@ function buildPizzaScenario() {
     expeditionToKgFactor: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   };
   const schedules: WeeklyProductionSchedule[] = [
     {
@@ -1359,10 +1369,621 @@ test("buildFactoryPlanningData respeita escape hatch EXPAND_MPI_INTO_OPS=false (
 
     const productIds = new Set(planning.productionOrders.flatMap((op) => op.items.map((item) => item.productId)));
     assert.ok(productIds.has("pizza"), "pizza presente");
+
+    // Escape hatch da EXPANSÃO MPI: nenhuma DEMANDA de massa derivada da receita.
+    // (A massa ainda pode aparecer como SLOT do cronograma — FASE 1 — mas com qtd 0
+    // e demandSource "cronograma", nunca como demanda expandida do pedido de pizza.)
+    const massaDemandItems = planning.orderItems.filter(
+      (item) => item.productId === "mpi-massa" && item.demandSource === "pedido",
+    );
     assert.equal(
-      productIds.has("mpi-massa"),
-      false,
-      "massa NÃO deve aparecer quando alguém define EXPAND_MPI_INTO_OPS=false explicitamente (escape hatch)",
+      massaDemandItems.length,
+      0,
+      "massa NÃO deve ganhar demanda via expansão quando EXPAND_MPI_INTO_OPS=false (escape hatch)",
+    );
+    const massaOpItems = planning.productionOrders.flatMap((op) =>
+      op.items.filter((item) => item.productId === "mpi-massa"),
+    );
+    massaOpItems.forEach((item) =>
+      assert.equal(item.totalKg, 0, "qualquer slot de massa visível é do cronograma (qtd 0), não demanda expandida"),
     );
   });
+});
+
+// ---------------------------------------------------------------------------
+// FASE 1 — Esqueleto do cronograma (slots produto×linha×dia sem pedido, qtd 0).
+// O cronograma ativo deve "preencher" a produção do dia mesmo sem pedido. Onde
+// há pedido, o item real vence a lacuna (qtd real, demandSource "pedido"); onde
+// não há, aparece um slot do cronograma com totalKg 0 e demandSource "cronograma".
+// ---------------------------------------------------------------------------
+
+const skeletonSectors: ProductionSector[] = [
+  { id: "sector-1", code: "SE-001", name: "Panificacao", responsible: "Maria", status: "ativo" },
+];
+
+const skeletonLines: ProductionLine[] = [
+  {
+    id: "line-operational",
+    code: "LP-002",
+    name: "Carteira Operacional",
+    sectorId: "sector-1",
+    type: "Seco",
+    operatingHours: "05:00 - 14:00",
+    capacityPerDayKg: 1000,
+    status: "ativo",
+  },
+];
+
+function buildSkeletonProduct(
+  overrides: Partial<ProductionProduct> & Pick<ProductionProduct, "id" | "code" | "name">,
+): ProductionProduct {
+  return {
+    description: "",
+    lineId: "line-operational",
+    masterLineId: "line-operational",
+    operationalLineId: "line-operational",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 2,
+    minimumProductionKg: 0,
+    economicProductionKg: 0,
+    allowsStorage: false,
+    productionDays: ["quarta"],
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.1 },
+      production: { unit: "Kg", description: "Kg", weightKg: 1 },
+      expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+    },
+    packagingProfile: undefined,
+    isSoldLoose: true,
+    recipe: [],
+    preparationStages: [...defaultProductPreparationStages],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: "",
+    productionUnit: "Kg",
+    salesUnit: "Un",
+    salesToKgFactor: 0.1,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 1,
+    expeditionLeadDays: 0,
+    isMpiIngredient: false,
+    capacityPerBatch: null,
+    economicBatchUnit: null,
+    ...overrides,
+  } as ProductionProduct;
+}
+
+// referenceDate quarta (2026-03-18); horizonte de 7 dias [18/03, 25/03) cobre exatamente
+// uma quarta (o próprio 18/03). Pedido feito 16/03 produz 18/03 (lead 0).
+const SKELETON_REFERENCE_WEDNESDAY = "2026-03-18";
+
+test("Fase 1: cronograma ativo gera slot qtd 0 (demandSource cronograma) sem pedido nenhum", () => {
+  const products = [buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quarta" })];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-10T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["quarta"], minimumProduction: 0 }],
+    },
+  ];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules,
+  });
+
+  const ops = planning.productionOrders.filter((op) => op.productionDate === SKELETON_REFERENCE_WEDNESDAY);
+  assert.equal(ops.length, 1, "uma OP na quarta a partir do cronograma");
+  const items = ops[0]!.items;
+  assert.equal(items.length, 1, "um item de produto");
+  assert.equal(items[0]?.productId, "product-1");
+  assert.equal(items[0]?.totalKg, 0, "slot sem demanda tem totalKg 0");
+
+  const skeletonItem = planning.orderItems.find((item) => item.productId === "product-1");
+  assert.ok(skeletonItem, "item esqueleto presente em orderItems");
+  assert.equal(skeletonItem?.demandSource, "cronograma");
+  assert.equal(skeletonItem?.internalKg, 0);
+  assert.equal(skeletonItem?.canPlan, true);
+  assert.equal(skeletonItem?.productionDate, SKELETON_REFERENCE_WEDNESDAY);
+});
+
+test("Fase 1: pedido na quarta vence a lacuna — qtd real, sem duplicar, demandSource pedido", () => {
+  const products = [buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quarta" })];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-10T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["quarta"], minimumProduction: 0 }],
+    },
+  ];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-16T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-1", quantity: 50, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules,
+  });
+
+  const ops = planning.productionOrders.filter((op) => op.productionDate === SKELETON_REFERENCE_WEDNESDAY);
+  assert.equal(ops.length, 1);
+  const items = ops[0]!.items;
+  assert.equal(items.length, 1, "não duplica: um único item para o produto");
+  assert.equal(items[0]?.productId, "product-1");
+  // 50 Un × 0,1 kg = 5 kg (demanda real do pedido vence o slot vazio).
+  assert.equal(items[0]?.totalKg, 5);
+
+  const realItems = planning.orderItems.filter((item) => item.productId === "product-1");
+  assert.equal(realItems.length, 1, "só o item real do pedido — nenhum esqueleto duplicado");
+  assert.equal(realItems[0]?.demandSource, "pedido");
+  assert.equal(realItems[0]?.internalKg, 5);
+});
+
+test("Fase 1: cenário misto — A com pedido (qtd) e B sem pedido (qtd 0) na mesma linha/dia", () => {
+  const products = [
+    buildSkeletonProduct({ id: "product-a", code: "PR-000A", name: "Pao A" }),
+    buildSkeletonProduct({ id: "product-b", code: "PR-000B", name: "Pao B" }),
+  ];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-10T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [
+        { id: "si-a", productId: "product-a", productionDays: ["quarta"], minimumProduction: 0 },
+        { id: "si-b", productId: "product-b", productionDays: ["quarta"], minimumProduction: 0 },
+      ],
+    },
+  ];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-16T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-a", quantity: 30, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules,
+  });
+
+  const ops = planning.productionOrders.filter((op) => op.productionDate === SKELETON_REFERENCE_WEDNESDAY);
+  assert.equal(ops.length, 1, "A e B compartilham linha/dia → uma OP só");
+  const byProduct = new Map(ops[0]!.items.map((item) => [item.productId, item]));
+  assert.equal(byProduct.get("product-a")?.totalKg, 3, "A: 30 Un × 0,1 = 3 kg");
+  assert.equal(byProduct.get("product-b")?.totalKg, 0, "B: slot do cronograma, qtd 0");
+
+  const itemA = planning.orderItems.find((item) => item.productId === "product-a");
+  const itemB = planning.orderItems.find((item) => item.productId === "product-b");
+  assert.equal(itemA?.demandSource, "pedido");
+  assert.equal(itemB?.demandSource, "cronograma");
+});
+
+test("Fase 1 regressão: item real mantém productionItemKey e status iguais (esqueleto não altera reais)", () => {
+  const products = [buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quarta" })];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-10T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["quarta"], minimumProduction: 0 }],
+    },
+  ];
+
+  const orderInput = {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-16T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-1", quantity: 50, unit: "Un" as const }],
+      },
+    ],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules,
+  };
+
+  // Sem esqueleto seria impossível desligar via flag, então comparamos contra os
+  // invariantes documentados: chave canônica 3 partes + status agendado/em_producao.
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, orderInput);
+  const realItem = planning.orderItems.find((item) => item.id === "item-1");
+  assert.ok(realItem);
+  assert.equal(realItem?.productionItemKey, "2026-03-18|line-operational|product-1");
+  // referenceDate === productionDate → em_producao (getPotentialItemStatus).
+  assert.equal(realItem?.status, "em_producao");
+  assert.equal(realItem?.demandSource, "pedido");
+});
+
+test("Fase 1: produto cujo dia NÃO intersecta o cronograma não gera slot (nem esqueleto)", () => {
+  // Produto produz quinta, cronograma só libera o item na terca → interseção vazia.
+  const products = [
+    buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quinta", productionDays: ["quinta"] }),
+  ];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      id: "schedule-1",
+      code: "SL-0001",
+      name: "Linha Operacional",
+      lineId: "line-operational",
+      status: "ativo",
+      createdAt: "2026-03-10T10:00:00.000Z",
+      createdBy: "Fernanda",
+      items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["terca"], minimumProduction: 0 }],
+    },
+  ];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules,
+  });
+
+  assert.equal(planning.productionOrders.length, 0, "sem interseção de dias → nenhuma OP");
+  assert.equal(
+    planning.orderItems.filter((item) => item.demandSource === "cronograma").length,
+    0,
+    "nenhum slot esqueleto criado",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// FASE 2 — Blindagem do slot sem demanda. Um slot do cronograma (sem pedido,
+// qtd 0) é APENAS visão de planejamento: não é liberável, propaga demandSource
+// até a OP, não vira "OP com demanda", e não entra na avaliação de entrega.
+// ---------------------------------------------------------------------------
+
+const phase2Schedule: WeeklyProductionSchedule = {
+  id: "schedule-1",
+  code: "SL-0001",
+  name: "Linha Operacional",
+  lineId: "line-operational",
+  status: "ativo",
+  createdAt: "2026-03-10T10:00:00.000Z",
+  createdBy: "Fernanda",
+  items: [{ id: "schedule-item-1", productId: "product-1", productionDays: ["quarta"], minimumProduction: 0 }],
+};
+
+test("Fase 2: slot de esqueleto NÃO é liberável (availableForRelease false)", () => {
+  const products = [buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quarta" })];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules: [phase2Schedule],
+  });
+
+  const skeletonItem = planning.orderItems.find((item) => item.demandSource === "cronograma");
+  assert.ok(skeletonItem, "slot esqueleto presente");
+  assert.equal(skeletonItem?.availableForRelease, false, "esqueleto não tem o que liberar");
+  assert.equal(skeletonItem?.releasedToProduction, false);
+});
+
+test("Fase 2: OP só de esqueleto → item demandSource 'cronograma' e OP hasDemand false", () => {
+  const products = [buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quarta" })];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules: [phase2Schedule],
+  });
+
+  const op = planning.productionOrders.find((o) => o.productionDate === SKELETON_REFERENCE_WEDNESDAY);
+  assert.ok(op, "OP de esqueleto existe (visão de planejamento)");
+  assert.equal(op?.hasDemand, false, "OP só de slots qtd 0 não tem demanda");
+  assert.equal(op?.items[0]?.demandSource, "cronograma");
+  assert.equal(op?.items[0]?.totalKg, 0);
+});
+
+test("Fase 2: OP com pedido → item demandSource 'pedido' e OP hasDemand true", () => {
+  const products = [buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quarta" })];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-16T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-1", quantity: 50, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules: [phase2Schedule],
+  });
+
+  const op = planning.productionOrders.find((o) => o.productionDate === SKELETON_REFERENCE_WEDNESDAY);
+  assert.ok(op);
+  assert.equal(op?.hasDemand, true, "pedido real → OP tem demanda");
+  assert.equal(op?.items[0]?.demandSource, "pedido");
+  assert.equal(op?.items[0]?.totalKg, 5);
+});
+
+test("Fase 2: OP mista (A com pedido, B só esqueleto) → hasDemand true; demandSource por item", () => {
+  const products = [
+    buildSkeletonProduct({ id: "product-a", code: "PR-000A", name: "Pao A" }),
+    buildSkeletonProduct({ id: "product-b", code: "PR-000B", name: "Pao B" }),
+  ];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      ...phase2Schedule,
+      items: [
+        { id: "si-a", productId: "product-a", productionDays: ["quarta"], minimumProduction: 0 },
+        { id: "si-b", productId: "product-b", productionDays: ["quarta"], minimumProduction: 0 },
+      ],
+    },
+  ];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-16T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-a", quantity: 30, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules,
+  });
+
+  const op = planning.productionOrders.find((o) => o.productionDate === SKELETON_REFERENCE_WEDNESDAY);
+  assert.ok(op);
+  assert.equal(op?.hasDemand, true, "ao menos um item com kg > 0 → OP tem demanda");
+  const byProduct = new Map(op!.items.map((it) => [it.productId, it]));
+  assert.equal(byProduct.get("product-a")?.demandSource, "pedido");
+  assert.equal(byProduct.get("product-b")?.demandSource, "cronograma");
+});
+
+test("Fase 2 (chão): rebuild por itens liberados NÃO inclui esqueleto", () => {
+  // Pedido para A (liberado) + esqueleto de B (sem pedido). applyFactoryWorkflowState
+  // reconstrói as OPs só dos itens liberados → o esqueleto não desce pro chão.
+  const products = [
+    buildSkeletonProduct({ id: "product-a", code: "PR-000A", name: "Pao A" }),
+    buildSkeletonProduct({ id: "product-b", code: "PR-000B", name: "Pao B" }),
+  ];
+  const schedules: WeeklyProductionSchedule[] = [
+    {
+      ...phase2Schedule,
+      items: [
+        { id: "si-a", productId: "product-a", productionDays: ["quarta"], minimumProduction: 0 },
+        { id: "si-b", productId: "product-b", productionDays: ["quarta"], minimumProduction: 0 },
+      ],
+    },
+  ];
+
+  const base = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        orderedAt: "2026-03-16T09:00:00.000Z",
+        items: [{ id: "item-1", productId: "product-a", quantity: 30, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules,
+  });
+
+  const applied = applyFactoryWorkflowState(base, {
+    isReleased: (orderId) => orderId === "order-1",
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "nao_iniciado",
+  });
+
+  // Nenhum item de esqueleto entra como liberado.
+  assert.equal(
+    applied.orderItems.some((item) => item.demandSource === "cronograma" && item.releasedToProduction),
+    false,
+    "esqueleto nunca é releasedToProduction",
+  );
+
+  // A OP reconstruída só contém o item com demanda real (A); B (esqueleto) sumiu.
+  const op = applied.productionOrders.find((o) => o.productionDate === SKELETON_REFERENCE_WEDNESDAY);
+  assert.ok(op, "OP reconstruída dos liberados");
+  assert.equal(op?.hasDemand, true);
+  const productIds = op!.items.map((it) => it.productId);
+  assert.deepEqual(productIds, ["product-a"], "só o item liberado com demanda real entra no chão");
+});
+
+test("Fase 2 (métrica): ocupação/produção iguais com e sem slots de esqueleto", () => {
+  // Reproduz o cálculo de ocupação/produzido de computeFactoryMetrics
+  // (factory-metrics.ts): soma totalKg por linha das OPs com demanda, no dia de
+  // referência, depois de aplicar o workflow. Prova que os slots de esqueleto
+  // (hasDemand false) NÃO mudam os números.
+  const products = [
+    buildSkeletonProduct({ id: "product-a", code: "PR-000A", name: "Pao A" }),
+    buildSkeletonProduct({ id: "product-b", code: "PR-000B", name: "Pao B" }),
+  ];
+  const storeOrders = [
+    {
+      id: "order-1",
+      code: "PD-0001",
+      storeId: "store-1",
+      orderedAt: "2026-03-16T09:00:00.000Z",
+      items: [{ id: "item-1", productId: "product-a", quantity: 30, unit: "Un" as const }],
+    },
+  ];
+
+  // COM cronograma: gera esqueleto de B (sem pedido) + slot real de A.
+  const withSkeleton = applyFactoryWorkflowState(
+    buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+      stores: [baseStore],
+      storeOrders,
+      settings,
+      sectors: skeletonSectors,
+      lines: skeletonLines,
+      products,
+      schedules: [
+        {
+          ...phase2Schedule,
+          items: [
+            { id: "si-a", productId: "product-a", productionDays: ["quarta"], minimumProduction: 0 },
+            { id: "si-b", productId: "product-b", productionDays: ["quarta"], minimumProduction: 0 },
+          ],
+        },
+      ],
+    }),
+    {
+      isReleased: (orderId) => orderId === "order-1",
+      isCancelled: () => false,
+      resolveProductionItemStatus: () => "nao_iniciado",
+    },
+  );
+
+  // Controle: MESMO cronograma para A (pedido planeja igual), mas SEM o item de B
+  // no cronograma → nenhum slot de esqueleto é gerado. A diferença entre os dois
+  // cenários é exatamente "existe esqueleto de B ou não".
+  const withoutSkeleton = applyFactoryWorkflowState(
+    buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+      stores: [baseStore],
+      storeOrders,
+      settings,
+      sectors: skeletonSectors,
+      lines: skeletonLines,
+      products,
+      schedules: [
+        {
+          ...phase2Schedule,
+          items: [
+            { id: "si-a", productId: "product-a", productionDays: ["quarta"], minimumProduction: 0 },
+          ],
+        },
+      ],
+    }),
+    {
+      isReleased: (orderId) => orderId === "order-1",
+      isCancelled: () => false,
+      resolveProductionItemStatus: () => "nao_iniciado",
+    },
+  );
+
+  // Sanidade: o cenário "com" realmente gerou um slot de esqueleto de B.
+  assert.ok(
+    withSkeleton.orderItems.some((item) => item.productId === "product-b" && item.demandSource === "cronograma"),
+    "cenário COM esqueleto deve conter o slot de B",
+  );
+  assert.ok(
+    !withoutSkeleton.orderItems.some((item) => item.demandSource === "cronograma"),
+    "cenário SEM esqueleto não deve conter slots de cronograma",
+  );
+
+  const occupancyByLine = (planning: ReturnType<typeof buildFactoryPlanningData>) => {
+    const byLine = new Map<string, number>();
+    planning.productionOrders
+      .filter((op) => op.hasDemand && op.productionDate === SKELETON_REFERENCE_WEDNESDAY)
+      .forEach((op) => byLine.set(op.lineId, (byLine.get(op.lineId) ?? 0) + op.totalKg));
+    return byLine;
+  };
+
+  assert.deepEqual(
+    Array.from(occupancyByLine(withSkeleton).entries()).sort(),
+    Array.from(occupancyByLine(withoutSkeleton).entries()).sort(),
+    "ocupação por linha idêntica com/sem esqueleto",
+  );
+
+  // Contagem de OPs/itens com demanda também idêntica (esqueleto não conta).
+  const opsWithDemand = (p: ReturnType<typeof buildFactoryPlanningData>) =>
+    p.productionOrders.filter((op) => op.hasDemand).length;
+  assert.equal(opsWithDemand(withSkeleton), opsWithDemand(withoutSkeleton));
+});
+
+test("Fase 2 (entrega): esqueleto não entra em expedition/expeditionItems de nenhum pedido", () => {
+  const products = [buildSkeletonProduct({ id: "product-1", code: "PR-0001", name: "Pao Quarta" })];
+
+  const planning = buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+    stores: [baseStore],
+    storeOrders: [],
+    settings,
+    sectors: skeletonSectors,
+    lines: skeletonLines,
+    products,
+    schedules: [phase2Schedule],
+  });
+
+  // Há slot de esqueleto no planejamento...
+  assert.ok(planning.orderItems.some((item) => item.demandSource === "cronograma"));
+  // ...mas a expedição é derivada de StoreOrders reais — sem pedido, nada a expedir,
+  // e nenhum orderId `skeleton:` vaza para a trava de entrega.
+  assert.equal(planning.expedition.length, 0, "esqueleto não cria linha de expedição");
+  assert.equal(planning.expeditionItems.length, 0, "esqueleto não cria item de separação");
+  assert.equal(
+    planning.expedition.some((row) => row.orderId.startsWith("skeleton:")),
+    false,
+  );
 });

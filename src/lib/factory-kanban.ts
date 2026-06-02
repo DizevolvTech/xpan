@@ -13,6 +13,16 @@ const TERMINAL_FOR_ACCEPTANCE: OrderStatus[] = [
   "cancelado",
   "aguardando_expedicao",
   "rota_entrega",
+  "entregue",
+];
+
+// Estados em que a PRODUÇÃO já terminou (saiu pra expedição/rota ou já entregue) —
+// ou foi cancelada. OP nesses estados NÃO pertence mais à coluna "Em produção".
+const PAST_PRODUCTION_STATUSES: OrderStatus[] = [
+  "aguardando_expedicao",
+  "rota_entrega",
+  "entregue",
+  "cancelado",
 ];
 
 /**
@@ -28,15 +38,16 @@ export function isOrderAwaitingAcceptance(order: {
 }
 
 /**
- * Coluna "Em produção": OP já LIBERADA e ainda não pronta (não está aguardando expedição).
- * Independe da data — uma OP liberada para um dia futuro também aparece aqui (era o bug:
- * antes só aparecia com status `em_producao`, ou seja, produção de hoje).
+ * Coluna "Em produção": OP já LIBERADA e ainda EM PRODUÇÃO (não passou para
+ * expedição/rota/entregue nem foi cancelada). Independe da data — uma OP liberada
+ * para um dia futuro também aparece aqui. Um pedido JÁ ENTREGUE sai daqui (era o
+ * bug: a OP entregue continuava em "Em produção" mostrando 100%).
  */
 export function isOpInProductionColumn(op: {
   releasedToProduction: boolean;
   status: OrderStatus;
 }): boolean {
-  return op.releasedToProduction && op.status !== "aguardando_expedicao";
+  return op.releasedToProduction && !PAST_PRODUCTION_STATUSES.includes(op.status);
 }
 
 /**

@@ -18,6 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { useConfirm } from "@/components/shared/confirm-dialog";
+import { FactoryAlertsCard } from "@/components/production/factory-alerts-card";
 import { FactoryMetricsCard } from "@/components/production/factory-metrics-card";
 import { InfoHint } from "@/components/shared/info-hint";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
@@ -1071,7 +1072,11 @@ export default function GestorFabricaPage() {
         />
       </div>
 
-      {/* AJ-A7: métricas operacionais — lead time / OTIF / ocupação / falhas.
+      {/* 2.3-D: painel de alertas de divergência — some quando não há alertas.
+          key força remount ao trocar a data de referência. */}
+      <FactoryAlertsCard key={`alerts-${anchorDate}`} referenceDate={anchorDate} windowDays={7} />
+
+      {/* AJ-A7: métricas operacionais — lead time / throughput / OTIF / ocupação / falhas.
           key força remount ao trocar de janela para estado limpo. */}
       <FactoryMetricsCard key={anchorDate} referenceDate={anchorDate} windowDays={7} />
 

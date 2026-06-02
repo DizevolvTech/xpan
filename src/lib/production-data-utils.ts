@@ -268,7 +268,7 @@ function convertIngredientQuantityToConsumptionUnit(
   };
 }
 
-function getRecipeReferenceWeightKgFromData(
+export function getRecipeReferenceWeightKgFromData(
   item: RecipeIngredientReference,
   ingredientsById: Map<string, ProductionIngredient>,
   productsById: Map<string, ProductionProduct>,

@@ -65,6 +65,7 @@ function buildBaseProduct(): ProductionProduct {
       expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   };
 }
 

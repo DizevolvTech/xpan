@@ -1,7 +1,22 @@
 export type OrderReleaseValidationReason =
   | "order_cancelled"
   | "order_not_planned"
-  | "order_not_releasable";
+  | "order_not_releasable"
+  // FASE 2 (blindagem): o id não corresponde a um pedido real (slot de esqueleto
+  // do cronograma, qtd 0). Liberar isso criaria um release órfão.
+  | "order_not_real";
+
+/**
+ * FASE 2 — prefixo dos ids do esqueleto do cronograma (`skeleton:<schedule.id>`
+ * no orderId, `skeleton:<productionItemKey>` no item id). Um id com este prefixo
+ * NUNCA é um pedido real: é só visão de planejamento.
+ */
+export const SKELETON_ID_PREFIX = "skeleton:";
+
+/** Um id (orderId/itemId) é de esqueleto do cronograma — não é pedido real. */
+export function isSkeletonOrderId(id: string | null | undefined): boolean {
+  return typeof id === "string" && id.startsWith(SKELETON_ID_PREFIX);
+}
 
 export class OrderReleaseValidationError extends Error {
   readonly reason: OrderReleaseValidationReason;

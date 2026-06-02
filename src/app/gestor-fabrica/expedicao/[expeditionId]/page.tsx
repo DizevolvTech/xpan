@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
 
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
@@ -13,6 +13,17 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useCurrentProfile } from "@/lib/use-current-profile";
 import {
   aggregateExpeditionItems,
   getAggregatedExpeditionItemKey,
@@ -42,8 +53,13 @@ export default function ExpedicaoDetailsPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [actionError, setActionError] = useState<string | null>(null);
   const [isChecklistSaving, setIsChecklistSaving] = useState(false);
+  const [isReleaseDialogOpen, setIsReleaseDialogOpen] = useState(false);
+  const [releaseReason, setReleaseReason] = useState("");
+  const [releaseError, setReleaseError] = useState<string | null>(null);
   const { planningData, isLoading } = useFactoryPlanningSnapshot(anchorDate);
   const deliveryExecutionState = useDeliveryExecution();
+  const { profile } = useCurrentProfile();
+  const canForceRelease = profile?.role === "administrador" || profile?.role === "gestor-fabrica";
 
   const expedition = useMemo(
     () =>
@@ -159,6 +175,39 @@ export default function ExpedicaoDetailsPage() {
     await persistChecklist(allCheckedState, "pronto_coleta", new Date().toISOString());
   }
 
+  async function handleForceRelease() {
+    if (!expedition || !checklistEditable) {
+      return;
+    }
+
+    const trimmedReason = releaseReason.trim();
+    if (!trimmedReason) {
+      setReleaseError("Informe o motivo da liberação com itens pendentes.");
+      return;
+    }
+
+    setReleaseError(null);
+    setActionError(null);
+    setIsChecklistSaving(true);
+
+    try {
+      await deliveryExecutionState.updateExecution(expedition.orderId, "pronto_coleta", {
+        checklistState: expeditionCheckedItems,
+        checklistCompletedAt: new Date().toISOString(),
+        force: true,
+        releaseReason: trimmedReason,
+      });
+      setIsReleaseDialogOpen(false);
+      setReleaseReason("");
+    } catch (error) {
+      setReleaseError(
+        error instanceof Error ? error.message : "Falha ao liberar a entrega com itens pendentes.",
+      );
+    } finally {
+      setIsChecklistSaving(false);
+    }
+  }
+
   const flowSteps = [
     {
       key: "pedidos",
@@ -240,6 +289,23 @@ export default function ExpedicaoDetailsPage() {
             <CheckCircle2 className="size-4" />
             {execution?.status === "aguardando_expedicao" ? "Continuar para entregas" : "Checklist concluído"}
           </Button>
+          {checklistEditable && !allItemsChecked && canForceRelease ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-amber-600 hover:text-amber-700"
+              disabled={isChecklistSaving}
+              onClick={() => {
+                setReleaseError(null);
+                setReleaseReason("");
+                setIsReleaseDialogOpen(true);
+              }}
+            >
+              <AlertTriangle className="size-4" />
+              Liberar com justificativa
+            </Button>
+          ) : null}
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-fabrica/expedicao">
               <ArrowLeft className="size-4" />
@@ -320,6 +386,20 @@ export default function ExpedicaoDetailsPage() {
                         : "Marque os itens conferidos e conclua o checklist para liberar a coleta."}
             </p>
           </div>
+          {execution?.pendingReleaseReason ? (
+            <div className="md:col-span-6 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p className="font-semibold">Entrega liberada com itens pendentes</p>
+                <p className="mt-0.5 text-amber-700/90">Motivo: {execution.pendingReleaseReason}</p>
+                {execution.pendingReleasedAt ? (
+                  <p className="mt-0.5 text-xs text-amber-700/80">
+                    Liberada em {new Date(execution.pendingReleasedAt).toLocaleString("pt-BR")}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {actionError ? (
             <div className="md:col-span-6 rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger-foreground">
               {actionError}
@@ -460,6 +540,48 @@ export default function ExpedicaoDetailsPage() {
           </PaginatedSection>
         </CardContent>
       </Card>
+
+      <Dialog open={isReleaseDialogOpen} onOpenChange={setIsReleaseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Liberar entrega com itens pendentes</DialogTitle>
+            <DialogDescription>
+              O checklist deste pedido não está 100% concluído. A liberação será registrada para
+              auditoria com o seu nome. Informe a justificativa obrigatória.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="release-reason">Motivo da liberação</Label>
+            <Textarea
+              id="release-reason"
+              value={releaseReason}
+              onChange={(event) => setReleaseReason(event.target.value)}
+              placeholder="Descreva por que a entrega está sendo liberada com itens pendentes."
+              rows={4}
+            />
+            {releaseError ? (
+              <p className="text-sm text-danger-foreground">{releaseError}</p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isChecklistSaving}
+              onClick={() => setIsReleaseDialogOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={releaseReason.trim().length === 0 || isChecklistSaving}
+              onClick={() => void handleForceRelease()}
+            >
+              Confirmar liberação
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageLayout>
   );
 }

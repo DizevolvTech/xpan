@@ -622,6 +622,7 @@ function buildPlannedItems(
           saleDate: addDays(availability.deliveryDate, normalizeSaleLeadDays(input.source.settings.saleLeadDays)),
           productionDate: availability.productionDate,
           delayed: availability.delayed,
+          demandSource: "pedido",
           productId: product.id,
           productCode: product.code,
           productName: product.name,
@@ -662,6 +663,131 @@ function buildPlannedItems(
   return sortOrderItems(items);
 }
 
+/**
+ * FASE 1 — horizonte de enumeração do esqueleto do cronograma.
+ *
+ * 7 dias = um ciclo semanal completo: cada dia de produção da semana aparece
+ * exatamente uma vez a partir de `referenceDate`. Isto NÃO é o lead de produção
+ * (esse vem da config — `OperationalSettings.expeditionLeadDays` — e do
+ * `expeditionLeadDays` do produto, aplicados pela disponibilidade do pedido). É
+ * só a janela de varredura para materializar os slots produto×linha×dia.
+ */
+export const SCHEDULE_SKELETON_HORIZON_DAYS = 7;
+
+/**
+ * FASE 1 — esqueleto do cronograma.
+ *
+ * Materializa, a partir do CRONOGRAMA ATIVO por linha, os slots produto×linha×dia
+ * MESMO SEM PEDIDO, como `PlannedOrderItem` ESQUELETO (quantidade/kg 0,
+ * `demandSource: "cronograma"`). Aditivo: não toca nos itens de pedido. O caller
+ * (`buildFactoryPlanningData`) filtra esses slots contra as chaves canônicas dos
+ * itens reais para preencher só LACUNAS (produto/dia sem pedido).
+ *
+ * Para cada linha com cronograma ativo, para cada `scheduleItem` (produto), resolve
+ * product/line/sector (mesmos lookups de `buildPlannedItems`) e, com a interseção de
+ * dias produto×cronograma (`getMatchingProductionDays`), enumera as datas no horizonte
+ * `[referenceDate, referenceDate + SCHEDULE_SKELETON_HORIZON_DAYS)` cujo dia-da-semana
+ * pertence à interseção.
+ */
+export function buildScheduleSkeletonItems(
+  input: {
+    scheduleByLineId: Map<string, WeeklyProductionSchedule>;
+    source: ResolvedPlanningSource;
+  },
+  referenceDate: string,
+  horizonDays: number = SCHEDULE_SKELETON_HORIZON_DAYS,
+): PlannedOrderItem[] {
+  const items: PlannedOrderItem[] = [];
+
+  for (const schedule of input.scheduleByLineId.values()) {
+    const line = input.source.linesById.get(schedule.lineId);
+    const sector = line ? input.source.sectorsById.get(line.sectorId) : undefined;
+    if (!line || !sector) {
+      continue;
+    }
+
+    for (const scheduleItem of schedule.items) {
+      const product = input.source.productsById.get(scheduleItem.productId);
+      if (!product) {
+        continue;
+      }
+
+      const matchingDays = getMatchingProductionDays(product.productionDays, scheduleItem.productionDays);
+      if (matchingDays.length === 0) {
+        continue;
+      }
+      const matchingDaySet = new Set(matchingDays);
+
+      for (let offset = 0; offset < horizonDays; offset += 1) {
+        const productionDate = addDays(referenceDate, offset);
+        if (!matchingDaySet.has(getWeekDayKey(productionDate))) {
+          continue;
+        }
+
+        const canPlan = true;
+        const scheduleDayPriority = getScheduleItemDayPriority(scheduleItem, getWeekDayKey(productionDate));
+        const productionItemKey = getProductionItemKey({
+          productionDate,
+          lineId: line.id,
+          productId: product.id,
+        });
+
+        items.push({
+          // Id estável e distinto do espaço de ids de pedido (que usa o id do item do pedido).
+          id: `skeleton:${productionItemKey}`,
+          orderId: `skeleton:${schedule.id}`,
+          orderCode: "—",
+          storeId: "",
+          storeName: "Cronograma",
+          orderedAt: "",
+          baseDate: productionDate,
+          deliveryDate: productionDate,
+          saleDate: productionDate,
+          productionDate,
+          delayed: false,
+          demandSource: "cronograma",
+          productId: product.id,
+          productCode: product.code,
+          productName: product.name,
+          lineId: line.id,
+          lineName: line.name,
+          sectorId: sector.id,
+          sectorName: sector.name,
+          scheduleId: schedule.id,
+          scheduleCode: schedule.code,
+          scheduleName: schedule.name,
+          requestedQuantity: 0,
+          requestedUnit: product.salesUnit,
+          internalKg: 0,
+          minimumProductionKg: product.minimumProductionKg,
+          expeditionUnit: product.expeditionUnit,
+          expeditionQuantityRaw: 0,
+          expeditionQuantity: 0,
+          canPlan,
+          scheduleDayPriority,
+          // FASE 2 (blindagem): um slot do cronograma sem pedido (qtd 0) não tem
+          // o que liberar — é só visão de planejamento. NUNCA liberável.
+          availableForRelease: false,
+          releasedToProduction: false,
+          productionStarted: false,
+          capacityPerBatch: product.capacityPerBatch,
+          salesToKgFactor: product.salesToKgFactor,
+          salesUnit: product.salesUnit,
+          batchesDone: 0,
+          productionItemKey,
+          productionItemStatus: "nao_iniciado",
+          preparationStages: normalizeProductPreparationStages(product.preparationStages),
+          workflowProgress: 0,
+          opCode: null,
+          status: getPotentialItemStatus(productionDate, canPlan, referenceDate),
+        } satisfies PlannedOrderItem);
+      }
+    }
+  }
+
+  return items;
+}
+
 export function buildProductionOrdersFromPlannedItems(
   plannedItems: PlannedOrderItem[],
   referenceDate: string,
@@ -684,7 +810,15 @@ export function buildProductionOrdersFromPlannedItems(
       scheduleName: string;
       orderCodes: Set<string>;
       orderIds: Set<string>;
-      items: Map<string, ProductionOrderItem & { capacityPerBatch: number | null; salesToKgFactor: number }>;
+      items: Map<
+        string,
+        ProductionOrderItem & {
+          capacityPerBatch: number | null;
+          salesToKgFactor: number;
+          // FASE 2: ao menos um source item deste produto nasceu de pedido real.
+          hasPedidoSource: boolean;
+        }
+      >;
       sourceItems: ProductionOrderSourceItem[];
       totalKg: number;
       releasedToProduction: boolean;
@@ -713,7 +847,14 @@ export function buildProductionOrdersFromPlannedItems(
           scheduleName: item.scheduleName ?? "Sem linha",
           orderCodes: new Set<string>(),
           orderIds: new Set<string>(),
-          items: new Map<string, ProductionOrderItem & { capacityPerBatch: number | null; salesToKgFactor: number }>(),
+          items: new Map<
+            string,
+            ProductionOrderItem & {
+              capacityPerBatch: number | null;
+              salesToKgFactor: number;
+              hasPedidoSource: boolean;
+            }
+          >(),
           sourceItems: [],
           totalKg: 0,
           releasedToProduction: false,
@@ -734,6 +875,10 @@ export function buildProductionOrdersFromPlannedItems(
           productCode: item.productCode,
           productName: item.productName,
           productionItemKey: item.productionItemKey ?? `${planningKey}|${item.productId}`,
+          // Placeholder; resolvido após agregar todos os source items (ver
+          // hasPedidoSource + totalKg abaixo).
+          demandSource: "cronograma",
+          hasPedidoSource: false,
           totalKg: 0,
           // AJ-0006.1: mínimo da fábrica; belowMinimum é recomputado após somar a
           // demanda consolidada de todas as lojas deste run de produção.
@@ -755,6 +900,10 @@ export function buildProductionOrdersFromPlannedItems(
 
       const aggregated = group.items.get(item.productId)!;
       aggregated.totalKg = round2(aggregated.totalKg + item.internalKg);
+      // FASE 2: marca demanda real assim que QUALQUER source item for "pedido"
+      // ou trouxer kg. demandSource final é derivado disto abaixo.
+      aggregated.hasPedidoSource =
+        aggregated.hasPedidoSource || item.demandSource === "pedido" || item.internalKg > 0;
       aggregated.productionSequence = aggregated.productionSequence ?? item.scheduleDayPriority;
       aggregated.progress = Math.max(aggregated.progress, item.workflowProgress);
       aggregated.status =
@@ -820,6 +969,11 @@ export function buildProductionOrdersFromPlannedItems(
           : opItem.progress;
         return {
           ...opItem,
+          // FASE 2: "pedido" se houve source de pedido OU kg consolidado > 0;
+          // senão é só slot do cronograma (esqueleto).
+          demandSource: (opItem.hasPedidoSource || opItem.totalKg > 0 ? "pedido" : "cronograma") as
+            | "pedido"
+            | "cronograma",
           belowMinimum: opItem.minimumProductionKg > 0 && opItem.totalKg < opItem.minimumProductionKg,
           batchCount: plan.batchCount,
           batchSizes: plan.batchSizes,
@@ -869,15 +1023,18 @@ export function buildProductionOrdersFromPlannedItems(
       itemsCount: group.sourceItems.length,
       ordersCount: group.orderIds.size,
       totalKg: round2(group.totalKg),
+      // FASE 2: a OP tem demanda real se ALGUM item consolidou kg > 0. OP cujos
+      // itens são todos cronograma/0 é uma "OP de esqueleto".
+      hasDemand: builtItems.some((opItem) => opItem.totalKg > 0),
       releasedToProduction: group.releasedToProduction,
       productionStarted: group.productionStarted,
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),
-      // Remove os campos auxiliares de batida (só usados p/ derivar o plano) do
-      // ProductionOrderItem público.
+      // Remove os campos auxiliares de batida + hasPedidoSource (só usados p/
+      // derivar plano/demandSource) do ProductionOrderItem público.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      items: builtItems.map(({ capacityPerBatch, salesToKgFactor, ...rest }) => rest),
+      items: builtItems.map(({ capacityPerBatch, salesToKgFactor, hasPedidoSource, ...rest }) => rest),
       sourceItems: group.sourceItems.sort((a, b) => {
         const bySequence =
           (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
@@ -1075,8 +1232,32 @@ export function buildFactoryPlanningData(
       })
     : orderItems;
 
-  const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(expandedItems, referenceDate);
-  const orderItemsWithOpCodes = orderItems.map((item) => {
+  // FASE 1 — esqueleto do cronograma: slots produto×linha×dia (qtd 0) que o
+  // cronograma ATIVO prevê. Só PREENCHE LACUNAS — onde já há um item com demanda
+  // real (mesma chave canônica produtoDate|lineId|productId), esse item manda e o
+  // esqueleto é descartado, então itens reais NUNCA mudam.
+  //
+  // As chaves vêm de `expandedItems` (pedidos + MPI já expandido), não só de
+  // `orderItems`: uma sub-receita (ex. massa de pizza) que JÁ ganhou demanda via
+  // expansão não deve ainda receber um slot-fantasma do cronograma por cima.
+  const existingKeys = new Set(
+    expandedItems
+      .filter((item) => item.canPlan && item.productionDate)
+      .map((item) => getProductionItemKey(item))
+      .filter((key): key is string => Boolean(key)),
+  );
+  const skeletonItems = buildScheduleSkeletonItems({ scheduleByLineId, source }, referenceDate).filter((item) => {
+    const key = getProductionItemKey(item);
+    return key !== null && !existingKeys.has(key);
+  });
+
+  // O esqueleto NÃO passa pela expansão de receita (slots têm qtd 0; expandi-los só
+  // geraria OPs-fantasma de MPI com 0 kg). Vai direto, junto com os itens expandidos.
+  const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(
+    [...expandedItems, ...skeletonItems],
+    referenceDate,
+  );
+  const orderItemsWithOpCodes = [...orderItems, ...skeletonItems].map((item) => {
     const planningKey = getPlanningKey(item);
     return {
       ...item,

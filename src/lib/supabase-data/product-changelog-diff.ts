@@ -23,6 +23,7 @@ const AUDITED_FIELDS: Array<{ field: string; label: string }> = [
   { field: "minimum_production_kg", label: "Produção mínima (Kg)" },
   { field: "economic_production_kg", label: "Produção econômica (Kg)" },
   { field: "capacity_per_batch", label: "Capacidade por batida" },
+  { field: "economic_batch_unit", label: "Unidade do lote econômico" },
   { field: "validity_days", label: "Validade (dias)" },
   { field: "production_days", label: "Dias de produção" },
   { field: "expedition_lead_days", label: "Lead de expedição" },

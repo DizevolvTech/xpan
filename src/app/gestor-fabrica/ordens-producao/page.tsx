@@ -51,6 +51,22 @@ type OpQueueRow = ProductionOrderRow & {
   productsCount: number;
 };
 
+// FASE 3 (UI): uma OP de esqueleto (hasDemand === false) é só visão de
+// planejamento do cronograma ativo — produto × linha × dia sem nenhum pedido
+// ainda. Não é liberável, qtd 0, não desce pro chão. Aqui ela aparece de forma
+// MUTED para a fábrica saber que aquele produto sai naquele dia/linha, sem
+// competir com o que de fato vai produzir.
+function isSkeletonOp(op: ProductionOrderRow) {
+  return op.hasDemand === false;
+}
+
+// Mínimo do cronograma agregado da OP de esqueleto (referência, não demanda).
+function skeletonMinimumKg(op: ProductionOrderRow) {
+  return op.items
+    .filter((item) => item.demandSource === "cronograma")
+    .reduce((sum, item) => sum + item.minimumProductionKg, 0);
+}
+
 type DailyLineRow = {
   id: string;
   productionDate: string;
@@ -88,6 +104,7 @@ const ORDER_STATUS_FILTER_OPTIONS: Array<{ value: OrderStatus; label: string }> 
   { value: "em_producao", label: "Em Produção" },
   { value: "aguardando_expedicao", label: "Aguardando Expedição" },
   { value: "rota_entrega", label: "Rota de Entrega" },
+  { value: "entregue", label: "Entregue" },
   { value: "cancelado", label: "Cancelado" },
 ];
 
@@ -101,6 +118,7 @@ const AGGREGATE_STATUS_PRIORITY: OrderStatus[] = [
   "em_producao",
   "aguardando_expedicao",
   "rota_entrega",
+  "entregue",
   "cancelado",
 ];
 
@@ -154,6 +172,11 @@ export default function OrdensProducaoPage() {
     [capacityByLineId, planningData.productionOrders],
   );
 
+  // FASE 3 (UI): KPIs e agregações ("o que vai produzir") consideram só OPs com
+  // demanda real. Os slots de esqueleto continuam visíveis na Fila de OPs abaixo,
+  // mas não inflam contagem de OPs liberadas, conclusão média nem batelada.
+  const demandOpRows = useMemo(() => opRows.filter((op) => !isSkeletonOp(op)), [opRows]);
+
   const filteredOps = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
 
@@ -176,10 +199,18 @@ export default function OrdensProducaoPage() {
       return matchesDate && matchesStatus && matchesCategory && matchesSubcategory && matchesSearch;
     });
   }, [lineFilter, opRows, productionDateFilter, searchTerm, sectorFilter, statusFilter]);
-  const sortedOps = useMemo(
-    () => sortItemsByTemporalValue(filteredOps, sortOrder, ["productionDate"]),
-    [filteredOps, sortOrder],
-  );
+  const sortedOps = useMemo(() => {
+    const byDate = sortItemsByTemporalValue(filteredOps, sortOrder, ["productionDate"]);
+    // FASE 3 (UI): dentro de cada dia/linha, os slots de esqueleto descem para
+    // depois dos com demanda — não competem com o que de fato vai produzir.
+    // Estável: mesma data + mesma linha → demanda primeiro, ordem preservada.
+    return [...byDate].sort((a, b) => {
+      if (a.productionDate !== b.productionDate || a.lineName !== b.lineName) {
+        return 0;
+      }
+      return Number(isSkeletonOp(a)) - Number(isSkeletonOp(b));
+    });
+  }, [filteredOps, sortOrder]);
 
   const opPagination = useMemo(() => paginateArray(sortedOps, opPage, opPageSize), [opPage, opPageSize, sortedOps]);
 
@@ -209,7 +240,7 @@ export default function OrdensProducaoPage() {
   const dailyLineRows = useMemo<DailyLineRow[]>(() => {
     const map = new Map<string, DailyLineRow>();
 
-    opRows.forEach((op) => {
+    demandOpRows.forEach((op) => {
       const key = `${op.productionDate}|${op.lineName}`;
       const current = map.get(key);
 
@@ -238,7 +269,7 @@ export default function OrdensProducaoPage() {
       }
       return a.lineName.localeCompare(b.lineName);
     });
-  }, [opRows]);
+  }, [demandOpRows]);
 
   const batchDemandRows = useMemo<BatchDemandRow[]>(() => {
     const map = new Map<
@@ -253,8 +284,14 @@ export default function OrdensProducaoPage() {
       }
     >();
 
-    planningData.productionOrders.forEach((op) => {
+    planningData.productionOrders
+      .filter((op) => !isSkeletonOp(op))
+      .forEach((op) => {
       op.items.forEach((item) => {
+        // Item de cronograma (qtd 0) não é demanda — não entra na batelada.
+        if (item.demandSource === "cronograma") {
+          return;
+        }
         const key = `${op.productionDate}|${item.productId}`;
         const existing = map.get(key);
         const sourceItemsForProduct = op.sourceItems.filter(
@@ -324,11 +361,13 @@ export default function OrdensProducaoPage() {
   }, [planningData.productionOrders]);
 
   const alignedLineRows = useMemo(() => {
-    const lines = Array.from(new Set(opRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
-    const dates = planningData.productionDates;
+    const lines = Array.from(new Set(demandOpRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
+    const dates = Array.from(new Set(demandOpRows.map((item) => item.productionDate))).sort((a, b) =>
+      a.localeCompare(b),
+    );
     const map = new Map<string, OpQueueRow[]>();
 
-    opRows.forEach((row) => {
+    demandOpRows.forEach((row) => {
       const key = `${row.lineName}|${row.productionDate}`;
       if (!map.has(key)) {
         map.set(key, []);
@@ -337,19 +376,21 @@ export default function OrdensProducaoPage() {
     });
 
     return { lines, dates, map };
-  }, [opRows, planningData.productionDates]);
+  }, [demandOpRows]);
 
   const kpis = useMemo(
     () => ({
-      totalOps: opRows.length,
-      totalKg: Number(opRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
+      totalOps: demandOpRows.length,
+      totalKg: Number(demandOpRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
       avgCompletion:
-        opRows.length === 0
+        demandOpRows.length === 0
           ? 0
-          : Number((opRows.reduce((sum, item) => sum + item.completion, 0) / opRows.length).toFixed(1)),
-      activeSubcategories: new Set(opRows.map((item) => item.lineName)).size,
+          : Number(
+              (demandOpRows.reduce((sum, item) => sum + item.completion, 0) / demandOpRows.length).toFixed(1),
+            ),
+      activeSubcategories: new Set(demandOpRows.map((item) => item.lineName)).size,
     }),
-    [opRows],
+    [demandOpRows],
   );
 
   const selectedOp = useMemo(
@@ -361,10 +402,10 @@ export default function OrdensProducaoPage() {
   // da fila do dia e pareciam "sumidas". Tornar explícitas com a data prevista.
   const scheduledOps = useMemo(
     () =>
-      opRows
+      demandOpRows
         .filter((item) => item.status === "agendado")
         .sort((a, b) => a.productionDate.localeCompare(b.productionDate)),
-    [opRows],
+    [demandOpRows],
   );
   const nextScheduledLabel = scheduledOps[0]?.productionDateLabel ?? "—";
 
@@ -387,7 +428,7 @@ export default function OrdensProducaoPage() {
       key: "producao",
       title: "Produção",
       helper: "OPs liberadas",
-      value: planningData.productionOrders.length,
+      value: demandOpRows.length,
       href: "/gestor-fabrica/ordens-producao",
       icon: Factory,
     },
@@ -408,39 +449,75 @@ export default function OrdensProducaoPage() {
     { key: "lineName", header: hierarchyLabels.line },
     { key: "scheduleName", header: hierarchyLabels.schedule },
     { key: "productsCount", header: "Produtos" },
-    { key: "totalKg", header: "Carga (Kg)" },
+    {
+      key: "totalKg",
+      header: "Carga (Kg)",
+      render: (item: OpQueueRow) => {
+        if (isSkeletonOp(item)) {
+          const minimumKg = skeletonMinimumKg(item);
+          return (
+            <div className="flex flex-col gap-0.5 text-muted-foreground">
+              <span aria-label="Sem carga — slot sem pedido">—</span>
+              {minimumKg > 0 ? (
+                <span className="text-[11px] tabular-nums">
+                  mín. {formatKgValue(minimumKg, { maximumFractionDigits: 2 })} Kg
+                </span>
+              ) : null}
+            </div>
+          );
+        }
+        return formatKgValue(item.totalKg);
+      },
+    },
     {
       key: "completion",
       header: "% conclusão",
-      render: (item: OpQueueRow) => (
-        <div className="min-w-[220px]">
-          <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-            <span>{item.completion.toFixed(1)}%</span>
-            <span>{formatKgValue(item.capacityKg)} Kg/dia de capacidade</span>
+      render: (item: OpQueueRow) =>
+        isSkeletonOp(item) ? (
+          <span className="text-xs text-muted-foreground/70">Aguardando pedido</span>
+        ) : (
+          <div className="min-w-[220px]">
+            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+              <span>{item.completion.toFixed(1)}%</span>
+              <span>{formatKgValue(item.capacityKg)} Kg/dia de capacidade</span>
+            </div>
+            <div className="h-2 rounded-full bg-panel">
+              <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.completion, 100)}%` }} />
+            </div>
           </div>
-          <div className="h-2 rounded-full bg-panel">
-            <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.completion, 100)}%` }} />
-          </div>
-        </div>
-      ),
+        ),
     },
     {
       key: "status",
       header: "Status",
-      render: (item: OpQueueRow) => <StatusBadge status={item.status} />,
+      render: (item: OpQueueRow) =>
+        isSkeletonOp(item) ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/[var(--opacity-strong)] px-2.5 py-[3px] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-secondary-foreground ring-1 ring-inset ring-border">
+            <span className="size-1.5 rounded-full bg-muted-foreground/[var(--opacity-strong)]" aria-hidden />
+            Sem pedido
+          </span>
+        ) : (
+          <StatusBadge status={item.status} />
+        ),
     },
     {
       key: "documents",
       header: "Ações",
-      render: (item: OpQueueRow) => (
-        <ProductionOrderActionsMenu
-          detailHref={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
-          preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
-          productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
-          onOpenWorkflow={() => openWorkflowDialog(item.id)}
-          onOpenPrint={openPrintPage}
-        />
-      ),
+      // Slots de esqueleto (qtd 0) não são liberáveis nem imprimíveis — sem menu.
+      render: (item: OpQueueRow) =>
+        isSkeletonOp(item) ? (
+          <span className="block text-right text-xs text-muted-foreground/60" aria-hidden>
+            —
+          </span>
+        ) : (
+          <ProductionOrderActionsMenu
+            detailHref={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            onOpenWorkflow={() => openWorkflowDialog(item.id)}
+            onOpenPrint={openPrintPage}
+          />
+        ),
     },
   ];
 
@@ -761,7 +838,12 @@ export default function OrdensProducaoPage() {
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border/60">
-          <CardTitle>Fila de OPs</CardTitle>
+          <div className="flex items-center gap-1.5">
+            <CardTitle>Fila de OPs</CardTitle>
+            <InfoHint
+              content="Linhas em tom apagado com a etiqueta “Sem pedido” são slots do cronograma: o produto sai naquele dia/linha, mas ainda não há pedido. Servem de referência — não são liberáveis. O “mín.” mostra o lote mínimo do cronograma."
+            />
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <DataTable
@@ -771,6 +853,9 @@ export default function OrdensProducaoPage() {
             pagination={false}
             showFooterControls={false}
             onRowClick={(item) => window.location.assign(`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)}
+            // Esqueleto não abre detalhe (não há OP real pra acionar) e fica MUTED.
+            isRowClickable={(item) => !isSkeletonOp(item)}
+            rowClassName={(item) => (isSkeletonOp(item) ? "text-muted-foreground opacity-[0.72]" : "")}
             emptyMessage="Nenhuma OP encontrada para os filtros"
             stickyHeader
           />

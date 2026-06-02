@@ -32,6 +32,8 @@ export interface PersistedDeliveryExecutionEntry {
   updatedAt: string;
   attemptsCount: number;
   lastAttempt: PersistedDeliveryAttempt | null;
+  pendingReleaseReason: string | null;
+  pendingReleasedAt: string | null;
 }
 
 export type DeliveryFailureReason =
@@ -209,7 +211,11 @@ export async function getPersistedDeliveryExecutions(
     DELIVERY_EXECUTION_CACHE_TTL_MS,
     async () => {
     const [executionRowsResult, orderRowsResult, attemptsByOrderDbId] = await Promise.all([
-      supabase.from("delivery_executions").select("order_id, status, checklist_state, checklist_completed_at, updated_at"),
+      supabase
+        .from("delivery_executions")
+        .select(
+          "order_id, status, checklist_state, checklist_completed_at, updated_at, pending_release_reason, pending_released_at",
+        ),
       supabase.from("store_orders").select("id, legacy_id"),
       loadDeliveryAttemptsByOrderDbId(supabase),
     ]);
@@ -230,6 +236,10 @@ export async function getPersistedDeliveryExecutions(
           "checklist_state" in row ? ((row.checklist_state as DeliveryChecklistState | null) ?? {}) : {},
         checklistCompletedAt:
           "checklist_completed_at" in row ? (row.checklist_completed_at ?? null) : null,
+        pendingReleaseReason:
+          "pending_release_reason" in row ? (row.pending_release_reason ?? null) : null,
+        pendingReleasedAt:
+          "pending_released_at" in row ? (row.pending_released_at ?? null) : null,
         updatedAt: row.updated_at,
         attemptsCount: attempts.length,
         lastAttempt: lastAttemptRow
@@ -381,6 +391,8 @@ export async function updateDeliveryExecution(
     checklistState?: DeliveryChecklistState;
     checklistCompletedAt?: string | null;
     tenantId?: string | null;
+    force?: boolean;
+    releaseReason?: string | null;
   } = {},
   updatedByProfileId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
@@ -452,8 +464,29 @@ export async function updateDeliveryExecution(
   // (aguardando_expedicao → pronto_coleta). Uma vez liberada, as transições
   // seguintes (em_rota, no_destino, entregue) não devem reexigir o checklist.
   const isEnteringDelivery = currentStatus === "aguardando_expedicao" && status === "pronto_coleta";
+  // Liberação com pendência: o gestor/admin pode forçar a entrada na entrega
+  // mesmo com checklist incompleto, mas é OBRIGADO a informar um motivo (que fica
+  // auditável). A autorização de QUEM pode forçar é responsabilidade da API; aqui
+  // apenas validamos o motivo e registramos o override. Nunca confiar em input do
+  // cliente para decidir a role.
+  const trimmedReleaseReason = options.releaseReason?.trim() ?? "";
+  let pendingRelease: {
+    reason: string;
+    releasedByProfileId: string | null;
+    releasedAt: string;
+  } | null = null;
   if (isEnteringDelivery && !checklistIsComplete) {
-    throw new Error("Conclua o checklist de todos os itens antes de avançar para entrega.");
+    if (!options.force) {
+      throw new Error("Conclua o checklist de todos os itens antes de avançar para entrega.");
+    }
+    if (!trimmedReleaseReason) {
+      throw new Error("Informe o motivo da liberação com itens pendentes.");
+    }
+    pendingRelease = {
+      reason: trimmedReleaseReason,
+      releasedByProfileId: updatedByDatabaseId,
+      releasedAt: new Date().toISOString(),
+    };
   }
 
   const upsertPayload = usingLegacyDeliverySchema
@@ -473,6 +506,13 @@ export async function updateDeliveryExecution(
             : checklistCompletedAt,
         updated_at: new Date().toISOString(),
         updated_by_profile_id: updatedByDatabaseId,
+        ...(pendingRelease
+          ? {
+              pending_release_reason: pendingRelease.reason,
+              pending_released_by_profile_id: pendingRelease.releasedByProfileId,
+              pending_released_at: pendingRelease.releasedAt,
+            }
+          : {}),
       };
   const upsertResult = await supabase.from("delivery_executions").upsert(upsertPayload, {
     onConflict: "order_id",
@@ -498,12 +538,20 @@ export async function updateDeliveryExecution(
     {
       orderId: orderRow.id,
       type: "entrega_status",
-      title: "Entrega atualizada",
-      description: `O pedido mudou para "${deliveryLabels[status]}".`,
+      title: pendingRelease ? "Entrega liberada com itens pendentes" : "Entrega atualizada",
+      description: pendingRelease
+        ? `O pedido foi liberado para entrega com itens pendentes no checklist. Motivo: ${pendingRelease.reason}`
+        : `O pedido mudou para "${deliveryLabels[status]}".`,
       createdByProfileId: updatedByProfileId ?? null,
       metadata: {
         status,
         checklistCompletedAt,
+        ...(pendingRelease
+          ? {
+              pendingReleaseReason: pendingRelease.reason,
+              pendingReleasedAt: pendingRelease.releasedAt,
+            }
+          : {}),
       },
     },
     supabase,

@@ -40,6 +40,12 @@ test("isOpInProductionColumn — OP concluída (aguardando expedição) sai de p
   assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "aguardando_expedicao" }), false);
 });
 
+test("isOpInProductionColumn — OP em rota ou JÁ ENTREGUE sai de produção", () => {
+  assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "rota_entrega" }), false);
+  assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "entregue" }), false);
+  assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "cancelado" }), false);
+});
+
 // Chave de navegação estável da OP — não depende de posição/index.
 test("getProductionOrderNavKey — deriva da identidade do agrupamento", () => {
   assert.equal(
