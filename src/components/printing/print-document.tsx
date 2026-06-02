@@ -127,34 +127,34 @@ export function PrintDocument({
              Reduzimos SÓ na impressão, com piso de legibilidade pro chão e
              line-height apertado. Negrito/cor/bordas permanecem intactos. */
           .print-doc .text-sm {
-            font-size: 10.5px !important;
-            line-height: 1.15 !important;
+            font-size: 9.5px !important;
+            line-height: 1.1 !important;
           }
           .print-doc .text-base {
-            font-size: 11.5px !important;
-            line-height: 1.15 !important;
+            font-size: 10.5px !important;
+            line-height: 1.1 !important;
           }
           .print-doc .text-lg {
-            font-size: 13px !important;
-            line-height: 1.1 !important;
+            font-size: 12px !important;
+            line-height: 1.05 !important;
           }
           .print-doc .text-xl {
-            font-size: 14px !important;
-            line-height: 1.1 !important;
+            font-size: 13px !important;
+            line-height: 1.05 !important;
           }
           .print-doc .text-2xl {
-            font-size: 15px !important;
-            line-height: 1.1 !important;
+            font-size: 14px !important;
+            line-height: 1.05 !important;
           }
 
           /* As linhas de ingrediente são o maior volume da folha: densamente
-             apertadas (10.5px legível, padding mínimo). Sobrepõe o text-sm dos
-             <td> e o padding 2px 6px anterior. */
+             apertadas (9.5px ainda legível, padding mínimo). Sobrepõe o text-sm
+             dos <td> e o padding anterior. */
           .print-doc table th,
           .print-doc table td {
-            font-size: 10.5px !important;
-            line-height: 1.15 !important;
-            padding: 1px 5px !important;
+            font-size: 9.5px !important;
+            line-height: 1.1 !important;
+            padding: 1px 4px !important;
           }
           .print-doc table {
             font-size: 10.5px;
@@ -224,47 +224,66 @@ export function PrintDocument({
             : "mx-auto max-w-5xl rounded-2xl border border-stone-200 bg-white shadow-sm print:max-w-none print:rounded-none print:border-0 print:shadow-none"
         }
       >
-        <header className={industrial ? "border-b border-stone-300 px-6 py-4 print:px-6 print:py-2" : "border-b border-stone-200 px-6 py-5 print:px-6 print:py-3"}>
-          <div className="flex flex-col gap-4 print:block">
-            <div className="flex items-start justify-between gap-4 print:block">
-              <div className={industrial ? "flex-1 text-center" : undefined}>
-                <div className={industrial ? "mb-2 flex items-center justify-center gap-3" : "mb-2 flex items-center gap-3"}>
-                  <Image
-                    src={brand.logoPath}
-                    alt={brand.name}
-                    width={industrial ? 40 : 32}
-                    height={industrial ? 40 : 32}
-                    className={industrial ? "h-10 w-10 object-contain" : "h-8 w-8 object-contain"}
-                    priority
-                  />
-                  <p className={industrial ? "text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500" : "text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500"}>
-                    {brand.name}
-                  </p>
+        {industrial ? (
+          // Cabeçalho enxuto: só o nome da linha (title) + uma linha minúscula de
+          // contexto (documento/data) pra folha de chão não ficar sem data. Sem
+          // logo/marca/setor/cartões — economia máxima de altura por folha.
+          <header className="flex items-center justify-between gap-3 border-b-2 border-stone-700 px-4 py-2 print:px-4 print:py-1">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold uppercase leading-none text-stone-900">{title}</h1>
+              {meta ? (
+                <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-stone-500 print:mt-0.5">
+                  {meta}
                 </div>
-                <h1 className={industrial ? "mt-1 text-[28px] font-bold uppercase leading-tight text-stone-900 print:text-[20px]" : "mt-1 text-2xl font-semibold text-stone-900 print:text-lg"}>
-                  {title}
-                </h1>
-                {subtitle ? (
-                  <p className={industrial ? "mt-1 text-sm font-semibold uppercase tracking-[0.04em] text-stone-600" : "mt-1 text-sm text-stone-600"}>
-                    {subtitle}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="flex items-center gap-2 print:hidden">
-                <Button type="button" variant="outline" onClick={() => window.print()}>
-                  <Printer className="size-4" />
-                  Imprimir
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => window.close()}>
-                  Fechar
-                </Button>
-              </div>
+              ) : null}
             </div>
+            <div className="flex items-center gap-2 print:hidden">
+              <Button type="button" variant="outline" onClick={() => window.print()}>
+                <Printer className="size-4" />
+                Imprimir
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => window.close()}>
+                Fechar
+              </Button>
+            </div>
+          </header>
+        ) : (
+          <header className="border-b border-stone-200 px-6 py-5 print:px-6 print:py-3">
+            <div className="flex flex-col gap-4 print:block">
+              <div className="flex items-start justify-between gap-4 print:block">
+                <div>
+                  <div className="mb-2 flex items-center gap-3">
+                    <Image
+                      src={brand.logoPath}
+                      alt={brand.name}
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 object-contain"
+                      priority
+                    />
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-500">
+                      {brand.name}
+                    </p>
+                  </div>
+                  <h1 className="mt-1 text-2xl font-semibold text-stone-900 print:text-lg">{title}</h1>
+                  {subtitle ? <p className="mt-1 text-sm text-stone-600">{subtitle}</p> : null}
+                </div>
 
-            {meta ? <div className={industrial ? "grid gap-2 md:grid-cols-3 print:gap-1.5" : "grid gap-3 md:grid-cols-3 print:gap-1.5"}>{meta}</div> : null}
-          </div>
-        </header>
+                <div className="flex items-center gap-2 print:hidden">
+                  <Button type="button" variant="outline" onClick={() => window.print()}>
+                    <Printer className="size-4" />
+                    Imprimir
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => window.close()}>
+                    Fechar
+                  </Button>
+                </div>
+              </div>
+
+              {meta ? <div className="grid gap-3 md:grid-cols-3 print:gap-1.5">{meta}</div> : null}
+            </div>
+          </header>
+        )}
 
         <div className={industrial ? "space-y-4 px-6 py-4 print:space-y-2 print:px-6 print:py-3" : "space-y-6 px-6 py-5 print:space-y-3 print:px-6 print:py-3"}>
           {children}

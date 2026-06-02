@@ -20,15 +20,6 @@ function sanitizeDateKey(raw: string | null) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
 }
 
-function MetaCard({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="border border-stone-300 bg-stone-100 px-3 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-stone-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-stone-900">{value}</p>
-    </article>
-  );
-}
-
 function RecipeTable({ rows }: { rows: (PrintIngredientRow & { isAdditional?: boolean })[] }) {
   if (rows.length === 0) {
     return null;
@@ -176,17 +167,10 @@ export default function PrePesagemPrintPage() {
 
   return (
     <PrintDocument
-      title={op.sectorName}
-      subtitle={op.lineName}
+      title={op.lineName}
       variant="industrial"
       autoPrint
-      meta={
-        <>
-          <MetaCard label="Documento" value={`Pré-pesagem · ${op.code}`} />
-          <MetaCard label="Produzir" value={op.productionDateLabel} />
-          <MetaCard label="Para entregar" value={deliveryDateLabel} />
-        </>
-      }
+      meta={`Pré-pesagem · ${op.code} · Produzir ${op.productionDateLabel} · Entregar ${deliveryDateLabel}`}
     >
       {document.ingredientProducts.length > 0 ? (
         <section className="space-y-3 print:space-y-1.5">
