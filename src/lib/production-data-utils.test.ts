@@ -75,6 +75,7 @@ const baseProduct: ProductionProduct = {
       expeditionLeadDays: 1,
   isMpiIngredient: false,
   capacityPerBatch: null,
+  economicBatchUnit: null,
 };
 
 test("recipe totals convert purchase unit into consumption unit before weight calculation", () => {

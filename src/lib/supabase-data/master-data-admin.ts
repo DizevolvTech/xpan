@@ -844,6 +844,7 @@ function normalizeProductPayload(input: ProductInput) {
     minimum_production_kg: input.minimumProductionKg,
     economic_production_kg: input.economicProductionKg,
     capacity_per_batch: input.capacityPerBatch ?? null,
+    economic_batch_unit: input.economicBatchUnit ?? null,
     allows_storage: input.allowsStorage,
     production_days: input.productionDays,
     // sale_lead_days é deprecated por produto (atributo global em operational_settings).
@@ -1354,6 +1355,7 @@ export async function cloneProduct(
       validity_days: row.validity_days,
       minimum_production_kg: row.minimum_production_kg,
       economic_production_kg: row.economic_production_kg,
+      economic_batch_unit: row.economic_batch_unit ?? null,
       allows_storage: row.allows_storage,
       production_days: row.production_days,
       sale_lead_days: row.sale_lead_days,

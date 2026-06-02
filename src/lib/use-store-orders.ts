@@ -191,6 +191,57 @@ export function useStoreOrderCatalog(storeId: string, orderedAt: string) {
   );
 }
 
+export type WeekdaySuggestion = {
+  seg: number;
+  ter: number;
+  qua: number;
+  qui: number;
+  sex: number;
+  sab: number;
+  dom: number;
+};
+
+/** 2.7-C — mapa ADVISORY: productId(legacy) -> média histórica por dia da semana. */
+export type StoreOrderSuggestionMap = Record<string, WeekdaySuggestion>;
+
+export function useStoreOrderSuggestions(storeId: string) {
+  const [suggestions, setSuggestions] = useState<StoreOrderSuggestionMap>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSuggestions() {
+      if (!storeId) {
+        setSuggestions({});
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({ storeId });
+        const data = await readJson<StoreOrderSuggestionMap>(
+          `/api/store-order-suggestions?${params.toString()}`,
+        );
+        if (!cancelled) {
+          setSuggestions(data);
+        }
+      } catch {
+        // ADVISORY only — falha em sugestões nunca deve travar a tela de pedido.
+        if (!cancelled) {
+          setSuggestions({});
+        }
+      }
+    }
+
+    void loadSuggestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId]);
+
+  return useMemo(() => ({ suggestions }), [suggestions]);
+}
+
 export function useCreateStoreOrder(onCreated?: () => void) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 

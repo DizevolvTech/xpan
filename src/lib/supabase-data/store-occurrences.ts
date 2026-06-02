@@ -311,6 +311,129 @@ export async function createStoreOccurrence(
   return getStoreOccurrenceDetail(legacyId, scope, supabase);
 }
 
+/**
+ * 2.6-F — Marca usada para identificar (e deduplicar) ocorrências geradas
+ * automaticamente pelos gatilhos de divergência. A marca é embutida no fim da
+ * descrição porque `store_occurrences` não tem coluna dedicada de origem/dedup
+ * (evitamos uma migration). Formato determinístico: `[auto:<alertId>@<data>]`.
+ */
+const AUTO_OCCURRENCE_PROBLEM_PREFIX = "[Automático]";
+
+export function buildAutoOccurrenceDedupMarker(alertId: string, referenceDate: string): string {
+  return `[auto:${alertId}@${referenceDate}]`;
+}
+
+export interface CreateSystemDivergenceOccurrenceInput {
+  /** id estável do FactoryAlert (ex.: "otif-below-threshold"). */
+  alertId: string;
+  /** data de referência (YYYY-MM-DD) — compõe a chave de dedup. */
+  referenceDate: string;
+  /** título do alerta → vira o `problem_type`. */
+  title: string;
+  /** detalhe do alerta → base da descrição. */
+  detail: string;
+  /** texto curto da métrica que disparou (ex.: "72%"). */
+  metric: string;
+}
+
+/**
+ * 2.6-F — cria uma ocorrência GERADA PELO SISTEMA a partir de um alerta de
+ * divergência de fábrica.
+ *
+ * Reusa o mesmo caminho das ocorrências manuais (validação de rascunho,
+ * alocação de código de negócio, append de evento de criação, mesma tabela
+ * `store_occurrences`) — NÃO duplica lógica de insert.
+ *
+ * Diferenças necessárias em relação a `createStoreOccurrence`:
+ *  - alertas são da FÁBRICA (não de um pedido específico). Como `order_id` é
+ *    NOT NULL, ancoramos no pedido mais recente do tenant apenas para satisfazer
+ *    a FK e permitir que a tela de ocorrências (que faz join order→loja) liste o
+ *    registro. Se o tenant não tiver nenhum pedido, retornamos null (não há
+ *    como ancorar) — o cron contabiliza como "sem âncora".
+ *  - o gate de status de entrega (`assertOccurrenceCanBeOpened`) NÃO se aplica a
+ *    divergências de fábrica e é deliberadamente ignorado aqui.
+ *
+ * Dedup: a marca determinística `[auto:<alertId>@<data>]` é embutida na
+ * descrição; o chamador (cron) verifica antes de criar.
+ */
+export async function createSystemDivergenceOccurrence(
+  input: CreateSystemDivergenceOccurrenceInput,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+): Promise<StoreOccurrenceDetail | null> {
+  const marker = buildAutoOccurrenceDedupMarker(input.alertId, input.referenceDate);
+  const description = `${input.detail.trim()}\n\nGerado automaticamente pelo monitor de divergências em ${input.referenceDate}. ${marker}`;
+
+  const normalizedInput = validateStoreOccurrenceDraft({
+    problemType: `${AUTO_OCCURRENCE_PROBLEM_PREFIX} ${input.title}`.trim(),
+    quantityType: "operacional",
+    // operacional: usamos 1 como marcador (o valor informativo está em metric/descrição).
+    quantity: 1,
+    quantityUnitSnapshot: "ocorrência",
+    productNameSnapshot: input.metric.trim() || "Divergência operacional",
+    description,
+  });
+
+  // Âncora: pedido mais recente do tenant (apenas para satisfazer order_id NOT NULL).
+  const anchorResult = await supabase
+    .from("store_orders")
+    .select("id")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (anchorResult.error) {
+    throw new Error(`Failed to resolve anchor order for system occurrence: ${anchorResult.error.message}`);
+  }
+
+  const anchorOrderId = anchorResult.data?.id;
+  if (!anchorOrderId) {
+    // Sem pedidos no tenant — não há como ancorar a ocorrência. Sinaliza ao cron.
+    return null;
+  }
+
+  const createdAtIso = new Date().toISOString();
+  const nextCode = await allocateBusinessCode("OC", createdAtIso, supabase);
+  const legacyId = `occ-${crypto.randomUUID()}`;
+  const insertResult = await supabase.from("store_occurrences").insert({
+    legacy_id: legacyId,
+    code: nextCode,
+    order_id: anchorOrderId,
+    order_item_id: null,
+    product_id: null,
+    product_name_snapshot: normalizedInput.productNameSnapshot,
+    problem_type: normalizedInput.problemType,
+    quantity_type: normalizedInput.quantityType,
+    quantity: normalizedInput.quantity,
+    quantity_unit_snapshot: normalizedInput.quantityUnitSnapshot,
+    description: normalizedInput.description,
+    status: "aberta",
+    // Ação do sistema — sem profile humano vinculado.
+    opened_by_profile_id: null,
+  });
+
+  if (insertResult.error) {
+    throw new Error(`Failed to create system occurrence: ${insertResult.error.message}`);
+  }
+
+  await appendStoreOccurrenceEvent(
+    {
+      occurrenceId: legacyId,
+      type: "criacao",
+      content: `Ocorrência ${nextCode} aberta automaticamente: ${normalizedInput.problemType}.`,
+      createdByProfileId: null,
+      metadata: {
+        source: "sistema",
+        alertId: input.alertId,
+        referenceDate: input.referenceDate,
+        metric: input.metric,
+      },
+    },
+    supabase,
+  );
+
+  return getStoreOccurrenceDetail(legacyId, {}, supabase);
+}
+
 export async function updateStoreOccurrenceStatus(
   input: {
     occurrenceId: string;

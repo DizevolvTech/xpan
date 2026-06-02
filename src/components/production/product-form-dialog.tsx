@@ -47,6 +47,7 @@ import {
   preferredOperationalUnits,
 } from "@/lib/operational-units";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import { planBatches } from "@/lib/production-batches";
 import {
   buildProductFormState,
   calculateQuantityPerPackage,
@@ -318,6 +319,24 @@ export function ProductFormDialog({
     () => Math.max(0, Number((100 - formState.breakPercent).toFixed(3))),
     [formState.breakPercent],
   );
+  // 2.4-F: prévia de como o arredondamento por batida se comporta para a base
+  // econômica informada. Reaproveita planBatches() (mesma matemática da OP).
+  const salesUnit = formState.unitProfiles.sales.unit;
+  const salesUnitLabel = getOperationalUnitLabel(salesUnit);
+  const batchPreview = useMemo(() => {
+    const capacity = formState.capacityPerBatch;
+    if (!capacity || capacity <= 0) return null;
+    const totalKg = Number(formState.economicProductionKg);
+    if (!Number.isFinite(totalKg) || totalKg <= 0) return null;
+    const salesToKgFactor =
+      salesUnit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
+    return planBatches({ totalKg, capacityPerBatch: capacity, salesToKgFactor, salesUnit });
+  }, [
+    formState.capacityPerBatch,
+    formState.economicProductionKg,
+    formState.unitProfiles.sales.weightKg,
+    salesUnit,
+  ]);
   // AJ-0004 / AJ-0004.1: quantidade final precisa (sem arredondamento de unidade
   // discreta), agora consumida da fonte única em `getProductRecipeTotalsFromData`
   // (`finalFractionsQuantityPrecise`) — mesmo valor que propaga a jusante.
@@ -1735,7 +1754,7 @@ export function ProductFormDialog({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Capacidade por batida (un de venda; vazio = sem batida)</Label>
+                    <Label>Capacidade por batida (em {salesUnitLabel}; vazio = sem batida)</Label>
                     <Input
                       type="number"
                       min={0}
@@ -1748,6 +1767,45 @@ export function ProductFormDialog({
                         }))
                       }
                     />
+                    {batchPreview ? (
+                      <p className="text-xs text-muted-foreground">
+                        Base econômica ={" "}
+                        {batchPreview.batchCount === 1
+                          ? `1 batida de ${formatLocaleNumber(batchPreview.batchSizes[0])} ${batchPreview.unitLabel}.`
+                          : `${batchPreview.batchCount} batidas de ${formatLocaleNumber(
+                              batchPreview.batchSizes[0],
+                            )} ${batchPreview.unitLabel}; última com ${formatLocaleNumber(
+                              batchPreview.batchSizes[batchPreview.batchSizes.length - 1],
+                            )} ${batchPreview.unitLabel}.`}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Unidade do lote econômico</Label>
+                    <Select
+                      value={formState.economicBatchUnit ?? "none"}
+                      onValueChange={(value) =>
+                        setFormState((current) => ({
+                          ...current,
+                          economicBatchUnit:
+                            value === "none"
+                              ? null
+                              : (value as ProductionProduct["economicBatchUnit"]),
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Não definido" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Não definido</SelectItem>
+                        <SelectItem value="kg">Kg</SelectItem>
+                        <SelectItem value="forma">Forma</SelectItem>
+                        <SelectItem value="maceira">Maceira</SelectItem>
+                        <SelectItem value="pacote">Pacote</SelectItem>
+                        <SelectItem value="unidade">Unidade</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex items-end md:col-span-2">
                     <div className="flex items-center gap-2 pb-2">

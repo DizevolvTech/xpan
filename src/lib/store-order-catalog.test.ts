@@ -98,6 +98,7 @@ function buildSnapshot(
       expeditionLeadDays: 0,
         isMpiIngredient: false,
         capacityPerBatch: null,
+        economicBatchUnit: null,
         createdAt: "2026-03-17T08:00:00Z",
         updatedAt: "2026-03-17T08:00:00Z",
       },

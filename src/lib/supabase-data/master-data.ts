@@ -343,6 +343,8 @@ async function loadMasterDataSnapshot(
       row.capacity_per_batch === null || row.capacity_per_batch === undefined
         ? null
         : Number(row.capacity_per_batch),
+    economicBatchUnit:
+      (row.economic_batch_unit as ProductionProduct["economicBatchUnit"]) ?? null,
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
     expeditionLeadDays:

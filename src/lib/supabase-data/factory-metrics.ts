@@ -2,7 +2,12 @@ import "server-only";
 
 import { applyFactoryWorkflowState } from "@/lib/factory-workflow-logic";
 import { buildFactoryPlanningData } from "@/lib/order-planning";
+import type { ProductionWeekDay } from "@/lib/production-planning";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import {
+  computeFactoryAlerts,
+  type FactoryAlert,
+} from "@/lib/supabase-data/factory-alerts";
 import {
   assertTenantId,
   isSupabaseMissingSchemaError,
@@ -21,6 +26,12 @@ export interface LeadTimePerStage {
   stage: string;
   averageMinutes: number;
   samples: number;
+}
+
+export interface ThroughputPerStage {
+  stage: string;
+  itemsCount: number;
+  perDay: number;
 }
 
 export interface LineOccupancy {
@@ -46,6 +57,10 @@ export interface FactoryMetricsResult {
     perStage: LeadTimePerStage[];
     samples: number;
   };
+  throughput: {
+    perStage: ThroughputPerStage[];
+    windowDays: number;
+  };
   otif: {
     deliveredOnTime: number;
     deliveredLate: number;
@@ -61,6 +76,40 @@ export interface FactoryMetricsResult {
     total: number;
     breakdown: DeliveryFailureBreakdown[];
   };
+  // 2.3-D: produção do dia (referenceDate) — base do alerta produzido vs planejado.
+  production: {
+    scheduledKg: number;
+    producedKg: number;
+  };
+  // 2.6-D: lojas que pedem nesse dia e ainda não têm pedido para a data.
+  storesWithoutOrder: number;
+  // 2.3-D: alertas de divergência (computeFactoryAlerts — também usado em 2.6-F).
+  alerts: FactoryAlert[];
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  nao_iniciado: "Não iniciado",
+  em_preparacao: "Em preparação",
+  em_producao: "Em produção",
+  em_forno: "No forno",
+  embalando: "Embalando",
+  concluido: "Concluído",
+};
+
+// referenceDate (YYYY-MM-DD) → dia da semana sem fuso (meio-dia UTC evita slip).
+const WEEKDAY_BY_INDEX: ProductionWeekDay[] = [
+  "domingo",
+  "segunda",
+  "terca",
+  "quarta",
+  "quinta",
+  "sexta",
+  "sabado",
+];
+
+function weekdayFromIsoDate(isoDate: string): ProductionWeekDay {
+  const date = new Date(`${isoDate}T12:00:00Z`);
+  return WEEKDAY_BY_INDEX[date.getUTCDay()];
 }
 
 const STAGE_ORDER = [
@@ -273,6 +322,28 @@ export async function computeFactoryMetrics(
       : 0;
 
   // -------------------------------------------------------------------------
+  // 2.6-E Throughput por etapa: quantos itens TRANSITARAM PARA cada estágio na
+  // janela (agrupado por status_to). Reusa os mesmos eventos já carregados —
+  // sem segunda query. `perDay` normaliza pela janela para comparabilidade.
+  // -------------------------------------------------------------------------
+  const transitionsByStage = new Map<string, Set<string>>();
+  events.forEach((event) => {
+    if (!event.status_to || !event.production_item_key) return;
+    const set = transitionsByStage.get(event.status_to) ?? new Set<string>();
+    set.add(`${event.production_item_key}|${event.created_at}`);
+    transitionsByStage.set(event.status_to, set);
+  });
+
+  const throughputByStage: ThroughputPerStage[] = STAGE_ORDER.map((stage) => {
+    const itemsCount = transitionsByStage.get(stage)?.size ?? 0;
+    return {
+      stage,
+      itemsCount,
+      perDay: Number((itemsCount / windowDays).toFixed(1)),
+    };
+  }).filter((row) => row.itemsCount > 0);
+
+  // -------------------------------------------------------------------------
   // OTIF: olha as delivery_executions da janela (união: delivery_date na janela
   // OU entrega concluída na janela — ver loadDeliveryExecutionsForWindow).
   // Em frequência de pedidos por dia ≪ 1000, isso é tranquilo.
@@ -366,6 +437,45 @@ export async function computeFactoryMetrics(
       : null;
 
   // -------------------------------------------------------------------------
+  // 2.3-D Produzido vs planejado (data de referência): kg planejados = soma das
+  // linhas; kg produzidos = soma do totalKg dos itens de OP que chegaram a
+  // `concluido` (status já resolvido pelo applyFactoryWorkflowState).
+  // -------------------------------------------------------------------------
+  const scheduledKgTotal = Number(
+    Array.from(scheduledKgByLine.values())
+      .reduce((sum, kg) => sum + kg, 0)
+      .toFixed(2),
+  );
+  let producedKg = 0;
+  planning.productionOrders
+    .filter((op) => op.productionDate === input.referenceDate)
+    .forEach((op) => {
+      op.items.forEach((item) => {
+        if (item.status === "concluido") producedKg += item.totalKg;
+      });
+    });
+  producedKg = Number(producedKg.toFixed(2));
+
+  // -------------------------------------------------------------------------
+  // 2.6-D Lojas sem pedido no prazo: lojas cujos orderingDays incluem o dia da
+  // semana da data de referência mas que não têm pedido com delivery_date ==
+  // referenceDate. Reusa factoryInput.stores (snapshot de lojas ativas) +
+  // planning.orders (pedidos já carregados) — sem query nova.
+  // -------------------------------------------------------------------------
+  const referenceWeekday = weekdayFromIsoDate(input.referenceDate);
+  const storeIdsWithOrderForDate = new Set(
+    planning.orders
+      .filter((order) => order.deliveryDate === input.referenceDate)
+      .map((order) => order.storeId),
+  );
+  const storesWithoutOrder = factoryInput.stores.filter(
+    (store) =>
+      store.orderingDays.includes(referenceWeekday) &&
+      !store.orderingBlockedDays.includes(referenceWeekday) &&
+      !storeIdsWithOrderForDate.has(store.id),
+  ).length;
+
+  // -------------------------------------------------------------------------
   // Falhas de entrega: count por motivo no período.
   // -------------------------------------------------------------------------
   const failuresByReason = new Map<string, number>();
@@ -376,6 +486,21 @@ export async function computeFactoryMetrics(
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count);
 
+  // -------------------------------------------------------------------------
+  // 2.3-D Alertas de divergência — função pura reutilizável (também consumida
+  // pela tarefa 2.6-F de gatilhos automáticos).
+  // -------------------------------------------------------------------------
+  const alerts = computeFactoryAlerts({
+    scheduledKg: scheduledKgTotal,
+    producedKg,
+    leadTimePerStage: perStage,
+    averageTotalMinutes,
+    otif: { deliveredOnTime, deliveredLate, otifPercent },
+    deliveryFailuresTotal: attempts.length,
+    storesWithoutOrder,
+    stageLabels: STAGE_LABELS,
+  });
+
   return {
     referenceDate: input.referenceDate,
     windowDays,
@@ -385,6 +510,10 @@ export async function computeFactoryMetrics(
       averageTotalMinutes,
       perStage,
       samples: totalDurations.length,
+    },
+    throughput: {
+      perStage: throughputByStage,
+      windowDays,
     },
     otif: {
       deliveredOnTime,
@@ -401,5 +530,11 @@ export async function computeFactoryMetrics(
       total: attempts.length,
       breakdown: failureBreakdown,
     },
+    production: {
+      scheduledKg: scheduledKgTotal,
+      producedKg,
+    },
+    storesWithoutOrder,
+    alerts,
   };
 }

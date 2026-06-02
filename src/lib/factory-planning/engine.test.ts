@@ -385,6 +385,7 @@ test("factory planning uses operational subcategory instead of cadastral subcate
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -493,6 +494,7 @@ test("AJ-0006.1: OP sinaliza demanda consolidada abaixo do lote mínimo da fábr
     expeditionLeadDays: 0,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   });
   const schedules: WeeklyProductionSchedule[] = [
     {
@@ -608,6 +610,7 @@ test("OP de produto batido divide a demanda em batidas (enche + sobra na última
     expeditionLeadDays: 0,
     isMpiIngredient: false,
     capacityPerBatch: 100,
+    economicBatchUnit: null,
   };
   const schedules: WeeklyProductionSchedule[] = [
     {
@@ -711,6 +714,7 @@ test("production orders keep the daily schedule priority when listing products",
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
     {
       id: "product-b",
@@ -751,6 +755,7 @@ test("production orders keep the daily schedule priority when listing products",
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -890,6 +895,7 @@ test("factory planning keeps non-scheduled products out of production and expedi
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -999,6 +1005,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       expeditionLeadDays: 1,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
     {
       id: "product-2",
@@ -1039,6 +1046,7 @@ test("workflow recognizes orders as ready for expedition when items finish on di
       expeditionLeadDays: 0,
       isMpiIngredient: false,
       capacityPerBatch: null,
+      economicBatchUnit: null,
     },
   ];
   const schedules: WeeklyProductionSchedule[] = [
@@ -1206,6 +1214,7 @@ function buildPizzaScenario() {
     expeditionToKgFactor: 1,
     isMpiIngredient: true,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   };
   const pizza: ProductionProduct = {
     id: "pizza",
@@ -1247,6 +1256,7 @@ function buildPizzaScenario() {
     expeditionToKgFactor: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   };
   const schedules: WeeklyProductionSchedule[] = [
     {

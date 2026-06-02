@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, AlertOctagon, Gauge, TrendingUp } from "lucide-react";
+import { Activity, AlertOctagon, Boxes, Gauge, TrendingUp } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/shared/info-hint";
@@ -10,6 +10,12 @@ interface LeadTimePerStage {
   stage: string;
   averageMinutes: number;
   samples: number;
+}
+
+interface ThroughputPerStage {
+  stage: string;
+  itemsCount: number;
+  perDay: number;
 }
 
 interface LineOccupancy {
@@ -34,6 +40,10 @@ interface FactoryMetricsResult {
     averageTotalMinutes: number;
     perStage: LeadTimePerStage[];
     samples: number;
+  };
+  throughput: {
+    perStage: ThroughputPerStage[];
+    windowDays: number;
   };
   otif: {
     deliveredOnTime: number;
@@ -156,7 +166,10 @@ export function FactoryMetricsCard({
 }
 
 function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
-  const { leadTime, otif, occupancy, deliveryFailures } = metrics;
+  const { leadTime, throughput, otif, occupancy, deliveryFailures } = metrics;
+  const totalThroughput = throughput.perStage.reduce((sum, row) => sum + row.itemsCount, 0);
+  const concluidoThroughput =
+    throughput.perStage.find((row) => row.stage === "concluido") ?? null;
   // Sem amostras → tom NEUTRO. Evita pintar de vermelho um KPI que só está sem
   // dados (ex.: OTIF "—" sem entregas no período não é "ruim", é ausência de dado).
   const hasLeadTime = leadTime.samples > 0;
@@ -179,7 +192,7 @@ function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
         : "info";
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <MetricTile
         icon={Activity}
         title="Lead time médio"
@@ -199,6 +212,44 @@ function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
             </ul>
             <p className="mt-1 text-[11px] text-muted-foreground/80">
               Médias por etapa — não somam o total.
+            </p>
+          </>
+        ) : null}
+      </MetricTile>
+
+      <MetricTile
+        icon={Boxes}
+        title="Throughput por etapa"
+        value={
+          concluidoThroughput
+            ? `${concluidoThroughput.perDay}/dia`
+            : totalThroughput > 0
+              ? `${totalThroughput} mov.`
+              : "—"
+        }
+        helper={
+          concluidoThroughput
+            ? `${concluidoThroughput.itemsCount} concluído(s) na janela`
+            : totalThroughput > 0
+              ? "Transições de itens por etapa"
+              : "Sem movimentações no período"
+        }
+        tone={totalThroughput > 0 ? "info" : "neutral"}
+      >
+        {throughput.perStage.length > 0 ? (
+          <>
+            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+              {throughput.perStage.map((row) => (
+                <li key={row.stage} className="flex justify-between gap-2">
+                  <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
+                  <span className="font-medium text-foreground/80">
+                    {row.itemsCount} · {row.perDay}/dia
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-muted-foreground/80">
+              Itens que entraram em cada etapa na janela.
             </p>
           </>
         ) : null}

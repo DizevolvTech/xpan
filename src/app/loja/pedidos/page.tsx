@@ -68,7 +68,7 @@ import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
-import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
+import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSuggestions, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 import { findActiveWindowOrder } from "@/lib/store-order-window";
 import { buildCoveredDaysFill, sumOrderDayQuantities } from "@/lib/store-order-coverage";
@@ -329,6 +329,9 @@ export default function PedidosLojaPage() {
     shouldShowStoreSelector,
   } = useStoreScope(activeStores, profile?.allowedStoreIds);
   const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso);
+  // 2.7-C — sugestão ADVISORY de quantidade por dia da semana (média histórica).
+  // Nunca preenche o input nem altera o payload; só exibe um hint discreto.
+  const { suggestions: weekdaySuggestions } = useStoreOrderSuggestions(selectedStoreId);
   const { occurrences } = useStoreOccurrences(selectedStoreId);
   const { createOrder, isSubmitting: isCreating } = useCreateStoreOrder(() => {
     void refreshStoreOrders();
@@ -1135,6 +1138,13 @@ export default function PedidosLojaPage() {
                               Use <em>&quot;Cobrir os N dias&quot;</em> para repetir a quantidade do 1º dia
                               em todos os dias cobertos.
                             </p>
+                            <p>
+                              <strong className="text-foreground">Sugestão (~):</strong> o número
+                              discreto <span className="tabular-nums text-muted-foreground">~12</span> abaixo
+                              de uma célula é a <em>média histórica desta loja</em> para aquele dia da semana
+                              (últimas 8 semanas). É apenas uma referência — <strong>não preenche o campo</strong>{" "}
+                              nem altera o que você envia.
+                            </p>
                           </div>
                         }
                       />
@@ -1291,6 +1301,11 @@ export default function PedidosLojaPage() {
                                 // não só a coluna ativa, para a loja se programar.
                                 const canEdit = isCovered;
 
+                                // 2.7-C — média histórica ADVISORY para este produto neste dia
+                                // da semana. Apenas um hint visual; não preenche o input.
+                                const suggestedQuantity =
+                                  isCovered ? weekdaySuggestions[product.productId]?.[dayField] : undefined;
+
                                 return (
                                   <td
                                     key={`${product.id}-${dayField}`}
@@ -1306,6 +1321,14 @@ export default function PedidosLojaPage() {
                                       disabled={!canEdit || !product.available}
                                       onChange={(next) => handleQuantityChange(product.id, dayField, next)}
                                     />
+                                    {suggestedQuantity && suggestedQuantity > 0 ? (
+                                      <div
+                                        className="mt-0.5 text-right text-[10.5px] font-medium tabular-nums text-muted-foreground/80"
+                                        title={`Média histórica desta loja às ${WEEK_LABEL[dayField]} (últimas 8 semanas). Apenas sugestão — não preenche o campo.`}
+                                      >
+                                        ~{formatLocaleNumber(suggestedQuantity, { maximumFractionDigits: 0 })}
+                                      </div>
+                                    ) : null}
                                   </td>
                                 );
                                 });

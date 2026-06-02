@@ -177,7 +177,11 @@ export interface ProductionProduct {
   isMpiIngredient: boolean;
   /** Capacidade por batida na unidade de venda. null = sem batida (1 corrida). */
   capacityPerBatch: number | null;
+  /** Unidade do lote econômico (forma/maceira/pacote/unidade/kg). null = não definido. */
+  economicBatchUnit: EconomicBatchUnit | null;
 }
+
+export type EconomicBatchUnit = "kg" | "forma" | "maceira" | "pacote" | "unidade";
 
 export interface WeeklyScheduleItem {
   id: string;
@@ -541,6 +545,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-pao-forma",
@@ -606,6 +611,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: true,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-pao-doce",
@@ -674,6 +680,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-mpi-base-pudim",
@@ -741,6 +748,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: true,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-pudim-mini",
@@ -801,6 +809,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-pudim-medio",
@@ -861,6 +870,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-pudim-grande",
@@ -921,6 +931,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-brownie",
@@ -981,6 +992,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-frango-assado",
@@ -1033,6 +1045,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-lasanha",
@@ -1085,6 +1098,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-coxinha",
@@ -1137,6 +1151,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
   {
     id: "product-empada-frango",
@@ -1189,6 +1204,7 @@ export const productionProducts: ProductionProduct[] = [
     expeditionLeadDays: 1,
     isMpiIngredient: false,
     capacityPerBatch: null,
+    economicBatchUnit: null,
   },
 ];
 
