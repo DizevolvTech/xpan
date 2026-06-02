@@ -25,6 +25,7 @@ import {
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 function openPrintPage(pathname: string) {
@@ -38,6 +39,7 @@ export default function OrdemProducaoDetailsPage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
   const { planningData, isLoading, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const tryFutureDateOverride = useFutureDateOverride();
   const { snapshot } = useMasterDataSnapshot();
 
   const op = useMemo(
@@ -122,9 +124,17 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      setWorkflowError(
-        error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+      // Trava de data futura: gestor/admin podem forçar a conclusão (forceable).
+      const handled = await tryFutureDateOverride(
+        error,
+        () => updateProductionItemStatus(productionItemKey, status, { force: true }),
+        (message) => setWorkflowError(message),
       );
+      if (!handled) {
+        setWorkflowError(
+          error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+        );
+      }
     } finally {
       setPendingItemKey(null);
     }
@@ -279,45 +289,53 @@ export default function OrdemProducaoDetailsPage() {
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       <div className="space-y-2">
                         <StatusBadge status={item.status} />
-                        <div className="flex flex-wrap gap-2">
-                          {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={pendingItemKey === item.productionItemKey}
-                              onClick={() =>
-                                void handleWorkflowAction(
-                                  item.productionItemKey,
-                                  getPreviousProductionItemStatus(item.status, item.preparationStages)!,
-                                )
-                              }
-                            >
-                              {getPreviousProductionActionLabel(item.status, item.preparationStages) ??
-                                `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status, item.preparationStages)!)}`}
-                            </Button>
-                          ) : null}
-                          {getNextProductionItemStatus(item.status, item.preparationStages) ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={pendingItemKey === item.productionItemKey}
-                              onClick={() =>
-                                void handleWorkflowAction(
-                                  item.productionItemKey,
-                                  getNextProductionItemStatus(item.status, item.preparationStages)!,
-                                )
-                              }
-                            >
-                              {getNextProductionActionLabel(item.status, item.preparationStages) ??
-                                `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
-                            </Button>
-                          ) : (
-                            <span className="text-xs font-semibold text-success-foreground">
-                              Fluxo concluído
-                            </span>
-                          )}
-                        </div>
+                        {item.capacityPerBatch != null && item.capacityPerBatch > 0 ? (
+                          // Item BATIDO: status vem das batidas (geridas no Chão);
+                          // os botões de avançar/voltar seriam no-op aqui.
+                          <p className="text-xs text-muted-foreground tabular-nums">
+                            {item.batchesDone}/{item.batchCount} batidas · geridas no Chão
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={pendingItemKey === item.productionItemKey}
+                                onClick={() =>
+                                  void handleWorkflowAction(
+                                    item.productionItemKey,
+                                    getPreviousProductionItemStatus(item.status, item.preparationStages)!,
+                                  )
+                                }
+                              >
+                                {getPreviousProductionActionLabel(item.status, item.preparationStages) ??
+                                  `Voltar para ${getProductionStatusLabel(getPreviousProductionItemStatus(item.status, item.preparationStages)!)}`}
+                              </Button>
+                            ) : null}
+                            {getNextProductionItemStatus(item.status, item.preparationStages) ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={pendingItemKey === item.productionItemKey}
+                                onClick={() =>
+                                  void handleWorkflowAction(
+                                    item.productionItemKey,
+                                    getNextProductionItemStatus(item.status, item.preparationStages)!,
+                                  )
+                                }
+                              >
+                                {getNextProductionActionLabel(item.status, item.preparationStages) ??
+                                  `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
+                              </Button>
+                            ) : (
+                              <span className="text-xs font-semibold text-success-foreground">
+                                Fluxo concluído
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.sourceItemsCount}</td>

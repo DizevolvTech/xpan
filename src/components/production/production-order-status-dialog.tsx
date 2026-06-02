@@ -105,6 +105,9 @@ export function ProductionOrderStatusDialog({
                     const nextStatus = getNextProductionItemStatus(item.status, item.preparationStages);
                     const previousActionLabel = getPreviousProductionActionLabel(item.status, item.preparationStages);
                     const nextActionLabel = getNextProductionActionLabel(item.status, item.preparationStages);
+                    // Item BATIDO: status vem das batidas (geridas no Chão), não dos botões
+                    // de avançar/voltar — que seriam no-op aqui. Mostra o progresso X/N.
+                    const isBatched = item.capacityPerBatch != null && item.capacityPerBatch > 0;
                     const sourceDates = op.sourceItems.filter(
                       (sourceItem) => sourceItem.productionItemKey === item.productionItemKey,
                     );
@@ -144,31 +147,38 @@ export function ProductionOrderStatusDialog({
                           </div>
                         </td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
-                          <div className="flex justify-end gap-2">
-                            {previousStatus ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={pendingItemKey === item.productionItemKey}
-                                onClick={() => void onUpdateStatus(item.productionItemKey, previousStatus)}
-                              >
-                                {previousActionLabel ?? `Voltar para ${getProductionStatusLabel(previousStatus)}`}
-                              </Button>
-                            ) : null}
-                            {nextStatus ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={pendingItemKey === item.productionItemKey}
-                                onClick={() => void onUpdateStatus(item.productionItemKey, nextStatus)}
-                              >
-                                {nextActionLabel ?? `Avançar para ${getProductionStatusLabel(nextStatus)}`}
-                              </Button>
-                            ) : (
-                              <span className="text-xs font-semibold text-success-foreground">Fluxo concluído</span>
-                            )}
-                          </div>
+                          {isBatched ? (
+                            <div className="text-xs text-muted-foreground tabular-nums">
+                              {item.batchesDone}/{item.batchCount} batidas
+                              <span className="block text-[11px]">geridas no Chão</span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end gap-2">
+                              {previousStatus ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={pendingItemKey === item.productionItemKey}
+                                  onClick={() => void onUpdateStatus(item.productionItemKey, previousStatus)}
+                                >
+                                  {previousActionLabel ?? `Voltar para ${getProductionStatusLabel(previousStatus)}`}
+                                </Button>
+                              ) : null}
+                              {nextStatus ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={pendingItemKey === item.productionItemKey}
+                                  onClick={() => void onUpdateStatus(item.productionItemKey, nextStatus)}
+                                >
+                                  {nextActionLabel ?? `Avançar para ${getProductionStatusLabel(nextStatus)}`}
+                                </Button>
+                              ) : (
+                                <span className="text-xs font-semibold text-success-foreground">Fluxo concluído</span>
+                              )}
+                            </div>
+                          )}
                         </td>
                           </tr>
                         );

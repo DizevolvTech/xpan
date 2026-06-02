@@ -7,6 +7,7 @@ import {
   type DeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
 import { buildClientTenantCacheKey } from "@/lib/client-access-context";
+import { ReleaseOrderBlockedError, type ReleaseBlockReason } from "@/lib/use-factory-planning";
 
 export type { DeliveryChecklistState, DeliveryExecutionStatus } from "@/lib/delivery-workflow";
 
@@ -182,6 +183,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
         checklistCompletedAt?: string | null;
         force?: boolean;
         releaseReason?: string | null;
+        // Override de gestor/admin da trava de data futura (entrega).
+        forceFutureDate?: boolean;
       },
     ) => {
       const updatedAt = new Date().toISOString();
@@ -228,11 +231,14 @@ export function useDeliveryExecution(_referenceDate?: string) {
           checklistCompletedAt: options?.checklistCompletedAt,
           force: options?.force,
           releaseReason: options?.force ? options.releaseReason : undefined,
+          forceFutureDate: options?.forceFutureDate,
         }),
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        const payload = (await response.json().catch(() => null)) as
+          | { message?: string; reason?: string; forceable?: boolean }
+          | null;
         setExecutionState((current) => {
           if (!previousEntry) {
             const nextState = { ...current };
@@ -248,6 +254,15 @@ export function useDeliveryExecution(_referenceDate?: string) {
           setDeliveryExecutionCache(nextState);
           return nextState;
         });
+        // Bloqueio overridable (ex.: data futura): preserva reason/forceable para a
+        // UI poder oferecer "confirmar mesmo assim" e refazer com forceFutureDate.
+        if (response.status === 400 && payload?.reason) {
+          throw new ReleaseOrderBlockedError(
+            payload.message ?? "Entrega bloqueada",
+            payload.reason as ReleaseBlockReason,
+            payload.forceable ?? false,
+          );
+        }
         throw new Error(payload?.message ?? "Falha ao atualizar entrega");
       }
     },

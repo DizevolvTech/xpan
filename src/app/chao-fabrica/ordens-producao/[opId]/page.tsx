@@ -10,6 +10,7 @@ import { OperationalDateScopeCard } from "@/components/shared/operational-date-s
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
@@ -24,7 +25,9 @@ import {
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { getOperationalTodayKey } from "@/lib/workflow-date-guard";
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -39,6 +42,8 @@ export default function OrdemProducaoDetailsPage() {
   const { planningData, isLoading, updateProductionItemStatus, completeProductionBatch, undoProductionBatch } =
     useFactoryPlanningSnapshot(anchorDate);
   const { snapshot } = useMasterDataSnapshot();
+  const toast = useToast();
+  const tryFutureDateOverride = useFutureDateOverride();
 
   const op = useMemo(() => {
     const decoded = decodeURIComponent(opId);
@@ -113,9 +118,19 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      setWorkflowError(
-        error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+      const handled = await tryFutureDateOverride(
+        error,
+        () => updateProductionItemStatus(productionItemKey, status, { force: true }),
+        (message) => {
+          setWorkflowError(message);
+          toast.error(message);
+        },
       );
+      if (!handled) {
+        setWorkflowError(
+          error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+        );
+      }
     } finally {
       setPendingItemKey(null);
     }
@@ -127,7 +142,17 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await completeProductionBatch(productionItemKey, batchCount);
     } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : "Falha ao concluir a batida.");
+      const handled = await tryFutureDateOverride(
+        error,
+        () => completeProductionBatch(productionItemKey, batchCount, { force: true }),
+        (message) => {
+          setWorkflowError(message);
+          toast.error(message);
+        },
+      );
+      if (!handled) {
+        setWorkflowError(error instanceof Error ? error.message : "Falha ao concluir a batida.");
+      }
     } finally {
       setPendingItemKey(null);
     }
@@ -190,6 +215,14 @@ export default function OrdemProducaoDetailsPage() {
         title="Janela da OP"
         description="A OP permanece aberta pelo código, enquanto o contexto temporal acompanha o mesmo recorte global do chão de fábrica."
       />
+
+      {op.productionDate > getOperationalTodayKey() ? (
+        <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
+          Produção agendada para <strong>{op.productionDateLabel}</strong> (data futura). A conclusão
+          de batidas/produção só é liberada quando a data chegar — antes disso depende de override do
+          gestor.
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>

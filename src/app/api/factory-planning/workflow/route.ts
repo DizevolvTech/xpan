@@ -5,6 +5,7 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { OrderReleaseValidationError } from "@/lib/supabase-data/release-validation";
+import { FutureWorkflowDateError, canOverrideFutureWorkflowDate } from "@/lib/workflow-date-guard";
 import {
   cancelOrder,
   completeProductionBatch,
@@ -37,6 +38,8 @@ export async function PATCH(request: Request) {
           action: "update-production-item-status";
           productionItemKey: string;
           status: ProductionItemStatus;
+          // Override de gestor/admin: força concluir produção em data futura.
+          force?: boolean;
         }
       | {
           action: "start-production-item";
@@ -46,6 +49,8 @@ export async function PATCH(request: Request) {
           action: "complete-production-batch";
           productionItemKey: string;
           batchCount: number;
+          // Override de gestor/admin: força fechar a produção em data futura.
+          force?: boolean;
         }
       | {
           action: "undo-production-batch";
@@ -126,13 +131,39 @@ export async function PATCH(request: Request) {
         authorization.effectiveTenantId,
         createSupabaseAdminClient(),
       );
-      await updateProductionItemStatus(
-        body.productionItemKey,
-        body.status,
-        authorization.user.id,
-        authorization.effectiveTenantId,
-        supabase,
-      );
+      if (body.force === true && !canOverrideFutureWorkflowDate(authorization.user.role)) {
+        return NextResponse.json(
+          {
+            message:
+              "Apenas gestor de fábrica ou administrador podem forçar produção em data futura.",
+          },
+          { status: 403 },
+        );
+      }
+      try {
+        await updateProductionItemStatus(
+          body.productionItemKey,
+          body.status,
+          authorization.user.id,
+          authorization.effectiveTenantId,
+          supabase,
+          body.force === true,
+        );
+      } catch (error) {
+        if (error instanceof FutureWorkflowDateError) {
+          // `forceable` reflete o papel: só gestor/admin recebem a opção de forçar
+          // (o chão vê só o aviso). A UI usa isso para oferecer "forçar mesmo assim".
+          return NextResponse.json(
+            {
+              message: error.message,
+              reason: error.reason,
+              forceable: canOverrideFutureWorkflowDate(authorization.user.role),
+            },
+            { status: 400 },
+          );
+        }
+        throw error;
+      }
       invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
     }
@@ -182,13 +213,37 @@ export async function PATCH(request: Request) {
         createSupabaseAdminClient(),
       );
       if (body.action === "complete-production-batch") {
-        await completeProductionBatch(
-          body.productionItemKey,
-          body.batchCount,
-          authorization.user.id,
-          authorization.effectiveTenantId,
-          supabase,
-        );
+        if (body.force === true && !canOverrideFutureWorkflowDate(authorization.user.role)) {
+          return NextResponse.json(
+            {
+              message:
+                "Apenas gestor de fábrica ou administrador podem forçar produção em data futura.",
+            },
+            { status: 403 },
+          );
+        }
+        try {
+          await completeProductionBatch(
+            body.productionItemKey,
+            body.batchCount,
+            authorization.user.id,
+            authorization.effectiveTenantId,
+            supabase,
+            body.force === true,
+          );
+        } catch (error) {
+          if (error instanceof FutureWorkflowDateError) {
+            return NextResponse.json(
+              {
+                message: error.message,
+                reason: error.reason,
+                forceable: canOverrideFutureWorkflowDate(authorization.user.role),
+              },
+              { status: 400 },
+            );
+          }
+          throw error;
+        }
       } else {
         await undoProductionBatch(
           body.productionItemKey,
@@ -214,6 +269,10 @@ export async function PATCH(request: Request) {
         },
         { status: 400 },
       );
+    }
+    if (error instanceof FutureWorkflowDateError) {
+      // Trava de data futura: regra de negócio → 400 (não é erro de servidor).
+      return NextResponse.json({ message: error.message, reason: error.reason }, { status: 400 });
     }
     console.error("Failed to update factory workflow", error);
     const message = error instanceof Error ? error.message : "Failed to update workflow";

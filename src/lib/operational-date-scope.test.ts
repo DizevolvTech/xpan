@@ -262,6 +262,7 @@ test("factory scope keeps related OP and expedition visible for the same selecte
             batchSizes: [],
             batchUnitLabel: "Kg",
             batchesDone: 0,
+            capacityPerBatch: null,
             preparationStages: [...defaultProductPreparationStages],
             sourceItemsCount: 1,
           },

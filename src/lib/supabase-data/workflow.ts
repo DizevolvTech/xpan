@@ -26,6 +26,7 @@ import {
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
 import { recordProductionLeftover } from "@/lib/supabase-data/production-leftovers";
 import { deriveBatchStatus } from "@/lib/production-batches";
+import { assertProductionNotInFuture } from "@/lib/workflow-date-guard";
 
 export interface PersistedWorkflowState {
   releasedOrders: string[];
@@ -554,6 +555,8 @@ export async function updateProductionItemStatus(
   updatedByProfileId?: string | null,
   tenantId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  // Override de gestor: pula a trava de data futura (autorização de role é no route).
+  force = false,
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   // Chave CANÔNICA (3 partes, sem scheduleId): persistimos e validamos sempre por
@@ -599,6 +602,14 @@ export async function updateProductionItemStatus(
   // amostras de lead-time em A7.
   if (currentStatus === status) {
     return;
+  }
+
+  // Trava de DATA FUTURA: não permitir marcar produção como CONCLUÍDA antes da
+  // data de produção chegar (a data é a 1ª parte da chave canônica). Evita que um
+  // `concluido` adiantado jogue o pedido direto para "Aguardando expedição".
+  // `force` (override de gestor, autorizado no route) pula a trava.
+  if (status === "concluido" && !force) {
+    assertProductionNotInFuture(canonicalKey);
   }
 
   const upsertResult = await supabase.from("workflow_production_items").upsert(
@@ -675,6 +686,8 @@ export async function completeProductionBatch(
   updatedByProfileId?: string | null,
   tenantId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  // Override de gestor: pula a trava de data futura (autorização de role é no route).
+  force = false,
 ) {
   const updatedBy = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   const canonicalKey = canonicalProductionItemKey(productionItemKey);
@@ -693,6 +706,15 @@ export async function completeProductionBatch(
   const cap = Math.max(1, Math.floor(batchCount));
   const next = Math.min(cap, current + 1);
   if (next === current) return;
+
+  // Trava de DATA FUTURA: NENHUMA batida pode ser registrada antes da data de
+  // produção chegar. NÃO gateamos por `next >= cap` — o `batchCount` (logo o `cap`)
+  // vem do CLIENTE; um batchCount inflado faria `next < cap` pular a trava enquanto
+  // o motor, com o SEU plano autoritativo, deriva `concluido` (bypass real). Bloquear
+  // qualquer batida em data futura fecha esse vetor. `force` (gestor) pula a trava.
+  if (!force) {
+    assertProductionNotInFuture(canonicalKey);
+  }
 
   const upsertResult = await supabase.from("workflow_production_batches").upsert(
     {

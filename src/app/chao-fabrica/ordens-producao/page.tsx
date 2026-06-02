@@ -22,6 +22,7 @@ import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,7 @@ import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal
 import { hierarchyLabels } from "@/lib/production-planning";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 
@@ -102,6 +104,8 @@ export default function OrdensProducaoPage() {
     [planningSnapshot, scope],
   );
   const { snapshot } = useMasterDataSnapshot();
+  const toast = useToast();
+  const tryFutureDateOverride = useFutureDateOverride();
 
   const capacityByLineId = useMemo(
     () => new Map(snapshot.lines.map((line) => [line.id, line.capacityPerDayKg])),
@@ -400,9 +404,20 @@ export default function OrdensProducaoPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      setWorkflowError(
-        error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+      // Trava de data futura: gestor/admin podem forçar (forceable do servidor).
+      const handled = await tryFutureDateOverride(
+        error,
+        () => updateProductionItemStatus(productionItemKey, status, { force: true }),
+        (message) => {
+          setWorkflowError(message);
+          toast.error(message);
+        },
       );
+      if (!handled) {
+        setWorkflowError(
+          error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+        );
+      }
     } finally {
       setPendingItemKey(null);
     }
