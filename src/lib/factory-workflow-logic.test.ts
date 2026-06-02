@@ -63,6 +63,10 @@ test("cancelled orders remain visible in pedidos and leave production/expedition
         availableForRelease: true,
         releasedToProduction: false,
         productionStarted: false,
+        capacityPerBatch: null,
+        salesToKgFactor: 1,
+        salesUnit: "Kg",
+        batchesDone: 0,
         productionItemKey: "2026-03-19|sector-1|line-1|schedule-1|product-1",
         productionItemStatus: null,
         preparationStages: [...defaultProductPreparationStages],
@@ -202,6 +206,10 @@ test("multiple orders on the same line and day collapse into one production orde
         availableForRelease: true,
         releasedToProduction: false,
         productionStarted: false,
+        capacityPerBatch: null,
+        salesToKgFactor: 1,
+        salesUnit: "Kg",
+        batchesDone: 0,
         productionItemKey: "2026-03-20|line-pan|schedule-pan|product-pan",
         productionItemStatus: null,
         preparationStages: [...defaultProductPreparationStages],
@@ -243,6 +251,10 @@ test("multiple orders on the same line and day collapse into one production orde
         availableForRelease: true,
         releasedToProduction: false,
         productionStarted: false,
+        capacityPerBatch: null,
+        salesToKgFactor: 1,
+        salesUnit: "Kg",
+        batchesDone: 0,
         productionItemKey: "2026-03-20|line-pan|schedule-pan|product-pan-2",
         productionItemStatus: null,
         preparationStages: [...defaultProductPreparationStages],
@@ -403,6 +415,10 @@ test("productionStarted gates chão visibility: started OR advanced status, neve
         availableForRelease: true,
         releasedToProduction: false,
         productionStarted: false,
+        capacityPerBatch: null,
+        salesToKgFactor: 1,
+        salesUnit: "Kg",
+        batchesDone: 0,
         productionItemKey: "2026-03-19|line-1|product-1",
         productionItemStatus: null,
         preparationStages: [...defaultProductPreparationStages],
@@ -457,4 +473,249 @@ test("productionStarted gates chão visibility: started OR advanced status, neve
     isProductionStarted: () => true,
   });
   assert.equal(notReleased.orderItems[0]?.productionStarted, false);
+});
+
+test("resolveBatchesDone drives item status through apply→engine chain (0→nao_iniciado, 2→em_producao, 5→concluido)", () => {
+  // 456 Un × 0.11 kg/Un = 50.16 kg → planBatches({ capacityPerBatch: 100 }) = 5 batidas.
+  const buildPlanning = (): FactoryPlanningData => ({
+    referenceDate: "2026-03-18",
+    orders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        dPlusLabel: "D+1",
+        deliveryDate: "2026-03-19",
+        deliveryDateLabel: "19/03/2026",
+        productionDateLabel: "19/03/2026",
+        itemsCount: 1,
+        totalKg: 50.16,
+        opsLabel: "-",
+        releasedToProduction: false,
+        availableForRelease: true,
+        workflowProgress: 0,
+        status: "em_espera",
+      },
+    ],
+    orderItems: [
+      {
+        id: "item-1",
+        orderId: "order-1",
+        orderCode: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        baseDate: "2026-03-18",
+        deliveryDate: "2026-03-19",
+        saleDate: "2026-03-19",
+        productionDate: "2026-03-19",
+        delayed: false,
+        productId: "product-1",
+        productCode: "PR-0001",
+        productName: "Produto Batido",
+        lineId: "line-1",
+        lineName: "Linha A",
+        sectorId: "sector-1",
+        sectorName: "Setor A",
+        scheduleId: "schedule-1",
+        scheduleCode: "SL-0001",
+        scheduleName: "Linha Executora",
+        requestedQuantity: 456,
+        requestedUnit: "Un",
+        internalKg: 50.16,
+        minimumProductionKg: 0,
+        expeditionUnit: "Un",
+        expeditionQuantityRaw: 456,
+        expeditionQuantity: 456,
+        canPlan: true,
+        scheduleDayPriority: null,
+        availableForRelease: true,
+        releasedToProduction: false,
+        productionStarted: false,
+        capacityPerBatch: 100,
+        salesToKgFactor: 0.11,
+        salesUnit: "Un",
+        batchesDone: 0,
+        productionItemKey: "2026-03-19|line-1|product-1",
+        productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
+        workflowProgress: 0,
+        opCode: null,
+        status: "em_espera",
+      },
+    ],
+    productionOrders: [],
+    expedition: [],
+    expeditionItems: [],
+    productionDates: ["2026-03-19"],
+    deliveryDates: ["2026-03-19"],
+  });
+
+  const baseWorkflow = {
+    isReleased: () => true,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "nao_iniciado" as const,
+    isProductionStarted: () => true,
+  };
+
+  // 0 batidas → nao_iniciado
+  const zeroBatches = applyFactoryWorkflowState(buildPlanning(), {
+    ...baseWorkflow,
+    resolveBatchesDone: () => 0,
+  });
+  assert.equal(zeroBatches.productionOrders[0]?.items[0]?.status, "nao_iniciado");
+
+  // 2 batidas → em_producao
+  const twoBatches = applyFactoryWorkflowState(buildPlanning(), {
+    ...baseWorkflow,
+    resolveBatchesDone: () => 2,
+  });
+  assert.equal(twoBatches.productionOrders[0]?.items[0]?.status, "em_producao");
+
+  // 5 batidas (= batchCount) → concluido
+  const fiveBatches = applyFactoryWorkflowState(buildPlanning(), {
+    ...baseWorkflow,
+    resolveBatchesDone: () => 5,
+  });
+  assert.equal(fiveBatches.productionOrders[0]?.items[0]?.status, "concluido");
+});
+
+test("batched completion propagates to the ORDER and expedition side (flows to aguardando_expedicao)", () => {
+  // 456 Un × 0.11 kg/Un = 50.16 kg → planBatches({ capacityPerBatch: 100 }) = 5 batidas.
+  // Produtos batidos NÃO escrevem em workflow_production_items (resolveProductionItemStatus
+  // sempre "nao_iniciado"); o status do pedido tem que vir do derivado das batidas.
+  const buildPlanning = (): FactoryPlanningData => ({
+    referenceDate: "2026-03-18",
+    orders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        dPlusLabel: "D+1",
+        deliveryDate: "2026-03-19",
+        deliveryDateLabel: "19/03/2026",
+        productionDateLabel: "19/03/2026",
+        itemsCount: 1,
+        totalKg: 50.16,
+        opsLabel: "-",
+        releasedToProduction: false,
+        availableForRelease: true,
+        workflowProgress: 0,
+        status: "em_espera",
+      },
+    ],
+    orderItems: [
+      {
+        id: "item-1",
+        orderId: "order-1",
+        orderCode: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        baseDate: "2026-03-18",
+        deliveryDate: "2026-03-19",
+        saleDate: "2026-03-19",
+        productionDate: "2026-03-19",
+        delayed: false,
+        productId: "product-1",
+        productCode: "PR-0001",
+        productName: "Produto Batido",
+        lineId: "line-1",
+        lineName: "Linha A",
+        sectorId: "sector-1",
+        sectorName: "Setor A",
+        scheduleId: "schedule-1",
+        scheduleCode: "SL-0001",
+        scheduleName: "Linha Executora",
+        requestedQuantity: 456,
+        requestedUnit: "Un",
+        internalKg: 50.16,
+        minimumProductionKg: 0,
+        expeditionUnit: "Un",
+        expeditionQuantityRaw: 456,
+        expeditionQuantity: 456,
+        canPlan: true,
+        scheduleDayPriority: null,
+        availableForRelease: true,
+        releasedToProduction: false,
+        productionStarted: false,
+        capacityPerBatch: 100,
+        salesToKgFactor: 0.11,
+        salesUnit: "Un",
+        batchesDone: 0,
+        productionItemKey: "2026-03-19|line-1|product-1",
+        productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
+        workflowProgress: 0,
+        opCode: null,
+        status: "em_espera",
+      },
+    ],
+    productionOrders: [],
+    expedition: [
+      {
+        id: "exp-1",
+        orderId: "order-1",
+        orderCode: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        deliveryDate: "2026-03-19",
+        deliveryDateLabel: "19/03/2026",
+        totalKg: 50.16,
+        itemsCount: 1,
+        itemsSummary: "1 item",
+        releasedToProduction: false,
+        workflowProgress: 0,
+        status: "em_espera",
+        items: [
+          {
+            itemId: "item-1",
+            productId: "product-1",
+            productCode: "PR-0001",
+            productName: "Produto Batido",
+            requestedQuantity: 456,
+            requestedUnit: "Un",
+            internalKg: 50.16,
+            expeditionQuantityRaw: 456,
+            expeditionQuantity: 456,
+            expeditionUnit: "Un",
+            productionDate: "2026-03-19",
+            saleDate: "2026-03-19",
+            workflowProgress: 0,
+          },
+        ],
+      },
+    ],
+    expeditionItems: [],
+    productionDates: ["2026-03-19"],
+    deliveryDates: ["2026-03-19"],
+  });
+
+  const baseWorkflow = {
+    isReleased: () => true,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "nao_iniciado" as const,
+  };
+
+  // 0 batidas → pedido NÃO está pronto p/ expedição.
+  const zeroBatches = applyFactoryWorkflowState(buildPlanning(), {
+    ...baseWorkflow,
+    resolveBatchesDone: () => 0,
+  });
+  assert.notEqual(zeroBatches.orders[0]?.status, "aguardando_expedicao");
+  assert.equal(zeroBatches.orders[0]?.status, "agendado");
+  assert.notEqual(zeroBatches.expedition[0]?.status, "aguardando_expedicao");
+
+  // 5 batidas (= batchCount) → pedido fecha 100% e flui p/ expedição.
+  const fiveBatches = applyFactoryWorkflowState(buildPlanning(), {
+    ...baseWorkflow,
+    resolveBatchesDone: () => 5,
+  });
+  assert.equal(fiveBatches.orders[0]?.status, "aguardando_expedicao");
+  assert.equal(fiveBatches.orderItems[0]?.productionItemStatus, "concluido");
+  assert.equal(fiveBatches.expedition[0]?.status, "aguardando_expedicao");
 });

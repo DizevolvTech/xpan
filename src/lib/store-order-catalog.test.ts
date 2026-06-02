@@ -97,6 +97,7 @@ function buildSnapshot(
         expeditionToKgFactor: 1,
       expeditionLeadDays: 0,
         isMpiIngredient: false,
+        capacityPerBatch: null,
         createdAt: "2026-03-17T08:00:00Z",
         updatedAt: "2026-03-17T08:00:00Z",
       },

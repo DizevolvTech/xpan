@@ -255,6 +255,12 @@ function buildMpiPlannedItem(params: {
     availableForRelease: parent.availableForRelease,
     releasedToProduction: parent.releasedToProduction,
     productionStarted: parent.productionStarted,
+    capacityPerBatch: mpiProduct.capacityPerBatch,
+    // Fator/unidade do PRÓPRIO produto MPI (a capacidade acima é na unidade dele),
+    // senão o split usaria a conversão do pai e erraria a contagem de batidas.
+    salesToKgFactor: mpiProduct.salesToKgFactor,
+    salesUnit: mpiProduct.salesUnit,
+    batchesDone: parent.batchesDone,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
     preparationStages: normalizeProductPreparationStages(mpiProduct.preparationStages),
@@ -333,6 +339,10 @@ function buildMixedIngredientPlannedItem(params: {
     availableForRelease: parent.availableForRelease,
     releasedToProduction: parent.releasedToProduction,
     productionStarted: parent.productionStarted,
+    capacityPerBatch: null,
+    salesToKgFactor: parent.salesToKgFactor,
+    salesUnit: parent.salesUnit,
+    batchesDone: parent.batchesDone,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
     // Ingredientes não definem etapas de preparo → usa o default normalizado.

@@ -1733,6 +1733,21 @@ export function ProductFormDialog({
                       }
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label>Capacidade por batida (un de venda; vazio = sem batida)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={formState.capacityPerBatch ?? ""}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          capacityPerBatch:
+                            event.target.value === "" ? null : Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </div>
                   <div className="flex items-end md:col-span-2">
                     <div className="flex items-center gap-2 pb-2">
                       <Checkbox

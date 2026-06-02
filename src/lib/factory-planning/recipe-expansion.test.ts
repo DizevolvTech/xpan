@@ -72,6 +72,7 @@ function makePizzaProduct(): ProductionProduct {
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
     isMpiIngredient: false,
+    capacityPerBatch: null,
   } as ProductionProduct;
 }
 
@@ -148,6 +149,7 @@ function makeMpiProduct(overrides: Partial<ProductionProduct> = {}): ProductionP
     expeditionUnit: "Kg",
     expeditionToKgFactor: 1,
     isMpiIngredient: true,
+    capacityPerBatch: null,
     ...overrides,
   } as ProductionProduct;
 }
@@ -187,6 +189,10 @@ function makePlannedItem(overrides: Partial<PlannedOrderItem> = {}): PlannedOrde
     availableForRelease: true,
     releasedToProduction: false,
     productionStarted: false,
+    capacityPerBatch: null,
+    salesToKgFactor: 1,
+    salesUnit: "Kg",
+    batchesDone: 0,
     productionItemKey: "2026-05-20|line-1|schedule-1|pizza",
     productionItemStatus: "nao_iniciado",
     preparationStages: [],

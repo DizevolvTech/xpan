@@ -24,6 +24,8 @@ const tenantOwnedTables = new Set([
   "store_order_items",
   "workflow_order_releases",
   "workflow_production_items",
+  "workflow_production_starts",
+  "workflow_production_batches",
   "delivery_executions",
   "store_occurrences",
   "store_order_events",

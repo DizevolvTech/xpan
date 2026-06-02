@@ -339,6 +339,10 @@ async function loadMasterDataSnapshot(
     validityDays: row.validity_days,
     minimumProductionKg: Number(row.minimum_production_kg),
     economicProductionKg: Number(row.economic_production_kg),
+    capacityPerBatch:
+      row.capacity_per_batch === null || row.capacity_per_batch === undefined
+        ? null
+        : Number(row.capacity_per_batch),
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
     expeditionLeadDays:

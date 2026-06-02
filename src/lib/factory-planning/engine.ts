@@ -28,6 +28,7 @@ import type {
   StoreProfile,
 } from "@/lib/factory-planning/types";
 import { getScheduleItemDayPriority } from "@/lib/production-data-utils";
+import { planBatches, deriveBatchStatus } from "@/lib/production-batches";
 import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { getProductionStatusProgress, normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { expandRecipeIntoItems } from "@/lib/factory-planning/recipe-expansion";
@@ -643,6 +644,10 @@ function buildPlannedItems(
           availableForRelease: canPlan,
           releasedToProduction: false,
           productionStarted: false,
+          capacityPerBatch: product.capacityPerBatch,
+          salesToKgFactor: product.salesToKgFactor,
+          salesUnit: product.salesUnit,
+          batchesDone: 0,
           productionItemKey,
           productionItemStatus: canPlan ? "nao_iniciado" : null,
           preparationStages: normalizeProductPreparationStages(product.preparationStages),
@@ -679,7 +684,7 @@ export function buildProductionOrdersFromPlannedItems(
       scheduleName: string;
       orderCodes: Set<string>;
       orderIds: Set<string>;
-      items: Map<string, ProductionOrderItem>;
+      items: Map<string, ProductionOrderItem & { capacityPerBatch: number | null; salesToKgFactor: number }>;
       sourceItems: ProductionOrderSourceItem[];
       totalKg: number;
       releasedToProduction: boolean;
@@ -708,7 +713,7 @@ export function buildProductionOrdersFromPlannedItems(
           scheduleName: item.scheduleName ?? "Sem linha",
           orderCodes: new Set<string>(),
           orderIds: new Set<string>(),
-          items: new Map<string, ProductionOrderItem>(),
+          items: new Map<string, ProductionOrderItem & { capacityPerBatch: number | null; salesToKgFactor: number }>(),
           sourceItems: [],
           totalKg: 0,
           releasedToProduction: false,
@@ -739,6 +744,12 @@ export function buildProductionOrdersFromPlannedItems(
           status: item.productionItemStatus ?? "nao_iniciado",
           preparationStages: item.preparationStages,
           sourceItemsCount: 0,
+          batchCount: 1,
+          batchSizes: [],
+          batchUnitLabel: item.salesUnit,
+          batchesDone: item.batchesDone,
+          capacityPerBatch: item.capacityPerBatch,
+          salesToKgFactor: item.salesToKgFactor,
         });
       }
 
@@ -792,7 +803,48 @@ export function buildProductionOrdersFromPlannedItems(
     const code = `OP-${group.productionDate.replaceAll("-", "").slice(2)}-${String(index + 1).padStart(3, "0")}`;
     opCodeByPlanningKey.set(group.planningKey, code);
 
-    const progress = getAverageProgress(group.sourceItems);
+    // Monta os itens já com plano de batidas + status/progresso efetivo.
+    const builtItems = Array.from(group.items.values())
+      .map((opItem) => {
+        const plan = planBatches({
+          totalKg: opItem.totalKg,
+          capacityPerBatch: opItem.capacityPerBatch,
+          salesToKgFactor: opItem.salesToKgFactor,
+          salesUnit: opItem.batchUnitLabel,
+        });
+        const isBatched = opItem.capacityPerBatch != null && opItem.capacityPerBatch > 0;
+        const batchesDone = Math.min(opItem.batchesDone, plan.batchCount);
+        const status = isBatched ? deriveBatchStatus(batchesDone, plan.batchCount) : opItem.status;
+        const progress = isBatched
+          ? Math.round((batchesDone / plan.batchCount) * 100)
+          : opItem.progress;
+        return {
+          ...opItem,
+          belowMinimum: opItem.minimumProductionKg > 0 && opItem.totalKg < opItem.minimumProductionKg,
+          batchCount: plan.batchCount,
+          batchSizes: plan.batchSizes,
+          batchUnitLabel: plan.unitLabel,
+          batchesDone,
+          status,
+          progress,
+        };
+      })
+      .sort((a, b) => {
+        const bySequence =
+          (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
+          (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
+        if (bySequence !== 0) {
+          return bySequence;
+        }
+        return a.productCode.localeCompare(b.productCode);
+      });
+
+    const progress =
+      builtItems.length === 0
+        ? 0
+        : Number(
+            (builtItems.reduce((sum, it) => sum + it.progress, 0) / builtItems.length).toFixed(1),
+          );
     const status: OrderStatus =
       progress >= 100
         ? "aguardando_expedicao"
@@ -822,21 +874,10 @@ export function buildProductionOrdersFromPlannedItems(
       progress,
       status,
       orderCodes: Array.from(group.orderCodes).sort((a, b) => a.localeCompare(b)),
-      items: Array.from(group.items.values())
-        .map((opItem) => ({
-          ...opItem,
-          // AJ-0006.1: demanda consolidada (soma de todas as lojas) abaixo do lote mínimo.
-          belowMinimum: opItem.minimumProductionKg > 0 && opItem.totalKg < opItem.minimumProductionKg,
-        }))
-        .sort((a, b) => {
-          const bySequence =
-            (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -
-            (b.productionSequence ?? Number.MAX_SAFE_INTEGER);
-          if (bySequence !== 0) {
-            return bySequence;
-          }
-          return a.productCode.localeCompare(b.productCode);
-        }),
+      // Remove os campos auxiliares de batida (só usados p/ derivar o plano) do
+      // ProductionOrderItem público.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      items: builtItems.map(({ capacityPerBatch, salesToKgFactor, ...rest }) => rest),
       sourceItems: group.sourceItems.sort((a, b) => {
         const bySequence =
           (a.productionSequence ?? Number.MAX_SAFE_INTEGER) -

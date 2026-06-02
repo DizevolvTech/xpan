@@ -72,9 +72,11 @@ export function applyFactoryWorkflowState(
     // testes do motor) podem omitir — `productionStarted` então só é true quando o
     // status já avançou (compat: OPs em andamento nunca somem do Chão).
     isProductionStarted?: (itemKey: string | null) => boolean;
+    resolveBatchesDone?: (itemKey: string | null) => number;
   },
 ): FactoryPlanningData {
   const isProductionStarted = workflow.isProductionStarted ?? (() => false);
+  const resolveBatchesDone = workflow.resolveBatchesDone ?? (() => 0);
   const orderItems = data.orderItems.map((item) => {
     if (workflow.isCancelled(item.orderId)) {
       return {
@@ -83,6 +85,7 @@ export function applyFactoryWorkflowState(
         productionStarted: false,
         productionItemStatus: null,
         workflowProgress: 0,
+        batchesDone: 0,
         opCode: null,
         status: "cancelado" as OrderStatus,
       };
@@ -95,6 +98,7 @@ export function applyFactoryWorkflowState(
         productionStarted: false,
         productionItemStatus: null,
         workflowProgress: 0,
+        batchesDone: 0,
         opCode: null,
         status: "em_espera" as OrderStatus,
       };
@@ -108,6 +112,7 @@ export function applyFactoryWorkflowState(
         productionStarted: false,
         productionItemStatus: "nao_iniciado" as ProductionItemStatus,
         workflowProgress: 0,
+        batchesDone: 0,
         opCode: null,
         status: "em_espera" as OrderStatus,
       };
@@ -135,6 +140,7 @@ export function applyFactoryWorkflowState(
       productionStarted,
       productionItemStatus,
       workflowProgress,
+      batchesDone: resolveBatchesDone(item.productionItemKey),
       status,
     };
   });
@@ -145,13 +151,42 @@ export function applyFactoryWorkflowState(
     data.referenceDate,
   );
 
+  // O motor já derivou status/progress por batida (batchesDone vs batchCount) em
+  // cada ProductionOrderItem. Indexa por productionItemKey para propagar de volta
+  // ao lado do pedido (produtos batidos NÃO escrevem em workflow_production_items).
+  const opItemDerived = new Map<string, { status: ProductionItemStatus; progress: number }>();
+  for (const op of productionOrders) {
+    for (const opItem of op.items) {
+      opItemDerived.set(opItem.productionItemKey, { status: opItem.status, progress: opItem.progress });
+    }
+  }
+
   const orderItemsWithOpCodes = orderItems.map((item) => {
     const planningKey = item.productionDate
       ? [item.productionDate, item.sectorId, item.lineId, item.scheduleId ?? "sem-linha"].join("|")
       : null;
+    const opCode = planningKey ? opCodeByPlanningKey.get(planningKey) ?? null : null;
+    // Para itens batidos, o status/progress canônico vem do motor (derivado das
+    // batidas), não de workflow_production_items — sobrescreve o lado do pedido.
+    const isBatched = item.capacityPerBatch != null && item.capacityPerBatch > 0;
+    const derived = isBatched && item.productionItemKey ? opItemDerived.get(item.productionItemKey) : undefined;
+    if (derived) {
+      return {
+        ...item,
+        opCode,
+        productionItemStatus: derived.status,
+        workflowProgress: derived.progress,
+        status:
+          derived.status === "concluido"
+            ? ("aguardando_expedicao" as OrderStatus)
+            : derived.progress > 0
+              ? ("em_producao" as OrderStatus)
+              : ("agendado" as OrderStatus),
+      };
+    }
     return {
       ...item,
-      opCode: planningKey ? opCodeByPlanningKey.get(planningKey) ?? null : null,
+      opCode,
     };
   });
 

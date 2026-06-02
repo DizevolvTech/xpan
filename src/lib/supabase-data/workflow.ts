@@ -23,6 +23,7 @@ import {
   assertPlanningAllowsRelease,
 } from "@/lib/supabase-data/release-validation";
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
+import { deriveBatchStatus } from "@/lib/production-batches";
 
 export interface PersistedWorkflowState {
   releasedOrders: string[];
@@ -33,6 +34,8 @@ export interface PersistedWorkflowState {
   // coluna "Em produção" do gestor; iniciar é o que faz a OP aparecer no quadro
   // do Chão (1ª coluna), mantendo o item em `nao_iniciado`.
   productionStartedKeys: string[];
+  /** Mapa production_item_key canônica → nº de batidas concluídas. */
+  productionBatchesDone: Record<string, number>;
 }
 
 /**
@@ -90,10 +93,11 @@ export function foldProductionItemStatuses(
 export async function getPersistedWorkflowState(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<PersistedWorkflowState> {
-  const [releasesResult, statusesResult, startsResult, ordersResult] = await Promise.all([
+  const [releasesResult, statusesResult, startsResult, batchesResult, ordersResult] = await Promise.all([
     supabase.from("workflow_order_releases").select("order_id"),
     supabase.from("workflow_production_items").select("production_item_key, status"),
     supabase.from("workflow_production_starts").select("production_item_key"),
+    supabase.from("workflow_production_batches").select("production_item_key, batches_done"),
     supabase.from("store_orders").select("id, legacy_id, management_status"),
   ]);
 
@@ -115,6 +119,9 @@ export async function getPersistedWorkflowState(
   const startRows = isSupabaseMissingSchemaError(startsResult.error, ["workflow_production_starts"])
     ? []
     : assertSupabaseResult(startsResult, "Failed to load workflow production starts");
+  const batchRows = isSupabaseMissingSchemaError(batchesResult.error, ["workflow_production_batches"])
+    ? []
+    : assertSupabaseResult(batchesResult, "Failed to load workflow production batches");
 
   const orderLegacyById = new Map(orderRows.map((row) => [row.id, row.legacy_id ?? row.id]));
 
@@ -130,6 +137,11 @@ export async function getPersistedWorkflowState(
     productionStartedKeys: startRows
       .map((row) => canonicalProductionItemKey(row.production_item_key))
       .filter((value, index, all) => all.indexOf(value) === index),
+    productionBatchesDone: batchRows.reduce<Record<string, number>>((acc, row) => {
+      const key = canonicalProductionItemKey(row.production_item_key);
+      acc[key] = Math.max(acc[key] ?? 0, Number(row.batches_done) || 0);
+      return acc;
+    }, {}),
   };
 }
 
@@ -223,6 +235,8 @@ async function appendOrderEventsForProductionItem(
       itemKey ? workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado" : null,
     isProductionStarted: (itemKey) =>
       itemKey ? workflowState.productionStartedKeys.includes(canonicalProductionItemKey(itemKey)) : false,
+    resolveBatchesDone: (itemKey) =>
+      itemKey ? workflowState.productionBatchesDone[canonicalProductionItemKey(itemKey)] ?? 0 : 0,
   });
 
   const ordersReadyForExpedition = uniqueOrders.filter((orderId) => {
@@ -589,6 +603,103 @@ export async function startProductionItem(
   }
 }
 
+/**
+ * Conclui UMA batida do item (incrementa batches_done). `batchCount` é o teto
+ * (do plano derivado, enviado pela UI) — idempotente: não passa do total.
+ */
+export async function completeProductionBatch(
+  productionItemKey: string,
+  batchCount: number,
+  updatedByProfileId?: string | null,
+  tenantId?: string | null,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const updatedBy = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
+  const canonicalKey = canonicalProductionItemKey(productionItemKey);
+  const currentResult = await supabase
+    .from("workflow_production_batches")
+    .select("batches_done")
+    .eq("production_item_key", canonicalKey)
+    .maybeSingle();
+  if (
+    currentResult.error &&
+    !isSupabaseMissingSchemaError(currentResult.error, ["workflow_production_batches"])
+  ) {
+    throw new Error(`Failed to load production batches: ${currentResult.error.message}`);
+  }
+  const current = Number(currentResult.data?.batches_done ?? 0);
+  const cap = Math.max(1, Math.floor(batchCount));
+  const next = Math.min(cap, current + 1);
+  if (next === current) return;
+
+  const upsertResult = await supabase.from("workflow_production_batches").upsert(
+    {
+      production_item_key: canonicalKey,
+      batches_done: next,
+      updated_at: new Date().toISOString(),
+      updated_by_profile_id: updatedBy,
+    },
+    { onConflict: "production_item_key" },
+  );
+  if (upsertResult.error) {
+    throw new Error(`Failed to complete production batch: ${upsertResult.error.message}`);
+  }
+
+  // Produtos batidos não escrevem em workflow_production_items, então a transição
+  // do status DERIVADO (das batidas) precisa disparar os mesmos eventos que o
+  // updateProductionItemStatus dispara: timeline da OP, evento de loja e — quando
+  // o pedido fecha 100% (concluido → aguardando_expedicao) — seed de
+  // delivery_executions + aviso "produção finalizada". Só dispara em transições
+  // reais: 1ª batida (nao_iniciado→em_producao) e última (em_producao→concluido);
+  // batidas intermediárias mantêm "em_producao" → sem ruído.
+  const before = deriveBatchStatus(current, cap);
+  const after = deriveBatchStatus(next, cap);
+  if (tenantId && before !== after) {
+    await appendOrderEventsForProductionItem(canonicalKey, after, before, updatedByProfileId, tenantId, supabase);
+  }
+}
+
+/**
+ * Desfaz uma batida (decrementa, piso 0). Para corrigir engano.
+ * NÃO dispara seeding/eventos: desfazer é uma correção, mantém-se contador-only.
+ */
+export async function undoProductionBatch(
+  productionItemKey: string,
+  updatedByProfileId?: string | null,
+  tenantId?: string | null,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+) {
+  const updatedBy = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
+  const canonicalKey = canonicalProductionItemKey(productionItemKey);
+  const currentResult = await supabase
+    .from("workflow_production_batches")
+    .select("batches_done")
+    .eq("production_item_key", canonicalKey)
+    .maybeSingle();
+  if (
+    currentResult.error &&
+    !isSupabaseMissingSchemaError(currentResult.error, ["workflow_production_batches"])
+  ) {
+    throw new Error(`Failed to load production batches: ${currentResult.error.message}`);
+  }
+  const current = Number(currentResult.data?.batches_done ?? 0);
+  const next = Math.max(0, current - 1);
+  if (next === current) return;
+
+  const upsertResult = await supabase.from("workflow_production_batches").upsert(
+    {
+      production_item_key: canonicalKey,
+      batches_done: next,
+      updated_at: new Date().toISOString(),
+      updated_by_profile_id: updatedBy,
+    },
+    { onConflict: "production_item_key" },
+  );
+  if (upsertResult.error) {
+    throw new Error(`Failed to undo production batch: ${upsertResult.error.message}`);
+  }
+}
+
 export interface AutoReleaseResult {
   released: Array<{ orderId: string; orderCode: string }>;
   skipped: Array<{ orderId: string; orderCode: string; reason: string }>;
@@ -634,6 +745,8 @@ export async function autoReleaseEligibleOrders(
       itemKey ? workflowState.productionItemStatuses[itemKey] ?? "nao_iniciado" : null,
     isProductionStarted: (itemKey) =>
       itemKey ? workflowState.productionStartedKeys.includes(canonicalProductionItemKey(itemKey)) : false,
+    resolveBatchesDone: (itemKey) =>
+      itemKey ? workflowState.productionBatchesDone[canonicalProductionItemKey(itemKey)] ?? 0 : 0,
   });
 
   const result: AutoReleaseResult = { released: [], skipped: [], failed: [] };
