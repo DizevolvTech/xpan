@@ -6,7 +6,7 @@ import { invalidateDeliveryExecutionCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions, updateDeliveryExecution } from "@/lib/supabase-data/delivery";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
-import { FutureWorkflowDateError } from "@/lib/workflow-date-guard";
+import { FutureWorkflowDateError, canOverrideFutureWorkflowDate } from "@/lib/workflow-date-guard";
 
 function isClientValidationError(message: string) {
   const normalized = message.toLowerCase();
@@ -77,9 +77,19 @@ export async function PATCH(request: Request) {
       checklistCompletedAt?: string | null;
       force?: boolean;
       releaseReason?: string | null;
+      // Override DEDICADO da trava de data futura (separado do `force` de checklist).
+      forceFutureDate?: boolean;
     };
 
     const wantsForce = body.force === true;
+    const wantsForceFutureDate = body.forceFutureDate === true;
+    if (wantsForceFutureDate && !canOverrideFutureWorkflowDate(authorization.user.role)) {
+      // Role decidida no servidor: só gestor/admin forçam entrega em data futura.
+      return NextResponse.json(
+        { message: "Apenas gestor de fábrica ou administrador podem forçar entrega em data futura." },
+        { status: 403 },
+      );
+    }
     if (wantsForce) {
       // Override de segurança: liberar a entrada na entrega com checklist
       // incompleto é um AFROUXAMENTO de trava. A decisão de QUEM pode forçar é
@@ -109,6 +119,7 @@ export async function PATCH(request: Request) {
         tenantId: authorization.effectiveTenantId,
         force: wantsForce,
         releaseReason: wantsForce ? body.releaseReason : null,
+        forceFutureDate: wantsForceFutureDate,
       },
       authorization.user.id,
       supabase,
@@ -117,8 +128,16 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof FutureWorkflowDateError) {
-      // Trava de data futura: regra de negócio → 400.
-      return NextResponse.json({ message: error.message, reason: error.reason }, { status: 400 });
+      // Trava de data futura: regra de negócio → 400. `forceable` reflete o papel
+      // (só gestor/admin) para a UI poder oferecer "confirmar mesmo assim".
+      return NextResponse.json(
+        {
+          message: error.message,
+          reason: error.reason,
+          forceable: canOverrideFutureWorkflowDate(authorization.user.role),
+        },
+        { status: 400 },
+      );
     }
     console.error("Failed to update delivery execution", error);
     const message =

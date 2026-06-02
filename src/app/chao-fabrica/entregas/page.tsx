@@ -14,7 +14,9 @@ import { OperationFiltersCard } from "@/components/shared/operation-filters-card
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
+import { ReleaseOrderBlockedError } from "@/lib/use-factory-planning";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -117,6 +119,7 @@ export default function EntregasPage() {
   );
   const deliveryExecutionState = useDeliveryExecution();
   const toast = useToast();
+  const confirm = useConfirm();
   const [attemptDialogRow, setAttemptDialogRow] = useState<DeliveryRow | null>(null);
   // Linha com transição de entrega em voo — desabilita o botão e evita
   // disparos concorrentes. Chave: orderId.
@@ -131,16 +134,44 @@ export default function EntregasPage() {
       try {
         await deliveryExecutionState.updateExecution(orderId, nextStatus);
       } catch (transitionError) {
-        const message =
-          transitionError instanceof Error
-            ? transitionError.message
-            : "Falha ao atualizar a entrega.";
-        toast.error(message, { title: "Não foi possível atualizar a entrega" });
+        // Trava de data futura na entrega: gestor/admin podem confirmar mesmo assim
+        // (forceable vem do servidor). Refaz com forceFutureDate: true.
+        if (
+          transitionError instanceof ReleaseOrderBlockedError &&
+          transitionError.forceable &&
+          transitionError.reason === "delivery_in_future"
+        ) {
+          const confirmed = await confirm({
+            title: "Confirmar entrega em data futura?",
+            description: transitionError.message,
+            tone: "default",
+            confirmLabel: "Confirmar mesmo assim",
+            cancelLabel: "Cancelar",
+          });
+          if (confirmed) {
+            try {
+              await deliveryExecutionState.updateExecution(orderId, nextStatus, {
+                forceFutureDate: true,
+              });
+            } catch (forceError) {
+              toast.error(
+                forceError instanceof Error ? forceError.message : "Falha ao atualizar a entrega.",
+                { title: "Não foi possível atualizar a entrega" },
+              );
+            }
+          }
+        } else {
+          const message =
+            transitionError instanceof Error
+              ? transitionError.message
+              : "Falha ao atualizar a entrega.";
+          toast.error(message, { title: "Não foi possível atualizar a entrega" });
+        }
       } finally {
         setPendingTransitionOrderId(null);
       }
     },
-    [deliveryExecutionState, pendingTransitionOrderId, toast],
+    [confirm, deliveryExecutionState, pendingTransitionOrderId, toast],
   );
 
   // AJ-A8: roteirização real. Constrói StoreProfile[] a partir do master-data

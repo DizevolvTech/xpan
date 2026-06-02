@@ -394,6 +394,9 @@ export async function updateDeliveryExecution(
     tenantId?: string | null;
     force?: boolean;
     releaseReason?: string | null;
+    // Override de gestor/admin da TRAVA de data futura (separado do `force` de
+    // checklist): pula assertDeliveryNotInFuture ao marcar `entregue`.
+    forceFutureDate?: boolean;
   } = {},
   updatedByProfileId?: string | null,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
@@ -406,9 +409,10 @@ export async function updateDeliveryExecution(
   });
 
   // Trava de DATA FUTURA: não permitir marcar como ENTREGUE antes da data de
-  // entrega agendada do pedido (evita entregas registradas em data futura).
-  // `options.force` (override de gestor/admin, autorizado no route) pula a trava.
-  if (status === "entregue" && !options.force) {
+  // entrega agendada do pedido. Só o override DEDICADO (`forceFutureDate`, de
+  // gestor/admin, autorizado no route) pula a trava — o `force` de checklist NÃO
+  // a desliga (concerns separados).
+  if (status === "entregue" && !options.forceFutureDate) {
     assertDeliveryNotInFuture(orderRow.delivery_date);
   }
 
