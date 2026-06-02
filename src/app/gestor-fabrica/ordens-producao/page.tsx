@@ -42,6 +42,7 @@ import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal
 import { hierarchyLabels } from "@/lib/production-planning";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 
@@ -150,6 +151,7 @@ export default function OrdensProducaoPage() {
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
   const { planningData: planningSnapshot, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const tryFutureDateOverride = useFutureDateOverride();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -621,9 +623,17 @@ export default function OrdensProducaoPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      setWorkflowError(
-        error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+      // Trava de data futura: gestor/admin podem forçar a conclusão (forceable).
+      const handled = await tryFutureDateOverride(
+        error,
+        () => updateProductionItemStatus(productionItemKey, status, { force: true }),
+        (message) => setWorkflowError(message),
       );
+      if (!handled) {
+        setWorkflowError(
+          error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+        );
+      }
     } finally {
       setPendingItemKey(null);
     }

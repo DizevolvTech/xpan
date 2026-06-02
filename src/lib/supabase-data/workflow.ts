@@ -707,10 +707,12 @@ export async function completeProductionBatch(
   const next = Math.min(cap, current + 1);
   if (next === current) return;
 
-  // Trava de DATA FUTURA: a batida que FECHA a produção (next >= cap → status
-  // derivado `concluido`) não pode ser registrada antes da data de produção chegar.
-  // `force` (override de gestor, autorizado no route) pula a trava.
-  if (next >= cap && !force) {
+  // Trava de DATA FUTURA: NENHUMA batida pode ser registrada antes da data de
+  // produção chegar. NÃO gateamos por `next >= cap` — o `batchCount` (logo o `cap`)
+  // vem do CLIENTE; um batchCount inflado faria `next < cap` pular a trava enquanto
+  // o motor, com o SEU plano autoritativo, deriva `concluido` (bypass real). Bloquear
+  // qualquer batida em data futura fecha esse vetor. `force` (gestor) pula a trava.
+  if (!force) {
     assertProductionNotInFuture(canonicalKey);
   }
 

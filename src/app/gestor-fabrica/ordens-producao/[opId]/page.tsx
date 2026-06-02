@@ -25,6 +25,7 @@ import {
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 function openPrintPage(pathname: string) {
@@ -38,6 +39,7 @@ export default function OrdemProducaoDetailsPage() {
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
   const { planningData, isLoading, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const tryFutureDateOverride = useFutureDateOverride();
   const { snapshot } = useMasterDataSnapshot();
 
   const op = useMemo(
@@ -122,9 +124,17 @@ export default function OrdemProducaoDetailsPage() {
     try {
       await updateProductionItemStatus(productionItemKey, status);
     } catch (error) {
-      setWorkflowError(
-        error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+      // Trava de data futura: gestor/admin podem forçar a conclusão (forceable).
+      const handled = await tryFutureDateOverride(
+        error,
+        () => updateProductionItemStatus(productionItemKey, status, { force: true }),
+        (message) => setWorkflowError(message),
       );
+      if (!handled) {
+        setWorkflowError(
+          error instanceof Error ? error.message : "Falha ao atualizar o estágio operacional.",
+        );
+      }
     } finally {
       setPendingItemKey(null);
     }
