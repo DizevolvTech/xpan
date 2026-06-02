@@ -10,6 +10,7 @@ import {
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
 import { canonicalProductionItemKey, getPersistedWorkflowState } from "@/lib/supabase-data/workflow";
+import { getPersistedDeliveryExecutions } from "@/lib/supabase-data/delivery";
 
 const FACTORY_PLANNING_CACHE_TTL_MS = 10_000;
 
@@ -31,13 +32,14 @@ export async function getFactoryPlanningSnapshot(
   );
 
   return getCachedServerData(cacheKey, FACTORY_PLANNING_CACHE_TTL_MS, async () => {
-    const [factoryInput, workflowState] = await Promise.all([
+    const [factoryInput, workflowState, deliveryExecutions] = await Promise.all([
       buildFactoryInputFromDb({
         supabase: options.supabase,
         includeProfileNames,
         tenantId,
       }),
       getPersistedWorkflowState(options.supabase),
+      getPersistedDeliveryExecutions({ supabase: options.supabase, tenantId }),
     ]);
 
     const basePlanning = buildFactoryPlanningData(referenceDate, factoryInput);
@@ -63,6 +65,12 @@ export async function getFactoryPlanningSnapshot(
       },
       resolveBatchesDone(itemKey) {
         return itemKey ? workflowState.productionBatchesDone[canonicalProductionItemKey(itemKey)] ?? 0 : 0;
+      },
+      // Mesmo espaço de id de `isReleased` (legacy_id): getPersistedWorkflowState
+      // chaveia releasedOrders por legacy_id e getPersistedDeliveryExecutions
+      // chaveia por legacy_id ?? id — lookup direto pelo orderId da OP.
+      resolveDeliveryStatus(orderId) {
+        return deliveryExecutions[orderId]?.status ?? null;
       },
     });
   });

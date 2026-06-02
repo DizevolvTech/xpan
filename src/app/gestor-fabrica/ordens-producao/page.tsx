@@ -104,6 +104,7 @@ const ORDER_STATUS_FILTER_OPTIONS: Array<{ value: OrderStatus; label: string }> 
   { value: "em_producao", label: "Em Produção" },
   { value: "aguardando_expedicao", label: "Aguardando Expedição" },
   { value: "rota_entrega", label: "Rota de Entrega" },
+  { value: "entregue", label: "Entregue" },
   { value: "cancelado", label: "Cancelado" },
 ];
 
@@ -117,6 +118,7 @@ const AGGREGATE_STATUS_PRIORITY: OrderStatus[] = [
   "em_producao",
   "aguardando_expedicao",
   "rota_entrega",
+  "entregue",
   "cancelado",
 ];
 

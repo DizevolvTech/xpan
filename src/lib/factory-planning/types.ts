@@ -7,7 +7,8 @@ export type OrderStatus =
   | "em_espera"
   | "aguardando_expedicao"
   | "cancelado"
-  | "rota_entrega";
+  | "rota_entrega"
+  | "entregue";
 export type ProductionItemStatus =
   | "nao_iniciado"
   | "em_preparacao"
