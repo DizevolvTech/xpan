@@ -157,9 +157,22 @@ export function FactoryMetricsCard({
 
 function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
   const { leadTime, otif, occupancy, deliveryFailures } = metrics;
-  const otifTone = otif.otifPercent >= 95 ? "success" : otif.otifPercent >= 80 ? "warning" : "danger";
-  const occupancyTone =
-    occupancy.averageOccupancyPercent >= 90
+  // Sem amostras → tom NEUTRO. Evita pintar de vermelho um KPI que só está sem
+  // dados (ex.: OTIF "—" sem entregas no período não é "ruim", é ausência de dado).
+  const hasLeadTime = leadTime.samples > 0;
+  const hasOtif = otif.deliveredOnTime + otif.deliveredLate > 0;
+  const hasOccupancy = occupancy.lines.length > 0;
+  const leadTimeTone = hasLeadTime ? "info" : "neutral";
+  const otifTone = !hasOtif
+    ? "neutral"
+    : otif.otifPercent >= 95
+      ? "success"
+      : otif.otifPercent >= 80
+        ? "warning"
+        : "danger";
+  const occupancyTone = !hasOccupancy
+    ? "neutral"
+    : occupancy.averageOccupancyPercent >= 90
       ? "danger"
       : occupancy.averageOccupancyPercent >= 70
         ? "warning"
@@ -172,17 +185,22 @@ function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
         title="Lead time médio"
         value={leadTime.samples > 0 ? formatMinutes(leadTime.averageTotalMinutes) : "—"}
         helper={leadTime.samples > 0 ? `${leadTime.samples} item(ns) com >1 evento` : "Sem amostras no período"}
-        tone="info"
+        tone={leadTimeTone}
       >
         {leadTime.perStage.length > 0 ? (
-          <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
-            {leadTime.perStage.map((row) => (
-              <li key={row.stage} className="flex justify-between gap-2">
-                <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
-                <span className="font-medium text-foreground/80">{formatMinutes(row.averageMinutes)}</span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+              {leadTime.perStage.map((row) => (
+                <li key={row.stage} className="flex justify-between gap-2">
+                  <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
+                  <span className="font-medium text-foreground/80">{formatMinutes(row.averageMinutes)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-muted-foreground/80">
+              Médias por etapa — não somam o total.
+            </p>
+          </>
         ) : null}
       </MetricTile>
 
@@ -254,7 +272,7 @@ interface MetricTileProps {
   title: string;
   value: string;
   helper?: string;
-  tone: "info" | "success" | "warning" | "danger";
+  tone: "info" | "success" | "warning" | "danger" | "neutral";
   children?: React.ReactNode;
 }
 
@@ -263,6 +281,7 @@ const TONE_CLASSES: Record<MetricTileProps["tone"], string> = {
   success: "border-success/40 bg-success/5",
   warning: "border-warning/40 bg-warning/5",
   danger: "border-destructive/40 bg-destructive/5",
+  neutral: "border-border/60",
 };
 
 function MetricTile({ icon: Icon, title, value, helper, tone, children }: MetricTileProps) {

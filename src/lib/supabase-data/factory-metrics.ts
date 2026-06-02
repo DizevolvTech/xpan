@@ -152,20 +152,48 @@ async function loadDeliveryExecutionsForWindow(
   windowStart: string,
   windowEnd: string,
 ): Promise<DeliveryExecutionRow[]> {
-  const result = await supabase
-    .from("delivery_executions")
-    .select("order_id, status, updated_at, store_orders!inner(delivery_date)")
-    .eq("tenant_id", tenantId)
-    .gte("store_orders.delivery_date", windowStart)
-    .lte("store_orders.delivery_date", windowEnd);
+  const selectCols = "order_id, status, updated_at, store_orders!inner(delivery_date)";
 
-  if (isSupabaseMissingSchemaError(result.error, ["delivery_executions"])) {
-    return [];
+  // União de dois recortes (dedup por order_id), para uma entrega contar tanto
+  // pela data PROMETIDA quanto pela data REALIZADA:
+  //  A) pedidos cuja delivery_date cai na janela (pendentes / atrasados / no prazo);
+  //  B) entregas concluídas na janela (status=entregue, updated_at na janela) —
+  //     cobre entregas antecipadas ou para data futura, que A deixava de fora.
+  // PostgREST não combina bem `.or()` cruzando tabela embutida, então fazemos
+  // duas queries simples em paralelo.
+  const [dueResult, deliveredResult] = await Promise.all([
+    supabase
+      .from("delivery_executions")
+      .select(selectCols)
+      .eq("tenant_id", tenantId)
+      .gte("store_orders.delivery_date", windowStart)
+      .lte("store_orders.delivery_date", windowEnd),
+    supabase
+      .from("delivery_executions")
+      .select(selectCols)
+      .eq("tenant_id", tenantId)
+      .eq("status", "entregue")
+      .gte("updated_at", `${windowStart}T00:00:00Z`)
+      .lte("updated_at", `${windowEnd}T23:59:59Z`),
+  ]);
+
+  for (const result of [dueResult, deliveredResult]) {
+    if (isSupabaseMissingSchemaError(result.error, ["delivery_executions"])) {
+      return [];
+    }
+    if (result.error) {
+      throw new Error(`Failed to load delivery executions: ${result.error.message}`);
+    }
   }
-  if (result.error) {
-    throw new Error(`Failed to load delivery executions: ${result.error.message}`);
+
+  const byOrder = new Map<string, DeliveryExecutionRow>();
+  for (const row of [
+    ...((dueResult.data ?? []) as unknown as DeliveryExecutionRow[]),
+    ...((deliveredResult.data ?? []) as unknown as DeliveryExecutionRow[]),
+  ]) {
+    byOrder.set(row.order_id, row);
   }
-  return (result.data ?? []) as unknown as DeliveryExecutionRow[];
+  return Array.from(byOrder.values());
 }
 
 /**
@@ -245,8 +273,9 @@ export async function computeFactoryMetrics(
       : 0;
 
   // -------------------------------------------------------------------------
-  // OTIF: olha delivery_executions com pedidos cuja delivery_date cai na
-  // janela. Em frequência de pedidos por dia ≪ 1000, isso é tranquilo.
+  // OTIF: olha as delivery_executions da janela (união: delivery_date na janela
+  // OU entrega concluída na janela — ver loadDeliveryExecutionsForWindow).
+  // Em frequência de pedidos por dia ≪ 1000, isso é tranquilo.
   // - on_time: status='entregue' e updated_at <= delivery_date+1d
   // - late: status='entregue' mas atrasou; OU status != 'entregue' depois
   //   de delivery_date+1d
