@@ -44,6 +44,14 @@ export interface StoreOrder {
   code: string;
   storeId: string;
   orderedAt: string;
+  /**
+   * AJ-A10: data de entrega PERSISTIDA do pedido (promessa firmada na criação /
+   * abertura pela fábrica). Preferida ao recomputo da janela na exibição —
+   * pedidos vazios e pedidos do cronograma para datas futuras devem mostrar a
+   * data gravada, não a "próxima" data da janela operacional. Opcional para
+   * compatibilidade com fixtures de teste.
+   */
+  deliveryDate?: string | null;
   items: StoreOrderItem[];
 }
 

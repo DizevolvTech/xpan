@@ -276,7 +276,7 @@ export async function listFactoryStoreOrders(
   const [ordersResult, itemsResult, storesResult, productsResult] = await Promise.all([
     supabase
       .from("store_orders")
-      .select("id, legacy_id, code, store_id, ordered_at")
+      .select("id, legacy_id, code, store_id, ordered_at, delivery_date")
       .order("ordered_at", { ascending: false }),
     supabase
       .from("store_order_items")
@@ -310,6 +310,9 @@ export async function listFactoryStoreOrders(
     code: row.code,
     storeId: storeLegacyById.get(row.store_id) ?? row.store_id,
     orderedAt: row.ordered_at,
+    // AJ-A10: data de entrega gravada (promessa firmada) — usada na exibição da
+    // lista em vez de recomputar a janela operacional.
+    deliveryDate: row.delivery_date ?? null,
     items: itemsByOrderId.get(row.id) ?? [],
   }));
 }

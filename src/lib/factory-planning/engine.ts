@@ -1082,8 +1082,14 @@ function buildOrders(
 
       const items = orderItemsByOrderId.get(order.id) ?? [];
       const opCodes = Array.from(opsByOrderId.get(order.id) ?? []).sort((a, b) => a.localeCompare(b));
-      const { deliveryDate: fallbackDeliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
-      const deliveryDate = items.length > 0 ? getLatestDate(items, fallbackDeliveryDate) : fallbackDeliveryDate;
+      const windowDeliveryDate = getOperationalOrderWindow(order.orderedAt, store, settings).deliveryDate;
+      // AJ-A10: a data de entrega PERSISTIDA do pedido é a promessa firmada (definida
+      // na criação / abertura pela fábrica). Preferi-la ao recomputo da janela — senão
+      // pedidos vazios e pedidos do cronograma para datas futuras exibem sempre a
+      // "próxima" data da janela. Sem data gravada (fixtures), mantém o comportamento
+      // anterior: os itens definem a data, ou a janela para pedidos vazios.
+      const deliveryDate =
+        order.deliveryDate ?? (items.length > 0 ? getLatestDate(items, windowDeliveryDate) : windowDeliveryDate);
 
       return {
         id: order.id,
@@ -1130,8 +1136,10 @@ function buildExpeditionRows(
       }
 
       const items = (orderItemsByOrderId.get(order.id) ?? []).slice().sort((a, b) => a.productCode.localeCompare(b.productCode));
-      const { deliveryDate: fallbackDeliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
-      const deliveryDate = items.length > 0 ? getLatestDate(items, fallbackDeliveryDate) : fallbackDeliveryDate;
+      const windowDeliveryDate = getOperationalOrderWindow(order.orderedAt, store, settings).deliveryDate;
+      // AJ-A10: preferir a data de entrega PERSISTIDA do pedido (ver buildPlannedOrderRows).
+      const deliveryDate =
+        order.deliveryDate ?? (items.length > 0 ? getLatestDate(items, windowDeliveryDate) : windowDeliveryDate);
       const orderSummary = orderByCode.get(order.code);
 
       const expeditionItems: ExpeditionItem[] = items.map((item) => ({
