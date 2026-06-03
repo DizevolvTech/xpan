@@ -6,6 +6,7 @@ import {
   buildFactoryPlanningData,
   getOperationalOrderWindow,
   getOperationalTimeline,
+  normalizeSaleLeadDays,
   resolveScheduledProductAvailability,
   resolveProductionDateInWindow,
 } from "@/lib/factory-planning/engine";
@@ -147,6 +148,43 @@ test("operational timeline derives sale day after delivery", () => {
     productionDate: "2026-03-19",
     delayed: false,
   });
+});
+
+test("normalizeSaleLeadDays floors at 0 and keeps 0 as same-day intent", () => {
+  assert.equal(normalizeSaleLeadDays(0), 0);
+  assert.equal(normalizeSaleLeadDays(1), 1);
+  assert.equal(normalizeSaleLeadDays(undefined), 0);
+  assert.equal(normalizeSaleLeadDays(Number.NaN), 0);
+  assert.equal(normalizeSaleLeadDays(-3), 0);
+  assert.equal(normalizeSaleLeadDays(2.7), 2);
+});
+
+test("operational timeline with saleLeadDays 0 sells on the delivery day", () => {
+  const timeline = getOperationalTimeline(
+    "2026-03-17T09:00:00",
+    baseStore,
+    { ...settings, saleLeadDays: 0 },
+    ["quinta"],
+    0,
+    0,
+  );
+
+  assert.equal(timeline.deliveryDate, "2026-03-19");
+  assert.equal(timeline.saleDate, timeline.deliveryDate);
+});
+
+test("operational timeline with saleLeadDays 1 sells one day after delivery", () => {
+  const timeline = getOperationalTimeline(
+    "2026-03-17T09:00:00",
+    baseStore,
+    { ...settings, saleLeadDays: 1 },
+    ["quinta"],
+    1,
+    0,
+  );
+
+  assert.equal(timeline.deliveryDate, "2026-03-19");
+  assert.equal(timeline.saleDate, "2026-03-20");
 });
 
 // Cenário do cliente — pedido PD-260429-0001:

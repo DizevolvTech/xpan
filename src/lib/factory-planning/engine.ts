@@ -197,8 +197,9 @@ export interface OperationalAvailabilityResult {
   scheduleItemId: string | null;
 }
 
-function normalizeSaleLeadDays(saleLeadDays: number | undefined) {
-  return Number.isFinite(saleLeadDays) && Number(saleLeadDays) > 0 ? Number(saleLeadDays) : 1;
+export function normalizeSaleLeadDays(saleLeadDays: number | undefined) {
+  const n = Number(saleLeadDays);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 function getMatchingProductionDays(

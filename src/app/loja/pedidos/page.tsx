@@ -55,6 +55,7 @@ import {
   getBaseDateByCutoff,
   getDeliveryDateByStoreRule,
   getOperationalBaseDateByStoreRule,
+  normalizeSaleLeadDays,
 } from "@/lib/order-planning";
 import {
   getStoreCanOrderSunday,
@@ -399,7 +400,7 @@ export default function PedidosLojaPage() {
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
   const saleDate = useMemo(() => {
     const date = new Date(`${deliveryDateKey}T00:00:00`);
-    const leadDays = Math.max(0, snapshot.operationalSettings.saleLeadDays ?? 1);
+    const leadDays = normalizeSaleLeadDays(snapshot.operationalSettings.saleLeadDays);
     date.setDate(date.getDate() + leadDays);
     return date;
   }, [deliveryDateKey, snapshot.operationalSettings.saleLeadDays]);

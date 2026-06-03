@@ -47,6 +47,7 @@ import {
   preferredOperationalUnits,
 } from "@/lib/operational-units";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import { normalizeSaleLeadDays } from "@/lib/order-planning";
 import { planBatches } from "@/lib/production-batches";
 import {
   buildProductFormState,
@@ -2005,7 +2006,10 @@ export function ProductFormDialog({
                     {
                       key: "sale",
                       label: "Vender a partir de",
-                      value: `Entrega + ${Math.max(1, snapshot.operationalSettings.saleLeadDays || 1)} dia(s)`,
+                      value:
+                        normalizeSaleLeadDays(snapshot.operationalSettings.saleLeadDays) === 0
+                          ? "No mesmo dia da entrega"
+                          : `Entrega + ${normalizeSaleLeadDays(snapshot.operationalSettings.saleLeadDays)} dia(s)`,
                       helper: "Configurado globalmente nas regras da fábrica (D+Y após entrega).",
                       tone: "success",
                     },
