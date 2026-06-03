@@ -1083,13 +1083,15 @@ function buildOrders(
       const items = orderItemsByOrderId.get(order.id) ?? [];
       const opCodes = Array.from(opsByOrderId.get(order.id) ?? []).sort((a, b) => a.localeCompare(b));
       const windowDeliveryDate = getOperationalOrderWindow(order.orderedAt, store, settings).deliveryDate;
-      // AJ-A10: a data de entrega PERSISTIDA do pedido é a promessa firmada (definida
-      // na criação / abertura pela fábrica). Preferi-la ao recomputo da janela — senão
-      // pedidos vazios e pedidos do cronograma para datas futuras exibem sempre a
-      // "próxima" data da janela. Sem data gravada (fixtures), mantém o comportamento
-      // anterior: os itens definem a data, ou a janela para pedidos vazios.
+      // AJ-A10: pedido VAZIO (sem itens) usa a data de entrega PERSISTIDA (promessa
+      // firmada na abertura pela fábrica) em vez da janela — senão pedidos do
+      // cronograma p/ data futura exibiriam a "próxima" data. Pedido PREENCHIDO usa a
+      // data dos ITENS (mesma base do filtro operational-date-scope e de
+      // buildExpeditionRows) → evita divergência filtro×exibição (pedido em 2 janelas).
+      // O filtro de escopo inclui pedido vazio por row.deliveryDate, então usar a
+      // persistida nele é coerente.
       const deliveryDate =
-        order.deliveryDate ?? (items.length > 0 ? getLatestDate(items, windowDeliveryDate) : windowDeliveryDate);
+        items.length > 0 ? getLatestDate(items, windowDeliveryDate) : (order.deliveryDate ?? windowDeliveryDate);
 
       return {
         id: order.id,
