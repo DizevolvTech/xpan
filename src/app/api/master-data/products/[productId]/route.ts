@@ -6,12 +6,34 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { ProductInput } from "@/lib/supabase-data/master-data-admin";
 import { updateProduct } from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { MasterDataValidationError } from "@/lib/supabase-data/master-data-admin";
 
 type RouteContext = {
   params: Promise<{
     productId: string;
   }>;
 };
+
+// Distingue rejeições de regra de negócio (→ HTTP 400, mensagem pt-BR exibível ao
+// usuário) de falhas internas (→ 500). `updateProduct` lança validações como
+// `Error` em pt-BR (ex.: código ERP em uso / imutável) e, em fluxos de revisão,
+// como `MasterDataValidationError`.
+function isClientValidationError(error: unknown): boolean {
+  if (error instanceof MasterDataValidationError) {
+    return true;
+  }
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const normalized = error.message.toLowerCase();
+  return (
+    normalized.includes("código erp") ||
+    normalized.includes("já está em uso") ||
+    normalized.includes("não pode ser alterado") ||
+    normalized.includes("somente produtos ativos") ||
+    normalized.includes("não está vinculado operacionalmente")
+  );
+}
 
 export async function PATCH(request: Request, context: RouteContext) {
   const authorization = await authorizeApiRequest({
@@ -55,6 +77,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true, scheduleRevisionImpact });
   } catch (error) {
+    if (isClientValidationError(error)) {
+      return NextResponse.json(
+        { message: (error as Error).message },
+        { status: 400 },
+      );
+    }
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to update product" },
       { status: 500 },

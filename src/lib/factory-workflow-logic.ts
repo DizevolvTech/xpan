@@ -133,15 +133,58 @@ export function applyFactoryWorkflowState(
     }
 
     if (!item.canPlan) {
+      // AJ-A5 defense-in-depth: o ramo `!canPlan` era destrutivo — zerava
+      // release/status ANTES de ler o estado persistido. Quando o cronograma
+      // ATIVO some (ex.: editar receita disparava a desativação), todas as OPs
+      // já liberadas/produzidas caíam para `em_espera`, perdendo o trabalho. A
+      // correção principal (#2 em master-data-admin) evita a desativação; aqui
+      // garantimos que, mesmo sem cronograma, um item já LIBERADO ou com produção
+      // avançada PRESERVA seu estado persistido em vez de reverter.
+      const persistedStatus = workflow.resolveProductionItemStatus(item.productionItemKey);
+      const releasedToProduction = workflow.isReleased(item.orderId);
+      const hasAdvancedStatus = persistedStatus !== null && persistedStatus !== "nao_iniciado";
+
+      // Sem release e sem produção avançada → comportamento atual (fora do fluxo).
+      if (!releasedToProduction && !hasAdvancedStatus) {
+        return {
+          ...item,
+          releasedToProduction: false,
+          productionStarted: false,
+          productionItemStatus: null,
+          workflowProgress: 0,
+          batchesDone: 0,
+          opCode: null,
+          status: "em_espera" as OrderStatus,
+        };
+      }
+
+      // Liberado e/ou com produção em curso → preserva o estado persistido,
+      // derivando status/progress como no ramo canPlan (elo: produção). Quando
+      // a chave é null o status fica parcial (só o release é recuperado) — a
+      // correção PRINCIPAL é não chegar aqui com cronograma desativado.
+      const productionItemStatus = persistedStatus ?? "nao_iniciado";
+      const workflowProgress = getProductionStatusProgress(
+        productionItemStatus,
+        item.preparationStages,
+      );
+      const productionStarted =
+        isProductionStarted(item.productionItemKey) || productionItemStatus !== "nao_iniciado";
+      const status: OrderStatus =
+        productionItemStatus === "concluido"
+          ? "aguardando_expedicao"
+          : workflowProgress > 0
+            ? "em_producao"
+            : "agendado";
+
       return {
         ...item,
-        releasedToProduction: false,
-        productionStarted: false,
-        productionItemStatus: null,
-        workflowProgress: 0,
-        batchesDone: 0,
+        releasedToProduction,
+        productionStarted,
+        productionItemStatus,
+        workflowProgress,
+        batchesDone: resolveBatchesDone(item.productionItemKey),
         opCode: null,
-        status: "em_espera" as OrderStatus,
+        status,
       };
     }
 

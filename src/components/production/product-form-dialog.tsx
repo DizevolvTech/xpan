@@ -660,9 +660,11 @@ export function ProductFormDialog({
       const impact = respBody?.scheduleRevisionImpact ?? null;
       if (impact) {
         toast.warning(
-          impact.recreated
-            ? `Cronograma reconstruído (${impact.affectedProducts} produto(s) afetado(s)). Reaudite o cronograma antes de liberar os pedidos.`
-            : `Revisão pendente do cronograma atualizada (${impact.affectedProducts} produto(s)). Reaudite antes de liberar.`,
+          impact.activeScheduleKept
+            ? `Revisão pendente aberta (${impact.affectedProducts} produto(s)). O cronograma ativo foi MANTIDO porque há OPs liberadas/lançadas — reaudite a revisão para aplicar as mudanças.`
+            : impact.recreated
+              ? `Cronograma reconstruído (${impact.affectedProducts} produto(s) afetado(s)). Reaudite o cronograma antes de liberar os pedidos.`
+              : `Revisão pendente do cronograma atualizada (${impact.affectedProducts} produto(s)). Reaudite antes de liberar.`,
         );
       }
     } catch (saveError) {

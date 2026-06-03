@@ -891,6 +891,100 @@ function buildScheduleRevisionName(subcategoryName: string, activeScheduleName?:
   return `Linha ${subcategoryName.trim()}`;
 }
 
+/**
+ * AJ-A5 — Detecta se há TRABALHO COMPROMETIDO na linha executora desta subcategoria
+ * operacional: OPs já lançadas (status avançou de `nao_iniciado`), iniciadas pelo
+ * gestor (mandadas para o Chão) ou pedidos já liberados que tocam esta linha.
+ *
+ * Escopo por LINHA: a `production_item_key` canônica é `data|lineId|productId`
+ * (engine.ts). O `lineId` é o legacy id (ou id) da subcategoria operacional. Chaves
+ * legadas de 4 partes (`data|lineId|scheduleId|productId`) também têm o `lineId` na
+ * 2ª posição, então o padrão `%|{lineId}|%` cobre ambas. Para releases, escopo via
+ * produtos da subcategoria → itens de pedido → releases.
+ *
+ * Filosofia (decisão do cliente): preservar a mais é benigno (no máximo adia a
+ * desativação do ativo); ORFANAR OPs é o erro grave. Em qualquer dúvida/erro de
+ * leitura, retornamos `true` (conservador → preserva o ativo).
+ */
+async function hasCommittedWorkOnScheduleLine(
+  subcategoryId: string,
+  lineKey: string,
+  supabase: SupabaseDataClient,
+): Promise<boolean> {
+  // `production_item_key` tem o lineId na 2ª posição (data|lineId|...). Usamos um
+  // padrão com a 1ª parte coringa para casar qualquer data: `_|{lineId}|%` não é
+  // suportado pelo LIKE do PostgREST (`_` casa 1 char), então usamos `%|{lineId}|%`
+  // e refinamos no cliente conferindo que o lineId está EXATAMENTE na 2ª posição.
+  const linePattern = `%|${lineKey}|%`;
+  const matchesLine = (key: string) => key.split("|")[1] === lineKey;
+
+  // (1) OPs lançadas: workflow_production_items com status != 'nao_iniciado'.
+  const itemsResult = await supabase
+    .from("workflow_production_items")
+    .select("production_item_key, status")
+    .like("production_item_key", linePattern);
+  if (itemsResult.error) {
+    // Erro de leitura (inclui schema ausente) → conservador: preserva.
+    return true;
+  }
+  const hasLaunchedItem = (itemsResult.data ?? []).some(
+    (row) => matchesLine(row.production_item_key) && row.status !== "nao_iniciado",
+  );
+  if (hasLaunchedItem) {
+    return true;
+  }
+
+  // (2) OPs iniciadas pelo gestor (mandadas ao Chão), mesmo ainda `nao_iniciado`.
+  const startsResult = await supabase
+    .from("workflow_production_starts")
+    .select("production_item_key")
+    .like("production_item_key", linePattern);
+  if (startsResult.error) {
+    return true;
+  }
+  if ((startsResult.data ?? []).some((row) => matchesLine(row.production_item_key))) {
+    return true;
+  }
+
+  // (3) Pedidos liberados que tocam esta linha: produtos da subcategoria
+  // operacional → itens de pedido → workflow_order_releases.
+  const lineProductsResult = await supabase
+    .from("products")
+    .select("id")
+    .eq("operational_subcategory_id", subcategoryId);
+  if (lineProductsResult.error) {
+    return true;
+  }
+  const productDbIds = (lineProductsResult.data ?? []).map((row) => row.id);
+  if (productDbIds.length === 0) {
+    return false;
+  }
+
+  const orderItemsResult = await supabase
+    .from("store_order_items")
+    .select("order_id")
+    .in("product_id", productDbIds);
+  if (orderItemsResult.error) {
+    return true;
+  }
+  const orderDbIds = Array.from(
+    new Set((orderItemsResult.data ?? []).map((row) => row.order_id).filter(Boolean)),
+  );
+  if (orderDbIds.length === 0) {
+    return false;
+  }
+
+  const releasesResult = await supabase
+    .from("workflow_order_releases")
+    .select("order_id")
+    .in("order_id", orderDbIds)
+    .limit(1);
+  if (releasesResult.error) {
+    return true;
+  }
+  return (releasesResult.data ?? []).length > 0;
+}
+
 async function rebuildPendingScheduleRevisionForSubcategoryDbId(
   subcategoryId: string,
   options: MutationOptions = {},
@@ -909,7 +1003,7 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
   ] = await Promise.all([
     supabase
       .from("subcategories")
-      .select("id, name")
+      .select("id, legacy_id, name")
       .eq("id", subcategoryId)
       .maybeSingle(),
     supabase.from("schedule_lines").select("code"),
@@ -978,15 +1072,28 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
     });
   }
 
+  // AJ-A5: a recriação (sem pendente) desativa o cronograma ativo para nova
+  // auditoria — mas isso ORFANA OPs já lançadas e reverte pedidos liberados a
+  // `em_espera`. Se houver trabalho comprometido na LINHA executora, preservamos
+  // o ativo (a revisão pendente ainda é aberta) até a auditoria aprovar. A linha
+  // do cronograma = legacy_id (ou id) da subcategoria operacional (engine lineId).
+  const lineKey = subcategory.legacy_id ?? subcategory.id;
+  const preserveActiveSchedule =
+    activeSchedule?.id != null && pendingSchedules.length === 0
+      ? await hasCommittedWorkOnScheduleLine(subcategoryId, lineKey, supabase)
+      : false;
+
   // AJ-0025: reaproveitar a revisão pendente existente (id estável) em vez de
   // deletar e recriar com legacy_id novo. O id da revisão entra no planning_key
   // (productionDate|sectorId|lineId|scheduleId); recriar órfã as OPs/statuses já
   // persistidos e zera o cronograma silenciosamente. Só recriamos quando NÃO há
-  // pendente — e aí o cronograma ativo é desativado para nova auditoria.
+  // pendente — e aí o cronograma ativo é desativado para nova auditoria, EXCETO
+  // quando preserveActiveSchedule=true (há OPs lançadas/pedidos liberados).
   const plan = planScheduleRevisionRebuild({
     pendingSchedules: pendingSchedules.map((row) => ({ id: row.id, created_at: row.created_at })),
     activeScheduleId: activeSchedule?.id ?? null,
     productCount: products.length,
+    preserveActiveSchedule,
   });
 
   // Consolida pendentes excedentes numa única revisão (mantém só a reaproveitada).

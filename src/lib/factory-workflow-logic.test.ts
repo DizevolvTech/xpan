@@ -932,3 +932,130 @@ test("sem resolveDeliveryStatus o status da OP é idêntico ao de hoje (só prod
 
   assert.equal(result.productionOrders[0]?.status, "aguardando_expedicao");
 });
+
+// --- AJ-A5: ramo !canPlan NÃO destrói itens liberados/produzidos -------------
+// Quando o cronograma ativo some (canPlan vira false), itens já liberados ou com
+// produção avançada PRECISAM preservar release/status — caso contrário a edição de
+// receita orfanaria as OPs e reverteria os pedidos para `em_espera`.
+function buildNotPlannableItemPlanning(): FactoryPlanningData {
+  return {
+    referenceDate: "2026-03-18",
+    orders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        dPlusLabel: "D+1",
+        deliveryDate: "2026-03-19",
+        deliveryDateLabel: "19/03/2026",
+        productionDateLabel: "19/03/2026",
+        itemsCount: 1,
+        totalKg: 12,
+        opsLabel: "-",
+        releasedToProduction: false,
+        availableForRelease: true,
+        workflowProgress: 0,
+        status: "em_espera",
+      },
+    ],
+    orderItems: [
+      {
+        id: "item-1",
+        orderId: "order-1",
+        orderCode: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        baseDate: "2026-03-18",
+        deliveryDate: "2026-03-19",
+        saleDate: "2026-03-19",
+        productionDate: "2026-03-19",
+        delayed: false,
+        demandSource: "pedido",
+        productId: "product-1",
+        productCode: "PR-0001",
+        productName: "Produto A",
+        lineId: "line-1",
+        lineName: "Linha A",
+        sectorId: "sector-1",
+        sectorName: "Setor A",
+        scheduleId: "schedule-1",
+        scheduleCode: "SL-0001",
+        scheduleName: "Linha Executora",
+        requestedQuantity: 12,
+        requestedUnit: "Kg",
+        internalKg: 12,
+        minimumProductionKg: 0,
+        expeditionUnit: "Kg",
+        expeditionQuantityRaw: 12,
+        expeditionQuantity: 12,
+        // Cronograma ativo desapareceu → motor marca canPlan=false.
+        canPlan: false,
+        scheduleDayPriority: null,
+        availableForRelease: false,
+        releasedToProduction: false,
+        productionStarted: false,
+        capacityPerBatch: null,
+        salesToKgFactor: 1,
+        salesUnit: "Kg",
+        batchesDone: 0,
+        productionItemKey: "2026-03-19|line-1|product-1",
+        productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
+        workflowProgress: 0,
+        opCode: null,
+        status: "em_espera",
+      },
+    ],
+    productionOrders: [],
+    expedition: [],
+    expeditionItems: [],
+    productionDates: ["2026-03-19"],
+    deliveryDates: ["2026-03-19"],
+  };
+}
+
+test("AJ-A5: item !canPlan mas LIBERADO preserva release e status persistido (não vira em_espera)", () => {
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: () => true,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "em_producao",
+  });
+
+  const item = result.orderItems[0];
+  // Estado persistido preservado — NÃO revertido para o ramo destrutivo antigo.
+  assert.equal(item?.releasedToProduction, true);
+  assert.equal(item?.productionItemStatus, "em_producao");
+  assert.notEqual(item?.status, "em_espera");
+  assert.equal(item?.status, "em_producao");
+  assert.ok((item?.workflowProgress ?? 0) > 0);
+});
+
+test("AJ-A5: item !canPlan com produção avançada preserva mesmo SEM release explícito", () => {
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: () => false,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "concluido",
+  });
+
+  const item = result.orderItems[0];
+  // Status avançado persistido sozinho já basta para preservar (defense-in-depth).
+  assert.equal(item?.productionItemStatus, "concluido");
+  assert.equal(item?.status, "aguardando_expedicao");
+});
+
+test("AJ-A5 regressão: item !canPlan NÃO liberado e sem produção continua indo para em_espera", () => {
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: () => false,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => null,
+  });
+
+  const item = result.orderItems[0];
+  assert.equal(item?.releasedToProduction, false);
+  assert.equal(item?.productionItemStatus, null);
+  assert.equal(item?.status, "em_espera");
+  assert.equal(item?.workflowProgress, 0);
+});
