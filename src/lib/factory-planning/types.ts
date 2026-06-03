@@ -278,6 +278,17 @@ export interface FactoryPlanningData {
   referenceDate: string;
   orders: PlannedOrderRow[];
   orderItems: PlannedOrderItem[];
+  /**
+   * FIX MPI — conjunto COMPLETO de itens de planejamento usado pelo motor para
+   * montar as OPs: `[...expandedItems, ...skeletonItems]`, ou seja, INCLUI os
+   * itens de sub-receita/MPI expandidos (que NÃO aparecem em `orderItems`, voltado
+   * à exibição). `applyFactoryWorkflowState` reconstrói as `productionOrders` a
+   * partir DESTE conjunto para que a OP do MPI (ex.: massa de pizza) sobreviva ao
+   * liberar o pedido. Opcional para compatibilidade com fixtures de teste que
+   * montam `FactoryPlanningData` à mão (sem MPI) — nesse caso o caller cai de volta
+   * em `orderItems`.
+   */
+  productionPlanItems?: PlannedOrderItem[];
   productionOrders: ProductionOrderRow[];
   expedition: ExpeditionRow[];
   expeditionItems: ExpeditionSeparationRow[];

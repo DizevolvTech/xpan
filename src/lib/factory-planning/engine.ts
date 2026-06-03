@@ -1106,7 +1106,10 @@ function buildOrders(
         totalKg: round2(items.reduce((sum, item) => sum + item.internalKg, 0)),
         opsLabel: buildOrderOpsLabel(opCodes),
         releasedToProduction: items.some((item) => item.releasedToProduction),
-        availableForRelease: items.every((item) => item.availableForRelease),
+        // A10: pedido VAZIO (0 itens) não é liberável — `[].every()` é `true`, o que
+        // deixava um pedido sem itens passar na validação e gerar release fantasma.
+        // Alinhado com factory-workflow-logic.ts (`... && items.length > 0`).
+        availableForRelease: items.length > 0 && items.every((item) => item.availableForRelease),
         workflowProgress: getAverageProgress(items),
         status: getOrderStatusFromItems(items),
       } satisfies PlannedOrderRow;
@@ -1137,9 +1140,13 @@ function buildExpeditionRows(
 
       const items = (orderItemsByOrderId.get(order.id) ?? []).slice().sort((a, b) => a.productCode.localeCompare(b.productCode));
       const windowDeliveryDate = getOperationalOrderWindow(order.orderedAt, store, settings).deliveryDate;
-      // AJ-A10: preferir a data de entrega PERSISTIDA do pedido (ver buildPlannedOrderRows).
-      const deliveryDate =
-        order.deliveryDate ?? (items.length > 0 ? getLatestDate(items, windowDeliveryDate) : windowDeliveryDate);
+      // A expedição usa a data calculada a partir dos ITENS — NÃO a data persistida.
+      // O filtro de janela operacional (operational-date-scope) inclui a expedição
+      // pelas datas dos itens; se aqui usássemos `order.deliveryDate` (persistida),
+      // pedidos do cronograma abertos para data futura apareceriam em 2 janelas com
+      // Recebimento divergente do dia filtrado. A lista da loja/gestor
+      // (buildPlannedOrderRows) é que mantém a data persistida.
+      const deliveryDate = items.length > 0 ? getLatestDate(items, windowDeliveryDate) : windowDeliveryDate;
       const orderSummary = orderByCode.get(order.code);
 
       const expeditionItems: ExpeditionItem[] = items.map((item) => ({
@@ -1275,6 +1282,19 @@ export function buildFactoryPlanningData(
     };
   });
 
+  // FIX MPI — conjunto COMPLETO de itens de planejamento (inclui os itens de
+  // sub-receita/MPI expandidos), com opCode pela mesma chave de planejamento que
+  // o motor usou. `orderItems` (exibição) NÃO contém os itens MPI; sem este
+  // conjunto, `applyFactoryWorkflowState` reconstruía as OPs só dos itens de
+  // exibição e a OP do MPI sumia ao liberar o pedido.
+  const productionPlanItems = [...expandedItems, ...skeletonItems].map((item) => {
+    const planningKey = getPlanningKey(item);
+    return {
+      ...item,
+      opCode: planningKey ? opCodeByPlanningKey.get(planningKey) ?? null : null,
+    };
+  });
+
   const orderItemsByOrderId = groupOrderItemsByOrderId(orderItemsWithOpCodes);
   const orders = buildOrders(input.storeOrders, orderItemsByOrderId, storeById, opsByOrderId, source.settings);
   const orderByCode = new Map(orders.map((order) => [order.code, order]));
@@ -1285,6 +1305,7 @@ export function buildFactoryPlanningData(
     referenceDate,
     orders,
     orderItems: orderItemsWithOpCodes,
+    productionPlanItems,
     productionOrders,
     expedition,
     expeditionItems,

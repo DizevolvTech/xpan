@@ -99,6 +99,94 @@ function buildOpsLabel(opCodes: string[]) {
   return `${opCodes[0]} +${opCodes.length - 1}`;
 }
 
+interface ItemWorkflowDeps {
+  isReleased: (orderId: string) => boolean;
+  isCancelled: (orderId: string) => boolean;
+  resolveProductionItemStatus: (itemKey: string | null) => ProductionItemStatus | null;
+  isProductionStarted: (itemKey: string | null) => boolean;
+  resolveBatchesDone: (itemKey: string | null) => number;
+}
+
+// Mapeia UM item de planejamento para o estado de workflow (release/status/
+// progress/batidas). Extraída do `.map` original para ser reaplicável tanto ao
+// conjunto de EXIBIÇÃO (`data.orderItems`, sem MPI) quanto ao conjunto COMPLETO
+// de planejamento (`data.productionPlanItems`, COM os itens MPI expandidos), de
+// onde as OPs são reconstruídas — assim a OP do MPI sobrevive ao liberar o pedido.
+function applyItemWorkflowState(item: PlannedOrderItem, workflow: ItemWorkflowDeps): PlannedOrderItem {
+  if (workflow.isCancelled(item.orderId)) {
+    return {
+      ...item,
+      releasedToProduction: false,
+      productionStarted: false,
+      productionItemStatus: null,
+      workflowProgress: 0,
+      batchesDone: 0,
+      opCode: null,
+      status: "cancelado" as OrderStatus,
+    };
+  }
+
+  if (!item.canPlan) {
+    // Item sem plano de produção (sem cronograma ativo / data inviável) está FORA
+    // do fluxo: o motor sempre define productionItemKey/productionDate = null e
+    // buildProductionOrdersFromPlannedItems filtra `canPlan && productionDate`, logo
+    // este item NUNCA gera OP. Zerar release/status mantém a coerência (sem OP =
+    // não está produzindo) e evita item "agendado"/liberado preso sem OP no chão.
+    // A proteção contra orfanar OPs ao editar receita é o preserveActiveSchedule
+    // (master-data-admin) — que mantém o item canPlan —, não este ramo.
+    return {
+      ...item,
+      releasedToProduction: false,
+      productionStarted: false,
+      productionItemStatus: null,
+      workflowProgress: 0,
+      batchesDone: 0,
+      opCode: null,
+      status: "em_espera" as OrderStatus,
+    };
+  }
+
+  const releasedToProduction = workflow.isReleased(item.orderId);
+  if (!releasedToProduction) {
+    return {
+      ...item,
+      releasedToProduction,
+      productionStarted: false,
+      productionItemStatus: "nao_iniciado" as ProductionItemStatus,
+      workflowProgress: 0,
+      batchesDone: 0,
+      opCode: null,
+      status: "em_espera" as OrderStatus,
+    };
+  }
+
+  const productionItemStatus = workflow.resolveProductionItemStatus(item.productionItemKey) ?? "nao_iniciado";
+  const workflowProgress = getProductionStatusProgress(
+    productionItemStatus,
+    item.preparationStages,
+  );
+  // Iniciada = marcada explicitamente pelo gestor OU já avançou de `nao_iniciado`
+  // (compat: OPs com trabalho em curso continuam visíveis no Chão).
+  const productionStarted =
+    workflow.isProductionStarted(item.productionItemKey) || productionItemStatus !== "nao_iniciado";
+  const status: OrderStatus =
+    productionItemStatus === "concluido"
+      ? "aguardando_expedicao"
+      : workflowProgress > 0
+        ? "em_producao"
+        : "agendado";
+
+  return {
+    ...item,
+    releasedToProduction,
+    productionStarted,
+    productionItemStatus,
+    workflowProgress,
+    batchesDone: workflow.resolveBatchesDone(item.productionItemKey),
+    status,
+  };
+}
+
 export function applyFactoryWorkflowState(
   data: FactoryPlanningData,
   workflow: {
@@ -116,120 +204,24 @@ export function applyFactoryWorkflowState(
     resolveDeliveryStatus?: (orderId: string) => DeliveryExecutionStatus | null;
   },
 ): FactoryPlanningData {
-  const isProductionStarted = workflow.isProductionStarted ?? (() => false);
-  const resolveBatchesDone = workflow.resolveBatchesDone ?? (() => 0);
-  const orderItems = data.orderItems.map((item) => {
-    if (workflow.isCancelled(item.orderId)) {
-      return {
-        ...item,
-        releasedToProduction: false,
-        productionStarted: false,
-        productionItemStatus: null,
-        workflowProgress: 0,
-        batchesDone: 0,
-        opCode: null,
-        status: "cancelado" as OrderStatus,
-      };
-    }
+  const itemDeps: ItemWorkflowDeps = {
+    isReleased: workflow.isReleased,
+    isCancelled: workflow.isCancelled,
+    resolveProductionItemStatus: workflow.resolveProductionItemStatus,
+    isProductionStarted: workflow.isProductionStarted ?? (() => false),
+    resolveBatchesDone: workflow.resolveBatchesDone ?? (() => 0),
+  };
 
-    if (!item.canPlan) {
-      // AJ-A5 defense-in-depth: o ramo `!canPlan` era destrutivo — zerava
-      // release/status ANTES de ler o estado persistido. Quando o cronograma
-      // ATIVO some (ex.: editar receita disparava a desativação), todas as OPs
-      // já liberadas/produzidas caíam para `em_espera`, perdendo o trabalho. A
-      // correção principal (#2 em master-data-admin) evita a desativação; aqui
-      // garantimos que, mesmo sem cronograma, um item já LIBERADO ou com produção
-      // avançada PRESERVA seu estado persistido em vez de reverter.
-      const persistedStatus = workflow.resolveProductionItemStatus(item.productionItemKey);
-      const releasedToProduction = workflow.isReleased(item.orderId);
-      const hasAdvancedStatus = persistedStatus !== null && persistedStatus !== "nao_iniciado";
+  // Lado de EXIBIÇÃO (orders/expedition): conjunto sem MPI — comportamento preservado.
+  const orderItems = data.orderItems.map((item) => applyItemWorkflowState(item, itemDeps));
 
-      // Sem release e sem produção avançada → comportamento atual (fora do fluxo).
-      if (!releasedToProduction && !hasAdvancedStatus) {
-        return {
-          ...item,
-          releasedToProduction: false,
-          productionStarted: false,
-          productionItemStatus: null,
-          workflowProgress: 0,
-          batchesDone: 0,
-          opCode: null,
-          status: "em_espera" as OrderStatus,
-        };
-      }
-
-      // Liberado e/ou com produção em curso → preserva o estado persistido,
-      // derivando status/progress como no ramo canPlan (elo: produção). Quando
-      // a chave é null o status fica parcial (só o release é recuperado) — a
-      // correção PRINCIPAL é não chegar aqui com cronograma desativado.
-      const productionItemStatus = persistedStatus ?? "nao_iniciado";
-      const workflowProgress = getProductionStatusProgress(
-        productionItemStatus,
-        item.preparationStages,
-      );
-      const productionStarted =
-        isProductionStarted(item.productionItemKey) || productionItemStatus !== "nao_iniciado";
-      const status: OrderStatus =
-        productionItemStatus === "concluido"
-          ? "aguardando_expedicao"
-          : workflowProgress > 0
-            ? "em_producao"
-            : "agendado";
-
-      return {
-        ...item,
-        releasedToProduction,
-        productionStarted,
-        productionItemStatus,
-        workflowProgress,
-        batchesDone: resolveBatchesDone(item.productionItemKey),
-        opCode: null,
-        status,
-      };
-    }
-
-    const releasedToProduction = workflow.isReleased(item.orderId);
-    if (!releasedToProduction) {
-      return {
-        ...item,
-        releasedToProduction,
-        productionStarted: false,
-        productionItemStatus: "nao_iniciado" as ProductionItemStatus,
-        workflowProgress: 0,
-        batchesDone: 0,
-        opCode: null,
-        status: "em_espera" as OrderStatus,
-      };
-    }
-
-    const productionItemStatus = workflow.resolveProductionItemStatus(item.productionItemKey) ?? "nao_iniciado";
-    const workflowProgress = getProductionStatusProgress(
-      productionItemStatus,
-      item.preparationStages,
-    );
-    // Iniciada = marcada explicitamente pelo gestor OU já avançou de `nao_iniciado`
-    // (compat: OPs com trabalho em curso continuam visíveis no Chão).
-    const productionStarted =
-      isProductionStarted(item.productionItemKey) || productionItemStatus !== "nao_iniciado";
-    const status: OrderStatus =
-      productionItemStatus === "concluido"
-        ? "aguardando_expedicao"
-        : workflowProgress > 0
-          ? "em_producao"
-          : "agendado";
-
-    return {
-      ...item,
-      releasedToProduction,
-      productionStarted,
-      productionItemStatus,
-      workflowProgress,
-      batchesDone: resolveBatchesDone(item.productionItemKey),
-      status,
-    };
-  });
-
-  const releasedItems = orderItems.filter((item) => item.releasedToProduction);
+  // FIX MPI — reconstrói as OPs do conjunto COMPLETO de planejamento (que INCLUI
+  // os itens MPI expandidos). Sem `productionPlanItems` (fixtures de teste antigas),
+  // cai de volta em `orderItems`. Itens MPI herdam orderId/canPlan/productionDate do
+  // pai (recipe-expansion), então `isReleased(orderId)` os marca liberados junto.
+  const planSourceItems = data.productionPlanItems ?? data.orderItems;
+  const planItemsWithState = planSourceItems.map((item) => applyItemWorkflowState(item, itemDeps));
+  const releasedItems = planItemsWithState.filter((item) => item.releasedToProduction);
   const { productionOrders: baseProductionOrders, opsByOrderId, opCodeByPlanningKey } =
     buildProductionOrdersFromPlannedItems(releasedItems, data.referenceDate);
 
@@ -317,7 +309,14 @@ export function applyFactoryWorkflowState(
 
     return {
       ...order,
-      releasedToProduction: cancelled ? false : items.some((item) => item.releasedToProduction),
+      // FIX A: deriva do estado AUTORITATIVO de release (DB) por order_id, não só
+      // dos itens. Um pedido sem itens plannable (ou vazio) mantinha
+      // releasedToProduction=false mesmo com release gravado → estado preso (voltava
+      // pra coluna "Aberto", cancelamento bloqueado). `isReleased` mantém a UI coerente
+      // com o DB.
+      releasedToProduction: cancelled
+        ? false
+        : workflow.isReleased(order.id) || items.some((item) => item.releasedToProduction),
       availableForRelease: cancelled ? false : items.every((item) => item.availableForRelease) && items.length > 0,
       workflowProgress: cancelled ? 0 : getAverageProgress(items),
       productionDateLabel: buildOrderProductionDateLabel(items),

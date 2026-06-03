@@ -1428,6 +1428,94 @@ test("buildFactoryPlanningData respeita escape hatch EXPAND_MPI_INTO_OPS=false (
   });
 });
 
+// FIX MPI — REGRESSÃO: a OP do item MPI (massa de pizza) deve SOBREVIVER ao liberar
+// o pedido. O bug: `applyFactoryWorkflowState` reconstruía as OPs de `data.orderItems`
+// (lado de exibição, SEM os itens MPI expandidos), então ao liberar o pedido a OP da
+// massa sumia do chão/pré-pesagem. Fix: reconstruir do conjunto COMPLETO de
+// planejamento (`productionPlanItems`, COM o MPI).
+test("FIX MPI: OP da massa (MPI) sobrevive ao liberar o pedido (applyFactoryWorkflowState)", () => {
+  withMpiExpansion(() => {
+    const { sectors, lines, products, schedules } = buildPizzaScenario();
+    const planning = buildFactoryPlanningData("2026-03-19", {
+      stores: [baseStore],
+      storeOrders: [
+        {
+          id: "order-1",
+          code: "PD-0001",
+          storeId: "store-1",
+          orderedAt: "2026-03-17T09:00:00.000Z",
+          items: [{ id: "item-1", productId: "pizza", quantity: 8, unit: "Un" }],
+        },
+      ],
+      settings,
+      sectors,
+      lines,
+      products,
+      schedules,
+    });
+
+    // ANTES de liberar: a base já tem OPs de pizza E de massa (motor expande).
+    const baseMassa = planning.productionOrders.flatMap((op) =>
+      op.items.filter((item) => item.productId === "mpi-massa"),
+    );
+    assert.equal(baseMassa.length, 1, "antes de liberar a OP da massa existe");
+    assert.equal(baseMassa[0]?.totalKg, 0.8, "massa = 0.4kg/kg × 2kg de pizza");
+    // O conjunto completo de planejamento (com MPI) é exposto para a reconstrução.
+    assert.ok(
+      planning.productionPlanItems?.some((item) => item.productId === "mpi-massa"),
+      "productionPlanItems inclui o item MPI",
+    );
+
+    // Libera o pedido pai (order-1). O item MPI herda orderId do pai → liberado junto.
+    const released = applyFactoryWorkflowState(planning, {
+      isReleased: (orderId) => orderId === "order-1",
+      isCancelled: () => false,
+      resolveProductionItemStatus: () => "nao_iniciado",
+    });
+
+    const releasedMassa = released.productionOrders.flatMap((op) =>
+      op.items.filter((item) => item.productId === "mpi-massa"),
+    );
+    assert.equal(releasedMassa.length, 1, "APÓS liberar, a OP da massa (MPI) CONTINUA presente");
+    assert.equal(releasedMassa[0]?.totalKg, 0.8, "totalKg da massa preservado após o release");
+
+    // E a OP da massa está marcada como liberada (desce pro chão).
+    const massaOp = released.productionOrders.find((op) =>
+      op.items.some((item) => item.productId === "mpi-massa"),
+    );
+    assert.equal(massaOp?.releasedToProduction, true, "OP da massa liberada junto com o pai");
+  });
+});
+
+// A10 — pedido VAZIO (0 itens) NÃO é liberável. `[].every()` é `true`, então sem a
+// guarda `items.length > 0` um pedido sem itens aparecia liberável e gerava release
+// fantasma.
+test("A10: pedido VAZIO (0 itens) tem availableForRelease=false em buildOrders", () => {
+  const { sectors, lines, products, schedules } = buildPizzaScenario();
+  const planning = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-empty",
+        code: "PD-VAZIO",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products,
+    schedules,
+  });
+
+  const emptyOrder = planning.orders.find((order) => order.id === "order-empty");
+  assert.ok(emptyOrder, "pedido vazio aparece na lista de pedidos");
+  assert.equal(emptyOrder?.itemsCount, 0);
+  assert.equal(emptyOrder?.availableForRelease, false, "pedido vazio NÃO é liberável");
+});
+
 // ---------------------------------------------------------------------------
 // FASE 1 — Esqueleto do cronograma (slots produto×linha×dia sem pedido, qtd 0).
 // O cronograma ativo deve "preencher" a produção do dia mesmo sem pedido. Onde
