@@ -25,6 +25,11 @@ import type {
 } from "@/lib/production-planning";
 import { normalizeScheduleDayPriorities } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
+import {
+  reduceLatestChangelogByProduct,
+  type ProductChangelogRow,
+  type ProductChangelogSummary,
+} from "@/lib/supabase-data/master-data-changelog";
 
 export interface MasterDataSnapshot {
   operationalSettings: OperationalSettings;
@@ -34,11 +39,23 @@ export interface MasterDataSnapshot {
   stores: StoreMasterData[];
   products: ProductionProduct[];
   schedules: WeeklyProductionSchedule[];
+  /**
+   * A6: última edição (motivo + campos alterados) por produto, derivada de
+   * `product_changelog`. Só é populado quando `includeProductChangelog` é true
+   * (personas não-loja). Ausente para tenants sem a migration de changelog.
+   */
+  productChangelogByProductId?: Record<string, ProductChangelogSummary>;
 }
 
 type MasterDataSnapshotOptions = {
   supabase?: SupabaseDataClient;
   includeProfileNames?: boolean;
+  /**
+   * A6: quando true, embute em `productChangelogByProductId` a última edição de
+   * cada produto (motivo + campos alterados) lida de `product_changelog`. Mantido
+   * desligado para a persona loja (não deve ver o histórico de alterações).
+   */
+  includeProductChangelog?: boolean;
   tenantId?: string | null;
   /**
    * AJ-0024: força recarga ignorando o cache (TTL 15s). Caminhos de escrita de
@@ -97,6 +114,7 @@ async function loadMasterDataSnapshot(
 ): Promise<MasterDataSnapshot> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const includeProfileNames = options.includeProfileNames ?? true;
+  const includeProductChangelog = options.includeProductChangelog ?? false;
   const tenantId = assertTenantId(options.tenantId);
 
   const [
@@ -112,6 +130,7 @@ async function loadMasterDataSnapshot(
     profilesResult,
     schedulesResult,
     scheduleSnapshotsResult,
+    productChangelogResult,
   ] = await Promise.all([
     supabase
       .from("operational_settings")
@@ -153,6 +172,16 @@ async function loadMasterDataSnapshot(
       .select("*")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: true }),
+    includeProductChangelog
+      ? supabase
+          .from("product_changelog")
+          .select(
+            "product_id, version_number, change_description, changed_by_name, created_at, snapshot_data",
+          )
+          .eq("tenant_id", tenantId)
+          .order("product_id", { ascending: true })
+          .order("version_number", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const settingsRow = assertSupabaseResult(
@@ -196,6 +225,19 @@ async function loadMasterDataSnapshot(
     scheduleSnapshotsResult,
     "Failed to load schedule snapshots",
   );
+  // A6: tenants sem a migration de changelog não devem quebrar a carga do snapshot.
+  const productChangelogRows = isSupabaseMissingSchemaError(
+    (productChangelogResult as { error: { message: string } | null }).error,
+    ["product_changelog"],
+  )
+    ? []
+    : (assertSupabaseResult(
+        productChangelogResult as {
+          data: ProductChangelogRow[];
+          error: { message: string } | null;
+        },
+        "Failed to load product changelog",
+      ) as ProductChangelogRow[]);
 
   const sectors: ProductionSector[] = sectorRows.map((row) => ({
     id: row.legacy_id ?? row.id,
@@ -418,6 +460,10 @@ async function loadMasterDataSnapshot(
     items: scheduleItemsByScheduleId.get(row.id) ?? [],
   }));
 
+  const productChangelogByProductId = includeProductChangelog
+    ? reduceLatestChangelogByProduct(productChangelogRows, productLegacyById)
+    : undefined;
+
   return {
     operationalSettings: {
       orderCutoffTime: String(settingsRow.order_cutoff_time).slice(0, 5),
@@ -433,6 +479,7 @@ async function loadMasterDataSnapshot(
     stores,
     products,
     schedules,
+    ...(productChangelogByProductId ? { productChangelogByProductId } : {}),
   };
 }
 
@@ -440,11 +487,15 @@ export async function getMasterDataSnapshot(
   options: MasterDataSnapshotOptions = {},
 ): Promise<MasterDataSnapshot> {
   const includeProfileNames = options.includeProfileNames ?? true;
+  const includeProductChangelog = options.includeProductChangelog ?? false;
   const tenantId = assertTenantId(options.tenantId);
   const cacheKey = buildTenantCacheKey(
     tenantId,
     "master-data",
     includeProfileNames ? "with-profiles" : "without-profiles",
+    // A6: segmenta o cache por-tenant para que uma chamada anterior da persona loja
+    // (sem changelog) não sirva um snapshot sem changelog ao gestor-fabrica.
+    includeProductChangelog ? "with-changelog" : "without-changelog",
   );
 
   return getCachedServerData(cacheKey, MASTER_DATA_CACHE_TTL_MS, () => loadMasterDataSnapshot(options), {
