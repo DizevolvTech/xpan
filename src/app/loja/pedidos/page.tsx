@@ -375,6 +375,14 @@ export default function PedidosLojaPage() {
       .then((data) => setOpenOrders(Array.isArray(data) ? data : []))
       .catch(() => setOpenOrders([]));
   }, [factoryOpensOrders]);
+  // AJ-A10: "Pedidos para preencher" deve respeitar a loja selecionada (como a
+  // tabela abaixo). Sem isso, personas multi-loja veem os pedidos de TODAS as
+  // lojas misturados — 1 pedido por loja/dia parece "vários por dia" e datas
+  // iguais de lojas diferentes ficam lado a lado parecendo duplicidade.
+  const openOrdersForStore = useMemo(
+    () => openOrders.filter((order) => order.storeId === selectedStoreId),
+    [openOrders, selectedStoreId],
+  );
 
   useEffect(() => {
     refreshOpenOrders();
@@ -915,9 +923,12 @@ export default function PedidosLojaPage() {
         </div>
 
         <Dialog open={isNewOrderOpen} onOpenChange={handleNewOrderDialogChange}>
-          {activeOrderInScope ? (
-            // Pedido em andamento existe: esconde "Novo Pedido" e oferece "Editar".
-            // Ajustes (incluir/remover itens) acontecem no fluxo de edição.
+          {!factoryOpensOrders && activeOrderInScope ? (
+            // Fluxo legado (loja cria do zero): pedido em andamento existe — esconde
+            // "Novo Pedido" e oferece "Editar". Ajustes acontecem no fluxo de edição.
+            // Com a fábrica abrindo os pedidos, NÃO mostramos esse widget no topo
+            // (evita dualidade): a loja preenche pela seção "Pedidos para preencher"
+            // e edita os já preenchidos pela ação na própria linha da tabela.
             <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
               <p className="text-xs text-muted-foreground">
                 Pedido em andamento:{" "}
@@ -1646,22 +1657,22 @@ export default function PedidosLojaPage() {
           </Dialog>
 
           {/* AJ-0009 Fase 4a: pedidos abertos pela fábrica, aguardando a loja preencher. */}
-          {factoryOpensOrders && openOrders.length > 0 ? (
+          {factoryOpensOrders && openOrdersForStore.length > 0 ? (
             <section className="space-y-2 rounded-xl border border-info/30 bg-info/[var(--opacity-subtle)] p-4">
               <div className="flex items-center gap-2">
                 <CalendarClock className="size-4 text-info" aria-hidden />
                 <h2 className="text-sm font-semibold text-foreground">
-                  Pedidos para preencher ({openOrders.length})
+                  Pedidos para preencher ({openOrdersForStore.length})
                 </h2>
               </div>
               <p className="text-xs text-muted-foreground">
                 A fábrica liberou <strong>1 pedido por dia</strong> da semana, conforme o cronograma.
                 Clique em <strong>Preencher</strong> para informar as quantidades antes do prazo.
               </p>
-              {/* A10: pedidos vêm já ordenados por delivery_date do backend; rotulamos
-                  cada um pelo dia da semana da entrega ("Pedido de Segunda/Terça/..."). */}
+              {/* A10: pedidos da loja selecionada, já ordenados por delivery_date do
+                  backend; rotulamos cada um pelo dia da semana da entrega. */}
               <ul className="grid gap-2 sm:grid-cols-2">
-                {openOrders.map((order) => {
+                {openOrdersForStore.map((order) => {
                   const weekdayLabel = formatDeliveryWeekdayLabel(order.deliveryWeekday);
                   return (
                     <li
@@ -1670,10 +1681,9 @@ export default function PedidosLojaPage() {
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">
-                          {weekdayLabel ? `Pedido de ${weekdayLabel}` : order.storeName}
+                          {weekdayLabel ? `Pedido de ${weekdayLabel}` : order.code}
                         </p>
                         <p className="text-xs text-muted-foreground tabular-nums">
-                          {weekdayLabel ? `${order.storeName} · ` : ""}
                           {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
                         </p>
                       </div>
