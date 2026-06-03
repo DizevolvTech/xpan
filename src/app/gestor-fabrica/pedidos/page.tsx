@@ -86,7 +86,12 @@ export default function PedidosFabricaPage() {
   const factoryOpensOrders = isFactoryOpensOrdersEnabled();
   const { snapshot: masterData } = useMasterDataSnapshot();
   const [isOpenOrdersDialogOpen, setIsOpenOrdersDialogOpen] = useState(false);
+  // A10: modo padrão "semana" (deriva os dias do cronograma); "manual" mantém a
+  // abertura de UMA data de entrega específica (fluxo anterior).
+  const [openMode, setOpenMode] = useState<"week" | "manual">("week");
   const [openDeliveryDate, setOpenDeliveryDate] = useState("");
+  // Data de referência (início da semana rolante) no modo "semana". Default: hoje.
+  const [openReferenceDate, setOpenReferenceDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [openStoreIds, setOpenStoreIds] = useState<string[]>([]);
   const [isOpeningOrders, setIsOpeningOrders] = useState(false);
   const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder, refresh } = useFactoryPlanningSnapshot(anchorDate);
@@ -265,17 +270,27 @@ export default function PedidosFabricaPage() {
   // AJ-0009 Fase 4a: abre pedidos vazios (status 'aberto') p/ as lojas preencherem.
   async function handleOpenOrders() {
     if (isOpeningOrders) return;
-    if (!openDeliveryDate || openStoreIds.length === 0) {
+    const isWeekMode = openMode === "week";
+    if (openStoreIds.length === 0) {
+      toast.error("Selecione ao menos uma loja.");
+      return;
+    }
+    if (!isWeekMode && !openDeliveryDate) {
       toast.error("Informe a data de entrega e selecione ao menos uma loja.");
       return;
     }
 
     setIsOpeningOrders(true);
     try {
+      // A10: modo "semana" deriva os dias do cronograma (sem data fixa); modo
+      // "manual" mantém a abertura de uma única data de entrega.
+      const body = isWeekMode
+        ? { mode: "week" as const, storeIds: openStoreIds, referenceDate: openReferenceDate || undefined }
+        : { deliveryDate: openDeliveryDate, storeIds: openStoreIds };
       const response = await fetch("/api/store-orders/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deliveryDate: openDeliveryDate, storeIds: openStoreIds }),
+        body: JSON.stringify(body),
       });
       const result = (await response.json().catch(() => null)) as
         | { opened?: Array<{ storeId: string; code: string }>; skipped?: string[]; message?: string }
@@ -287,14 +302,17 @@ export default function PedidosFabricaPage() {
       const openedCount = result?.opened?.length ?? 0;
       const skippedCount = result?.skipped?.length ?? 0;
       if (openedCount > 0) {
+        const target = isWeekMode ? "a semana" : openDeliveryDate;
         toast.success(
-          `${openedCount} pedido(s) aberto(s) para ${openDeliveryDate}.` +
-            (skippedCount > 0 ? ` ${skippedCount} loja(s) já tinha(m) pedido ativo.` : ""),
+          `${openedCount} pedido(s) aberto(s) para ${target}.` +
+            (skippedCount > 0 ? ` ${skippedCount} loja(s) sem novidade.` : ""),
         );
       } else {
         toast.info(
           skippedCount > 0
-            ? `Nenhum pedido aberto: as ${skippedCount} loja(s) já tinham pedido ativo nessa data.`
+            ? isWeekMode
+              ? `Nenhum pedido novo: as ${skippedCount} loja(s) já estão com a semana liberada.`
+              : `Nenhum pedido aberto: as ${skippedCount} loja(s) já tinham pedido ativo nessa data.`
             : "Nenhum pedido aberto.",
         );
       }
@@ -937,20 +955,48 @@ export default function PedidosFabricaPage() {
           <DialogHeader>
             <DialogTitle>Abrir pedidos para as lojas</DialogTitle>
             <DialogDescription>
-              Cria um pedido em aberto para cada loja selecionada preencher. Lojas que já têm
-              pedido ativo na data são ignoradas.
+              {openMode === "week"
+                ? "Libera um pedido por dia da semana derivado do cronograma, para cada loja selecionada preencher. Lojas que já estão com a semana liberada são ignoradas."
+                : "Cria um pedido em aberto numa data de entrega específica para cada loja selecionada preencher. Lojas que já têm pedido ativo na data são ignoradas."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid gap-2">
-              <Label htmlFor="open-delivery-date">Data de entrega *</Label>
-              <Input
-                id="open-delivery-date"
-                type="date"
-                value={openDeliveryDate}
-                onChange={(event) => setOpenDeliveryDate(event.target.value)}
-              />
+              <Label>Como abrir</Label>
+              <Select value={openMode} onValueChange={(value) => setOpenMode(value as "week" | "manual")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">Gerar a semana a partir do cronograma</SelectItem>
+                  <SelectItem value="manual">Data específica</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+            {openMode === "week" ? (
+              <div className="grid gap-2">
+                <Label htmlFor="open-reference-date">Data de referência</Label>
+                <Input
+                  id="open-reference-date"
+                  type="date"
+                  value={openReferenceDate}
+                  onChange={(event) => setOpenReferenceDate(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Início da semana rolante de 7 dias. Padrão: hoje.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                <Label htmlFor="open-delivery-date">Data de entrega *</Label>
+                <Input
+                  id="open-delivery-date"
+                  type="date"
+                  value={openDeliveryDate}
+                  onChange={(event) => setOpenDeliveryDate(event.target.value)}
+                />
+              </div>
+            )}
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
                 <Label>Lojas *</Label>
@@ -1014,9 +1060,17 @@ export default function PedidosFabricaPage() {
             <Button
               type="button"
               onClick={() => void handleOpenOrders()}
-              disabled={isOpeningOrders || !openDeliveryDate || openStoreIds.length === 0}
+              disabled={
+                isOpeningOrders ||
+                openStoreIds.length === 0 ||
+                (openMode === "manual" && !openDeliveryDate)
+              }
             >
-              {isOpeningOrders ? "Abrindo..." : `Abrir ${openStoreIds.length || ""} pedido(s)`}
+              {isOpeningOrders
+                ? "Abrindo..."
+                : openMode === "week"
+                  ? `Liberar semana${openStoreIds.length ? ` · ${openStoreIds.length} loja(s)` : ""}`
+                  : `Abrir ${openStoreIds.length || ""} pedido(s)`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -50,7 +50,7 @@ export interface FactoryPlanningInput {
   ingredients?: ProductionIngredient[];
 }
 
-interface ResolvedPlanningSource {
+export interface ResolvedPlanningSource {
   settings: OperationalSettings;
   sectorsById: Map<string, ProductionSector>;
   linesById: Map<string, ProductionLine>;
@@ -387,7 +387,7 @@ function sanitizeFactor(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
-function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<string, WeeklyProductionSchedule> {
+export function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<string, WeeklyProductionSchedule> {
   const map = new Map<string, WeeklyProductionSchedule>();
 
   // Defensivo: se houver mais de um cronograma ativo por linha (não deveria, mas pode em race conditions),
@@ -427,7 +427,7 @@ function isMixedIngredientExpansionEnabled() {
   return process.env.EXPAND_MIXED_INGREDIENT_INTO_OPS !== "false";
 }
 
-function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
+export function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
   return {
     settings: input.settings,
     sectorsById: new Map(input.sectors.map((sector) => [sector.id, sector])),

@@ -191,6 +191,24 @@ function formatDateKeyWithWeekday(dateKey: string) {
   return formatDateWithWeekday(new Date(`${dateKey}T00:00:00`));
 }
 
+// A10: rótulo capitalizado do dia da semana (chave pt-BR vinda de
+// store_orders.delivery_weekday: segunda..domingo). Forma curta ("Terça",
+// "Sábado") — distinta do label longo de productionWeekDays ("Terça-feira").
+const DELIVERY_WEEKDAY_LABEL: Record<string, string> = {
+  segunda: "Segunda",
+  terca: "Terça",
+  quarta: "Quarta",
+  quinta: "Quinta",
+  sexta: "Sexta",
+  sabado: "Sábado",
+  domingo: "Domingo",
+};
+
+function formatDeliveryWeekdayLabel(weekday: string | null): string | null {
+  if (!weekday) return null;
+  return DELIVERY_WEEKDAY_LABEL[weekday] ?? null;
+}
+
 function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
@@ -312,7 +330,14 @@ export default function PedidosLojaPage() {
   // em vez de criar do zero.
   const factoryOpensOrders = isFactoryOpensOrdersEnabled();
   const [openOrders, setOpenOrders] = useState<
-    Array<{ id: string; code: string; storeId: string; storeName: string; deliveryDate: string }>
+    Array<{
+      id: string;
+      code: string;
+      storeId: string;
+      storeName: string;
+      deliveryDate: string;
+      deliveryWeekday: string | null;
+    }>
   >([]);
 
   const referenceDate = useMemo(() => new Date(), []);
@@ -1630,31 +1655,39 @@ export default function PedidosLojaPage() {
                 </h2>
               </div>
               <p className="text-xs text-muted-foreground">
-                A fábrica abriu estes pedidos. Clique em <strong>Preencher</strong> para informar as
-                quantidades antes do prazo.
+                A fábrica liberou <strong>1 pedido por dia</strong> da semana, conforme o cronograma.
+                Clique em <strong>Preencher</strong> para informar as quantidades antes do prazo.
               </p>
+              {/* A10: pedidos vêm já ordenados por delivery_date do backend; rotulamos
+                  cada um pelo dia da semana da entrega ("Pedido de Segunda/Terça/..."). */}
               <ul className="grid gap-2 sm:grid-cols-2">
-                {openOrders.map((order) => (
-                  <li
-                    key={order.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{order.storeName}</p>
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => handleOpenEditOrder({ id: order.id } as StoreOrderSummary)}
+                {openOrders.map((order) => {
+                  const weekdayLabel = formatDeliveryWeekdayLabel(order.deliveryWeekday);
+                  return (
+                    <li
+                      key={order.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
                     >
-                      Preencher
-                    </Button>
-                  </li>
-                ))}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {weekdayLabel ? `Pedido de ${weekdayLabel}` : order.storeName}
+                        </p>
+                        <p className="text-xs text-muted-foreground tabular-nums">
+                          {weekdayLabel ? `${order.storeName} · ` : ""}
+                          {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => handleOpenEditOrder({ id: order.id } as StoreOrderSummary)}
+                      >
+                        Preencher
+                      </Button>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ) : null}
