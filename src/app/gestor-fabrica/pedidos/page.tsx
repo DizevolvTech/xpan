@@ -677,7 +677,18 @@ export default function PedidosFabricaPage() {
                               size="sm"
                               // Não desabilitamos mais por availableForRelease: o servidor é a
                               // fonte da verdade e o gestor decide se quer forçar a liberação.
-                              disabled={order.releasedToProduction || order.status === "cancelado"}
+                              // EXCEÇÃO: pedido VAZIO (0 itens) não é liberável — aguarda a loja
+                              // preencher (o backend também rejeita).
+                              disabled={
+                                order.releasedToProduction ||
+                                order.status === "cancelado" ||
+                                items.length === 0
+                              }
+                              title={
+                                items.length === 0
+                                  ? "Pedido sem itens — aguardando a loja preencher"
+                                  : undefined
+                              }
                               onClick={() => void handleReleaseOrder(order)}
                             >
                               {order.releasedToProduction ? "Liberado" : "Liberar para produção"}

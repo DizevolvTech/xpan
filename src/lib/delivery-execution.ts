@@ -54,6 +54,45 @@ function getFallbackStatus(): DeliveryExecutionStatus {
   return "aguardando_expedicao";
 }
 
+function buildSyntheticExecutionEntry(status: DeliveryExecutionStatus): DeliveryExecutionEntry {
+  return {
+    status,
+    checklistState: {},
+    checklistCompletedAt: null,
+    updatedAt: new Date().toISOString(),
+    attemptsCount: 0,
+    lastAttempt: null,
+    pendingReleaseReason: null,
+    pendingReleasedAt: null,
+  };
+}
+
+/**
+ * Resolve a execução de entrega EXIBÍVEL para um pedido.
+ *
+ * A execução persistida vence o status sintético sempre que:
+ *  - a expedição está pronta (fluxo normal), OU
+ *  - ela já está em um estado AVANÇADO (em_rota/no_destino/entregue/
+ *    tentativa_falha). Mesmo que o status derivado da produção recompute
+ *    `expeditionReady` para false, um pedido já entregue/em rota NÃO pode
+ *    reaparecer como "aguardando_expedicao" (mesmo invariante do servidor em
+ *    `resolveEffectiveDeliveryExecutionStatus`).
+ */
+export function resolveDeliveryExecutionEntry(
+  persistedExecution: DeliveryExecutionEntry | undefined,
+  expeditionReady: boolean,
+): DeliveryExecutionEntry {
+  if (persistedExecution && (expeditionReady || persistedExecution.status !== "aguardando_expedicao")) {
+    return persistedExecution;
+  }
+
+  if (!expeditionReady) {
+    return buildSyntheticExecutionEntry("aguardando_expedicao");
+  }
+
+  return buildSyntheticExecutionEntry(getFallbackStatus());
+}
+
 function getDeliveryExecutionCacheKey() {
   return buildClientTenantCacheKey("delivery-executions", "all");
 }
@@ -140,37 +179,8 @@ export function useDeliveryExecution(_referenceDate?: string) {
   }, []);
 
   const resolveExecution = useCallback(
-    (orderId: string, expeditionReady: boolean): DeliveryExecutionEntry => {
-      const persistedExecution = executionState[orderId];
-
-      if (persistedExecution && expeditionReady) {
-        return persistedExecution;
-      }
-
-      if (!expeditionReady) {
-        return {
-          status: "aguardando_expedicao",
-          checklistState: {},
-          checklistCompletedAt: null,
-          updatedAt: new Date().toISOString(),
-          attemptsCount: 0,
-          lastAttempt: null,
-          pendingReleaseReason: null,
-          pendingReleasedAt: null,
-        };
-      }
-
-      return {
-        status: getFallbackStatus(),
-        checklistState: {},
-        checklistCompletedAt: null,
-        updatedAt: new Date().toISOString(),
-        attemptsCount: 0,
-        lastAttempt: null,
-        pendingReleaseReason: null,
-        pendingReleasedAt: null,
-      };
-    },
+    (orderId: string, expeditionReady: boolean): DeliveryExecutionEntry =>
+      resolveDeliveryExecutionEntry(executionState[orderId], expeditionReady),
     [executionState],
   );
 
