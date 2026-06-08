@@ -6,6 +6,7 @@ import {
   buildFactoryPlanningData,
   getOperationalOrderWindow,
   getOperationalTimeline,
+  getWeekDayKey,
   normalizeSaleLeadDays,
   resolveScheduledProductAvailability,
   resolveProductionDateInWindow,
@@ -185,6 +186,77 @@ test("operational timeline with saleLeadDays 1 sells one day after delivery", ()
 
   assert.equal(timeline.deliveryDate, "2026-03-19");
   assert.equal(timeline.saleDate, "2026-03-20");
+});
+
+// AJ-A10: ancoragem do preenchimento na data de entrega COMPROMETIDA (X).
+// Quando a loja preenche um pedido aberto pela fábrica p/ data futura, o motor deve
+// agendar a produção para entregar em X — NÃO na "próxima janela operacional".
+
+test("scheduled availability anchors production at the committed future delivery date (X)", () => {
+  // Produto produz quarta, lead 1 (quarta + 1 = quinta = entrega).
+  // Janela NATURAL (pedido terça 17/03): entrega quinta 19/03, produz quarta 18/03.
+  const natural = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+  });
+
+  assert.equal(natural.available, true);
+  assert.equal(natural.deliveryDate, "2026-03-19");
+  assert.equal(natural.productionDate, "2026-03-18");
+
+  // MESMA chamada, mas ANCORADA em X = quinta 02/04 (data comprometida futura).
+  const anchored = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+    targetDeliveryDate: "2026-04-02",
+  });
+
+  // Entrega = X; produção = quarta 01/04 (01/04 + 1 lead = 02/04 = X). Disponível.
+  assert.equal(anchored.available, true);
+  assert.equal(anchored.deliveryDate, "2026-04-02");
+  assert.equal(anchored.productionDate, "2026-04-01");
+  assert.equal(getWeekDayKey(anchored.productionDate!), "quarta");
+
+  // Prova do efeito: a ancoragem MUDOU o plano vs. a janela natural.
+  assert.notEqual(anchored.deliveryDate, natural.deliveryDate);
+  assert.notEqual(anchored.productionDate, natural.productionDate);
+});
+
+test("scheduled availability with null targetDeliveryDate is IDENTICAL to legacy window behavior", () => {
+  const legacy = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+  });
+
+  const explicitNull = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+    targetDeliveryDate: null,
+  });
+
+  // Regressão crítica: caminho novo desligado ⇒ resultado byte-a-byte igual ao legado.
+  assert.deepEqual(explicitNull, legacy);
+  assert.equal(explicitNull.deliveryDate, getOperationalOrderWindow("2026-03-17T09:00:00", baseStore, settings).deliveryDate);
+});
+
+test("operational timeline anchored at X sells X + saleLeadDays", () => {
+  const timeline = getOperationalTimeline(
+    "2026-03-17T09:00:00",
+    baseStore,
+    { ...settings, saleLeadDays: 1 },
+    ["quarta"],
+    1,
+    1,
+    "2026-04-02",
+  );
+
+  assert.equal(timeline.deliveryDate, "2026-04-02");
+  assert.equal(timeline.productionDate, "2026-04-01");
+  assert.equal(timeline.saleDate, "2026-04-03");
 });
 
 // Cenário do cliente — pedido PD-260429-0001:

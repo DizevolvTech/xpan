@@ -224,9 +224,26 @@ export function resolveScheduledProductAvailability(
     productProductionDays: ProductionWeekDay[];
     productExpeditionLeadDays: number;
     scheduleItem?: Pick<WeeklyScheduleItem, "id" | "productionDays"> | null;
+    /**
+     * AJ-A10: data de entrega COMPROMETIDA (X) quando a loja PREENCHE um pedido que
+     * a fábrica abriu para uma data futura. Quando informada, o planejamento ancora
+     * em X (entrega = X; busca a data de produção que entrega em X) em vez de na
+     * "próxima janela operacional" derivada de `orderedAt`. Ausente/null →
+     * comportamento IDÊNTICO ao legado (entrega = janela operacional de orderedAt).
+     */
+    targetDeliveryDate?: string | null;
   },
 ): OperationalAvailabilityResult {
-  const { baseDate, deliveryDate } = getOperationalOrderWindow(orderedAt, store, settings);
+  const window = getOperationalOrderWindow(orderedAt, store, settings);
+  const deliveryDate = options.targetDeliveryDate ?? window.deliveryDate;
+  // base operacional = quando o pedido entrou (só display); nunca ancora a busca.
+  const baseDate = window.baseDate;
+  // Quando ancorado em X, a busca regressiva da data de produção precisa de um piso
+  // suficientemente anterior a X (lead do produto + folga semanal) para encontrar o
+  // dia de produção compatível. Sem âncora, mantém o piso legado (window.baseDate).
+  const searchFloor = options.targetDeliveryDate
+    ? addDays(deliveryDate, -(options.productExpeditionLeadDays + 7))
+    : window.baseDate;
   const deliveryWeekDay = getWeekDayKey(deliveryDate);
 
   if (!options.scheduleItem) {
@@ -264,7 +281,7 @@ export function resolveScheduledProductAvailability(
 
   const receivingDays = getEnabledReceivingDays(store);
   const productionWindow = resolveProductionDateInWindow(
-    baseDate,
+    searchFloor,
     deliveryDate,
     matchingDays,
     options.productExpeditionLeadDays,
@@ -327,6 +344,7 @@ export function getOperationalTimeline(
   productionDays: ProductionWeekDay[],
   saleLeadDays = 0,
   productExpeditionLeadDays = 1,
+  targetDeliveryDate?: string | null,
 ) {
   const availability = resolveScheduledProductAvailability(orderedAt, store, settings, {
     productProductionDays: productionDays,
@@ -335,6 +353,7 @@ export function getOperationalTimeline(
       id: "virtual-schedule-item",
       productionDays,
     },
+    targetDeliveryDate,
   });
 
   return {
@@ -585,6 +604,10 @@ function buildPlannedItems(
             productProductionDays: product.productionDays,
             productExpeditionLeadDays: product.expeditionLeadDays,
             scheduleItem,
+            // AJ-A10: ancora o item à data de entrega COMPROMETIDA do pedido (quando a
+            // fábrica abriu para data futura). Pedidos sem deliveryDate persistida →
+            // null → janela operacional legada.
+            targetDeliveryDate: order.deliveryDate ?? null,
           },
         );
         const salesFactor = sanitizeFactor(product.salesToKgFactor);

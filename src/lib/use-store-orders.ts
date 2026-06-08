@@ -138,7 +138,14 @@ export function useStoreOrderDetail(orderId: string, referenceDate: string) {
   );
 }
 
-export function useStoreOrderCatalog(storeId: string, orderedAt: string) {
+export function useStoreOrderCatalog(
+  storeId: string,
+  orderedAt: string,
+  // AJ-A10: data de entrega COMPROMETIDA do pedido sendo preenchido (aberto pela
+  // fábrica p/ data futura). Quando informada, o catálogo ancora disponibilidade
+  // nessa data — a loja vê os produtos produzíveis para o dia comprometido.
+  targetDeliveryDate: string | null = null,
+) {
   const [catalog, setCatalog] = useState<StoreOrderCatalogProduct[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,6 +169,9 @@ export function useStoreOrderCatalog(storeId: string, orderedAt: string) {
           storeId,
           orderedAt,
         });
+        if (targetDeliveryDate) {
+          params.set("targetDeliveryDate", targetDeliveryDate);
+        }
         const data = await readJson<StoreOrderCatalogProduct[]>(`/api/store-order-catalog?${params.toString()}`);
         if (!cancelled) {
           setCatalog(data);
@@ -183,7 +193,7 @@ export function useStoreOrderCatalog(storeId: string, orderedAt: string) {
     return () => {
       cancelled = true;
     };
-  }, [orderedAt, storeId]);
+  }, [orderedAt, storeId, targetDeliveryDate]);
 
   return useMemo(
     () => ({ catalog, isLoading, error }),

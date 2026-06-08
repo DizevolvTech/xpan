@@ -354,7 +354,17 @@ export default function PedidosLojaPage() {
     setActiveStoreId: setSelectedStoreId,
     shouldShowStoreSelector,
   } = useStoreScope(activeStores, profile?.allowedStoreIds);
-  const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso);
+  // AJ-A10: ao PREENCHER um pedido aberto pela fábrica (data de entrega futura
+  // comprometida), o catálogo deve ancorar nessa data — a loja vê os produtos
+  // produzíveis para o dia comprometido, não para a próxima janela de hoje.
+  const editingOrderTargetDelivery = useMemo(() => {
+    if (!editingOrderId) return null;
+    const open = openOrders.find((order) => order.id === editingOrderId);
+    if (open?.deliveryDate) return open.deliveryDate;
+    const summary = storeOrderSummaries.find((order) => order.id === editingOrderId);
+    return summary?.deliveryDateKey ?? null;
+  }, [editingOrderId, openOrders, storeOrderSummaries]);
+  const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso, editingOrderTargetDelivery);
   // 2.7-C — sugestão ADVISORY de quantidade por dia da semana (média histórica).
   // Nunca preenche o input nem altera o payload; só exibe um hint discreto.
   const { suggestions: weekdaySuggestions } = useStoreOrderSuggestions(selectedStoreId);

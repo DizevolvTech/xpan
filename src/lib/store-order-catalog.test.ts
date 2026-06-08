@@ -147,6 +147,49 @@ test("store catalog returns only products that match the active subline and vali
   assert.equal(catalog[0]?.saleDate, "2026-03-20");
 });
 
+test("store catalog anchors availability/timeline at committed future delivery date (X) when provided", () => {
+  const snapshot = buildSnapshot(["quinta"]);
+
+  // SEM âncora: janela natural (pedido terça 17/03 → entrega/produção quinta 19/03).
+  const natural = buildStoreOrderCatalog(snapshot, {
+    storeId: "store-1",
+    orderedAt: "2026-03-17T09:00:00Z",
+  });
+  assert.equal(natural[0]?.available, true);
+  assert.equal(natural[0]?.deliveryDate, "2026-03-19");
+  assert.equal(natural[0]?.productionDate, "2026-03-19");
+
+  // COM âncora X = quinta 02/04 (entrega comprometida futura). Produto produz quinta,
+  // lead 0 ⇒ produz no próprio dia da entrega = X.
+  const anchored = buildStoreOrderCatalog(snapshot, {
+    storeId: "store-1",
+    orderedAt: "2026-03-17T09:00:00Z",
+    targetDeliveryDate: "2026-04-02",
+  });
+  assert.equal(anchored[0]?.available, true);
+  assert.equal(anchored[0]?.deliveryDate, "2026-04-02");
+  assert.equal(anchored[0]?.productionDate, "2026-04-02");
+  // saleLeadDays = 1 ⇒ venda em X + 1 = 03/04.
+  assert.equal(anchored[0]?.saleDate, "2026-04-03");
+
+  // Prova do efeito: ancorar mudou o plano vs. a janela natural.
+  assert.notEqual(anchored[0]?.deliveryDate, natural[0]?.deliveryDate);
+});
+
+test("store catalog with null/absent targetDeliveryDate is identical to legacy window behavior", () => {
+  const legacy = buildStoreOrderCatalog(buildSnapshot(["quinta"]), {
+    storeId: "store-1",
+    orderedAt: "2026-03-17T09:00:00Z",
+  });
+  const explicitNull = buildStoreOrderCatalog(buildSnapshot(["quinta"]), {
+    storeId: "store-1",
+    orderedAt: "2026-03-17T09:00:00Z",
+    targetDeliveryDate: null,
+  });
+
+  assert.deepEqual(explicitNull, legacy);
+});
+
 test("store catalog keeps products available when a pending schedule revision exists alongside the active one", () => {
   const snapshot = buildSnapshot(["quinta"]);
 

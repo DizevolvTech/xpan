@@ -63,6 +63,7 @@ type ResolvedStoreOrderRow = {
   code: string;
   store_id: string;
   ordered_at: string;
+  delivery_date: string | null;
   management_status: "ativo" | "cancelado";
   note: string;
   status: StoreOrderLifecycleStatus;
@@ -92,7 +93,7 @@ async function resolveStoreOrderRow(
 ): Promise<ResolvedStoreOrderRow> {
   const query = supabase
     .from("store_orders")
-    .select("id, legacy_id, code, store_id, ordered_at, management_status, note, status");
+    .select("id, legacy_id, code, store_id, ordered_at, delivery_date, management_status, note, status");
   const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
 
   return assertSupabaseResult(
@@ -152,6 +153,12 @@ async function validateStoreOrderItems(
     orderedAt: string;
     tenantId: string;
     supabase: SupabaseDataClient;
+    /**
+     * AJ-A10: data de entrega COMPROMETIDA (X) do pedido sendo preenchido (aberto pela
+     * fábrica p/ data futura). A validação de disponibilidade do catálogo ancora em X.
+     * `createStoreOrder` (loja cria do zero) não tem X comprometido → null.
+     */
+    targetDeliveryDate?: string | null;
   },
 ) {
   const normalizedItems = dedupeItems(items);
@@ -190,6 +197,7 @@ async function validateStoreOrderItems(
   const availableCatalog = buildStoreOrderCatalog(snapshot, {
     storeId: store.id,
     orderedAt: options.orderedAt,
+    targetDeliveryDate: options.targetDeliveryDate ?? null,
   });
   const catalogByProductId = new Map(availableCatalog.map((product) => [product.productId, product]));
   const productRows = await loadOrderProductRows(options.supabase);
@@ -373,6 +381,9 @@ export async function createStoreOrder(
     orderedAt,
     tenantId: input.tenantId ?? "",
     supabase,
+    // Loja cria o pedido do zero — não há entrega comprometida pela fábrica; a janela
+    // operacional manda. AJ-A10 só ancora quando a fábrica abriu p/ data futura.
+    targetDeliveryDate: null,
   });
   const storeDatabaseId = await resolveStoreDatabaseId(input.storeId, supabase);
 
@@ -788,6 +799,11 @@ export async function updateStoreOrder(
     orderedAt: orderRow.ordered_at,
     tenantId: input.tenantId ?? "",
     supabase,
+    // AJ-A10: PREENCHER um pedido (aberto pela fábrica p/ data futura) ancora a
+    // disponibilidade na entrega COMPROMETIDA persistida (`delivery_date`), não na
+    // próxima janela operacional derivada de `ordered_at`. Pedidos legados sem
+    // delivery_date → null → comportamento idêntico ao atual.
+    targetDeliveryDate: orderRow.delivery_date ?? null,
   });
 
   const updateOrderResult = await supabase
