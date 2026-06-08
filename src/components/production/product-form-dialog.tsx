@@ -47,6 +47,7 @@ import {
   preferredOperationalUnits,
 } from "@/lib/operational-units";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import { normalizeSaleLeadDays } from "@/lib/order-planning";
 import { planBatches } from "@/lib/production-batches";
 import {
   buildProductFormState,
@@ -659,9 +660,11 @@ export function ProductFormDialog({
       const impact = respBody?.scheduleRevisionImpact ?? null;
       if (impact) {
         toast.warning(
-          impact.recreated
-            ? `Cronograma reconstruído (${impact.affectedProducts} produto(s) afetado(s)). Reaudite o cronograma antes de liberar os pedidos.`
-            : `Revisão pendente do cronograma atualizada (${impact.affectedProducts} produto(s)). Reaudite antes de liberar.`,
+          impact.activeScheduleKept
+            ? `Revisão pendente aberta (${impact.affectedProducts} produto(s)). O cronograma ativo foi MANTIDO porque há OPs liberadas/lançadas — reaudite a revisão para aplicar as mudanças.`
+            : impact.recreated
+              ? `Cronograma reconstruído (${impact.affectedProducts} produto(s) afetado(s)). Reaudite o cronograma antes de liberar os pedidos.`
+              : `Revisão pendente do cronograma atualizada (${impact.affectedProducts} produto(s)). Reaudite antes de liberar.`,
         );
       }
     } catch (saveError) {
@@ -2005,7 +2008,10 @@ export function ProductFormDialog({
                     {
                       key: "sale",
                       label: "Vender a partir de",
-                      value: `Entrega + ${Math.max(1, snapshot.operationalSettings.saleLeadDays || 1)} dia(s)`,
+                      value:
+                        normalizeSaleLeadDays(snapshot.operationalSettings.saleLeadDays) === 0
+                          ? "No mesmo dia da entrega"
+                          : `Entrega + ${normalizeSaleLeadDays(snapshot.operationalSettings.saleLeadDays)} dia(s)`,
                       helper: "Configurado globalmente nas regras da fábrica (D+Y após entrega).",
                       tone: "success",
                     },

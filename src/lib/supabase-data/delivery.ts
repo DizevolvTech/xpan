@@ -173,10 +173,16 @@ function isMissingDeliveryAttemptsSchema(
 
 async function loadDeliveryAttemptsByOrderDbId(
   supabase: SupabaseDataClient,
+  tenantId: string,
 ): Promise<Map<string, DeliveryAttemptRow[]>> {
+  // Defense-in-depth: filtro de tenant explícito além da allowlist do wrapper
+  // (tenantOwnedTables). O admin client (service-role) faz bypass de RLS, então
+  // sem o `.eq('tenant_id')` um SELECT cru carregaria tentativas de TODOS os
+  // tenants na memória.
   const result = await supabase
     .from("delivery_attempts")
     .select("id, order_id, attempt_number, failed_at, failure_reason, reason_notes, reschedule_to")
+    .eq("tenant_id", tenantId)
     .order("attempt_number", { ascending: true });
 
   if (isMissingDeliveryAttemptsSchema(result.error)) {
@@ -218,7 +224,7 @@ export async function getPersistedDeliveryExecutions(
           "order_id, status, checklist_state, checklist_completed_at, updated_at, pending_release_reason, pending_released_at",
         ),
       supabase.from("store_orders").select("id, legacy_id"),
-      loadDeliveryAttemptsByOrderDbId(supabase),
+      loadDeliveryAttemptsByOrderDbId(supabase, tenantId),
     ]);
 
     const orderRows = assertSupabaseResult(orderRowsResult, "Failed to load order ids for delivery executions");

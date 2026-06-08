@@ -55,6 +55,7 @@ import {
   getBaseDateByCutoff,
   getDeliveryDateByStoreRule,
   getOperationalBaseDateByStoreRule,
+  normalizeSaleLeadDays,
 } from "@/lib/order-planning";
 import {
   getStoreCanOrderSunday,
@@ -190,6 +191,24 @@ function formatDateKeyWithWeekday(dateKey: string) {
   return formatDateWithWeekday(new Date(`${dateKey}T00:00:00`));
 }
 
+// A10: rótulo capitalizado do dia da semana (chave pt-BR vinda de
+// store_orders.delivery_weekday: segunda..domingo). Forma curta ("Terça",
+// "Sábado") — distinta do label longo de productionWeekDays ("Terça-feira").
+const DELIVERY_WEEKDAY_LABEL: Record<string, string> = {
+  segunda: "Segunda",
+  terca: "Terça",
+  quarta: "Quarta",
+  quinta: "Quinta",
+  sexta: "Sexta",
+  sabado: "Sábado",
+  domingo: "Domingo",
+};
+
+function formatDeliveryWeekdayLabel(weekday: string | null): string | null {
+  if (!weekday) return null;
+  return DELIVERY_WEEKDAY_LABEL[weekday] ?? null;
+}
+
 function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
@@ -311,7 +330,14 @@ export default function PedidosLojaPage() {
   // em vez de criar do zero.
   const factoryOpensOrders = isFactoryOpensOrdersEnabled();
   const [openOrders, setOpenOrders] = useState<
-    Array<{ id: string; code: string; storeId: string; storeName: string; deliveryDate: string }>
+    Array<{
+      id: string;
+      code: string;
+      storeId: string;
+      storeName: string;
+      deliveryDate: string;
+      deliveryWeekday: string | null;
+    }>
   >([]);
 
   const referenceDate = useMemo(() => new Date(), []);
@@ -328,7 +354,17 @@ export default function PedidosLojaPage() {
     setActiveStoreId: setSelectedStoreId,
     shouldShowStoreSelector,
   } = useStoreScope(activeStores, profile?.allowedStoreIds);
-  const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso);
+  // AJ-A10: ao PREENCHER um pedido aberto pela fábrica (data de entrega futura
+  // comprometida), o catálogo deve ancorar nessa data — a loja vê os produtos
+  // produzíveis para o dia comprometido, não para a próxima janela de hoje.
+  const editingOrderTargetDelivery = useMemo(() => {
+    if (!editingOrderId) return null;
+    const open = openOrders.find((order) => order.id === editingOrderId);
+    if (open?.deliveryDate) return open.deliveryDate;
+    const summary = storeOrderSummaries.find((order) => order.id === editingOrderId);
+    return summary?.deliveryDateKey ?? null;
+  }, [editingOrderId, openOrders, storeOrderSummaries]);
+  const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso, editingOrderTargetDelivery);
   // 2.7-C — sugestão ADVISORY de quantidade por dia da semana (média histórica).
   // Nunca preenche o input nem altera o payload; só exibe um hint discreto.
   const { suggestions: weekdaySuggestions } = useStoreOrderSuggestions(selectedStoreId);
@@ -349,6 +385,14 @@ export default function PedidosLojaPage() {
       .then((data) => setOpenOrders(Array.isArray(data) ? data : []))
       .catch(() => setOpenOrders([]));
   }, [factoryOpensOrders]);
+  // AJ-A10: "Pedidos para preencher" deve respeitar a loja selecionada (como a
+  // tabela abaixo). Sem isso, personas multi-loja veem os pedidos de TODAS as
+  // lojas misturados — 1 pedido por loja/dia parece "vários por dia" e datas
+  // iguais de lojas diferentes ficam lado a lado parecendo duplicidade.
+  const openOrdersForStore = useMemo(
+    () => openOrders.filter((order) => order.storeId === selectedStoreId),
+    [openOrders, selectedStoreId],
+  );
 
   useEffect(() => {
     refreshOpenOrders();
@@ -399,7 +443,7 @@ export default function PedidosLojaPage() {
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
   const saleDate = useMemo(() => {
     const date = new Date(`${deliveryDateKey}T00:00:00`);
-    const leadDays = Math.max(0, snapshot.operationalSettings.saleLeadDays ?? 1);
+    const leadDays = normalizeSaleLeadDays(snapshot.operationalSettings.saleLeadDays);
     date.setDate(date.getDate() + leadDays);
     return date;
   }, [deliveryDateKey, snapshot.operationalSettings.saleLeadDays]);
@@ -889,9 +933,12 @@ export default function PedidosLojaPage() {
         </div>
 
         <Dialog open={isNewOrderOpen} onOpenChange={handleNewOrderDialogChange}>
-          {activeOrderInScope ? (
-            // Pedido em andamento existe: esconde "Novo Pedido" e oferece "Editar".
-            // Ajustes (incluir/remover itens) acontecem no fluxo de edição.
+          {!factoryOpensOrders && activeOrderInScope ? (
+            // Fluxo legado (loja cria do zero): pedido em andamento existe — esconde
+            // "Novo Pedido" e oferece "Editar". Ajustes acontecem no fluxo de edição.
+            // Com a fábrica abrindo os pedidos, NÃO mostramos esse widget no topo
+            // (evita dualidade): a loja preenche pela seção "Pedidos para preencher"
+            // e edita os já preenchidos pela ação na própria linha da tabela.
             <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
               <p className="text-xs text-muted-foreground">
                 Pedido em andamento:{" "}
@@ -1620,40 +1667,47 @@ export default function PedidosLojaPage() {
           </Dialog>
 
           {/* AJ-0009 Fase 4a: pedidos abertos pela fábrica, aguardando a loja preencher. */}
-          {factoryOpensOrders && openOrders.length > 0 ? (
+          {factoryOpensOrders && openOrdersForStore.length > 0 ? (
             <section className="space-y-2 rounded-xl border border-info/30 bg-info/[var(--opacity-subtle)] p-4">
               <div className="flex items-center gap-2">
                 <CalendarClock className="size-4 text-info" aria-hidden />
                 <h2 className="text-sm font-semibold text-foreground">
-                  Pedidos para preencher ({openOrders.length})
+                  Pedidos para preencher ({openOrdersForStore.length})
                 </h2>
               </div>
               <p className="text-xs text-muted-foreground">
-                A fábrica abriu estes pedidos. Clique em <strong>Preencher</strong> para informar as
-                quantidades antes do prazo.
+                A fábrica liberou <strong>1 pedido por dia</strong> da semana, conforme o cronograma.
+                Clique em <strong>Preencher</strong> para informar as quantidades antes do prazo.
               </p>
+              {/* A10: pedidos da loja selecionada, já ordenados por delivery_date do
+                  backend; rotulamos cada um pelo dia da semana da entrega. */}
               <ul className="grid gap-2 sm:grid-cols-2">
-                {openOrders.map((order) => (
-                  <li
-                    key={order.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{order.storeName}</p>
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => handleOpenEditOrder({ id: order.id } as StoreOrderSummary)}
+                {openOrdersForStore.map((order) => {
+                  const weekdayLabel = formatDeliveryWeekdayLabel(order.deliveryWeekday);
+                  return (
+                    <li
+                      key={order.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
                     >
-                      Preencher
-                    </Button>
-                  </li>
-                ))}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {weekdayLabel ? `Pedido de ${weekdayLabel}` : order.code}
+                        </p>
+                        <p className="text-xs text-muted-foreground tabular-nums">
+                          {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => handleOpenEditOrder({ id: order.id } as StoreOrderSummary)}
+                      >
+                        Preencher
+                      </Button>
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           ) : null}

@@ -36,7 +36,60 @@ test("planScheduleRevisionRebuild — sem pendente, recria a partir do ativo e d
     affectedPendingRevisions: 0,
     affectedProducts: 7,
     recreated: true,
+    activeScheduleKept: false,
   });
+});
+
+test("planScheduleRevisionRebuild — sem pendente MAS preserveActiveSchedule=true → recreated mas NÃO desativa o ativo", () => {
+  // AJ-A5: editar a receita de um produto com OPs já lançadas/pedidos liberados
+  // sob o cronograma ativo NÃO pode desativá-lo (orfanaria as OPs e reverteria os
+  // pedidos). A revisão pendente ainda é aberta (recreated=true), mas o ativo é
+  // PRESERVADO até a auditoria aprovar — sinalizado por activeScheduleKept=true.
+  const plan = planScheduleRevisionRebuild({
+    pendingSchedules: [],
+    activeScheduleId: "sched-active",
+    productCount: 5,
+    preserveActiveSchedule: true,
+  });
+
+  assert.equal(plan.reuseScheduleLineId, null);
+  assert.equal(plan.recreated, true);
+  // Sem desativação — o ativo continua vivo apesar da revisão pendente aberta.
+  assert.equal(plan.deactivateActiveScheduleId, null);
+  assert.deepEqual(plan.impact, {
+    affectedPendingRevisions: 0,
+    affectedProducts: 5,
+    recreated: true,
+    activeScheduleKept: true,
+  });
+});
+
+test("planScheduleRevisionRebuild — sem pendente e preserveActiveSchedule=false → desativa o ativo (comportamento atual)", () => {
+  // Default explícito: sem trabalho comprometido, a recriação desativa o ativo.
+  const plan = planScheduleRevisionRebuild({
+    pendingSchedules: [],
+    activeScheduleId: "sched-active",
+    productCount: 3,
+    preserveActiveSchedule: false,
+  });
+
+  assert.equal(plan.recreated, true);
+  assert.equal(plan.deactivateActiveScheduleId, "sched-active");
+  assert.equal(plan.impact.activeScheduleKept, false);
+});
+
+test("planScheduleRevisionRebuild — preserveActiveSchedule=true sem ativo → activeScheduleKept=false (nada a preservar)", () => {
+  const plan = planScheduleRevisionRebuild({
+    pendingSchedules: [],
+    activeScheduleId: null,
+    productCount: 2,
+    preserveActiveSchedule: true,
+  });
+
+  assert.equal(plan.recreated, true);
+  assert.equal(plan.deactivateActiveScheduleId, null);
+  // Sem ativo, não há nada a preservar → o flag fica false.
+  assert.equal(plan.impact.activeScheduleKept, false);
 });
 
 test("planScheduleRevisionRebuild — múltiplas pendentes: reusa a mais recente e consolida o resto", () => {

@@ -2,12 +2,16 @@ import "server-only";
 
 import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import type { FactoryPlanningInput, StoreOrder, StoreProfile } from "@/lib/order-planning";
-import { getOperationalOrderWindow } from "@/lib/order-planning";
+import { getOperationalOrderWindow, getTodayDateKey } from "@/lib/order-planning";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import { allocateBusinessCode } from "@/lib/supabase-data/business-codes";
 import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
 import { planStoreOrdersToOpen } from "@/lib/store-order-open-plan";
+import {
+  activeStoreDateKey,
+  planWeeklyStoreOrderReleases,
+} from "@/lib/store-order-weekly-release-plan";
 import { resolveFilledStatus, type StoreOrderLifecycleStatus } from "@/lib/store-order-lifecycle";
 import {
   assertSupabaseResult,
@@ -59,6 +63,7 @@ type ResolvedStoreOrderRow = {
   code: string;
   store_id: string;
   ordered_at: string;
+  delivery_date: string | null;
   management_status: "ativo" | "cancelado";
   note: string;
   status: StoreOrderLifecycleStatus;
@@ -88,7 +93,7 @@ async function resolveStoreOrderRow(
 ): Promise<ResolvedStoreOrderRow> {
   const query = supabase
     .from("store_orders")
-    .select("id, legacy_id, code, store_id, ordered_at, management_status, note, status");
+    .select("id, legacy_id, code, store_id, ordered_at, delivery_date, management_status, note, status");
   const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
 
   return assertSupabaseResult(
@@ -148,6 +153,12 @@ async function validateStoreOrderItems(
     orderedAt: string;
     tenantId: string;
     supabase: SupabaseDataClient;
+    /**
+     * AJ-A10: data de entrega COMPROMETIDA (X) do pedido sendo preenchido (aberto pela
+     * fábrica p/ data futura). A validação de disponibilidade do catálogo ancora em X.
+     * `createStoreOrder` (loja cria do zero) não tem X comprometido → null.
+     */
+    targetDeliveryDate?: string | null;
   },
 ) {
   const normalizedItems = dedupeItems(items);
@@ -186,6 +197,7 @@ async function validateStoreOrderItems(
   const availableCatalog = buildStoreOrderCatalog(snapshot, {
     storeId: store.id,
     orderedAt: options.orderedAt,
+    targetDeliveryDate: options.targetDeliveryDate ?? null,
   });
   const catalogByProductId = new Map(availableCatalog.map((product) => [product.productId, product]));
   const productRows = await loadOrderProductRows(options.supabase);
@@ -272,7 +284,7 @@ export async function listFactoryStoreOrders(
   const [ordersResult, itemsResult, storesResult, productsResult] = await Promise.all([
     supabase
       .from("store_orders")
-      .select("id, legacy_id, code, store_id, ordered_at")
+      .select("id, legacy_id, code, store_id, ordered_at, delivery_date")
       .order("ordered_at", { ascending: false }),
     supabase
       .from("store_order_items")
@@ -306,6 +318,9 @@ export async function listFactoryStoreOrders(
     code: row.code,
     storeId: storeLegacyById.get(row.store_id) ?? row.store_id,
     orderedAt: row.ordered_at,
+    // AJ-A10: data de entrega gravada (promessa firmada) — usada na exibição da
+    // lista em vez de recomputar a janela operacional.
+    deliveryDate: row.delivery_date ?? null,
     items: itemsByOrderId.get(row.id) ?? [],
   }));
 }
@@ -366,6 +381,9 @@ export async function createStoreOrder(
     orderedAt,
     tenantId: input.tenantId ?? "",
     supabase,
+    // Loja cria o pedido do zero — não há entrega comprometida pela fábrica; a janela
+    // operacional manda. AJ-A10 só ancora quando a fábrica abriu p/ data futura.
+    targetDeliveryDate: null,
   });
   const storeDatabaseId = await resolveStoreDatabaseId(input.storeId, supabase);
 
@@ -550,12 +568,175 @@ export async function openStoreOrders(
   return { opened, skipped };
 }
 
+export interface OpenWeeklyStoreOrdersInput {
+  /** Início do horizonte rolante de 7 dias (YYYY-MM-DD). Default: hoje. */
+  referenceDate?: string;
+  /** Lojas (legacy ids) para as quais liberar a semana. */
+  storeIds: string[];
+  openedByProfileId?: string | null;
+  tenantId?: string | null;
+  orderedAt?: string;
+}
+
+/**
+ * FEATURE A10: a fábrica LIBERA os pedidos da SEMANA por dia, a partir do cronograma.
+ *
+ * Para cada loja-alvo, deriva (via `planWeeklyStoreOrderReleases`) o conjunto de datas de
+ * entrega da semana cobertas pelo cronograma ativo e que a loja recebe, e abre um pedido
+ * `aberto` VAZIO por (loja × deliveryDate) que ainda não tem pedido ativo (idempotência).
+ *
+ * Erros de regra de negócio (nenhuma loja existe, sem cronograma ativo) são lançados com
+ * mensagens que a rota mapeia para HTTP 400 (`isClientValidationError`).
+ */
+export async function openWeeklyStoreOrdersFromSchedule(
+  input: OpenWeeklyStoreOrdersInput,
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+): Promise<{ opened: Array<{ storeId: string; code: string }>; skipped: string[] }> {
+  const orderedAt = input.orderedAt ?? new Date().toISOString();
+  const referenceDate = input.referenceDate ?? getTodayDateKey();
+  const snapshot = await getMasterDataSnapshot({
+    supabase,
+    includeProfileNames: false,
+    tenantId: input.tenantId,
+    forceRefresh: true,
+  });
+  const openedByProfileDatabaseId = await resolveProfileDatabaseId(
+    supabase,
+    input.openedByProfileId ?? null,
+    { tenantId: input.tenantId },
+  );
+
+  const requestedStoreIds = Array.from(new Set(input.storeIds));
+  const storeByLegacyId = new Map(snapshot.stores.map((store) => [store.id, store]));
+  const targetStores: StoreProfile[] = requestedStoreIds
+    .map((legacyId) => storeByLegacyId.get(legacyId))
+    .filter((store): store is (typeof snapshot.stores)[number] => Boolean(store))
+    .map((store) => ({
+      id: store.id,
+      code: store.code,
+      name: store.name,
+      orderingDays: store.orderingDays,
+      receivingDays: store.receivingDays,
+      orderingBlockedDays: store.orderingBlockedDays,
+      receivingBlockedDays: store.receivingBlockedDays,
+      receiveWindow: store.receiveWindow,
+      deliveryZone: store.deliveryZone ?? null,
+    }));
+
+  if (targetStores.length === 0) {
+    throw new Error("Nenhuma loja válida informada para liberar os pedidos da semana.");
+  }
+
+  const hasActiveSchedule = snapshot.schedules.some((schedule) => schedule.status === "ativo");
+  if (!hasActiveSchedule) {
+    throw new Error(
+      "Não há cronograma ativo: os pedidos da semana só podem ser liberados a partir de um cronograma ativo.",
+    );
+  }
+
+  // Resolve db ids das lojas-alvo (para a checagem de pedidos ativos e os inserts).
+  const storeDbIdByLegacy = new Map<string, string>();
+  for (const store of targetStores) {
+    storeDbIdByLegacy.set(store.id, await resolveStoreDatabaseId(store.id, supabase));
+  }
+  const dbIds = Array.from(storeDbIdByLegacy.values());
+  const dbIdToLegacy = new Map(
+    Array.from(storeDbIdByLegacy.entries()).map(([legacy, db]) => [db, legacy]),
+  );
+
+  // Pedidos ATIVOS futuros (>= referenceDate) das lojas-alvo → Set "storeId|deliveryDate".
+  const existingActiveByStoreDate = new Set<string>();
+  if (dbIds.length > 0) {
+    const existingResult = await supabase
+      .from("store_orders")
+      .select("store_id, delivery_date")
+      .eq("management_status", "ativo")
+      .gte("delivery_date", referenceDate)
+      .in("store_id", dbIds);
+    const existing = assertSupabaseResult(existingResult, "Failed to load active orders for weekly release");
+    for (const row of existing) {
+      const legacy = dbIdToLegacy.get(row.store_id);
+      if (legacy) {
+        existingActiveByStoreDate.add(activeStoreDateKey(legacy, row.delivery_date));
+      }
+    }
+  }
+
+  const plan = planWeeklyStoreOrderReleases({
+    referenceDate,
+    stores: targetStores,
+    schedules: snapshot.schedules,
+    products: snapshot.products,
+    sectors: snapshot.sectors,
+    lines: snapshot.lines,
+    settings: snapshot.operationalSettings,
+    ingredients: snapshot.ingredients,
+    existingActiveByStoreDate,
+  });
+
+  const opened: Array<{ storeId: string; code: string }> = [];
+  for (const release of plan.toOpen) {
+    const store = storeByLegacyId.get(release.storeId)!;
+    const storeDatabaseId = storeDbIdByLegacy.get(release.storeId)!;
+    const legacyId = `order-${crypto.randomUUID()}`;
+    const code = await allocateBusinessCode("PD", orderedAt, supabase);
+
+    const insertResult = await supabase
+      .from("store_orders")
+      .insert({
+        legacy_id: legacyId,
+        code,
+        store_id: storeDatabaseId,
+        opened_by_profile_id: openedByProfileDatabaseId,
+        opened_at: orderedAt,
+        ordered_at: orderedAt,
+        base_date: release.deliveryDate,
+        delivery_date: release.deliveryDate,
+        delivery_weekday: release.deliveryWeekday,
+        release_origin: "cronograma",
+        source_schedule_ids: release.sourceScheduleIds,
+        receive_window_snapshot: store.receiveWindow,
+        expedition_lead_days_snapshot: snapshot.operationalSettings.expeditionLeadDays,
+        note: "",
+        status: "aberto",
+      })
+      .select("legacy_id, code")
+      .single();
+    const inserted = assertSupabaseResult(insertResult, "Failed to open weekly store order");
+
+    await appendStoreOrderEvent(
+      {
+        orderId: inserted.legacy_id ?? legacyId,
+        type: "criacao",
+        title: "Pedido aberto pela fábrica (cronograma)",
+        description: `Pedido ${inserted.code} liberado para a loja ${store.name} preencher (entrega ${release.deliveryDate}).`,
+        createdByProfileId: input.openedByProfileId ?? null,
+        metadata: {
+          origin: "cronograma",
+          deliveryDate: release.deliveryDate,
+          deliveryWeekday: release.deliveryWeekday,
+          sourceScheduleIds: release.sourceScheduleIds,
+        },
+      },
+      supabase,
+    );
+
+    opened.push({ storeId: release.storeId, code: inserted.code });
+  }
+
+  // "skipped" no mesmo formato textual de openStoreOrders (legacy ids), deduplicado.
+  const skipped = Array.from(new Set(plan.skipped.map((entry) => entry.storeId)));
+
+  return { opened, skipped };
+}
+
 export interface OpenStoreOrderSummary {
   id: string;
   code: string;
   storeId: string;
   storeName: string;
   deliveryDate: string;
+  deliveryWeekday: string | null;
 }
 
 /**
@@ -569,7 +750,7 @@ export async function listOpenStoreOrders(
   const [ordersResult, storesResult] = await Promise.all([
     supabase
       .from("store_orders")
-      .select("id, legacy_id, code, store_id, delivery_date")
+      .select("id, legacy_id, code, store_id, delivery_date, delivery_weekday")
       .eq("status", "aberto")
       .eq("management_status", "ativo")
       .order("delivery_date", { ascending: true }),
@@ -591,6 +772,7 @@ export async function listOpenStoreOrders(
         storeId: storeLegacyId,
         storeName: store?.name ?? "Loja",
         deliveryDate: row.delivery_date,
+        deliveryWeekday: row.delivery_weekday ?? null,
       };
     })
     .filter((order) => (allowed ? allowed.has(order.storeId) : true));
@@ -617,6 +799,11 @@ export async function updateStoreOrder(
     orderedAt: orderRow.ordered_at,
     tenantId: input.tenantId ?? "",
     supabase,
+    // AJ-A10: PREENCHER um pedido (aberto pela fábrica p/ data futura) ancora a
+    // disponibilidade na entrega COMPROMETIDA persistida (`delivery_date`), não na
+    // próxima janela operacional derivada de `ordered_at`. Pedidos legados sem
+    // delivery_date → null → comportamento idêntico ao atual.
+    targetDeliveryDate: orderRow.delivery_date ?? null,
   });
 
   const updateOrderResult = await supabase

@@ -26,6 +26,10 @@ export async function GET() {
       supabase,
       tenantId: authorization.effectiveTenantId,
       includeProfileNames: hasAnyNonStoreAccess(authorization.permissions),
+      // A6: a auditoria de cronograma (gestor-fabrica) consome o último changelog por
+      // produto daqui, em vez do endpoint cross-módulo que exige gestor-dados.produtos.
+      // Loja não recebe o histórico de alterações.
+      includeProductChangelog: hasAnyNonStoreAccess(authorization.permissions),
     });
     const allowedStoreIds = getAllowedStoreIds(authorization);
 

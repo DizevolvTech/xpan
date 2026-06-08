@@ -932,3 +932,181 @@ test("sem resolveDeliveryStatus o status da OP é idêntico ao de hoje (só prod
 
   assert.equal(result.productionOrders[0]?.status, "aguardando_expedicao");
 });
+
+// --- ramo !canPlan: item fora do fluxo (sem OP) vai para em_espera ------------
+// Quando o cronograma ativo some (canPlan vira false), o motor SEMPRE zera
+// productionItemKey/productionDate e o item NUNCA gera OP (buildProductionOrders
+// filtra `canPlan && productionDate`). O defense-in-depth do A5, que tentava
+// PRESERVAR release/status nesse ramo, criava um item "agendado"/liberado preso SEM
+// OP no chão (resolveProductionItemStatus(null) é null → caminho de status avançado
+// era código morto). Revertido ao comportamento coerente: sem OP = em_espera. A
+// proteção REAL contra orfanar OPs ao editar receita é o preserveActiveSchedule
+// (master-data-admin), que mantém o item canPlan — não este ramo.
+function buildNotPlannableItemPlanning(): FactoryPlanningData {
+  return {
+    referenceDate: "2026-03-18",
+    orders: [
+      {
+        id: "order-1",
+        code: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        dPlusLabel: "D+1",
+        deliveryDate: "2026-03-19",
+        deliveryDateLabel: "19/03/2026",
+        productionDateLabel: "19/03/2026",
+        itemsCount: 1,
+        totalKg: 12,
+        opsLabel: "-",
+        releasedToProduction: false,
+        availableForRelease: true,
+        workflowProgress: 0,
+        status: "em_espera",
+      },
+    ],
+    orderItems: [
+      {
+        id: "item-1",
+        orderId: "order-1",
+        orderCode: "PD-0001",
+        storeId: "store-1",
+        storeName: "Loja A",
+        orderedAt: "18/03/2026 08:00",
+        baseDate: "2026-03-18",
+        deliveryDate: "2026-03-19",
+        saleDate: "2026-03-19",
+        productionDate: "2026-03-19",
+        delayed: false,
+        demandSource: "pedido",
+        productId: "product-1",
+        productCode: "PR-0001",
+        productName: "Produto A",
+        lineId: "line-1",
+        lineName: "Linha A",
+        sectorId: "sector-1",
+        sectorName: "Setor A",
+        scheduleId: "schedule-1",
+        scheduleCode: "SL-0001",
+        scheduleName: "Linha Executora",
+        requestedQuantity: 12,
+        requestedUnit: "Kg",
+        internalKg: 12,
+        minimumProductionKg: 0,
+        expeditionUnit: "Kg",
+        expeditionQuantityRaw: 12,
+        expeditionQuantity: 12,
+        // Cronograma ativo desapareceu → motor marca canPlan=false. Nesse caso o
+        // motor SEMPRE zera productionItemKey/productionDate (engine.ts) e o item
+        // nunca gera OP — refletido aqui para exercitar o caminho REAL.
+        canPlan: false,
+        scheduleDayPriority: null,
+        availableForRelease: false,
+        releasedToProduction: false,
+        productionStarted: false,
+        capacityPerBatch: null,
+        salesToKgFactor: 1,
+        salesUnit: "Kg",
+        batchesDone: 0,
+        productionItemKey: null,
+        productionItemStatus: null,
+        preparationStages: [...defaultProductPreparationStages],
+        workflowProgress: 0,
+        opCode: null,
+        status: "em_espera",
+      },
+    ],
+    productionOrders: [],
+    expedition: [],
+    expeditionItems: [],
+    productionDates: ["2026-03-19"],
+    deliveryDates: ["2026-03-19"],
+  };
+}
+
+test("item !canPlan e LIBERADO no DB NÃO reporta agendado/em_producao sem OP — vai para em_espera", () => {
+  // Caminho REAL: canPlan=false → productionItemKey=null → resolveProductionItemStatus(null)
+  // (que o caller real só chama com chave válida) jamais entrega status avançado. O stub
+  // aqui devolveria "em_producao" para QUALQUER chave, mas a chave é null e o ramo é
+  // destrutivo: o item sai do fluxo. Garante que um item sem OP nunca aparece liberado/
+  // produzindo (estado preso).
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: () => true,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "em_producao",
+  });
+
+  const item = result.orderItems[0];
+  assert.equal(item?.releasedToProduction, false);
+  assert.equal(item?.productionItemStatus, null);
+  assert.equal(item?.status, "em_espera");
+  assert.equal(item?.workflowProgress, 0);
+  assert.notEqual(item?.status, "agendado");
+  assert.notEqual(item?.status, "em_producao");
+});
+
+test("item !canPlan com produção 'avançada' (chave null) ainda vai para em_espera — sem OP", () => {
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: () => false,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => "concluido",
+  });
+
+  const item = result.orderItems[0];
+  // Sem chave de produção (canPlan=false) não há OP nem status persistido real:
+  // não há como reportar concluido/aguardando_expedicao.
+  assert.equal(item?.productionItemStatus, null);
+  assert.equal(item?.status, "em_espera");
+  assert.notEqual(item?.status, "aguardando_expedicao");
+});
+
+test("item !canPlan NÃO liberado e sem produção vai para em_espera", () => {
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: () => false,
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => null,
+  });
+
+  const item = result.orderItems[0];
+  assert.equal(item?.releasedToProduction, false);
+  assert.equal(item?.productionItemStatus, null);
+  assert.equal(item?.status, "em_espera");
+  assert.equal(item?.workflowProgress, 0);
+});
+
+// FIX A — order.releasedToProduction deriva do estado AUTORITATIVO de release (DB)
+// por order_id, não só dos itens. Pedido cujos itens perderam canPlan (ou pedido
+// vazio) mantinha o flag false mesmo com release gravado → estado preso (voltava pra
+// "Aberto", cancelamento bloqueado).
+test("FIX A: order com release gravado no DB mas SEM itens liberáveis reporta releasedToProduction=true", () => {
+  // O item é !canPlan → applyItemWorkflowState zera item.releasedToProduction.
+  // Mesmo assim, com release gravado por order_id, o PEDIDO deve aparecer liberado.
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: (orderId) => orderId === "order-1",
+    isCancelled: () => false,
+    resolveProductionItemStatus: () => null,
+  });
+
+  const order = result.orders.find((o) => o.id === "order-1");
+  assert.equal(
+    result.orderItems[0]?.releasedToProduction,
+    false,
+    "o item em si não está liberado (sem plano de produção)",
+  );
+  assert.equal(
+    order?.releasedToProduction,
+    true,
+    "o PEDIDO reporta liberado pelo estado autoritativo (DB), mantendo a UI coerente",
+  );
+});
+
+test("FIX A: pedido cancelado nunca reporta releasedToProduction, mesmo com release no DB", () => {
+  const result = applyFactoryWorkflowState(buildNotPlannableItemPlanning(), {
+    isReleased: () => true,
+    isCancelled: () => true,
+    resolveProductionItemStatus: () => null,
+  });
+
+  const order = result.orders.find((o) => o.id === "order-1");
+  assert.equal(order?.releasedToProduction, false, "cancelado vence o release autoritativo");
+});

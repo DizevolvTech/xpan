@@ -60,6 +60,13 @@ export function buildStoreOrderCatalog(
   options: {
     storeId: string;
     orderedAt: string;
+    /**
+     * AJ-A10: data de entrega COMPROMETIDA (X) do pedido que a loja está preenchendo
+     * (aberto pela fábrica p/ data futura). Quando informada, a disponibilidade e a
+     * timeline ancoram em X em vez da próxima janela operacional. Ausente/null →
+     * comportamento legado.
+     */
+    targetDeliveryDate?: string | null;
   },
 ) {
   const store = snapshot.stores.find((entry) => entry.id === options.storeId);
@@ -102,6 +109,7 @@ export function buildStoreOrderCatalog(
             productProductionDays: product.productionDays,
             productExpeditionLeadDays: product.expeditionLeadDays,
             scheduleItem,
+            targetDeliveryDate: options.targetDeliveryDate ?? null,
           },
         )
       : null;
@@ -112,6 +120,7 @@ export function buildStoreOrderCatalog(
       product.productionDays,
       snapshot.operationalSettings.saleLeadDays,
       product.expeditionLeadDays,
+      options.targetDeliveryDate ?? null,
     );
 
     const key = `${schedule?.id ?? line.id}|${product.id}`;
@@ -135,7 +144,9 @@ export function buildStoreOrderCatalog(
       productionDays: availability?.matchingDays ?? [],
       minimumProductionKg: product.minimumProductionKg,
       baseDate: availability?.baseDate ?? orderWindow.baseDate,
-      deliveryDate: availability?.deliveryDate ?? orderWindow.deliveryDate,
+      // AJ-A10: sem availability (linha sem cronograma), o fallback de entrega também
+      // respeita a data comprometida X quando informada.
+      deliveryDate: availability?.deliveryDate ?? options.targetDeliveryDate ?? orderWindow.deliveryDate,
       productionDate: availability?.productionDate ?? timeline.productionDate,
       saleDate: timeline.saleDate,
       available: availability?.available ?? false,

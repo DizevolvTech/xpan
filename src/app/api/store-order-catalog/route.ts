@@ -23,6 +23,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("storeId");
     const orderedAt = searchParams.get("orderedAt");
+    // AJ-A10: opcional. Quando a loja preenche um pedido aberto p/ data futura, a UI
+    // passa a entrega comprometida (X) para ancorar a disponibilidade nessa data.
+    const targetDeliveryDate = searchParams.get("targetDeliveryDate");
 
     if (!storeId || !orderedAt) {
       return NextResponse.json([]);
@@ -44,6 +47,7 @@ export async function GET(request: Request) {
     const catalog = buildStoreOrderCatalog(snapshot, {
       storeId,
       orderedAt,
+      targetDeliveryDate: targetDeliveryDate ?? null,
     });
 
     return NextResponse.json(catalog);

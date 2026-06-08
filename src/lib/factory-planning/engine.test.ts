@@ -6,6 +6,8 @@ import {
   buildFactoryPlanningData,
   getOperationalOrderWindow,
   getOperationalTimeline,
+  getWeekDayKey,
+  normalizeSaleLeadDays,
   resolveScheduledProductAvailability,
   resolveProductionDateInWindow,
 } from "@/lib/factory-planning/engine";
@@ -147,6 +149,114 @@ test("operational timeline derives sale day after delivery", () => {
     productionDate: "2026-03-19",
     delayed: false,
   });
+});
+
+test("normalizeSaleLeadDays floors at 0 and keeps 0 as same-day intent", () => {
+  assert.equal(normalizeSaleLeadDays(0), 0);
+  assert.equal(normalizeSaleLeadDays(1), 1);
+  assert.equal(normalizeSaleLeadDays(undefined), 0);
+  assert.equal(normalizeSaleLeadDays(Number.NaN), 0);
+  assert.equal(normalizeSaleLeadDays(-3), 0);
+  assert.equal(normalizeSaleLeadDays(2.7), 2);
+});
+
+test("operational timeline with saleLeadDays 0 sells on the delivery day", () => {
+  const timeline = getOperationalTimeline(
+    "2026-03-17T09:00:00",
+    baseStore,
+    { ...settings, saleLeadDays: 0 },
+    ["quinta"],
+    0,
+    0,
+  );
+
+  assert.equal(timeline.deliveryDate, "2026-03-19");
+  assert.equal(timeline.saleDate, timeline.deliveryDate);
+});
+
+test("operational timeline with saleLeadDays 1 sells one day after delivery", () => {
+  const timeline = getOperationalTimeline(
+    "2026-03-17T09:00:00",
+    baseStore,
+    { ...settings, saleLeadDays: 1 },
+    ["quinta"],
+    1,
+    0,
+  );
+
+  assert.equal(timeline.deliveryDate, "2026-03-19");
+  assert.equal(timeline.saleDate, "2026-03-20");
+});
+
+// AJ-A10: ancoragem do preenchimento na data de entrega COMPROMETIDA (X).
+// Quando a loja preenche um pedido aberto pela fábrica p/ data futura, o motor deve
+// agendar a produção para entregar em X — NÃO na "próxima janela operacional".
+
+test("scheduled availability anchors production at the committed future delivery date (X)", () => {
+  // Produto produz quarta, lead 1 (quarta + 1 = quinta = entrega).
+  // Janela NATURAL (pedido terça 17/03): entrega quinta 19/03, produz quarta 18/03.
+  const natural = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+  });
+
+  assert.equal(natural.available, true);
+  assert.equal(natural.deliveryDate, "2026-03-19");
+  assert.equal(natural.productionDate, "2026-03-18");
+
+  // MESMA chamada, mas ANCORADA em X = quinta 02/04 (data comprometida futura).
+  const anchored = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+    targetDeliveryDate: "2026-04-02",
+  });
+
+  // Entrega = X; produção = quarta 01/04 (01/04 + 1 lead = 02/04 = X). Disponível.
+  assert.equal(anchored.available, true);
+  assert.equal(anchored.deliveryDate, "2026-04-02");
+  assert.equal(anchored.productionDate, "2026-04-01");
+  assert.equal(getWeekDayKey(anchored.productionDate!), "quarta");
+
+  // Prova do efeito: a ancoragem MUDOU o plano vs. a janela natural.
+  assert.notEqual(anchored.deliveryDate, natural.deliveryDate);
+  assert.notEqual(anchored.productionDate, natural.productionDate);
+});
+
+test("scheduled availability with null targetDeliveryDate is IDENTICAL to legacy window behavior", () => {
+  const legacy = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+  });
+
+  const explicitNull = resolveScheduledProductAvailability("2026-03-17T09:00:00", baseStore, settings, {
+    productProductionDays: ["quarta"],
+    productExpeditionLeadDays: 1,
+    scheduleItem: { id: "schedule-item-1", productionDays: ["quarta"] },
+    targetDeliveryDate: null,
+  });
+
+  // Regressão crítica: caminho novo desligado ⇒ resultado byte-a-byte igual ao legado.
+  assert.deepEqual(explicitNull, legacy);
+  assert.equal(explicitNull.deliveryDate, getOperationalOrderWindow("2026-03-17T09:00:00", baseStore, settings).deliveryDate);
+});
+
+test("operational timeline anchored at X sells X + saleLeadDays", () => {
+  const timeline = getOperationalTimeline(
+    "2026-03-17T09:00:00",
+    baseStore,
+    { ...settings, saleLeadDays: 1 },
+    ["quarta"],
+    1,
+    1,
+    "2026-04-02",
+  );
+
+  assert.equal(timeline.deliveryDate, "2026-04-02");
+  assert.equal(timeline.productionDate, "2026-04-01");
+  assert.equal(timeline.saleDate, "2026-04-03");
 });
 
 // Cenário do cliente — pedido PD-260429-0001:
@@ -1388,6 +1498,94 @@ test("buildFactoryPlanningData respeita escape hatch EXPAND_MPI_INTO_OPS=false (
       assert.equal(item.totalKg, 0, "qualquer slot de massa visível é do cronograma (qtd 0), não demanda expandida"),
     );
   });
+});
+
+// FIX MPI — REGRESSÃO: a OP do item MPI (massa de pizza) deve SOBREVIVER ao liberar
+// o pedido. O bug: `applyFactoryWorkflowState` reconstruía as OPs de `data.orderItems`
+// (lado de exibição, SEM os itens MPI expandidos), então ao liberar o pedido a OP da
+// massa sumia do chão/pré-pesagem. Fix: reconstruir do conjunto COMPLETO de
+// planejamento (`productionPlanItems`, COM o MPI).
+test("FIX MPI: OP da massa (MPI) sobrevive ao liberar o pedido (applyFactoryWorkflowState)", () => {
+  withMpiExpansion(() => {
+    const { sectors, lines, products, schedules } = buildPizzaScenario();
+    const planning = buildFactoryPlanningData("2026-03-19", {
+      stores: [baseStore],
+      storeOrders: [
+        {
+          id: "order-1",
+          code: "PD-0001",
+          storeId: "store-1",
+          orderedAt: "2026-03-17T09:00:00.000Z",
+          items: [{ id: "item-1", productId: "pizza", quantity: 8, unit: "Un" }],
+        },
+      ],
+      settings,
+      sectors,
+      lines,
+      products,
+      schedules,
+    });
+
+    // ANTES de liberar: a base já tem OPs de pizza E de massa (motor expande).
+    const baseMassa = planning.productionOrders.flatMap((op) =>
+      op.items.filter((item) => item.productId === "mpi-massa"),
+    );
+    assert.equal(baseMassa.length, 1, "antes de liberar a OP da massa existe");
+    assert.equal(baseMassa[0]?.totalKg, 0.8, "massa = 0.4kg/kg × 2kg de pizza");
+    // O conjunto completo de planejamento (com MPI) é exposto para a reconstrução.
+    assert.ok(
+      planning.productionPlanItems?.some((item) => item.productId === "mpi-massa"),
+      "productionPlanItems inclui o item MPI",
+    );
+
+    // Libera o pedido pai (order-1). O item MPI herda orderId do pai → liberado junto.
+    const released = applyFactoryWorkflowState(planning, {
+      isReleased: (orderId) => orderId === "order-1",
+      isCancelled: () => false,
+      resolveProductionItemStatus: () => "nao_iniciado",
+    });
+
+    const releasedMassa = released.productionOrders.flatMap((op) =>
+      op.items.filter((item) => item.productId === "mpi-massa"),
+    );
+    assert.equal(releasedMassa.length, 1, "APÓS liberar, a OP da massa (MPI) CONTINUA presente");
+    assert.equal(releasedMassa[0]?.totalKg, 0.8, "totalKg da massa preservado após o release");
+
+    // E a OP da massa está marcada como liberada (desce pro chão).
+    const massaOp = released.productionOrders.find((op) =>
+      op.items.some((item) => item.productId === "mpi-massa"),
+    );
+    assert.equal(massaOp?.releasedToProduction, true, "OP da massa liberada junto com o pai");
+  });
+});
+
+// A10 — pedido VAZIO (0 itens) NÃO é liberável. `[].every()` é `true`, então sem a
+// guarda `items.length > 0` um pedido sem itens aparecia liberável e gerava release
+// fantasma.
+test("A10: pedido VAZIO (0 itens) tem availableForRelease=false em buildOrders", () => {
+  const { sectors, lines, products, schedules } = buildPizzaScenario();
+  const planning = buildFactoryPlanningData("2026-03-19", {
+    stores: [baseStore],
+    storeOrders: [
+      {
+        id: "order-empty",
+        code: "PD-VAZIO",
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [],
+      },
+    ],
+    settings,
+    sectors,
+    lines,
+    products,
+    schedules,
+  });
+
+  const emptyOrder = planning.orders.find((order) => order.id === "order-empty");
+  assert.ok(emptyOrder, "pedido vazio aparece na lista de pedidos");
+  assert.equal(emptyOrder?.itemsCount, 0);
+  assert.equal(emptyOrder?.availableForRelease, false, "pedido vazio NÃO é liberável");
 });
 
 // ---------------------------------------------------------------------------

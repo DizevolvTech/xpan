@@ -2,6 +2,9 @@ export type OrderReleaseValidationReason =
   | "order_cancelled"
   | "order_not_planned"
   | "order_not_releasable"
+  // A10: pedido sem itens (vazio) — `[].every()` é `true`, então sem esta guarda
+  // explícita um pedido vazio passaria na validação e geraria um release fantasma.
+  | "order_empty"
   // FASE 2 (blindagem): o id não corresponde a um pedido real (slot de esqueleto
   // do cronograma, qtd 0). Liberar isso criaria um release órfão.
   | "order_not_real";
@@ -37,7 +40,7 @@ export interface OrderRowForValidation {
 }
 
 export interface PlanningSnapshotForValidation {
-  orders: Array<{ id: string; availableForRelease: boolean }>;
+  orders: Array<{ id: string; availableForRelease: boolean; itemsCount?: number }>;
 }
 
 export function assertPlanningAllowsRelease(
@@ -69,6 +72,19 @@ export function assertPlanningAllowsRelease(
       error: new OrderReleaseValidationError(
         "order_not_planned",
         "pedido não aparece no planejamento da fábrica para hoje (verifique janela operacional, itens, sub-receita / MPI).",
+      ),
+    };
+  }
+
+  // A10: pedido vazio (0 itens) — rejeição explícita. `availableForRelease` já é
+  // `false` para pedido vazio no motor, mas a mensagem genérica de "item sem produção
+  // planejável" confundiria; aqui damos o motivo real.
+  if (planningRow.itemsCount === 0) {
+    return {
+      ok: false,
+      error: new OrderReleaseValidationError(
+        "order_empty",
+        "Pedido sem itens não pode ser liberado para produção.",
       ),
     };
   }

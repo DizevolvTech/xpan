@@ -67,16 +67,9 @@ type ScheduleDayBoard = {
   plannedKg: number;
 };
 
-// AJ-0003.1: entrada do histórico de edições de produto (product_changelog).
-type ProductChangelogFieldChange = { field: string; label: string; from: string; to: string };
-type ProductChangelogEntry = {
-  id: string;
-  version_number: number;
-  change_description: string | null;
-  changed_by_name: string | null;
-  created_at: string;
-  snapshot_data: { name?: string; description?: string; changedFields?: ProductChangelogFieldChange[] } | null;
-};
+// A6: última edição por produto (product_changelog), embutida no snapshot de
+// master-data (campo `productChangelogByProductId`). Antes vinha de um fetch ao
+// endpoint cross-módulo, que dava 403 silencioso para o gestor-fabrica.
 
 type SublinhaRow = WeeklyProductionSchedule & {
   lineName: string;
@@ -502,52 +495,15 @@ export default function SublinhasProducaoPage() {
     [selectedSchedule],
   );
 
-  // AJ-0003.1: ao abrir a auditoria, carrega a última edição (motivo + campos
-  // alterados) de cada produto da revisão, do product_changelog, para destacar
-  // na grade auditável o que mudou e por quê.
-  const [productChangelogById, setProductChangelogById] = useState<
-    Map<string, ProductChangelogEntry>
-  >(new Map());
-
-  useEffect(() => {
-    if (!isDetailsOpen || selectedLineProducts.length === 0) {
-      setProductChangelogById(new Map());
-      return;
-    }
-
-    let cancelled = false;
-    const productIds = Array.from(new Set(selectedLineProducts.map((product) => product.productId)));
-
-    void Promise.allSettled(
-      productIds.map(async (productId) => {
-        const response = await fetch(
-          `/api/master-data/products/${encodeURIComponent(productId)}/changelog`,
-        );
-        if (!response.ok) {
-          return null;
-        }
-        const entries = (await response.json().catch(() => null)) as ProductChangelogEntry[] | null;
-        // O endpoint devolve em ordem decrescente de versão — a primeira é a última edição.
-        const latest = Array.isArray(entries) && entries.length > 0 ? entries[0] : null;
-        return latest ? ([productId, latest] as const) : null;
-      }),
-    ).then((results) => {
-      if (cancelled) {
-        return;
-      }
-      const next = new Map<string, ProductChangelogEntry>();
-      for (const result of results) {
-        if (result.status === "fulfilled" && result.value) {
-          next.set(result.value[0], result.value[1]);
-        }
-      }
-      setProductChangelogById(next);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isDetailsOpen, selectedLineProducts]);
+  // A6: a última edição (motivo + campos alterados) de cada produto vem embutida no
+  // snapshot de master-data, que o gestor-fabrica já está autorizado a ler. Antes
+  // havia um fetch por produto ao endpoint cross-módulo, que retornava 403 silencioso
+  // (permissão gestor-dados.produtos indisponível à persona) — a justificativa nunca
+  // aparecia. Ausente para tenants sem a migration de changelog (box não renderiza).
+  const productChangelogById = useMemo(
+    () => snapshot.productChangelogByProductId ?? {},
+    [snapshot.productChangelogByProductId],
+  );
   const selectedDayBoards = useMemo(
     () => {
       const orderedDays = [
@@ -1414,21 +1370,21 @@ export default function SublinhasProducaoPage() {
                                   <div className="font-medium text-foreground">{product.name}</div>
                                   <div className="text-xs text-muted-foreground">{product.code}</div>
                                   {(() => {
-                                    // AJ-0003.1: justificativa + campos alterados da última edição.
-                                    const changelog = productChangelogById.get(product.productId);
-                                    if (!changelog?.change_description?.trim()) {
+                                    // A6: justificativa + campos alterados da última edição.
+                                    const changelog = productChangelogById[product.productId];
+                                    if (!changelog?.changeDescription?.trim()) {
                                       return null;
                                     }
-                                    const changedFields = changelog.snapshot_data?.changedFields ?? [];
+                                    const changedFields = changelog.changedFields ?? [];
                                     return (
                                       <div className="mt-2 rounded-lg border border-info/30 bg-info/10 px-2.5 py-1.5">
                                         <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-info">
                                           <History className="size-3" aria-hidden />
                                           Última edição
-                                          {changelog.changed_by_name ? ` · ${changelog.changed_by_name}` : ""}
+                                          {changelog.changedByName ? ` · ${changelog.changedByName}` : ""}
                                         </div>
                                         <p className="mt-1 text-xs text-foreground">
-                                          {changelog.change_description}
+                                          {changelog.changeDescription}
                                         </p>
                                         {changedFields.length > 0 ? (
                                           <ul className="mt-1.5 space-y-0.5">

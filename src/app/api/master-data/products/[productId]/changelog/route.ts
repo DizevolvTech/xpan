@@ -4,6 +4,11 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
+// A6: este endpoint permanece restrito a gestor-dados.produtos (histórico completo
+// no módulo de produtos). A auditoria de cronograma (gestor-fabrica) NÃO consome
+// este endpoint — ela lê o último changelog por produto de
+// `snapshot.productChangelogByProductId` (GET /api/master-data), que a persona já
+// está autorizada a ler. NÃO relaxar a permissão aqui.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ productId: string }> },

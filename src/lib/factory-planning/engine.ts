@@ -50,7 +50,7 @@ export interface FactoryPlanningInput {
   ingredients?: ProductionIngredient[];
 }
 
-interface ResolvedPlanningSource {
+export interface ResolvedPlanningSource {
   settings: OperationalSettings;
   sectorsById: Map<string, ProductionSector>;
   linesById: Map<string, ProductionLine>;
@@ -197,8 +197,9 @@ export interface OperationalAvailabilityResult {
   scheduleItemId: string | null;
 }
 
-function normalizeSaleLeadDays(saleLeadDays: number | undefined) {
-  return Number.isFinite(saleLeadDays) && Number(saleLeadDays) > 0 ? Number(saleLeadDays) : 1;
+export function normalizeSaleLeadDays(saleLeadDays: number | undefined) {
+  const n = Number(saleLeadDays);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 
 function getMatchingProductionDays(
@@ -223,9 +224,26 @@ export function resolveScheduledProductAvailability(
     productProductionDays: ProductionWeekDay[];
     productExpeditionLeadDays: number;
     scheduleItem?: Pick<WeeklyScheduleItem, "id" | "productionDays"> | null;
+    /**
+     * AJ-A10: data de entrega COMPROMETIDA (X) quando a loja PREENCHE um pedido que
+     * a fábrica abriu para uma data futura. Quando informada, o planejamento ancora
+     * em X (entrega = X; busca a data de produção que entrega em X) em vez de na
+     * "próxima janela operacional" derivada de `orderedAt`. Ausente/null →
+     * comportamento IDÊNTICO ao legado (entrega = janela operacional de orderedAt).
+     */
+    targetDeliveryDate?: string | null;
   },
 ): OperationalAvailabilityResult {
-  const { baseDate, deliveryDate } = getOperationalOrderWindow(orderedAt, store, settings);
+  const window = getOperationalOrderWindow(orderedAt, store, settings);
+  const deliveryDate = options.targetDeliveryDate ?? window.deliveryDate;
+  // base operacional = quando o pedido entrou (só display); nunca ancora a busca.
+  const baseDate = window.baseDate;
+  // Quando ancorado em X, a busca regressiva da data de produção precisa de um piso
+  // suficientemente anterior a X (lead do produto + folga semanal) para encontrar o
+  // dia de produção compatível. Sem âncora, mantém o piso legado (window.baseDate).
+  const searchFloor = options.targetDeliveryDate
+    ? addDays(deliveryDate, -(options.productExpeditionLeadDays + 7))
+    : window.baseDate;
   const deliveryWeekDay = getWeekDayKey(deliveryDate);
 
   if (!options.scheduleItem) {
@@ -263,7 +281,7 @@ export function resolveScheduledProductAvailability(
 
   const receivingDays = getEnabledReceivingDays(store);
   const productionWindow = resolveProductionDateInWindow(
-    baseDate,
+    searchFloor,
     deliveryDate,
     matchingDays,
     options.productExpeditionLeadDays,
@@ -326,6 +344,7 @@ export function getOperationalTimeline(
   productionDays: ProductionWeekDay[],
   saleLeadDays = 0,
   productExpeditionLeadDays = 1,
+  targetDeliveryDate?: string | null,
 ) {
   const availability = resolveScheduledProductAvailability(orderedAt, store, settings, {
     productProductionDays: productionDays,
@@ -334,6 +353,7 @@ export function getOperationalTimeline(
       id: "virtual-schedule-item",
       productionDays,
     },
+    targetDeliveryDate,
   });
 
   return {
@@ -386,7 +406,7 @@ function sanitizeFactor(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
-function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<string, WeeklyProductionSchedule> {
+export function buildActiveScheduleByLine(schedules: WeeklyProductionSchedule[]): Map<string, WeeklyProductionSchedule> {
   const map = new Map<string, WeeklyProductionSchedule>();
 
   // Defensivo: se houver mais de um cronograma ativo por linha (não deveria, mas pode em race conditions),
@@ -426,7 +446,7 @@ function isMixedIngredientExpansionEnabled() {
   return process.env.EXPAND_MIXED_INGREDIENT_INTO_OPS !== "false";
 }
 
-function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
+export function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlanningSource {
   return {
     settings: input.settings,
     sectorsById: new Map(input.sectors.map((sector) => [sector.id, sector])),
@@ -584,6 +604,10 @@ function buildPlannedItems(
             productProductionDays: product.productionDays,
             productExpeditionLeadDays: product.expeditionLeadDays,
             scheduleItem,
+            // AJ-A10: ancora o item à data de entrega COMPROMETIDA do pedido (quando a
+            // fábrica abriu para data futura). Pedidos sem deliveryDate persistida →
+            // null → janela operacional legada.
+            targetDeliveryDate: order.deliveryDate ?? null,
           },
         );
         const salesFactor = sanitizeFactor(product.salesToKgFactor);
@@ -1081,8 +1105,16 @@ function buildOrders(
 
       const items = orderItemsByOrderId.get(order.id) ?? [];
       const opCodes = Array.from(opsByOrderId.get(order.id) ?? []).sort((a, b) => a.localeCompare(b));
-      const { deliveryDate: fallbackDeliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
-      const deliveryDate = items.length > 0 ? getLatestDate(items, fallbackDeliveryDate) : fallbackDeliveryDate;
+      const windowDeliveryDate = getOperationalOrderWindow(order.orderedAt, store, settings).deliveryDate;
+      // AJ-A10: pedido VAZIO (sem itens) usa a data de entrega PERSISTIDA (promessa
+      // firmada na abertura pela fábrica) em vez da janela — senão pedidos do
+      // cronograma p/ data futura exibiriam a "próxima" data. Pedido PREENCHIDO usa a
+      // data dos ITENS (mesma base do filtro operational-date-scope e de
+      // buildExpeditionRows) → evita divergência filtro×exibição (pedido em 2 janelas).
+      // O filtro de escopo inclui pedido vazio por row.deliveryDate, então usar a
+      // persistida nele é coerente.
+      const deliveryDate =
+        items.length > 0 ? getLatestDate(items, windowDeliveryDate) : (order.deliveryDate ?? windowDeliveryDate);
 
       return {
         id: order.id,
@@ -1099,7 +1131,10 @@ function buildOrders(
         totalKg: round2(items.reduce((sum, item) => sum + item.internalKg, 0)),
         opsLabel: buildOrderOpsLabel(opCodes),
         releasedToProduction: items.some((item) => item.releasedToProduction),
-        availableForRelease: items.every((item) => item.availableForRelease),
+        // A10: pedido VAZIO (0 itens) não é liberável — `[].every()` é `true`, o que
+        // deixava um pedido sem itens passar na validação e gerar release fantasma.
+        // Alinhado com factory-workflow-logic.ts (`... && items.length > 0`).
+        availableForRelease: items.length > 0 && items.every((item) => item.availableForRelease),
         workflowProgress: getAverageProgress(items),
         status: getOrderStatusFromItems(items),
       } satisfies PlannedOrderRow;
@@ -1129,8 +1164,14 @@ function buildExpeditionRows(
       }
 
       const items = (orderItemsByOrderId.get(order.id) ?? []).slice().sort((a, b) => a.productCode.localeCompare(b.productCode));
-      const { deliveryDate: fallbackDeliveryDate } = getOperationalOrderWindow(order.orderedAt, store, settings);
-      const deliveryDate = items.length > 0 ? getLatestDate(items, fallbackDeliveryDate) : fallbackDeliveryDate;
+      const windowDeliveryDate = getOperationalOrderWindow(order.orderedAt, store, settings).deliveryDate;
+      // A expedição usa a data calculada a partir dos ITENS — NÃO a data persistida.
+      // O filtro de janela operacional (operational-date-scope) inclui a expedição
+      // pelas datas dos itens; se aqui usássemos `order.deliveryDate` (persistida),
+      // pedidos do cronograma abertos para data futura apareceriam em 2 janelas com
+      // Recebimento divergente do dia filtrado. A lista da loja/gestor
+      // (buildPlannedOrderRows) é que mantém a data persistida.
+      const deliveryDate = items.length > 0 ? getLatestDate(items, windowDeliveryDate) : windowDeliveryDate;
       const orderSummary = orderByCode.get(order.code);
 
       const expeditionItems: ExpeditionItem[] = items.map((item) => ({
@@ -1266,6 +1307,19 @@ export function buildFactoryPlanningData(
     };
   });
 
+  // FIX MPI — conjunto COMPLETO de itens de planejamento (inclui os itens de
+  // sub-receita/MPI expandidos), com opCode pela mesma chave de planejamento que
+  // o motor usou. `orderItems` (exibição) NÃO contém os itens MPI; sem este
+  // conjunto, `applyFactoryWorkflowState` reconstruía as OPs só dos itens de
+  // exibição e a OP do MPI sumia ao liberar o pedido.
+  const productionPlanItems = [...expandedItems, ...skeletonItems].map((item) => {
+    const planningKey = getPlanningKey(item);
+    return {
+      ...item,
+      opCode: planningKey ? opCodeByPlanningKey.get(planningKey) ?? null : null,
+    };
+  });
+
   const orderItemsByOrderId = groupOrderItemsByOrderId(orderItemsWithOpCodes);
   const orders = buildOrders(input.storeOrders, orderItemsByOrderId, storeById, opsByOrderId, source.settings);
   const orderByCode = new Map(orders.map((order) => [order.code, order]));
@@ -1276,6 +1330,7 @@ export function buildFactoryPlanningData(
     referenceDate,
     orders,
     orderItems: orderItemsWithOpCodes,
+    productionPlanItems,
     productionOrders,
     expedition,
     expeditionItems,

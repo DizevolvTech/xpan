@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, canAccessStore, getAllowedStoreIds } from "@/lib/api-auth";
+import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
+import { canStoreInitiateOrder } from "@/lib/store-order-lifecycle";
 import { resolveStoreVisibleOrderStatus } from "@/lib/store-order-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions } from "@/lib/supabase-data/delivery";
@@ -108,6 +110,19 @@ export async function POST(request: Request) {
 
   if ("response" in authorization) {
     return authorization.response;
+  }
+
+  // A10: com o modelo "fábrica abre o pedido" ligado, a loja NÃO cria pedidos do zero —
+  // só preenche (PATCH) os que a fábrica liberou. Gate no nível da rota para não quebrar a
+  // criação programática (seed/import) que chama `createStoreOrder` diretamente.
+  if (!canStoreInitiateOrder(isFactoryOpensOrdersEnabled())) {
+    return NextResponse.json(
+      {
+        message:
+          "Os pedidos são abertos pela fábrica a partir do cronograma; selecione um pedido liberado para preencher.",
+      },
+      { status: 400 },
+    );
   }
 
   try {

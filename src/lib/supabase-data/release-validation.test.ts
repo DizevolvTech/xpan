@@ -60,6 +60,23 @@ test("assertPlanningAllowsRelease — pedido sem availableForRelease bloqueia (o
   }
 });
 
+test("assertPlanningAllowsRelease — pedido VAZIO (0 itens) é rejeitado (order_empty)", () => {
+  const planningEmptyOrder: PlanningSnapshotForValidation = {
+    // Pedido presente no planejamento, mas sem itens. `availableForRelease` já é
+    // false no motor para pedido vazio; aqui validamos a rejeição EXPLÍCITA.
+    orders: [{ id: "PED-001", availableForRelease: false, itemsCount: 0 }],
+  };
+
+  const result = assertPlanningAllowsRelease(baseOrderRow, planningEmptyOrder, "PED-001");
+
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.error.reason, "order_empty");
+    assert.match(result.error.message, /sem itens/);
+    assert.match(result.error.message, /Invalid release/);
+  }
+});
+
 test("assertPlanningAllowsRelease — happy path: pedido planejado + releasable retorna ok", () => {
   const result = assertPlanningAllowsRelease(baseOrderRow, planningWithReleasable, "PED-001");
 

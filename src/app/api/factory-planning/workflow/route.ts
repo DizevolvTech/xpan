@@ -263,9 +263,10 @@ export async function PATCH(request: Request) {
         {
           message: error.message,
           reason: error.reason,
-          // A UI distingue "cancelado" (irrecuperável) dos demais (overridable
-          // via force) por esse campo.
-          forceable: error.reason !== "order_cancelled",
+          // A UI distingue motivos irrecuperáveis (cancelado, pedido vazio) dos
+          // demais (overridable via force) por esse campo. Pedido vazio não tem o
+          // que produzir → não há o que forçar.
+          forceable: error.reason !== "order_cancelled" && error.reason !== "order_empty",
         },
         { status: 400 },
       );
