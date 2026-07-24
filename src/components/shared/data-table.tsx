@@ -40,8 +40,12 @@ interface Action<T> {
    * Componente compartilhado — ausente = comportamento de hoje, ação sempre ativa.
    * Afordância desabilitada, NÃO removida (guard-rail R3, mesmo critério do read-only). */
   isDisabled?: (item: T) => boolean;
-  /** Motivo exibido (title/aria-label) quando `isDisabled` devolve `true`. */
-  disabledLabel?: string;
+  /**
+   * Motivo exibido quando `isDisabled` devolve `true`. Aceita função porque uma mesma ação
+   * pode ser bloqueada por razões diferentes na mesma tabela (ex.: pedido liberado × pedido
+   * cancelado) — texto fixo anunciaria a justificativa errada em parte das linhas.
+   */
+  disabledLabel?: string | ((item: T) => string);
 }
 
 interface DataTableProps<T> {
@@ -449,9 +453,14 @@ export function DataTable<T extends object>({
                           !action.allowInReadOnly &&
                           blocksReadOnlyAction(action.label);
                         const isBlockedByRow = action.isDisabled?.(item) ?? false;
-                        const actionLabel =
-                          isBlockedByRow && action.disabledLabel ? action.disabledLabel : action.label;
-                        return (
+                        const disabledReason =
+                          isBlockedByRow && action.disabledLabel
+                            ? typeof action.disabledLabel === "function"
+                              ? action.disabledLabel(item)
+                              : action.disabledLabel
+                            : null;
+                        const actionLabel = disabledReason ?? action.label;
+                        const button = (
                           <Button
                             key={actionIndex}
                             type="button"
@@ -477,6 +486,18 @@ export function DataTable<T extends object>({
                           >
                             <Icon className="size-4" />
                           </Button>
+                        );
+
+                        // `disabled` no Button traz `pointer-events-none`, então o tooltip
+                        // nativo do `title` NUNCA dispara no próprio botão. O wrapper recebe
+                        // o hover e mostra o motivo — sem ele a linha bloqueada vira só um
+                        // ícone cinza, sem explicação para quem enxerga.
+                        return disabledReason ? (
+                          <span key={actionIndex} title={disabledReason} className="inline-flex">
+                            {button}
+                          </span>
+                        ) : (
+                          button
                         );
                       })}
                     </div>
@@ -636,9 +657,14 @@ export function DataTable<T extends object>({
                           !action.allowInReadOnly &&
                           blocksReadOnlyAction(action.label);
                         const isBlockedByRow = action.isDisabled?.(item) ?? false;
-                        const actionLabel =
-                          isBlockedByRow && action.disabledLabel ? action.disabledLabel : action.label;
-                        return (
+                        const disabledReason =
+                          isBlockedByRow && action.disabledLabel
+                            ? typeof action.disabledLabel === "function"
+                              ? action.disabledLabel(item)
+                              : action.disabledLabel
+                            : null;
+                        const actionLabel = disabledReason ?? action.label;
+                        const button = (
                           <Button
                             key={actionIndex}
                             type="button"
@@ -663,8 +689,19 @@ export function DataTable<T extends object>({
                             aria-label={actionLabel}
                           >
                             <Icon className="size-4" />
-                            <span>{action.label}</span>
+                            {/* Rótulo visível acompanha o nome acessível: mostrar "Editar
+                                pedido" enquanto o aria-label diz o motivo quebraria WCAG
+                                2.5.3 e ainda deixaria a loja sem saber por que não pode. */}
+                            <span>{actionLabel}</span>
                           </Button>
+                        );
+
+                        return disabledReason ? (
+                          <span key={actionIndex} title={disabledReason} className="inline-flex">
+                            {button}
+                          </span>
+                        ) : (
+                          button
                         );
                       })}
                     </div>

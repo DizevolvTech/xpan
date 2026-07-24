@@ -491,7 +491,11 @@ export function ProductFormDialog({
           // `recipe-${Date.now()}` colidia em dois cliques no mesmo milissegundo — com o
           // mesmo insumo repetido em etapas diferentes (incentivado agora), editar uma
           // linha editava as duas. UUID mata a colisão.
-          id: crypto.randomUUID(),
+          // `crypto.randomUUID` só existe em secure context: a tela aberta por
+          // `http://<ip-da-lan>` (tablet do chão, `next dev -H 0.0.0.0`) devolveria
+          // undefined e quebraria "Adicionar item". O fallback ainda evita a colisão do
+          // `Date.now()` puro, que dava id igual em dois cliques no mesmo milissegundo.
+          id: globalThis.crypto?.randomUUID?.() ?? `recipe-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           sourceId: sourceOption.id,
           sourceType: sourceOption.sourceType,
           label: sourceOption.label,

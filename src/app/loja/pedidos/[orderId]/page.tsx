@@ -64,10 +64,10 @@ function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
 }
 
-// XPAN item 6 — hidratação: `getTodayDateKey()` usa `new Date()` no fuso local; calculado
-// durante o render de SERVIDOR pode divergir do cliente perto da meia-noite. Snapshot de
-// servidor vazio (alerta desligado) e o valor real só no cliente, como em
-// `useOperationalDateScope`. A string é estável entre chamadas → sem re-render em loop.
+// XPAN item 6 — hidratação: o "hoje" é resolvido no cliente porque o render de SERVIDOR não
+// deve decidir se um pedido está atrasado (snapshot inicial vazio desliga o alerta; o valor
+// real chega na hidratação), como em `useOperationalDateScope`. A string é estável entre
+// chamadas → sem re-render em loop.
 const subscribeToNothing = () => () => undefined;
 const getServerTodayDateKey = () => "";
 

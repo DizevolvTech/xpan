@@ -19,6 +19,7 @@ import {
 } from "@/lib/production-data-utils";
 import {
   assertSupabaseResult,
+  isSupabaseMissingSchemaError,
   isUuid,
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
@@ -800,9 +801,32 @@ async function replaceProductRecipeItems(
   );
 
   const insertResult = await supabase.from("product_recipe_items").insert(rows);
-  if (insertResult.error) {
-    throw new Error(`Failed to save product recipe: ${insertResult.error.message}`);
+  if (!insertResult.error) {
+    return;
   }
+
+  // A gravação é DELETE + INSERT e o supabase-js não tem transação: se o INSERT falhar
+  // porque a coluna `stage` ainda não existe (ambiente sem a migration 20260724191500), a
+  // receita já foi APAGADA e seria perdida. Nesse caso específico regravamos sem a coluna
+  // nova — a etapa se perde (todo mundo volta ao default `massa`), mas a receita sobrevive.
+  // Mesmo critério defensivo de `release-recipe-snapshot.ts`.
+  if (isSupabaseMissingSchemaError(insertResult.error, ["product_recipe_items"])) {
+    const rowsWithoutStage = rows.map((row) => {
+      const { stage, ...rest } = row;
+      void stage;
+      return rest;
+    });
+    const retryResult = await supabase.from("product_recipe_items").insert(rowsWithoutStage);
+    if (!retryResult.error) {
+      console.warn(
+        "[master-data-admin] coluna `stage` ausente em product_recipe_items — receita gravada sem etapa. Aplique a migration 20260724191500_product_recipe_item_stage.",
+      );
+      return;
+    }
+    throw new Error(`Failed to save product recipe: ${retryResult.error.message}`);
+  }
+
+  throw new Error(`Failed to save product recipe: ${insertResult.error.message}`);
 }
 
 async function replaceProductPreparationSteps(

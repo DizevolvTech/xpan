@@ -230,15 +230,22 @@ function buildOrderDetailPath(orderId: string, referenceDate: string) {
   return `/loja/pedidos/${orderId}?ref=${referenceDate}`;
 }
 
-// XPAN item 5 — motivo da trava, exibido no lugar do rótulo da ação bloqueada. O gate real
-// é do servidor (`ensureOrderIsMutable`): depois de liberado a receita está congelada e a OP
-// já foi derivada do pedido. Aqui só evitamos abrir o formulário para falhar no submit.
-const LOCKED_ORDER_ACTION_LABEL = "Pedido liberado para produção — não pode mais ser editado";
+// XPAN item 5 — motivo da trava. O gate real é do servidor (`ensureOrderIsMutable`): depois
+// de liberado a receita está congelada e a OP já foi derivada do pedido. Aqui só evitamos
+// abrir o formulário para falhar no submit. O motivo é POR LINHA porque liberado e cancelado
+// travam pelo mesmo predicado — texto fixo anunciaria a justificativa errada em metade dos
+// casos.
+function getLockedOrderReason(order: StoreOrderSummary): string {
+  if (order.status === "cancelado") {
+    return "Pedido cancelado — não pode ser editado";
+  }
+  return "Pedido liberado para produção — não pode mais ser editado";
+}
 
-// XPAN item 6 — hidratação: `getTodayDateKey()` usa `new Date()` no fuso local; calculado
-// durante o render de SERVIDOR pode divergir do cliente perto da meia-noite. Mesmo padrão de
-// `useOperationalDateScope`: snapshot de servidor vazio (alerta desligado) e o valor real só
-// no cliente. String estável entre chamadas → `useSyncExternalStore` não re-renderiza em loop.
+// XPAN item 6 — hidratação: o "hoje" é resolvido no cliente porque o render de SERVIDOR não
+// deve decidir se um pedido está atrasado (o snapshot inicial vazio desliga o alerta e o
+// valor real chega na hidratação). Mesmo padrão de `useOperationalDateScope`. String estável
+// entre chamadas → `useSyncExternalStore` não re-renderiza em loop.
 const subscribeToNothing = () => () => undefined;
 const getServerTodayDateKey = () => "";
 
@@ -841,7 +848,7 @@ export default function PedidosLojaPage() {
       // pedido (não liberado e não cancelado). Antes a ação abria o formulário 100% editável
       // e a loja só descobria a trava ao salvar — com os itens já zerados na tela.
       isDisabled: (item: StoreOrderSummary) => !isStoreOrderEditable(item),
-      disabledLabel: LOCKED_ORDER_ACTION_LABEL,
+      disabledLabel: getLockedOrderReason,
       onClick: (item: StoreOrderSummary) => handleOpenEditOrder(item),
     },
     {
@@ -1063,7 +1070,7 @@ export default function PedidosLojaPage() {
                 title={
                   isStoreOrderEditable(activeOrderInScope)
                     ? "Editar pedido"
-                    : LOCKED_ORDER_ACTION_LABEL
+                    : getLockedOrderReason(activeOrderInScope)
                 }
                 onClick={() => handleOpenEditOrder(activeOrderInScope)}
               >

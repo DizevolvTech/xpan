@@ -185,7 +185,12 @@ export async function recordProductionLeftover(
     unit: input.unit,
     recorded_by_profile_id: recordedByDatabaseId,
   };
-  const upsertOptions = { onConflict: "tenant_id,planning_key", ignoreDuplicates: true } as const;
+  // `ignoreDuplicates: false` → a reconclusão SOBRESCREVE. Enquanto o produzido era sempre
+  // a estimativa, DO NOTHING bastava (o valor era determinístico e não havia o que
+  // corrigir). Agora o operador digita: desfazer a batida e reconcluir com o número certo
+  // é um caminho real da mesma tela, e descartar em silêncio deixaria o valor errado
+  // gravado enquanto a tela diz que salvou.
+  const upsertOptions = { onConflict: "tenant_id,planning_key", ignoreDuplicates: false } as const;
 
   let result = await supabase
     .from("production_leftovers")
@@ -242,9 +247,13 @@ export async function listProductionLeftovers(
     Number.isFinite(options.windowDays) && Number(options.windowDays) > 0
       ? Math.trunc(Number(options.windowDays))
       : 7;
+  // Janela para TRÁS: sobra/falta só existe para produção CONCLUÍDA, e a trava de data
+  // futura impede concluir adiante — olhar para a frente fazia a tela mostrar praticamente
+  // só o dia de hoje, e a falta registrada sumia na virada da meia-noite. "Últimos N dias"
+  // é o que os rótulos da tela (7/14/30/90) sempre prometeram.
   const referenceDate = options.referenceDate;
-  const windowStart = referenceDate;
-  const windowEnd = addDays(referenceDate, windowDays - 1);
+  const windowStart = addDays(referenceDate, -(windowDays - 1));
+  const windowEnd = referenceDate;
 
   const runQuery = (columns: string) =>
     supabase

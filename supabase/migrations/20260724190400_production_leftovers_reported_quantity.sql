@@ -28,3 +28,29 @@ comment on table public.production_leftovers is
 
 comment on column public.production_leftovers.reported_produced_quantity is
   'Quantidade informada pelo operador ao concluir o item da OP. NULL = não informada (produced_quantity é a estimativa do plano de batidas).';
+
+-- O registro passou a ser CORRIGÍVEL: desfazer a batida e reconcluir com o número certo é
+-- um caminho real da tela do chão, e o upsert virou DO UPDATE (antes era DO NOTHING, que
+-- descartava a correção em silêncio). A tabela só tinha policy de select e insert — sem
+-- esta, qualquer caller que não use service role falha ao regravar.
+drop policy if exists production_leftovers_update_factory_scope on public.production_leftovers;
+create policy production_leftovers_update_factory_scope
+on public.production_leftovers
+for update
+to authenticated
+using (
+  tenant_id = public.current_tenant_id()
+  and public.current_user_role() in (
+    'administrador'::public.user_role,
+    'gestor-fabrica'::public.user_role,
+    'chao-fabrica'::public.user_role
+  )
+)
+with check (
+  tenant_id = public.current_tenant_id()
+  and public.current_user_role() in (
+    'administrador'::public.user_role,
+    'gestor-fabrica'::public.user_role,
+    'chao-fabrica'::public.user_role
+  )
+);

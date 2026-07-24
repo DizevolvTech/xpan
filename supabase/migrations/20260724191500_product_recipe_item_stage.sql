@@ -14,6 +14,13 @@
 -- folha de produção mantém a heurística legada de "Adic." por palavra-chave e sai
 -- idêntica à de hoje.
 
+-- DRIFT: `observation` existe no banco de produção mas NUNCA teve migration no repo (é
+-- gravada por replaceProductRecipeItems e lida no mapeamento). Ambiente novo montado só a
+-- partir do repo quebrava ao salvar receita. Fechando aqui, junto — `if not exists` torna
+-- isso um no-op onde a coluna já existe.
+alter table public.product_recipe_items
+  add column if not exists observation text not null default '';
+
 alter table public.product_recipe_items
   add column if not exists stage text not null default 'massa';
 

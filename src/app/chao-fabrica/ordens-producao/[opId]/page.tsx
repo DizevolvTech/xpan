@@ -78,12 +78,38 @@ function estimateProducedQuantity(batchSizes: number[]) {
   return Math.round((batchSizes[0] ?? 0) * batchSizes.length * 1000) / 1000;
 }
 
-/** Aceita vírgula ou ponto; `null` quando não é uma quantidade válida. */
+/**
+ * Aceita vírgula ou ponto; `null` quando não é uma quantidade válida.
+ *
+ * O campo mostra o previsto com vírgula decimal, então o operador digita em pt-BR e "1.500"
+ * significa MIL E QUINHENTOS — tratar o ponto como decimal gravaria 1,5 e inventaria uma
+ * falta gigante. Regra: se há vírgula, ela é o decimal e os pontos são separador de milhar;
+ * sem vírgula, um ponto só é decimal (ex.: "1.5"), mas ponto usado como milhar ("1.500",
+ * "1.234.567") é reconhecido pelo agrupamento de 3 dígitos.
+ */
 function parseQuantityInput(raw: string): number | null {
-  const normalized = raw.trim().replace(",", ".");
-  if (!normalized) {
+  const trimmed = raw.trim();
+  if (!trimmed || !/^[\d.,\s]+$/.test(trimmed)) {
     return null;
   }
+
+  const compact = trimmed.replace(/\s/g, "");
+  let normalized: string;
+
+  if (compact.includes(",")) {
+    // pt-BR canônico: ponto é milhar, vírgula é decimal.
+    normalized = compact.replaceAll(".", "").replace(",", ".");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(compact)) {
+    // Só pontos, todos agrupando 3 dígitos → milhar ("1.500", "1.234.567").
+    normalized = compact.replaceAll(".", "");
+  } else {
+    normalized = compact;
+  }
+
+  if (!/^\d*\.?\d*$/.test(normalized) || normalized === "" || normalized === ".") {
+    return null;
+  }
+
   const parsed = Number(normalized);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
@@ -277,7 +303,11 @@ export default function OrdemProducaoDetailsPage() {
 
   async function submitConclusion(
     target: ConclusionTarget,
-    reportedProducedQuantity: number,
+    // `null` = o operador não mexeu no número → o servidor grava a ESTIMATIVA que ele
+    // próprio deriva, e a sobra não é marcada como medida no chão. Reenviar o valor
+    // pré-preenchido marcaria 100% das conclusões como "informado" e ainda misturaria um
+    // produzido calculado no cliente com um planejado re-derivado no servidor.
+    reportedProducedQuantity: number | null,
     options: { force?: boolean } = {},
   ) {
     await patchWorkflow(
@@ -307,9 +337,14 @@ export default function OrdemProducaoDetailsPage() {
     }
     const reported = parseQuantityInput(conclusionQuantity);
     if (reported === null) {
-      setWorkflowError("Informe a quantidade produzida (número maior ou igual a zero).");
+      // O próprio diálogo já mostra o aviso inline abaixo do campo; escrever no banner da
+      // página só produziria uma mensagem escondida ATRÁS do modal.
       return;
     }
+    // Igual ao previsto = o operador confirmou sem medir. Nesse caso NÃO reportamos: o
+    // registro continua sendo a estimativa do plano e a coluna "Origem" só marca
+    // "Informado" quando houve de fato um número vindo da balança.
+    const reportedOrNull = reported === target.estimatedQuantity ? null : reported;
 
     // Fecha o diálogo ANTES de enviar: o override de data futura abre a própria
     // confirmação, e dois modais empilhados atrapalham o operador.
@@ -317,11 +352,11 @@ export default function OrdemProducaoDetailsPage() {
     setWorkflowError(null);
     setPendingItemKey(target.productionItemKey);
     try {
-      await submitConclusion(target, reported);
+      await submitConclusion(target, reportedOrNull);
     } catch (error) {
       const handled = await tryFutureDateOverride(
         error,
-        () => submitConclusion(target, reported, { force: true }),
+        () => submitConclusion(target, reportedOrNull, { force: true }),
         (message) => {
           setWorkflowError(message);
           toast.error(message);
@@ -733,7 +768,9 @@ export default function OrdemProducaoDetailsPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="reported-produced-quantity">
-                  Quantidade produzida ({conclusionTarget.unitLabel})
+                  {conclusionTarget.mode === "batch"
+                    ? `Quantidade produzida no item inteiro — todas as ${conclusionTarget.batchCount} batidas (${conclusionTarget.unitLabel})`
+                    : `Quantidade produzida (${conclusionTarget.unitLabel})`}
                 </Label>
                 <Input
                   id="reported-produced-quantity"
