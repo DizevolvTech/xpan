@@ -559,3 +559,70 @@ void test("expandRecipeIntoItems faz recursão de 2 níveis (A → MPI-B → MPI
   const ids = result.map((r) => r.productId);
   assert.deepEqual(ids.sort(), ["mpi-fermento", "mpi-massa", "pizza"].sort());
 });
+
+// ---------------------------------------------------------------------------
+// XPAN #6 (parte 2): pedido JÁ LIBERADO usa a receita CONGELADA no release
+// (releasedRecipeByOrderProduct), não a receita editada ao vivo.
+// ---------------------------------------------------------------------------
+
+void test("expandRecipeIntoItems — pedido LIBERADO expande a receita CONGELADA (snapshot), não a ao vivo", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const massaNova = makeMpiProduct({ id: "mpi-massa-nova", name: "Massa Nova" });
+  const massaAntiga = makeMpiProduct({ id: "mpi-massa-antiga", name: "Massa Antiga" });
+  // Receita AO VIVO (editada depois da liberação): usa a massa NOVA.
+  const pizza = {
+    ...makePizzaProduct(),
+    recipe: [
+      { id: "r1", sourceType: "ingrediente", sourceId: "farinha", label: "Farinha", quantity: 0.6, unit: "Kg" },
+      { id: "r2", sourceType: "produto", sourceId: "mpi-massa-nova", label: "Massa Nova", quantity: 0.4, unit: "Kg" },
+    ],
+  } as ProductionProduct;
+  const productsById = new Map([
+    [pizza.id, pizza],
+    [massaNova.id, massaNova],
+    [massaAntiga.id, massaAntiga],
+  ]);
+
+  // Snapshot congelado NA LIBERAÇÃO: a pizza usava a massa ANTIGA.
+  const releasedRecipeByOrderProduct = new Map([
+    [
+      "order-1",
+      new Map([
+        [
+          "pizza",
+          [
+            { id: "r1", sourceType: "ingrediente", sourceId: "farinha", label: "Farinha", quantity: 0.6, unit: "Kg" },
+            { id: "r2", sourceType: "produto", sourceId: "mpi-massa-antiga", label: "Massa Antiga", quantity: 0.4, unit: "Kg" },
+          ] as ProductionProduct["recipe"],
+        ],
+      ]),
+    ],
+  ]);
+
+  const liberado = expandRecipeIntoItems(
+    [makePlannedItem({ orderId: "order-1", releasedToProduction: true })],
+    productsById,
+    [farinha],
+    [pizza, massaNova, massaAntiga],
+    { releasedRecipeByOrderProduct },
+  );
+  assert.deepEqual(
+    liberado.filter((i) => i.productId !== "pizza").map((i) => i.productId),
+    ["mpi-massa-antiga"],
+    "OP liberada expande a massa ANTIGA (receita congelada), não a nova",
+  );
+
+  // Contraprova: pedido SEM snapshot (não liberado) usa a receita ao vivo (massa nova).
+  const aoVivo = expandRecipeIntoItems(
+    [makePlannedItem({ orderId: "order-2" })],
+    productsById,
+    [farinha],
+    [pizza, massaNova, massaAntiga],
+    { releasedRecipeByOrderProduct },
+  );
+  assert.deepEqual(
+    aoVivo.filter((i) => i.productId !== "pizza").map((i) => i.productId),
+    ["mpi-massa-nova"],
+    "pedido sem snapshot usa a receita ao vivo",
+  );
+});

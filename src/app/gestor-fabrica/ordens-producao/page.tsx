@@ -171,19 +171,33 @@ export default function OrdensProducaoPage() {
     () => (editingProductId ? snapshot.products.find((product) => product.id === editingProductId) ?? null : null),
     [editingProductId, snapshot.products],
   );
-  // XPAN-5: resumo das folhas do dia (âncora do escopo) para a impressão em lote.
-  // Usa o snapshot bruto do dia (mesma base que a página de impressão em lote busca).
+  // XPAN-5: resumo das folhas do dia para a impressão em lote.
+  // A data-alvo NÃO é cegamente o `anchorDate`: no modo "Todo o período" a âncora é HOJE,
+  // mas a produção costuma ser futura (ex.: OPs de amanhã) — aí o botão ficava travado
+  // (0 folhas). Resolvemos a data como: filtro de data de produção, se ativo; senão o dia
+  // âncora se ele tiver produção; senão a produção mais próxima (menor productionDate).
   const dayPrintSummary = useMemo(() => {
-    const dayOps = planningSnapshot.productionOrders.filter(
-      (op) => op.productionDate === anchorDate && op.hasDemand !== false,
+    const demandOps = planningSnapshot.productionOrders.filter((op) => op.hasDemand !== false);
+    const datesWithOps = Array.from(new Set(demandOps.map((op) => op.productionDate))).sort((a, b) =>
+      a.localeCompare(b),
     );
+    const printDate =
+      productionDateFilter !== "all"
+        ? productionDateFilter
+        : datesWithOps.includes(anchorDate)
+          ? anchorDate
+          : datesWithOps[0] ?? anchorDate;
+    const dayOps = demandOps.filter((op) => op.productionDate === printDate);
     return {
+      printDate,
       opCount: dayOps.length,
-      productCount: dayOps.reduce((sum, op) => sum + op.itemsCount, 0),
+      // "produtos" = produtos DISTINTOS a produzir (op.items), não linhas de pedido
+      // consolidadas (op.itemsCount) — senão 2 lojas pedindo o mesmo produto contam "2".
+      productCount: dayOps.reduce((sum, op) => sum + op.items.length, 0),
       totalKg: dayOps.reduce((sum, op) => sum + op.totalKg, 0),
-      dayLabel: dayOps[0]?.productionDateLabel ?? anchorDate,
+      dayLabel: dayOps[0]?.productionDateLabel ?? printDate,
     };
-  }, [planningSnapshot.productionOrders, anchorDate]);
+  }, [planningSnapshot.productionOrders, anchorDate, productionDateFilter]);
 
   const opRows = useMemo<OpQueueRow[]>(
     () =>
@@ -687,7 +701,7 @@ export default function OrdensProducaoPage() {
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <DayPrintButton
-            date={anchorDate}
+            date={dayPrintSummary.printDate}
             dayLabel={dayPrintSummary.dayLabel}
             opCount={dayPrintSummary.opCount}
             productCount={dayPrintSummary.productCount}

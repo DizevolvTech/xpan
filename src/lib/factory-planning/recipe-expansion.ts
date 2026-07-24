@@ -5,7 +5,7 @@ import type {
   ProductionSector,
 } from "@/lib/production-planning";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
-import { normalizeProductPreparationStages } from "@/lib/production-workflow";
+import { intermediatePreparationStages } from "@/lib/production-workflow";
 
 import type { PlannedOrderItem } from "./types";
 
@@ -39,6 +39,13 @@ export interface ExpandRecipeOptions {
    * puro fica só na pré-pesagem).
    */
   expandMixedIngredients?: boolean;
+  /**
+   * XPAN #6: receita CONGELADA na liberação, por `orderId → productId → receita`. Se um
+   * item pertence a um pedido presente aqui (liberado), a expansão usa esta receita no lugar
+   * da receita AO VIVO do produto — para que editar a receita não mude OPs já liberadas.
+   * A chave usa o mesmo espaço de id do motor (`legacy_id ?? id`).
+   */
+  releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>;
 }
 
 /**
@@ -98,12 +105,21 @@ export function expandRecipeIntoItems(
         return;
       }
 
-      const parentProduct = productsById.get(parent.productId);
-      if (!parentProduct || parentProduct.recipe.length === 0) {
+      const liveProduct = productsById.get(parent.productId);
+      if (!liveProduct) {
         return;
       }
+      // XPAN #6: pedido liberado → usa a receita CONGELADA (snapshot); senão a receita ao
+      // vivo. Quando há snapshot, também escalamos as quantidades pela receita congelada
+      // (produto efetivo com a receita do snapshot), para os kg de MPI baterem com ela.
+      const frozenRecipe = options.releasedRecipeByOrderProduct?.get(parent.orderId)?.get(parent.productId);
+      const recipe = frozenRecipe ?? liveProduct.recipe;
+      if (recipe.length === 0) {
+        return;
+      }
+      const parentProduct = frozenRecipe ? { ...liveProduct, recipe: frozenRecipe } : liveProduct;
 
-      for (const recipeRef of parentProduct.recipe) {
+      for (const recipeRef of recipe) {
         // AJ-0008.1 (Fase 3): ingrediente misturado puro referenciado na receita
         // vira OP separada, herdando a rota do pai (ingredientes não têm linha própria).
         if (recipeRef.sourceType === "ingrediente") {
@@ -235,6 +251,8 @@ function buildMpiPlannedItem(params: {
     delayed: parent.delayed,
     // Item derivado herda a origem do pai (pedido → MPI de pedido; esqueleto → MPI de esqueleto).
     demandSource: parent.demandSource,
+    // MPI = etapa intermediária (base), não o produto final → a UI sinaliza.
+    isIntermediate: true,
     productId: mpiProduct.id,
     productCode: mpiProduct.code,
     productName: mpiProduct.name,
@@ -265,7 +283,8 @@ function buildMpiPlannedItem(params: {
     batchesDone: parent.batchesDone,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
-    preparationStages: normalizeProductPreparationStages(mpiProduct.preparationStages),
+    // Base/MPI: nunca embala (a embalagem é do produto final que o consome).
+    preparationStages: intermediatePreparationStages(mpiProduct.preparationStages),
     workflowProgress: 0,
     opCode: null,
     status: parent.status,
@@ -319,6 +338,8 @@ function buildMixedIngredientPlannedItem(params: {
     productionDate: parent.productionDate,
     delayed: parent.delayed,
     demandSource: parent.demandSource,
+    // Ingrediente misturado = etapa intermediária (base) → a UI sinaliza.
+    isIntermediate: true,
     productId: mixedIngredient.id,
     productCode: mixedIngredient.code,
     productName: mixedIngredient.name,
@@ -348,8 +369,8 @@ function buildMixedIngredientPlannedItem(params: {
     batchesDone: parent.batchesDone,
     productionItemKey,
     productionItemStatus: parent.canPlan ? "nao_iniciado" : null,
-    // Ingredientes não definem etapas de preparo → usa o default normalizado.
-    preparationStages: normalizeProductPreparationStages(undefined),
+    // Ingrediente misturado (base): fluxo padrão SEM embalagem — insumo não é embalado.
+    preparationStages: intermediatePreparationStages(undefined),
     workflowProgress: 0,
     opCode: null,
     status: parent.status,

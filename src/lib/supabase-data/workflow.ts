@@ -10,6 +10,7 @@ import {
 } from "@/lib/production-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { buildFactoryInputFromDb } from "@/lib/supabase-data/store-orders";
+import { captureReleaseRecipeSnapshot } from "@/lib/supabase-data/release-recipe-snapshot";
 import { appendStoreOrderEvent } from "@/lib/supabase-data/store-order-events";
 import {
   assertSupabaseResult,
@@ -509,6 +510,21 @@ export async function releaseOrder(
 
   if (upsertResult.error) {
     throw new Error(`Failed to release order: ${upsertResult.error.message}`);
+  }
+
+  // XPAN #6: congela a receita da árvore do pedido no momento da liberação, para que
+  // edições posteriores de receita não mudem esta OP já liberada. Best-effort: uma falha
+  // aqui NUNCA bloqueia a liberação (fallback = receita ao vivo, comportamento anterior).
+  if (options.tenantId) {
+    try {
+      await captureReleaseRecipeSnapshot(orderRow, options.tenantId, supabase);
+    } catch (snapshotError) {
+      console.warn(
+        `[releaseOrder] falha ao congelar a receita do pedido ${orderRow.id}: ${
+          snapshotError instanceof Error ? snapshotError.message : snapshotError
+        }`,
+      );
+    }
   }
 
   if (forcedReason) {

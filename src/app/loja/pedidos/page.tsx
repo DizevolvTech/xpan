@@ -191,24 +191,6 @@ function formatDateKeyWithWeekday(dateKey: string) {
   return formatDateWithWeekday(new Date(`${dateKey}T00:00:00`));
 }
 
-// A10: rótulo capitalizado do dia da semana (chave pt-BR vinda de
-// store_orders.delivery_weekday: segunda..domingo). Forma curta ("Terça",
-// "Sábado") — distinta do label longo de productionWeekDays ("Terça-feira").
-const DELIVERY_WEEKDAY_LABEL: Record<string, string> = {
-  segunda: "Segunda",
-  terca: "Terça",
-  quarta: "Quarta",
-  quinta: "Quinta",
-  sexta: "Sexta",
-  sabado: "Sábado",
-  domingo: "Domingo",
-};
-
-function formatDeliveryWeekdayLabel(weekday: string | null): string | null {
-  if (!weekday) return null;
-  return DELIVERY_WEEKDAY_LABEL[weekday] ?? null;
-}
-
 function formatOperationalDays(days: ProductionWeekDay[]) {
   return days.map((day) => productionDayLabels.get(day) ?? day).join(" · ");
 }
@@ -326,19 +308,19 @@ export default function PedidosLojaPage() {
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   // Indisponíveis ocultos por padrão; usuário pode desmarcar para ver tudo.
   const [hideUnavailable, setHideUnavailable] = useState(true);
-  // AJ-0009 Fase 4a: com a flag ligada, a loja preenche pedidos abertos pela fábrica
-  // em vez de criar do zero.
+  // XPAN-Lote: com a flag ligada, a FÁBRICA abre um LOTE (janela) e a loja CRIA seus
+  // pedidos nos slots (loja × data) do lote. `openBatches` = lotes abertos; a loja escolhe
+  // uma data ainda sem pedido e cria. `creatingForSlotDate` = a data do slot escolhido
+  // (trava o formulário nela).
   const factoryOpensOrders = isFactoryOpensOrdersEnabled();
-  const [openOrders, setOpenOrders] = useState<
+  const [openBatches, setOpenBatches] = useState<
     Array<{
       id: string;
-      code: string;
-      storeId: string;
-      storeName: string;
-      deliveryDate: string;
-      deliveryWeekday: string | null;
+      referenceDate: string;
+      slots: Array<{ storeId: string; deliveryDate: string }>;
     }>
   >([]);
+  const [creatingForSlotDate, setCreatingForSlotDate] = useState<string | null>(null);
 
   const referenceDate = useMemo(() => new Date(), []);
   const orderedAtIso = useMemo(() => referenceDate.toISOString(), [referenceDate]);
@@ -369,11 +351,13 @@ export default function PedidosLojaPage() {
   // o item sumia do payload (F1 no cliente).
   const editingOrderTargetDelivery = useMemo(() => {
     if (!editingOrderId) return null;
-    const open = openOrders.find((order) => order.id === editingOrderId);
-    if (open?.deliveryDate) return open.deliveryDate;
     return editingOrderDetail?.committedDeliveryDate ?? null;
-  }, [editingOrderId, openOrders, editingOrderDetail?.committedDeliveryDate]);
-  const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso, editingOrderTargetDelivery);
+  }, [editingOrderId, editingOrderDetail?.committedDeliveryDate]);
+  // XPAN-Lote: catálogo ANCORADO na data certa — editar pedido usa a data comprometida do
+  // detalhe; CRIAR num slot do lote usa a data do slot (`creatingForSlotDate`). Assim a loja
+  // vê os produtos entregáveis exatamente na data escolhida.
+  const catalogTargetDelivery = editingOrderId ? editingOrderTargetDelivery : creatingForSlotDate;
+  const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso, catalogTargetDelivery);
   // 2.7-C — sugestão ADVISORY de quantidade por dia da semana (média histórica).
   // Nunca preenche o input nem altera o payload; só exibe um hint discreto.
   const { suggestions: weekdaySuggestions } = useStoreOrderSuggestions(selectedStoreId);
@@ -386,22 +370,37 @@ export default function PedidosLojaPage() {
   });
   const refreshOpenOrders = useCallback(() => {
     if (!factoryOpensOrders) {
-      setOpenOrders([]);
+      setOpenBatches([]);
       return;
     }
     void fetch("/api/store-orders/open")
       .then((response) => (response.ok ? response.json() : []))
-      .then((data) => setOpenOrders(Array.isArray(data) ? data : []))
-      .catch(() => setOpenOrders([]));
+      .then((data) => setOpenBatches(Array.isArray(data) ? data : []))
+      .catch(() => setOpenBatches([]));
   }, [factoryOpensOrders]);
-  // AJ-A10: "Pedidos para preencher" deve respeitar a loja selecionada (como a
-  // tabela abaixo). Sem isso, personas multi-loja veem os pedidos de TODAS as
-  // lojas misturados — 1 pedido por loja/dia parece "vários por dia" e datas
-  // iguais de lojas diferentes ficam lado a lado parecendo duplicidade.
-  const openOrdersForStore = useMemo(
-    () => openOrders.filter((order) => order.storeId === selectedStoreId),
-    [openOrders, selectedStoreId],
-  );
+  // XPAN-Lote: datas (slots) do lote AINDA SEM pedido para a loja selecionada — o que a
+  // loja pode pedir. Remove as datas que já viraram pedido (evita duplicidade + limpa a
+  // lista conforme a loja vai criando).
+  const pendingSlotDatesForStore = useMemo(() => {
+    if (!selectedStoreId) return [] as string[];
+    const orderedDates = new Set(
+      storeOrderSummaries
+        .filter((order) => order.storeId === selectedStoreId && order.status !== "cancelado")
+        .map((order) => order.deliveryDateKey),
+    );
+    const seen = new Set<string>();
+    const dates: string[] = [];
+    for (const batch of openBatches) {
+      for (const slot of batch.slots) {
+        if (slot.storeId !== selectedStoreId) continue;
+        if (orderedDates.has(slot.deliveryDate)) continue;
+        if (seen.has(slot.deliveryDate)) continue;
+        seen.add(slot.deliveryDate);
+        dates.push(slot.deliveryDate);
+      }
+    }
+    return dates.sort((a, b) => a.localeCompare(b));
+  }, [openBatches, selectedStoreId, storeOrderSummaries]);
 
   useEffect(() => {
     refreshOpenOrders();
@@ -443,10 +442,13 @@ export default function PedidosLojaPage() {
   );
   const deliveryDateKey = useMemo(
     () =>
-      selectedStore
+      // XPAN-Lote: criando num slot do lote → a entrega É a data do slot (trava o
+      // formulário nela). Fora do lote (fluxo legado) → regra da janela operacional.
+      creatingForSlotDate ??
+      (selectedStore
         ? getDeliveryDateByStoreRule(effectiveBaseDateKey, selectedStore, snapshot.operationalSettings)
-        : effectiveBaseDateKey,
-    [effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
+        : effectiveBaseDateKey),
+    [creatingForSlotDate, effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
   );
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
   const saleDate = useMemo(() => {
@@ -854,10 +856,20 @@ export default function PedidosLojaPage() {
     if (!open) {
       setIsOrderConfirmationOpen(false);
       setEditingOrderId(null);
+      setCreatingForSlotDate(null);
       setOrderNote("");
       setOrderProducts(catalog);
       clearCatalogFilters();
     }
+  }
+
+  // XPAN-Lote: a loja escolhe uma data do lote aberto → cria um pedido NOVO travado nessa
+  // data de entrega. (Não é edição: não setamos editingOrderId; o catálogo ancora em
+  // `creatingForSlotDate` e o submit envia `deliveryDate`.)
+  function handleCreateForSlot(deliveryDate: string) {
+    setEditingOrderId(null);
+    setCreatingForSlotDate(deliveryDate);
+    setIsNewOrderOpen(true);
   }
 
   async function handleOpenOrderConfirmation() {
@@ -922,11 +934,14 @@ export default function PedidosLojaPage() {
           storeId: selectedStore.id,
           note: orderNote.trim(),
           orderedAt: referenceDate.toISOString(),
+          // XPAN-Lote: cria o pedido no SLOT escolhido do lote (data comprometida).
+          deliveryDate: creatingForSlotDate ?? undefined,
           items: orderItems,
         });
       }
       setIsOrderConfirmationOpen(false);
       setEditingOrderId(null);
+      setCreatingForSlotDate(null);
       setOrderProducts(catalog);
       setOrderNote("");
     } catch (submitError) {
@@ -995,10 +1010,10 @@ export default function PedidosLojaPage() {
               </Button>
             </div>
           ) : factoryOpensOrders ? (
-            // AJ-0009 Fase 4a: com a fábrica abrindo os pedidos, a loja não cria do
-            // zero — preenche os pedidos abertos (seção "Pedidos para preencher").
+            // XPAN-Lote: a fábrica abre um LOTE (janela de datas); a loja monta seus pedidos
+            // escolhendo uma data na seção "Lote aberto — datas para pedir" abaixo.
             <p className="shrink-0 text-xs text-muted-foreground">
-              Os pedidos são abertos pela fábrica. Preencha-os na seção abaixo.
+              A fábrica libera os pedidos por lote. Escolha uma data na seção abaixo.
             </p>
           ) : (
             <DialogTrigger asChild>
@@ -1712,49 +1727,54 @@ export default function PedidosLojaPage() {
             </DialogContent>
           </Dialog>
 
-          {/* AJ-0009 Fase 4a: pedidos abertos pela fábrica, aguardando a loja preencher. */}
-          {factoryOpensOrders && openOrdersForStore.length > 0 ? (
+          {/* XPAN-Lote: a fábrica abriu um LOTE (janela de datas). A loja escolhe uma data
+              ainda sem pedido e cria o pedido dela travado nessa entrega. */}
+          {factoryOpensOrders && pendingSlotDatesForStore.length > 0 ? (
             <section className="space-y-2 rounded-xl border border-info/30 bg-info/[var(--opacity-subtle)] p-4">
               <div className="flex items-center gap-2">
                 <CalendarClock className="size-4 text-info" aria-hidden />
                 <h2 className="text-sm font-semibold text-foreground">
-                  Pedidos para preencher ({openOrdersForStore.length})
+                  Lote aberto — datas para pedir ({pendingSlotDatesForStore.length})
                 </h2>
               </div>
               <p className="text-xs text-muted-foreground">
-                A fábrica liberou <strong>1 pedido por dia</strong> da semana, conforme o cronograma.
-                Clique em <strong>Preencher</strong> para informar as quantidades antes do prazo.
+                A fábrica liberou os pedidos da semana. Escolha uma <strong>data de entrega</strong>{" "}
+                abaixo para montar seu pedido — <strong>1 pedido por data</strong>. As datas já
+                pedidas somem desta lista.
               </p>
-              {/* A10: pedidos da loja selecionada, já ordenados por delivery_date do
-                  backend; rotulamos cada um pelo dia da semana da entrega. */}
               <ul className="grid gap-2 sm:grid-cols-2">
-                {openOrdersForStore.map((order) => {
-                  const weekdayLabel = formatDeliveryWeekdayLabel(order.deliveryWeekday);
-                  return (
-                    <li
-                      key={order.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
+                {pendingSlotDatesForStore.map((deliveryDate) => (
+                  <li
+                    key={deliveryDate}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        Entrega {formatDateKeyWithWeekday(deliveryDate)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Ainda sem pedido nesta data.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => handleCreateForSlot(deliveryDate)}
                     >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {weekdayLabel ? `Pedido de ${weekdayLabel}` : order.code}
-                        </p>
-                        <p className="text-xs text-muted-foreground tabular-nums">
-                          {order.code} · entrega {formatDateKeyWithWeekday(order.deliveryDate)}
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="shrink-0"
-                        onClick={() => handleOpenEditOrder({ id: order.id } as StoreOrderSummary)}
-                      >
-                        Preencher
-                      </Button>
-                    </li>
-                  );
-                })}
+                      <Plus className="size-4" />
+                      Montar pedido
+                    </Button>
+                  </li>
+                ))}
               </ul>
+            </section>
+          ) : factoryOpensOrders && selectedStoreId ? (
+            <section className="rounded-xl border border-border/60 bg-muted/[var(--opacity-subtle)] p-4">
+              <p className="text-xs text-muted-foreground">
+                Nenhum lote aberto para esta loja no momento. Quando a fábrica liberar os pedidos
+                da semana, as datas disponíveis aparecerão aqui.
+              </p>
             </section>
           ) : null}
 

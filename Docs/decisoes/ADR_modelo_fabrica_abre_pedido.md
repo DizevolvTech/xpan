@@ -1,5 +1,53 @@
 # ADR: Modelo "fábrica abre pedido → loja preenche" (AJ-0009)
 
+## Atualização 2026-07-24 — Modelo LOTE (`order_batches`), substitui a Fase 4a
+
+**Decisão do Giuseppe (validação com o sistema rodando):** a Fase 4a (fábrica **cria
+pedidos vazios** `status='aberto'` que a loja preenche) foi **abandonada** — na prática
+poluía a lista do gestor com dezenas de pedidos vazios e "misturava" com os pedidos
+preenchidos ("fica muito confuso"). Adotado o modelo **LOTE**, que é a Opção A/Fase 4b
+enxuta: a fábrica abre **um** `order_batches` (a "janela") e a **loja cria** seus pedidos
+dentro dele. Isto responde, na prática, várias das perguntas abertas abaixo (granularidade
+= N datas por lote; escopo = lista de lojas; "não pedir" = loja simplesmente não cria no
+slot; migração = `batch_id` nulo é legado).
+
+**Modelo implementado:**
+
+- Tabela `order_batches` (migration `20260724130000_order_batches.sql`): `id, tenant_id,
+  reference_date, slots jsonb (`[{storeId, deliveryDate}]`), opened_by_profile_id,
+  opened_at, status ('aberto'|'fechado'), note`. `store_orders` ganhou `batch_id`. RLS:
+  leitura para admin/gestor-fabrica/chao-fabrica/loja; escrita para admin/gestor-fabrica.
+  (Entrou em `tenantOwnedTables` — sem isso o upsert quebra por `tenant_id NOT NULL`.)
+- **Fábrica abre o LOTE** (`openOrderBatch`, `POST /api/store-orders/open`): cria **1**
+  registro com os slots (modo `week` deriva do cronograma via `planWeeklyStoreOrderReleases`;
+  modo `manual` usa 1 data). **Não cria pedido nenhum.**
+- **Loja cria dentro do lote** (`createStoreOrder`, `POST /api/store-orders`): o **gate**
+  `findOpenBatchCoveringSlot(storeId, deliveryDate)` recusa criar fora de um slot coberto por
+  um lote aberto (roda **antes** da validação de itens → mensagem clara "fora de um lote").
+  O pedido nasce comprometido na data do slot: `opened_at` preenchido + `batch_id`, e
+  `committedDeliveryDate = opened_at ? delivery_date : null` **ancora** o catálogo/planejamento
+  nessa data (pedido criado livre pela loja, sem lote → `null` → production-driven).
+- **UI loja** (`loja/pedidos`): "Lote aberto — datas para pedir" lista os slots ainda sem
+  pedido; clicar numa data abre o formulário travado nela (`creatingForSlotDate`). Datas já
+  pedidas somem da lista.
+- **UI gestor** (`gestor-fabrica/pedidos`): botão "Abrir lote"; badge "Lote aberto: X/Y"
+  (slots já viraram pedido / total). A lista de pedidos passa a mostrar **só pedidos reais**
+  (automático — não há mais pedido vazio).
+- **Verificação ao vivo:** `e2e/live_cycle.py` cobre abrir-lote → loja cria no slot → gate
+  (400 fora do lote) → liberável/libera (F1) → consistência de datas → produção avança
+  (10 PASS · 0 FAIL).
+
+**Efeito colateral notado — métrica "lojas sem pedido no prazo"**
+(`factory-metrics.ts` / `factory-alerts.ts`): antes, abrir o pedido vazio já "zerava" o
+alerta (a loja passava a ter um pedido). Agora o alerta só zera quando a loja cria o pedido
+**de verdade** — semanticamente mais correto ("a loja ainda não pediu"), e a visão precisa
+do que falta preencher está no badge "Lote aberto: X/Y". Métrica **não alterada** de
+propósito.
+
+**Fica pendente da Opção A completa:** estados `rascunho`/`publicada`/`encerrada` do lote
+(hoje só `aberto`/`fechado`), cutoff automático, e re-derivação dos slots ao auditar o
+cronograma. Ver perguntas abertas 3, 4 e 7.
+
 ## Status
 
 **Aceito (2026-05-30) — Opção C (híbrido faseado), Fase 4a.** Decisão do Giuseppe.

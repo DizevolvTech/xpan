@@ -13,6 +13,8 @@ import {
   planWeeklyStoreOrderReleases,
 } from "@/lib/store-order-weekly-release-plan";
 import { resolveFilledStatus, type StoreOrderLifecycleStatus } from "@/lib/store-order-lifecycle";
+import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
+import { findOpenBatchCoveringSlot } from "@/lib/supabase-data/order-batches";
 import {
   assertSupabaseResult,
   isUuid,
@@ -20,6 +22,7 @@ import {
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
+import { getReleasedRecipeSnapshots } from "@/lib/supabase-data/release-recipe-snapshot";
 
 export interface CreateStoreOrderInput {
   storeId: string;
@@ -27,6 +30,10 @@ export interface CreateStoreOrderInput {
   tenantId?: string | null;
   orderedAt?: string;
   note?: string;
+  /** XPAN-Lote: data de entrega do SLOT do lote que a loja está preenchendo. Quando
+   * informada, o pedido nasce COMPROMETIDO nessa data (catálogo ancorado nela). Ausente =
+   * janela operacional de hoje (production-driven, fluxo legado sem lote). */
+  deliveryDate?: string;
   items: Array<{
     productId: string;
     quantity: number;
@@ -341,13 +348,15 @@ export async function buildFactoryInputFromDb(
   } = {},
 ): Promise<FactoryPlanningInput> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
-  const [snapshot, storeOrders] = await Promise.all([
+  const [snapshot, storeOrders, releasedRecipeByOrderProduct] = await Promise.all([
     getMasterDataSnapshot({
       supabase,
       includeProfileNames: options.includeProfileNames,
       tenantId: options.tenantId,
     }),
     listFactoryStoreOrders(supabase),
+    // XPAN #6: receitas congeladas na liberação — o motor as usa p/ pedidos liberados.
+    getReleasedRecipeSnapshots(supabase),
   ]);
 
   return {
@@ -369,6 +378,7 @@ export async function buildFactoryInputFromDb(
     products: snapshot.products,
     ingredients: snapshot.ingredients,
     schedules: snapshot.schedules,
+    releasedRecipeByOrderProduct,
   };
 }
 
@@ -384,29 +394,54 @@ export async function createStoreOrder(
       tenantId: input.tenantId,
     },
   );
+
+  // XPAN-Lote / GATE (antes de validar itens, p/ mensagem clara "fora do lote"): com
+  // "fábrica abre o lote" ligado, a loja só cria pedido para um SLOT (loja × data) coberto
+  // por um LOTE ABERTO. Sem slot ou sem lote → rejeita (não é bug: a fábrica precisa abrir
+  // o lote). O pedido herda o lote (batch_id) e nasce COMPROMETIDO na data do slot (opened_at
+  // ⇒ committedDeliveryDate ancora o catálogo/planejamento nela).
+  let batchId: string | null = null;
+  if (isFactoryOpensOrdersEnabled()) {
+    if (!input.deliveryDate) {
+      throw new Error(
+        "Fora de um lote: escolha um slot (data de entrega) do lote aberto pela fábrica para criar o pedido.",
+      );
+    }
+    const batch = await findOpenBatchCoveringSlot(input.storeId, input.deliveryDate, supabase);
+    if (!batch) {
+      throw new Error(
+        `Fora de um lote aberto: não há lote da fábrica cobrindo esta loja para a entrega ${input.deliveryDate}. Peça à fábrica para abrir o lote da semana.`,
+      );
+    }
+    batchId = batch.id;
+  }
+
   const { snapshot, store, orderWindow, validatedItems } = await validateStoreOrderItems(input.items, {
     storeId: input.storeId,
     orderedAt,
     tenantId: input.tenantId ?? "",
     supabase,
-    // Loja cria o pedido do zero — não há entrega comprometida pela fábrica; a janela
-    // operacional manda. AJ-A10 só ancora quando a fábrica abriu p/ data futura.
-    targetDeliveryDate: null,
+    // XPAN-Lote: quando a loja preenche um SLOT do lote (input.deliveryDate), ancora o
+    // catálogo nessa data comprometida. Sem slot → janela operacional (production-driven).
+    targetDeliveryDate: input.deliveryDate ?? null,
   });
   const storeDatabaseId = await resolveStoreDatabaseId(input.storeId, supabase);
+
+  // A entrega efetiva do pedido = o slot do lote (se informado) ou a janela de hoje.
+  const effectiveDeliveryDate = input.deliveryDate ?? orderWindow.deliveryDate;
 
   // Check for existing active order for the same store + delivery date
   const existingOrderResult = await supabase
     .from("store_orders")
     .select("id, code")
     .eq("store_id", storeDatabaseId)
-    .eq("delivery_date", orderWindow.deliveryDate)
+    .eq("delivery_date", effectiveDeliveryDate)
     .eq("management_status", "ativo")
     .maybeSingle();
 
   if (existingOrderResult.data) {
     throw new Error(
-      `Já existe um pedido ativo (${existingOrderResult.data.code}) para esta loja na data ${orderWindow.deliveryDate}. Use a opção Editar no pedido existente.`,
+      `Já existe um pedido ativo (${existingOrderResult.data.code}) para esta loja na data ${effectiveDeliveryDate}. Use a opção Editar no pedido existente.`,
     );
   }
 
@@ -422,14 +457,14 @@ export async function createStoreOrder(
       created_by_profile_id: createdByProfileDatabaseId,
       ordered_at: orderedAt,
       base_date: orderWindow.baseDate,
-      delivery_date: orderWindow.deliveryDate,
+      delivery_date: effectiveDeliveryDate,
+      // XPAN-Lote: pedido de lote é comprometido na data do slot → opened_at + batch_id.
+      // committedDeliveryDate = opened_at ? delivery_date : null ancora o catálogo nela.
+      opened_at: batchId ? orderedAt : null,
+      batch_id: batchId,
       receive_window_snapshot: store.receiveWindow,
       expedition_lead_days_snapshot: snapshot.operationalSettings.expeditionLeadDays,
       note: input.note ?? "",
-      // AJ-0009 Fase 4a: pedido criado pela loja nasce "preenchido". Deixamos o
-      // DEFAULT da coluna (migration 20260530120000) cuidar disso — assim o código é
-      // forward-compatible (funciona antes E depois da migration). O ciclo
-      // aberto→preenchido só vale com a flag FACTORY_OPENS_ORDERS ligada (rollout gated).
     })
     .select("id, legacy_id, code")
     .single();

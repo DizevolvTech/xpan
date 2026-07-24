@@ -260,6 +260,8 @@ export function useCreateStoreOrder(onCreated?: () => void) {
       storeId: string;
       note?: string;
       orderedAt?: string;
+      // XPAN-Lote: data de entrega do slot escolhido no lote (trava o pedido nessa data).
+      deliveryDate?: string;
       items: Array<{ productId: string; quantity: number; unit: string }>;
     }) => {
       setIsSubmitting(true);

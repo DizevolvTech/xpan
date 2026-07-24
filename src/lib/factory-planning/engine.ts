@@ -48,6 +48,13 @@ export interface FactoryPlanningInput {
    * regressão — `getRecipeReferenceWeightKgFromData` faz fallback.
    */
   ingredients?: ProductionIngredient[];
+  /**
+   * XPAN #6: receita CONGELADA na liberação por `orderId → productId → receita`. A expansão
+   * MPI usa a receita do snapshot para pedidos liberados, para que editar a receita não
+   * mude OPs já liberadas. Opcional — undefined ⇒ tudo usa a receita ao vivo (comportamento
+   * anterior). Ver `getReleasedRecipeSnapshots`.
+   */
+  releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>;
 }
 
 export interface ResolvedPlanningSource {
@@ -58,6 +65,7 @@ export interface ResolvedPlanningSource {
   products: ProductionProduct[];
   ingredients: ProductionIngredient[];
   schedules: WeeklyProductionSchedule[];
+  releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>;
 }
 
 const weekdayByIndex: ProductionWeekDay[] = [
@@ -457,6 +465,7 @@ export function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlan
     products: input.products,
     ingredients: input.ingredients ?? [],
     schedules: input.schedules,
+    releasedRecipeByOrderProduct: input.releasedRecipeByOrderProduct,
   };
 }
 
@@ -904,6 +913,9 @@ export function buildProductionOrdersFromPlannedItems(
           productCode: item.productCode,
           productName: item.productName,
           productionItemKey: item.productionItemKey ?? `${planningKey}|${item.productId}`,
+          // Todos os source items de um mesmo productId compartilham a natureza (o MPI/
+          // misturado tem productId próprio), então o 1º define se é intermediário.
+          isIntermediate: item.isIntermediate ?? false,
           // Placeholder; resolvido após agregar todos os source items (ver
           // hasPedidoSource + totalKg abaixo).
           demandSource: "cronograma",
@@ -1276,6 +1288,8 @@ export function buildFactoryPlanningData(
         sectorsById: source.sectorsById,
         // AJ-0008.1 (Fase 3): ingrediente misturado puro também vira OP (default ON).
         expandMixedIngredients: isMixedIngredientExpansionEnabled(),
+        // XPAN #6: pedido liberado expande a receita congelada no release, não a ao vivo.
+        releasedRecipeByOrderProduct: source.releasedRecipeByOrderProduct,
       })
     : orderItems;
 

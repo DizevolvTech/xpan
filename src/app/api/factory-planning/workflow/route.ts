@@ -7,6 +7,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { OrderReleaseValidationError } from "@/lib/supabase-data/release-validation";
 import { FutureWorkflowDateError, canOverrideFutureWorkflowDate } from "@/lib/workflow-date-guard";
 import {
+  canonicalProductionItemKey,
   cancelOrder,
   completeProductionBatch,
   releaseOrder,
@@ -55,6 +56,14 @@ export async function PATCH(request: Request) {
       | {
           action: "undo-production-batch";
           productionItemKey: string;
+        }
+      | {
+          // Avanço EM MASSA de etapa (chão): a OP inteira ou a coluna inteira de uma
+          // vez, em UMA requisição. Cada item leva seu status-alvo (o cliente já sabe o
+          // próximo status). Itens batidos são geridos pela pré-pesagem — não entram aqui.
+          action: "advance-production-items";
+          items: Array<{ productionItemKey: string; status: ProductionItemStatus }>;
+          force?: boolean;
         };
 
     if (body.action === "release-order") {
@@ -254,6 +263,81 @@ export async function PATCH(request: Request) {
       }
       invalidatePlanningCaches(authorization.effectiveTenantId);
       return NextResponse.json({ ok: true });
+    }
+
+    if (body.action === "advance-production-items") {
+      const authorization = await authorizeApiRequest({
+        contextLabel: "PATCH /api/factory-planning/workflow advance-production-items",
+        anyOfPermissions: ["gestor-fabrica.ops", "chao-fabrica.ops"],
+        minimumLevel: "operar",
+        requireTenantContext: true,
+        requireWritableTenant: true,
+      });
+
+      if ("response" in authorization) {
+        return authorization.response;
+      }
+      if (body.force === true && !canOverrideFutureWorkflowDate(authorization.user.role)) {
+        return NextResponse.json(
+          { message: "Apenas gestor de fábrica ou administrador podem forçar produção em data futura." },
+          { status: 403 },
+        );
+      }
+
+      const supabase = createTenantScopedSupabaseClient(
+        authorization.effectiveTenantId,
+        createSupabaseAdminClient(),
+      );
+      const rawItems = Array.isArray(body.items) ? body.items : [];
+      // Dedupe por chave CANÔNICA: cada write é por essa chave; dois itens que colapsam
+      // na mesma canônica virariam corrida de upsert na MESMA row se rodassem juntos.
+      // Mantém a 1ª ocorrência (a UI manda um alvo por item).
+      const items = Array.from(
+        new Map(
+          rawItems.map((item) => [canonicalProductionItemKey(item.productionItemKey), item] as const),
+        ).values(),
+      );
+      let advanced = 0;
+      // `blocked` = data futura (recuperável via force por gestor/admin); `failed` = demais.
+      const blocked: string[] = [];
+      const failed: Array<{ productionItemKey: string; message: string }> = [];
+      const advanceOne = async (item: { productionItemKey: string; status: ProductionItemStatus }) => {
+        try {
+          await updateProductionItemStatus(
+            item.productionItemKey,
+            item.status,
+            authorization.user.id,
+            authorization.effectiveTenantId,
+            supabase,
+            body.force === true,
+          );
+          advanced += 1;
+        } catch (error) {
+          if (error instanceof FutureWorkflowDateError) {
+            blocked.push(item.productionItemKey);
+          } else {
+            failed.push({
+              productionItemKey: item.productionItemKey,
+              message: error instanceof Error ? error.message : "Falha ao avançar item.",
+            });
+          }
+        }
+      };
+      // Paralelo com concorrência LIMITADA: itens têm chaves canônicas distintas (rows
+      // distintas), então rodar em paralelo é seguro e corta o wall-clock ~Nx. O teto
+      // evita estourar o pool do Supabase quando o gestor avança milhares de OPs de uma vez.
+      const CONCURRENCY = 8;
+      for (let i = 0; i < items.length; i += CONCURRENCY) {
+        await Promise.all(items.slice(i, i + CONCURRENCY).map(advanceOne));
+      }
+      invalidatePlanningCaches(authorization.effectiveTenantId);
+      return NextResponse.json({
+        ok: failed.length === 0,
+        advanced,
+        blockedCount: blocked.length,
+        forceable: canOverrideFutureWorkflowDate(authorization.user.role),
+        failed,
+      });
     }
 
     return NextResponse.json({ message: "Unsupported workflow action" }, { status: 400 });

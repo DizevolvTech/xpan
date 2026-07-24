@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Ciclo REAL de pedido no modelo atual `FACTORY_OPENS_ORDERS` (default ON):
-fábrica abre pedidos da semana → loja preenche → fábrica libera → produção avança.
+"""Ciclo REAL de pedido no modelo LOTE (`FACTORY_OPENS_ORDERS` default ON):
+fábrica abre um LOTE (janela de datas × lojas) → loja MONTA um pedido num slot →
+fábrica libera → produção avança.
 
-Substitui o cenário obsoleto de `full_flow_a1_a8.py` (que cria pedido do zero via
-POST /store-orders — hoje BLOQUEADO pela flag: "os pedidos são abertos pela fábrica").
+Modelo LOTE: a fábrica NÃO cria mais pedidos vazios. Abre 1 `order_batches` com os
+slots (loja × data). A loja lista os lotes (GET /open), escolhe uma data ainda sem
+pedido e CRIA o pedido (POST /store-orders com `deliveryDate` = data do slot). O gate
+server-side em createStoreOrder recusa criar fora de um slot coberto por lote aberto.
 
 Foca nos ERROS DO CLIENTE (checklist XPAN, itens de falha grave):
 - **F1 / falha-grave** — um pedido preenchido DEVE ser liberável e liberar (não travar).
@@ -114,45 +117,79 @@ def run():
         loja = fresh("loja")
         rec("login", "PASS", "fabrica + loja logados")
 
-        # 1) FÁBRICA ABRE PEDIDOS DA SEMANA (derivados do cronograma ativo).
+        # 1) FÁBRICA ABRE UM LOTE (slots loja × data derivados do cronograma ativo).
         r = api(fab, "POST", "/api/store-orders/open",
                 {"mode": "week", "referenceDate": REF, "storeIds": STORE_IDS})
         if r.status_code in (200, 201):
-            opened = (r.json() or {}).get("opened", []) if r.text else []
-            created_order_codes.extend([o.get("code") for o in opened if o.get("code")])
-            rec("open-week", "PASS", f"fábrica abriu {len(opened)} pedido(s) da semana (ref={REF})")
+            body = r.json() if r.text else {}
+            slots = body.get("slots", []) or []
+            rec("open-lote", "PASS",
+                f"fábrica abriu 1 lote com {len(slots)} slot(s) (batch={body.get('batchId')}, ref={REF})")
         elif r.status_code == 409:
-            rec("open-week", "SKIP", "recurso desligado (FACTORY_OPENS_ORDERS=false)")
-        else:
-            rec("open-week", "SKIP", f"nada aberto: {r.status_code} {r.text[:120]}")
-
-        # 2) LOJA ACHA UM PEDIDO ABERTO E PREENCHE (catálogo ancorado na data comprometida).
-        r = api(loja, "GET", "/api/store-orders/open")
-        open_orders = r.json() if r.status_code == 200 and r.text else []
-        if not isinstance(open_orders, list) or not open_orders:
-            rec("fill", "FAIL", "nenhum pedido aberto p/ a loja preencher — não dá p/ testar o ciclo")
+            rec("open-lote", "SKIP", "recurso desligado (FACTORY_OPENS_ORDERS=false)")
             return _summary()
-        target = open_orders[0]
-        oid, commit_date, store_id = target.get("id"), target.get("deliveryDate"), target.get("storeId")
-        log(f"pedido alvo {oid} · entrega comprometida {commit_date} · loja {store_id}")
+        else:
+            rec("open-lote", "FAIL", f"lote não abriu: {r.status_code} {r.text[:150]}")
+            return _summary()
 
+        # 2) LOJA LISTA OS LOTES ABERTOS, ESCOLHE UM SLOT E CRIA O PEDIDO.
+        r = api(loja, "GET", "/api/store-orders/open")
+        batches = r.json() if r.status_code == 200 and r.text else []
+        loja_slots = [s for b in (batches or []) for s in (b.get("slots") or [])] if isinstance(batches, list) else []
+        if not loja_slots:
+            rec("create", "FAIL", "loja não vê nenhum slot de lote aberto — não dá p/ testar o ciclo")
+            return _summary()
+        # Escolhe o 1º slot cuja data ainda NÃO tem pedido da loja (evita duplicidade).
+        existing = api(loja, "GET", "/api/store-orders")
+        existing_rows = existing.json() if existing.status_code == 200 and existing.text else []
+        ordered_keys = {
+            f"{o.get('storeId')}|{o.get('deliveryDateKey')}"
+            for o in (existing_rows or [])
+            if o.get("status") != "cancelado"
+        }
+        target = next(
+            (s for s in loja_slots if f"{s.get('storeId')}|{s.get('deliveryDate')}" not in ordered_keys),
+            None,
+        )
+        if target is None:
+            rec("create", "SKIP", "todos os slots do lote já têm pedido — nada a criar")
+            return _summary()
+        store_id, commit_date = target.get("storeId"), target.get("deliveryDate")
+        log(f"slot alvo · loja {store_id} · entrega {commit_date}")
+
+        # Catálogo ancorado na data do slot — a loja vê os produtos entregáveis nessa data.
         r = api(loja, "GET",
                 f"/api/store-order-catalog?storeId={store_id}&orderedAt={REF}T09:00:00"
                 f"&targetDeliveryDate={commit_date}")
         cat = r.json() if r.status_code == 200 and r.text else []
         avail = [c for c in cat if c.get("available")] if isinstance(cat, list) else []
         if not avail:
-            rec("fill", "FAIL", f"catálogo ancorado vazio p/ {commit_date} — loja não consegue preencher (TRAVA)")
+            rec("create", "FAIL", f"catálogo ancorado vazio p/ {commit_date} — loja não consegue montar (TRAVA)")
             return _summary()
         items = []
         for c in avail[:2]:
             q = 6 if c.get("unitKind") == "discrete" else max(1.0, round(float(c.get("minimumProductionKg") or 0) + 0.5, 3))
             items.append({"productId": c["productId"], "quantity": q, "unit": c.get("unit")})
-        r = api(loja, "PATCH", f"/api/store-orders/{oid}", {"items": items, "note": "e2e/live_cycle"})
+        r = api(loja, "POST", "/api/store-orders",
+                {"storeId": store_id, "deliveryDate": commit_date, "items": items, "note": "e2e/live_cycle"})
         if r.status_code not in (200, 201):
-            rec("fill", "FAIL", f"preencher travou: {r.status_code} {r.text[:150]}")
+            rec("create", "FAIL", f"criar no slot travou: {r.status_code} {r.text[:150]}")
             return _summary()
-        rec("fill", "PASS", f"loja preencheu o pedido aberto ({len(items)} itens)")
+        created = r.json() if r.text else {}
+        # createStoreOrder devolve { orderId (=legacy_id), code } — o MESMO id que o
+        # planning usa (id: legacy_id ?? id) e que resolveOrderRow aceita.
+        oid = created.get("orderId") or created.get("id")
+        if created.get("code"):
+            created_order_codes.append(created.get("code"))
+        rec("create", "PASS", f"loja criou o pedido no slot ({len(items)} itens, code={created.get('code')})")
+
+        # 2b) GATE — criar FORA de um slot coberto pelo lote deve ser RECUSADO (400).
+        bad_date = (datetime.date.fromisoformat(commit_date) + datetime.timedelta(days=180)).isoformat()
+        rbad = api(loja, "POST", "/api/store-orders",
+                   {"storeId": store_id, "deliveryDate": bad_date, "items": items, "note": "e2e/gate"})
+        rec("gate-slot", "PASS" if rbad.status_code == 400 else "FAIL",
+            f"criar fora do lote recusado (400)" if rbad.status_code == 400
+            else f"gate FUROU: status {rbad.status_code} p/ data fora do lote {bad_date}")
 
         # 3) F1 — o pedido preenchido DEVE ser liberável e liberar.
         snap = api(fab, "GET", f"/api/factory-planning?referenceDate={REF}").json()

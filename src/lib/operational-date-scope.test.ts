@@ -251,6 +251,7 @@ test("factory scope keeps related OP and expedition visible for the same selecte
             productCode: "PR-02205",
             productName: "Pudim",
             productionItemKey: "2026-03-20|line-1|schedule-1|product-1",
+            isIntermediate: false,
             demandSource: "pedido",
             totalKg: 4.35,
             minimumProductionKg: 0,

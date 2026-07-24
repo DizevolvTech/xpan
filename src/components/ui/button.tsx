@@ -9,7 +9,9 @@ import { readClientAccessContext } from "@/lib/client-access-context";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold tracking-[0.005em] transition-[transform,box-shadow,background-color,border-color,color,filter] duration-200 ease-out disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/45 focus-visible:ring-[3px] active:translate-y-0 active:duration-75",
+  // `cursor-pointer`: o Tailwind v4 removeu o cursor de ponteiro padrão do <button>; sem
+  // isto o mouse fica em seta e o botão "não parece clicável" (feedback do usuário).
+  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold tracking-[0.005em] transition-[transform,box-shadow,background-color,border-color,color,filter] duration-200 ease-out disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/45 focus-visible:ring-[3px] active:translate-y-0 active:duration-75",
   {
     variants: {
       variant: {

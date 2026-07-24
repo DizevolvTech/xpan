@@ -12,6 +12,7 @@ import {
   Truck,
 } from "lucide-react";
 
+import { DayPrintButton } from "@/components/production/day-print-button";
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
 import { DataTable } from "@/components/shared/data-table";
@@ -103,6 +104,31 @@ export default function OrdensProducaoPage() {
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
   );
+  // "Imprimir folhas do dia" (mesma UX do gestor): a data-alvo é o filtro de produção se
+  // ativo; senão o dia âncora se tiver produção; senão a produção mais próxima — assim o
+  // botão não trava quando a produção do dia é futura (âncora = hoje, OPs de amanhã).
+  const dayPrintSummary = useMemo(() => {
+    const demandOps = planningSnapshot.productionOrders.filter((op) => op.hasDemand !== false);
+    const datesWithOps = Array.from(new Set(demandOps.map((op) => op.productionDate))).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    const printDate =
+      productionDateFilter !== "all"
+        ? productionDateFilter
+        : datesWithOps.includes(anchorDate)
+          ? anchorDate
+          : datesWithOps[0] ?? anchorDate;
+    const dayOps = demandOps.filter((op) => op.productionDate === printDate);
+    return {
+      printDate,
+      opCount: dayOps.length,
+      // "produtos" = produtos DISTINTOS a produzir (op.items), não linhas de pedido
+      // consolidadas (op.itemsCount) — senão 2 lojas pedindo o mesmo produto contam "2".
+      productCount: dayOps.reduce((sum, op) => sum + op.items.length, 0),
+      totalKg: dayOps.reduce((sum, op) => sum + op.totalKg, 0),
+      dayLabel: dayOps[0]?.productionDateLabel ?? printDate,
+    };
+  }, [planningSnapshot.productionOrders, anchorDate, productionDateFilter]);
   const { snapshot } = useMasterDataSnapshot();
   const toast = useToast();
   const tryFutureDateOverride = useFutureDateOverride();
@@ -433,12 +459,21 @@ export default function OrdensProducaoPage() {
         { label: "Ordens de Produção" },
       ]}
       actions={
-        <Button asChild type="button" variant="outline">
-          <Link href="/chao-fabrica">
-            <ArrowLeft className="size-4" />
-            Voltar ao painel
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <DayPrintButton
+            date={dayPrintSummary.printDate}
+            dayLabel={dayPrintSummary.dayLabel}
+            opCount={dayPrintSummary.opCount}
+            productCount={dayPrintSummary.productCount}
+            totalKg={dayPrintSummary.totalKg}
+          />
+          <Button asChild type="button" variant="outline">
+            <Link href="/chao-fabrica">
+              <ArrowLeft className="size-4" />
+              Voltar ao painel
+            </Link>
+          </Button>
+        </div>
       }
     >
       {/* Action bar — pílula de escopo. ScopeCard cheio fica nas telas analíticas;

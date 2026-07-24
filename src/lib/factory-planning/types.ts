@@ -81,6 +81,9 @@ export interface PlannedOrderItem {
   //   correspondente — aparece com quantidade/kg 0 para que a produção do dia mostre
   //   o que o cronograma prevê, mesmo sem demanda.
   demandSource: "pedido" | "cronograma";
+  // Item derivado da receita (MPI ou ingrediente misturado) — não o produto final do
+  // pedido. Ausente/false para itens normais; os builders de expansão marcam `true`.
+  isIntermediate?: boolean;
   productId: string;
   productCode: string;
   productName: string;
@@ -104,9 +107,9 @@ export interface PlannedOrderItem {
   scheduleDayPriority: number | null;
   availableForRelease: boolean;
   releasedToProduction: boolean;
-  // Produção iniciada pelo gestor ("Iniciar produção do dia"). Estado separado de
-  // releasedToProduction: liberar coloca a OP na coluna do gestor; iniciar é o que
-  // a manda para o quadro do Chão (1ª coluna), mantendo o item em `nao_iniciado`.
+  // Produção já em andamento (≥1 item avançou de `nao_iniciado`). NÃO é mais o filtro de
+  // visibilidade do Chão (desde 2026-07-24 liberar já manda a OP pro chão — ver
+  // isOpOnChaoBoard). Hoje só sinaliza "já começou" para KPIs/rótulos.
   productionStarted: boolean;
   // Batidas: capacidade + fator/unidade p/ derivar o plano após consolidar o totalKg.
   capacityPerBatch: number | null;
@@ -146,6 +149,10 @@ export interface ProductionOrderItem {
   productCode: string;
   productName: string;
   productionItemKey: string;
+  // Item INTERMEDIÁRIO (base/insumo): MPI ou ingrediente misturado derivado da receita,
+  // não o produto final do pedido. A UI o sinaliza (badge "Base") porque ele é uma etapa
+  // ANTERIOR e por isso costuma estar num progresso diferente do produto final.
+  isIntermediate: boolean;
   // FASE 2 (blindagem): origem da demanda agregada do item da OP.
   // - "pedido": ao menos um source item nasceu de um StoreOrder (demanda real) OU
   //   o item consolidou kg > 0.
@@ -218,8 +225,9 @@ export interface ProductionOrderRow {
   // planejamento, não desce pro chão nem conta em métrica.
   hasDemand: boolean;
   releasedToProduction: boolean;
-  // OP iniciada (≥1 item com produção iniciada). É o filtro de visibilidade do
-  // quadro do Chão: liberada mas não iniciada NÃO aparece para o operário.
+  // OP iniciada (≥1 item com produção iniciada). NÃO é mais o filtro do Chão: desde
+  // 2026-07-24 toda OP liberada aparece pro operário (isOpOnChaoBoard). Serve p/ KPIs
+  // e para saber se o trabalho já começou.
   productionStarted: boolean;
   progress: number;
   status: OrderStatus;

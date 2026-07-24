@@ -179,8 +179,13 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       date: formatDateTimeBr(orderRow.ordered_at),
       orderedAtIso: orderRow.ordered_at,
       orderedAtKey: orderRow.ordered_at.slice(0, 10),
-      deliveryDate: formatDateBr(orderRow.delivery_date),
-      deliveryDateKey: orderRow.delivery_date,
+      // XPAN item #1 (fonte única de verdade): a data de entrega EXIBIDA vem do MESMO
+      // cálculo do planning (planningOrder) que a lista/visão consolidada usa — não da
+      // delivery_date persistida. Para pedido comprometido ambas coincidem; para pedido
+      // production-driven, isto elimina a divergência detalhe × consolidado. O fallback
+      // cobre o caso (raro) de o pedido não estar no snapshot de planejamento.
+      deliveryDate: planningOrder?.deliveryDateLabel ?? formatDateBr(orderRow.delivery_date),
+      deliveryDateKey: planningOrder?.deliveryDate ?? orderRow.delivery_date,
       // XPAN-2/3: só a data COMPROMETIDA pela fábrica (`opened_at` preenchido) ancora o
       // catálogo de disponibilidade na edição. Pedido criado pela loja → null →
       // production-driven, coerente com `updateStoreOrder`. Cobre também o re-editar de

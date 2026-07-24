@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   getProductionOrderNavKey,
   isOpInProductionColumn,
+  isOpOnChaoBoard,
   isOrderAwaitingAcceptance,
 } from "@/lib/factory-kanban";
 
@@ -44,6 +45,23 @@ test("isOpInProductionColumn — OP em rota ou JÁ ENTREGUE sai de produção", 
   assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "rota_entrega" }), false);
   assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "entregue" }), false);
   assert.equal(isOpInProductionColumn({ releasedToProduction: true, status: "cancelado" }), false);
+});
+
+// Quadro do CHÃO = toda OP liberada (liberar já manda pro chão; sem 2º passo "iniciar").
+test("isOpOnChaoBoard — OP liberada aparece no chão mesmo SEM produção iniciada", () => {
+  // O cerne da correção: antes exigia produção iniciada (gestor mostrava a OP, chão não).
+  assert.equal(isOpOnChaoBoard({ releasedToProduction: true, status: "agendado" }), true);
+  assert.equal(isOpOnChaoBoard({ releasedToProduction: true, status: "em_producao" }), true);
+});
+
+test("isOpOnChaoBoard — OP concluída/expedição continua no chão (rola p/ coluna Expedição)", () => {
+  assert.equal(isOpOnChaoBoard({ releasedToProduction: true, status: "aguardando_expedicao" }), true);
+  assert.equal(isOpOnChaoBoard({ releasedToProduction: true, status: "entregue" }), true);
+});
+
+test("isOpOnChaoBoard — OP não liberada ou cancelada NÃO aparece no chão", () => {
+  assert.equal(isOpOnChaoBoard({ releasedToProduction: false, status: "agendado" }), false);
+  assert.equal(isOpOnChaoBoard({ releasedToProduction: true, status: "cancelado" }), false);
 });
 
 // Chave de navegação estável da OP — não depende de posição/index.

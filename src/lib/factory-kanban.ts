@@ -51,6 +51,20 @@ export function isOpInProductionColumn(op: {
 }
 
 /**
+ * Quadro do CHÃO: mostra TODA OP liberada (não cancelada) — inclusive as ainda NÃO
+ * iniciadas. Liberar já manda a OP pro chão (decisão 2026-07-24): antes exigia também
+ * `productionStarted` (2º passo "Iniciar produção do dia"), o que fazia o gestor mostrar
+ * a OP e o chão não → os dois quadros divergiam. As OPs concluídas seguem incluídas (ainda
+ * liberadas) e rolam para a coluna "Expedição" pela etapa dos itens, não pelo `status`.
+ */
+export function isOpOnChaoBoard(op: {
+  releasedToProduction: boolean;
+  status: OrderStatus;
+}): boolean {
+  return op.releasedToProduction && op.status !== "cancelado";
+}
+
+/**
  * Chave de navegação ESTÁVEL de uma OP (`productionDate|sectorId|lineId|scheduleId`).
  *
  * O `id`/`code` da OP são posicionais (`op-${index}` / `OP-...-NNN`) e mudam quando

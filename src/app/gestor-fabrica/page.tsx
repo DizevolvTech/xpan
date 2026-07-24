@@ -21,6 +21,7 @@ import { useConfirm } from "@/components/shared/confirm-dialog";
 import { FactoryAlertsCard } from "@/components/production/factory-alerts-card";
 import { FactoryMetricsCard } from "@/components/production/factory-metrics-card";
 import { InfoHint } from "@/components/shared/info-hint";
+import { KanbanCardMotion } from "@/components/shared/kanban-card-motion";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { useToast } from "@/components/shared/toast";
@@ -320,92 +321,9 @@ export default function GestorFabricaPage() {
     [batchProgress, confirm, refreshPlanning, releaseOrderRequest, toast],
   );
 
-  // AJ — "iniciar produção" em lote: avança os itens `nao_iniciado` da OP para o
-  // 1º estágio (mesma transição que o chão usa), via o mesmo endpoint do release.
-  const startProductionItemRequest = useCallback(
-    async (productionItemKey: string) => {
-      const response = await fetch("/api/factory-planning/workflow", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start-production-item", productionItemKey }),
-      });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message ?? `Falha ao iniciar produção (status ${response.status}).`);
-      }
-    },
-    [],
-  );
-
-  const runBatchStartProduction = useCallback(
-    async (columnKey: string, ops: ProductionOrderRow[]) => {
-      if (batchProgress) return;
-      // "Iniciar produção do dia" = mandar para o Chão as OPs liberadas ainda NÃO
-      // iniciadas. NÃO avança o status (o item segue `nao_iniciado` / 1ª coluna do
-      // Chão = pré-pesagem); apenas marca a produção como iniciada. Trabalhamos por
-      // OP (todas as suas chaves de item) e ignoramos OPs já iniciadas.
-      const startableOps = ops.filter((op) => !op.productionStarted);
-      const startableKeys = startableOps.flatMap((op) =>
-        op.items.map((item) => item.productionItemKey),
-      );
-
-      if (startableKeys.length === 0) {
-        toast.info("Nenhuma OP pendente de início nesta etapa.");
-        return;
-      }
-
-      if (startableOps.length > 10) {
-        const confirmed = await confirm({
-          title: `Iniciar a produção de ${startableOps.length} OP(s)?`,
-          description:
-            "Esta ação envia para o chão de fábrica todas as OPs liberadas ainda não iniciadas do dia. Falhas são reportadas ao final.",
-          confirmLabel: `Iniciar ${startableOps.length}`,
-          cancelLabel: "Cancelar",
-        });
-        if (!confirmed) return;
-      }
-
-      setBatchProgress({ columnKey, current: 0, total: startableKeys.length, label: "Iniciando" });
-      let succeeded = 0;
-      let failed = 0;
-      let firstError: string | null = null;
-      let completed = 0;
-
-      await Promise.allSettled(
-        startableKeys.map(async (productionItemKey) => {
-          try {
-            await startProductionItemRequest(productionItemKey);
-            succeeded += 1;
-          } catch (startError) {
-            failed += 1;
-            if (!firstError) {
-              firstError =
-                startError instanceof Error ? startError.message : "Falha ao iniciar a produção.";
-            }
-          } finally {
-            completed += 1;
-            setBatchProgress((current) =>
-              current && current.columnKey === columnKey ? { ...current, current: completed } : current,
-            );
-          }
-        }),
-      );
-
-      if (failed === 0) {
-        toast.success(`${startableOps.length} OP(s) enviada(s) para o chão.`);
-      } else if (succeeded === 0) {
-        toast.error(firstError ?? `Falha ao iniciar ${failed} item(ns).`);
-      } else {
-        toast.warning(
-          `${succeeded} iniciados · ${failed} com falha${firstError ? `. Primeiro erro: ${firstError}` : "."}`,
-        );
-      }
-
-      setBatchProgress(null);
-      await refreshPlanning(true).catch(() => undefined);
-    },
-    [batchProgress, confirm, refreshPlanning, startProductionItemRequest, toast],
-  );
+  // XPAN-2026-07-24: "Iniciar produção do dia" REMOVIDO — liberar já manda a OP pro chão
+  // (o chão mostra toda OP liberada). Não há mais 2º passo aqui: o operário avança a OP
+  // direto no quadro do chão.
 
   useEffect(() => {
     setSettingsDraft({
@@ -648,20 +566,6 @@ export default function GestorFabricaPage() {
     const today = all.filter((order) => order.deliveryDate === anchorDate);
     return { all, today };
   }, [anchorDate, kanbanColumns]);
-
-  // OPs da coluna "Em produção" liberadas e ainda NÃO iniciadas (pendentes de
-  // mandar para o chão). Contamos OPs (não itens): "Iniciar produção do dia"
-  // envia a OP inteira para o quadro do chão.
-  const productionColumn = useMemo(
-    () => kanbanColumns.find((column) => column.key === "producao") ?? null,
-    [kanbanColumns],
-  );
-  const productionStartableCount = useMemo(() => {
-    if (!productionColumn || productionColumn.kind !== "ops") {
-      return 0;
-    }
-    return productionColumn.items.filter((op) => !op.productionStarted).length;
-  }, [productionColumn]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -1090,7 +994,6 @@ export default function GestorFabricaPage() {
           const tone = KANBAN_TONE_STYLES[column.tone];
           const isEmpty = column.items.length === 0;
           const isOpenColumn = column.key === "aberto";
-          const isProductionColumn = column.key === "producao";
           const isExpedColumn = column.key === "expedicao";
           const columnBatchActive =
             batchProgress?.columnKey === column.key ? batchProgress : null;
@@ -1140,7 +1043,7 @@ export default function GestorFabricaPage() {
                   • "do dia"  = deliveryDate === anchorDate
                   • "em espera" = todos com availableForRelease no scope visível.
                   Confirmação via useConfirm para batches >10 (no runBatchRelease). */}
-              {isOpenColumn || isProductionColumn ? (
+              {isOpenColumn ? (
                 <div className="flex flex-col gap-1.5 pl-2">
                   {columnBatchActive ? (
                     <div
@@ -1153,7 +1056,7 @@ export default function GestorFabricaPage() {
                         {columnBatchActive.label} {columnBatchActive.current}/{columnBatchActive.total}…
                       </span>
                     </div>
-                  ) : isOpenColumn ? (
+                  ) : (
                     <>
                       <Button
                         type="button"
@@ -1191,26 +1094,6 @@ export default function GestorFabricaPage() {
                         </Button>
                       ) : null}
                     </>
-                  ) : (
-                    // AJ — coluna "Em produção": inicia as OPs do dia em lote (mesma pegada
-                    // do "Liberar tudo", mas avançando os itens não iniciados para produção).
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="min-h-11 w-full justify-start gap-2"
-                      disabled={productionStartableCount === 0 || batchProgress !== null}
-                      onClick={() => {
-                        if (column.kind === "ops") {
-                          void runBatchStartProduction(column.key, column.items);
-                        }
-                      }}
-                    >
-                      <Play className="size-3.5" aria-hidden />
-                      Iniciar produção do dia
-                      <span className="ms-auto tabular-nums opacity-80">
-                        ({productionStartableCount})
-                      </span>
-                    </Button>
                   )}
                 </div>
               ) : null}
@@ -1224,7 +1107,10 @@ export default function GestorFabricaPage() {
                     —
                   </p>
                 ) : column.kind === "orders" ? (
-                  column.items.map((order) => {
+                  // Chave estável do pedido: ao ser liberado/expedido ele muda de coluna e o
+                  // AnimatePresence anima a saída/entrada (transição de etapa).
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {column.items.map((order) => {
                     const isPending = pendingOrderIds.has(order.id);
                     const canRelease =
                       isOpenColumn &&
@@ -1232,7 +1118,7 @@ export default function GestorFabricaPage() {
                       !order.releasedToProduction;
                     const isRowBusy = isPending || batchProgress !== null;
                     return (
-                      <div
+                      <KanbanCardMotion
                         key={order.id}
                         className={`group/order flex items-center gap-2 rounded-md transition-colors hover:bg-muted/60 focus-within:bg-muted/60 ${
                           isPending ? "opacity-60" : ""
@@ -1282,23 +1168,27 @@ export default function GestorFabricaPage() {
                             Checklist
                           </Link>
                         ) : null}
-                      </div>
+                      </KanbanCardMotion>
                     );
-                  })
+                    })}
+                  </AnimatePresence>
                 ) : (
-                  column.items.map((op, opIndex) => {
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {column.items.map((op, opIndex) => {
                     const isOpen = !!expandedOpIds[op.id];
                     const progress = Math.max(0, Math.min(100, op.progress));
+                    // Progresso 0 = OP liberada, no chão, ainda não avançada (NÃO "iniciada":
+                    // o rótulo antigo dava a entender que a produção já tinha começado).
                     const progressLabel =
                       progress <= 0
-                        ? "iniciada"
+                        ? "no chão"
                         : `${progress.toFixed(progress < 10 ? 1 : 0)}%`;
                     // AJ-0001: a coluna já vem ordenada por productionDate (proxy de SLA),
                     // então a 1ª OP da fila é a próxima a trabalhar → badge "PRÓXIMA".
                     const isNextInQueue = opIndex === 0;
                     return (
-                      <div
-                        key={op.id}
+                      <KanbanCardMotion
+                        key={getProductionOrderNavKey(op)}
                         className="rounded-md transition-colors hover:bg-muted/50 focus-within:bg-muted/50"
                       >
                         <button
@@ -1403,9 +1293,10 @@ export default function GestorFabricaPage() {
                             </motion.div>
                           ) : null}
                         </AnimatePresence>
-                      </div>
+                      </KanbanCardMotion>
                     );
-                  })
+                    })}
+                  </AnimatePresence>
                 )}
               </div>
             </motion.section>

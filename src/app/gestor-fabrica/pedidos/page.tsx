@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ListChecks, ShoppingCart, Truck, Zap } from "lucide-react";
 
 import {
@@ -86,6 +86,25 @@ export default function PedidosFabricaPage() {
   const factoryOpensOrders = isFactoryOpensOrdersEnabled();
   const { snapshot: masterData } = useMasterDataSnapshot();
   const [isOpenOrdersDialogOpen, setIsOpenOrdersDialogOpen] = useState(false);
+  // XPAN-Lote: slots (loja × data) dos lotes ABERTOS — base do card "Lote aberto: X/Y".
+  const [openBatchSlots, setOpenBatchSlots] = useState<Array<{ storeId: string; deliveryDate: string }>>([]);
+  const refreshOpenBatches = useCallback(() => {
+    if (!factoryOpensOrders) {
+      setOpenBatchSlots([]);
+      return;
+    }
+    void fetch("/api/store-orders/open")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data: Array<{ slots?: Array<{ storeId: string; deliveryDate: string }> }>) =>
+        setOpenBatchSlots(
+          Array.isArray(data) ? data.flatMap((batch) => batch.slots ?? []) : [],
+        ),
+      )
+      .catch(() => setOpenBatchSlots([]));
+  }, [factoryOpensOrders]);
+  useEffect(() => {
+    refreshOpenBatches();
+  }, [refreshOpenBatches]);
   // A10: modo padrão "semana" (deriva os dias do cronograma); "manual" mantém a
   // abertura de UMA data de entrega específica (fluxo anterior).
   const [openMode, setOpenMode] = useState<"week" | "manual">("week");
@@ -123,6 +142,23 @@ export default function PedidosFabricaPage() {
       };
     });
   }, [orderItemsByOrderId, planningData.orders]);
+
+  // XPAN-Lote: status do lote aberto — quantos slots (loja × data) já viraram pedido real
+  // (X) sobre o total liberado (Y). "Preenchido" = existe um pedido não-cancelado da loja
+  // com aquela data de entrega.
+  const openBatchStatus = useMemo(() => {
+    const total = openBatchSlots.length;
+    if (total === 0) return null;
+    const orderedKeys = new Set(
+      summaryRows
+        .filter((order) => order.status !== "cancelado")
+        .map((order) => `${order.storeId}|${order.deliveryDate}`),
+    );
+    const filled = openBatchSlots.filter((slot) =>
+      orderedKeys.has(`${slot.storeId}|${slot.deliveryDate}`),
+    ).length;
+    return { filled, total, pending: total - filled };
+  }, [openBatchSlots, summaryRows]);
 
   const filteredOrders = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase();
@@ -264,10 +300,9 @@ export default function PedidosFabricaPage() {
     await performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast);
   }
 
-  // AJ-A6: libera em batelada todos os pedidos elegíveis num clique. Aplica a
-  // mesma trava server-side do A1 (sem force) — pedidos bloqueados aparecem
-  // como falhas no resumo, sem interromper o batch.
-  // AJ-0009 Fase 4a: abre pedidos vazios (status 'aberto') p/ as lojas preencherem.
+  // XPAN-Lote: a fábrica abre UM LOTE (janela de datas × lojas). Não cria pedido nenhum —
+  // a loja monta os pedidos dentro do lote. O modo "semana" deriva os slots do cronograma;
+  // "manual" usa uma data de entrega única.
   async function handleOpenOrders() {
     if (isOpeningOrders) return;
     const isWeekMode = openMode === "week";
@@ -282,44 +317,32 @@ export default function PedidosFabricaPage() {
 
     setIsOpeningOrders(true);
     try {
-      // A10: modo "semana" deriva os dias do cronograma (sem data fixa); modo
-      // "manual" mantém a abertura de uma única data de entrega.
       const body = isWeekMode
         ? { mode: "week" as const, storeIds: openStoreIds, referenceDate: openReferenceDate || undefined }
-        : { deliveryDate: openDeliveryDate, storeIds: openStoreIds };
+        : { mode: "manual" as const, deliveryDate: openDeliveryDate, storeIds: openStoreIds };
       const response = await fetch("/api/store-orders/open", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const result = (await response.json().catch(() => null)) as
-        | { opened?: Array<{ storeId: string; code: string }>; skipped?: string[]; message?: string }
+        | { batchId?: string; slots?: Array<{ storeId: string; deliveryDate: string }>; message?: string }
         | null;
       if (!response.ok) {
-        throw new Error(result?.message ?? "Falha ao abrir pedidos.");
+        throw new Error(result?.message ?? "Falha ao abrir o lote.");
       }
       await refresh();
-      const openedCount = result?.opened?.length ?? 0;
-      const skippedCount = result?.skipped?.length ?? 0;
-      if (openedCount > 0) {
-        const target = isWeekMode ? "a semana" : openDeliveryDate;
-        toast.success(
-          `${openedCount} pedido(s) aberto(s) para ${target}.` +
-            (skippedCount > 0 ? ` ${skippedCount} loja(s) sem novidade.` : ""),
-        );
-      } else {
-        toast.info(
-          skippedCount > 0
-            ? isWeekMode
-              ? `Nenhum pedido novo: as ${skippedCount} loja(s) já estão com a semana liberada.`
-              : `Nenhum pedido aberto: as ${skippedCount} loja(s) já tinham pedido ativo nessa data.`
-            : "Nenhum pedido aberto.",
-        );
-      }
+      refreshOpenBatches();
+      const slotCount = result?.slots?.length ?? 0;
+      const storeCount = new Set((result?.slots ?? []).map((slot) => slot.storeId)).size;
+      toast.success(
+        `Lote aberto: ${slotCount} data(s) liberada(s) para ${storeCount} loja(s). ` +
+          "As lojas já podem montar os pedidos.",
+      );
       setIsOpenOrdersDialogOpen(false);
       setOpenStoreIds([]);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao abrir pedidos.");
+      toast.error(error instanceof Error ? error.message : "Falha ao abrir o lote.");
     } finally {
       setIsOpeningOrders(false);
     }
@@ -481,7 +504,8 @@ export default function PedidosFabricaPage() {
         </Popover>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-          {/* AJ-0009 Fase 4a: a fábrica abre os pedidos (só com a flag ligada). */}
+          {/* XPAN-Lote: a fábrica abre um LOTE (janela) e as lojas montam os pedidos dentro
+              dele (só com a flag ligada). */}
           {factoryOpensOrders ? (
             <Button
               type="button"
@@ -490,8 +514,23 @@ export default function PedidosFabricaPage() {
               onClick={() => setIsOpenOrdersDialogOpen(true)}
             >
               <CalendarPlus className="size-4" />
-              Abrir pedidos
+              Abrir lote
             </Button>
+          ) : null}
+          {/* XPAN-Lote: status do lote aberto — quantas datas já viraram pedido (X/Y). */}
+          {factoryOpensOrders && openBatchStatus ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-info/30 bg-info/[var(--opacity-subtle)] px-2.5 py-1 text-[11px] font-medium tabular-nums text-info"
+              title="Datas do lote já preenchidas pelas lojas / total liberado."
+            >
+              <CalendarRange className="size-3.5" aria-hidden />
+              Lote aberto: {openBatchStatus.filled}/{openBatchStatus.total}
+              {openBatchStatus.pending > 0 ? (
+                <span className="text-info/70">· {openBatchStatus.pending} a preencher</span>
+              ) : (
+                <span className="text-info/70">· completo</span>
+              )}
+            </span>
           ) : null}
           {/* AJ-A6: libera todos os pedidos elegíveis num clique. Aplica a mesma
               trava do A1 — os bloqueados aparecem como falhas no resumo. */}
@@ -960,15 +999,16 @@ export default function PedidosFabricaPage() {
         </DialogContent>
       </Dialog>
 
-      {/* AJ-0009 Fase 4a: a fábrica abre pedidos vazios para as lojas preencherem. */}
+      {/* XPAN-Lote: a fábrica abre um LOTE (janela de datas × lojas); as lojas montam os
+          pedidos dentro dele. Não cria pedido nenhum aqui. */}
       <Dialog open={isOpenOrdersDialogOpen} onOpenChange={setIsOpenOrdersDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Abrir pedidos para as lojas</DialogTitle>
+            <DialogTitle>Abrir lote de pedidos</DialogTitle>
             <DialogDescription>
               {openMode === "week"
-                ? "Libera um pedido por dia da semana derivado do cronograma, para cada loja selecionada preencher. Lojas que já estão com a semana liberada são ignoradas."
-                : "Cria um pedido em aberto numa data de entrega específica para cada loja selecionada preencher. Lojas que já têm pedido ativo na data são ignoradas."}
+                ? "Libera as datas de entrega da semana (derivadas do cronograma) para as lojas selecionadas montarem seus pedidos. Não cria pedido nenhum — as lojas escolhem as datas e preenchem."
+                : "Libera uma data de entrega específica para as lojas selecionadas montarem seus pedidos. Não cria pedido nenhum — as lojas escolhem e preenchem."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1080,8 +1120,8 @@ export default function PedidosFabricaPage() {
               {isOpeningOrders
                 ? "Abrindo..."
                 : openMode === "week"
-                  ? `Liberar semana${openStoreIds.length ? ` · ${openStoreIds.length} loja(s)` : ""}`
-                  : `Abrir ${openStoreIds.length || ""} pedido(s)`}
+                  ? `Abrir lote da semana${openStoreIds.length ? ` · ${openStoreIds.length} loja(s)` : ""}`
+                  : `Abrir lote${openStoreIds.length ? ` · ${openStoreIds.length} loja(s)` : ""}`}
             </Button>
           </DialogFooter>
         </DialogContent>

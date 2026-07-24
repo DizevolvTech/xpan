@@ -252,6 +252,34 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     [refresh],
   );
 
+  // Avanço EM MASSA (chão): OP inteira ou coluna inteira em UMA requisição. Devolve o
+  // resumo (avançados / bloqueados por data futura / falhas) para a UI dar feedback.
+  const advanceProductionItems = useCallback(
+    async (
+      items: Array<{ productionItemKey: string; status: ProductionItemStatus }>,
+      options: { force?: boolean } = {},
+    ) => {
+      const result = await readJson<{
+        ok: boolean;
+        advanced: number;
+        blockedCount: number;
+        forceable: boolean;
+        failed: Array<{ productionItemKey: string; message: string }>;
+      }>("/api/factory-planning/workflow", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "advance-production-items",
+          items,
+          force: options.force === true,
+        }),
+      });
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
   return useMemo(
     () => ({
       planningData,
@@ -264,8 +292,10 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
       updateProductionItemStatus,
       completeProductionBatch,
       undoProductionBatch,
+      advanceProductionItems,
     }),
     [
+      advanceProductionItems,
       cancelOrder,
       completeProductionBatch,
       error,

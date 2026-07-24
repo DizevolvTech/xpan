@@ -278,6 +278,22 @@ export default function OrdemProducaoDetailsPage() {
                       <tr key={item.productId}>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.productCode} · {item.productName}
+                      {item.isIntermediate ? (
+                        <span
+                          className="ms-2 inline-flex items-center rounded-full bg-accent/[var(--opacity-subtle)] px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[0.06em] text-accent-foreground"
+                          title="Insumo intermediário (base) feito na receita — etapa anterior ao produto final, por isso costuma estar em outro ponto."
+                        >
+                          Base
+                        </span>
+                      ) : null}
+                      {item.belowMinimum && item.minimumProductionKg > 0 ? (
+                        <span
+                          className="ms-2 inline-flex items-center rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[0.06em] text-warning-foreground"
+                          title={`Demanda (${formatKgValue(item.totalKg)} kg) abaixo do lote mínimo do produto (${formatKgValue(item.minimumProductionKg)} kg). É só um AVISO — não trava a OP. Ajuste o mínimo na aba Receita do produto.`}
+                        >
+                          Abaixo do mínimo
+                        </span>
+                      ) : null}
                       {item.batchCount > 1 ? (
                         <p className="text-sm text-muted-foreground tabular-nums">
                           {item.batchesDone}/{item.batchCount} batidas · {item.batchSizes.join(" + ")} {item.batchUnitLabel}

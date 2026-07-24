@@ -4,33 +4,33 @@ import { authorizeApiRequest, getAllowedStoreIds } from "@/lib/api-auth";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import {
-  listOpenStoreOrders,
-  openStoreOrders,
-  openWeeklyStoreOrdersFromSchedule,
-} from "@/lib/supabase-data/store-orders";
+import { listOpenBatches, openOrderBatch } from "@/lib/supabase-data/order-batches";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
-// Rejeições de regra de negócio → HTTP 400 (não 500). Mesmo padrão de
-// src/app/api/store-orders/route.ts (substrings das mensagens lançadas).
+// Rejeições de regra de negócio → HTTP 400 (não 500). Substrings das mensagens lançadas
+// (gotcha store-orders-http-status).
 function isClientValidationError(message: string) {
   const normalized = message.toLowerCase();
-
   return (
     normalized.includes("cronograma") ||
     normalized.includes("nenhuma loja") ||
-    normalized.includes("dia de entrega") ||
+    normalized.includes("informe") ||
+    normalized.includes("data de entrega") ||
     normalized.includes("não há") ||
+    normalized.includes("slot") ||
+    normalized.includes("lote") ||
     normalized.includes("invalid") ||
     normalized.includes("not found")
   );
 }
 
-// AJ-0009 Fase 4a: a loja lista os pedidos `aberto` (abertos pela fábrica) para preencher.
+// XPAN-Lote: a LOJA lista os LOTES abertos — os slots (loja × data) para os quais ela pode
+// CRIAR um pedido. Substitui a antiga listagem de pedidos vazios pré-criados.
 export async function GET() {
   const authorization = await authorizeApiRequest({
     contextLabel: "GET /api/store-orders/open",
-    permission: "loja.pedidos",
+    // A LOJA lê para montar pedidos; o GESTOR lê para ver o status do lote (X/Y).
+    anyOfPermissions: ["loja.pedidos", "gestor-fabrica.pedidos"],
     minimumLevel: "operar",
     includeStoreScope: true,
     requireTenantContext: true,
@@ -41,7 +41,7 @@ export async function GET() {
   }
 
   if (!isFactoryOpensOrdersEnabled()) {
-    // Flag off: nenhum pedido aberto a preencher (fluxo legado: a loja cria).
+    // Flag off: sem lotes — a loja cria pedido livre ("Novo Pedido").
     return NextResponse.json([]);
   }
 
@@ -50,17 +50,17 @@ export async function GET() {
       authorization.effectiveTenantId,
       createSupabaseAdminClient(),
     );
-    const openOrders = await listOpenStoreOrders(supabase, getAllowedStoreIds(authorization));
-    return NextResponse.json(openOrders);
+    const batches = await listOpenBatches(getAllowedStoreIds(authorization), supabase);
+    return NextResponse.json(batches);
   } catch (error) {
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Falha ao carregar pedidos abertos." },
+      { message: error instanceof Error ? error.message : "Falha ao carregar lotes abertos." },
       { status: 500 },
     );
   }
 }
 
-// AJ-0009 Fase 4a: a fábrica abre pedidos (status `aberto`) para as lojas preencherem.
+// XPAN-Lote: a FÁBRICA abre um LOTE (1 registro order_batches), não N pedidos vazios.
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
     contextLabel: "POST /api/store-orders/open",
@@ -85,16 +85,8 @@ export async function POST(request: Request) {
     | { mode?: string; deliveryDate?: string; referenceDate?: string; storeIds?: string[] }
     | null;
 
-  const isWeekMode = payload?.mode === "week";
-
   if (!Array.isArray(payload?.storeIds) || payload.storeIds.length === 0) {
     return NextResponse.json({ message: "Informe ao menos uma loja." }, { status: 400 });
-  }
-  if (!isWeekMode && !payload.deliveryDate) {
-    return NextResponse.json(
-      { message: "Informe a data de entrega e ao menos uma loja." },
-      { status: 400 },
-    );
   }
 
   try {
@@ -102,31 +94,24 @@ export async function POST(request: Request) {
       authorization.effectiveTenantId,
       createSupabaseAdminClient(),
     );
-    // A10: mode 'week' libera os pedidos da SEMANA por dia (derivados do cronograma).
-    // Caso contrário, mantém a abertura MANUAL de UMA data de entrega.
-    const result = isWeekMode
-      ? await openWeeklyStoreOrdersFromSchedule(
-          {
-            referenceDate: payload.referenceDate,
-            storeIds: payload.storeIds,
-            openedByProfileId: authorization.user.id,
-            tenantId: authorization.effectiveTenantId,
-          },
-          supabase,
-        )
-      : await openStoreOrders(
-          {
-            deliveryDate: payload.deliveryDate!,
-            storeIds: payload.storeIds,
-            openedByProfileId: authorization.user.id,
-            tenantId: authorization.effectiveTenantId,
-          },
-          supabase,
-        );
+    const batch = await openOrderBatch(
+      {
+        mode: payload.mode === "week" ? "week" : "manual",
+        referenceDate: payload.referenceDate,
+        deliveryDate: payload.deliveryDate,
+        storeIds: payload.storeIds,
+        openedByProfileId: authorization.user.id,
+        tenantId: authorization.effectiveTenantId,
+      },
+      supabase,
+    );
     invalidatePlanningCaches(authorization.effectiveTenantId);
-    return NextResponse.json(result, { status: 201 });
+    return NextResponse.json(
+      { batchId: batch.id, referenceDate: batch.referenceDate, slots: batch.slots },
+      { status: 201 },
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha ao abrir pedidos.";
+    const message = error instanceof Error ? error.message : "Falha ao abrir o lote.";
     return NextResponse.json({ message }, { status: isClientValidationError(message) ? 400 : 500 });
   }
 }

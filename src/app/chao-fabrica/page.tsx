@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowRight,
@@ -14,21 +14,24 @@ import {
   Soup,
   Zap,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
+import { KanbanCardMotion } from "@/components/shared/kanban-card-motion";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
+import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import {
   getProductionOrderNavKey,
   isOpInProductionColumn,
+  isOpOnChaoBoard,
 } from "@/lib/factory-kanban";
 import type {
   ProductionItemStatus,
   ProductionOrderRow,
 } from "@/lib/factory-planning";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
-import { getNextProductionActionLabel } from "@/lib/production-workflow";
+import { getNextProductionActionLabel, getNextProductionItemStatus } from "@/lib/production-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
@@ -61,7 +64,13 @@ type KanbanColumnBase = {
 // O board do chão é 100% produção: toda coluna é `kind: "ops"`. A antiga coluna
 // handoff de expedição (`kind: "orders"`) saiu — a saída para o checklist agora
 // é um link no KPI e no selo de OP concluída, não uma coluna.
-type KanbanColumn = KanbanColumnBase & { kind: "ops"; items: ProductionOrderRow[] };
+type KanbanColumn = KanbanColumnBase & {
+  kind: "ops";
+  items: ProductionOrderRow[];
+  // Lista COMPLETA da coluna (antes da paginação visual) — usada pelo "Avançar todas
+  // da coluna" para tocar TODAS as OPs, não só as visíveis.
+  allItems: ProductionOrderRow[];
+};
 
 const KANBAN_TONE_STYLES: Record<
   KanbanTone,
@@ -131,6 +140,37 @@ function opCurrentStage(op: ProductionOrderRow): ProductionItemStatus {
   );
 }
 
+// Rótulo de ENTREGA da OP, derivado dos pedidos de origem — NÃO é a data de produção
+// (`productionDate`). Uma OP produz num dia e pode servir entregas de datas diferentes
+// (leads distintos por produto); mostra a data única ou a mais próxima + "+N".
+function deriveOpDeliveryLabel(op: ProductionOrderRow): string | null {
+  const labelByDate = new Map<string, string>();
+  for (const src of op.sourceItems) {
+    if (src.deliveryDate) labelByDate.set(src.deliveryDate, src.deliveryDateLabel);
+  }
+  if (labelByDate.size === 0) return null;
+  const sorted = [...labelByDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const [, firstLabel] = sorted[0];
+  return sorted.length === 1 ? firstLabel : `${firstLabel} +${sorted.length - 1}`;
+}
+
+// Itens de uma OP que avançam POR STATUS em um clique: pendentes, NÃO-batidos, com uma
+// próxima etapa definida. Cada um leva seu status-alvo. Batidos avançam pelas batidas
+// (pré-pesagem) — ficam de fora do avanço em massa por status.
+function advanceableItemsOf(
+  op: ProductionOrderRow,
+): Array<{ productionItemKey: string; status: ProductionItemStatus }> {
+  return op.items
+    .filter(
+      (item) =>
+        item.status !== "concluido" && !(item.capacityPerBatch != null && item.capacityPerBatch > 0),
+    )
+    .flatMap((item) => {
+      const next = getNextProductionItemStatus(item.status, item.preparationStages);
+      return next ? [{ productionItemKey: item.productionItemKey, status: next }] : [];
+    });
+}
+
 // O board do chão tem 4 colunas. "Produção" agrupa os 3 estágios intermediários
 // (em produção, no forno, embalando) — o chão só precisa enxergar "está sendo
 // produzido", sem o detalhe da sub-etapa. "Expedição" é a OP com todos os itens
@@ -171,34 +211,67 @@ export default function ChaoFabricaPage() {
     planningData: planningSnapshot,
     isLoading,
     error,
+    advanceProductionItems,
   } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
   );
 
-  // Lista canônica das OPs ATIVAS no chão — dirigida por ESTADO (produção
-  // iniciada pelo gestor, liberada e não-expedida), não por data. Reusada no
-  // KPI, no progresso do dia e no badge "PRÓXIMA" para que os números NUNCA se
-  // contradigam com o que o board mostra (só OPs iniciadas aparecem).
+  // Avanço de etapa EM MASSA e DIRETO do board (não mais só-leitura, nem item a item):
+  // 1 clique avança a OP inteira; o cabeçalho da coluna avança TODAS as OPs da coluna.
+  // Escala p/ milhares de produtos/dia — nada de abrir OP por OP. Itens batidos são
+  // geridos pela pré-pesagem (batidas), então ficam de fora do avanço por status.
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const toast = useToast();
+
+  async function runAdvance(
+    items: Array<{ productionItemKey: string; status: ProductionItemStatus }>,
+    label: string,
+  ) {
+    if (items.length === 0) {
+      toast.info("Nada a avançar por status — itens batidos avançam pelas batidas (pré-pesagem).");
+      return;
+    }
+    setIsAdvancing(true);
+    try {
+      const result = await advanceProductionItems(items);
+      if (result.advanced > 0) {
+        toast.success(`${result.advanced} item(ns) avançado(s) — ${label}.`);
+      }
+      if (result.blockedCount > 0) {
+        toast.warning(`${result.blockedCount} item(ns) em data futura não avançaram (só gestor/admin força).`);
+      }
+      if (result.failed.length > 0) {
+        toast.error(`${result.failed.length} item(ns) falharam ao avançar.`);
+      }
+    } catch (advanceError) {
+      toast.error(advanceError instanceof Error ? advanceError.message : "Falha ao avançar a produção.");
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
+  const handleAdvanceOp = (op: ProductionOrderRow) => void runAdvance(advanceableItemsOf(op), op.code);
+  const handleAdvanceColumn = (ops: ProductionOrderRow[], columnTitle: string) =>
+    void runAdvance(ops.flatMap(advanceableItemsOf), `${columnTitle} (${ops.length} OP)`);
+
+  // Lista canônica das OPs em PRODUÇÃO no chão — dirigida por ESTADO (liberada e
+  // não-expedida), não por data. Bate 1:1 com a coluna "Em produção" do gestor
+  // (mesmo predicado `isOpInProductionColumn`). Reusada no KPI, no progresso do dia
+  // e no badge "PRÓXIMA" para que os números NUNCA se contradigam com o quadro.
   const productionOps = useMemo(
-    () =>
-      planningData.productionOrders.filter(
-        (op) => op.productionStarted && isOpInProductionColumn(op),
-      ),
+    () => planningData.productionOrders.filter((op) => isOpInProductionColumn(op)),
     [planningData.productionOrders],
   );
 
-  // O BOARD só mostra OPs cuja PRODUÇÃO FOI INICIADA pelo gestor ("Iniciar
-  // produção do dia"). Liberar (aceitar o pedido) coloca a OP na coluna do gestor,
-  // mas ela só chega ao chão quando o gestor inicia o dia — aí entra na 1ª coluna
-  // ("Não iniciado" / pré-pesagem). Inclui também as concluídas (terminais) para
-  // a OP migrar para "Expedição" em vez de sumir.
+  // O BOARD mostra TODA OP liberada (decisão 2026-07-24: liberar já manda pro chão —
+  // sem o 2º passo "Iniciar produção do dia"). Assim o chão bate com o gestor. As OPs
+  // recém-liberadas caem na 1ª coluna ("Não iniciado" / pré-pesagem); as concluídas
+  // migram para "Expedição". Antes exigia `productionStarted` e o chão ficava vazio até
+  // o gestor iniciar — origem da divergência gestor×chão.
   const boardOps = useMemo(
-    () =>
-      planningData.productionOrders.filter(
-        (op) => op.releasedToProduction && op.productionStarted,
-      ),
+    () => planningData.productionOrders.filter((op) => isOpOnChaoBoard(op)),
     [planningData.productionOrders],
   );
 
@@ -278,6 +351,7 @@ export default function ChaoFabricaPage() {
         emptyText: "Nenhuma OP nesta etapa.",
         listHref: "/chao-fabrica/ordens-producao",
         items: items.slice(0, CHAO_KANBAN_LIMIT),
+        allItems: items,
         totalCount: items.length,
       };
     });
@@ -553,6 +627,24 @@ export default function ChaoFabricaPage() {
                 ) : null}
               </header>
 
+              {/* Avanço EM MASSA da coluna: 1 clique avança TODAS as OPs da etapa —
+                  o que torna viável tocar milhares de produtos/dia. Só nas colunas
+                  produtivas (Expedição é terminal) e quando há item avançável. */}
+              {column.key !== "expedicao" &&
+              column.allItems.some((op) => advanceableItemsOf(op).length > 0) ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isAdvancing}
+                  onClick={() => handleAdvanceColumn(column.allItems, column.title)}
+                  className="w-full gap-1.5"
+                >
+                  <Zap className="size-4" aria-hidden />
+                  Avançar todas da coluna ({column.totalCount})
+                </Button>
+              ) : null}
+
               {/* Lista de cards — densidade chão (cards altos, glanceable). */}
               <div className="flex flex-1 flex-col gap-2">
                 {isEmpty ? (
@@ -564,15 +656,23 @@ export default function ChaoFabricaPage() {
                     <p className="text-sm text-muted-foreground">{column.emptyText}</p>
                   </div>
                 ) : (
-                  column.items.map((op) => (
-                    <ChaoOpCard
-                      key={op.id}
-                      op={op}
-                      tone={tone}
-                      anchorDate={anchorDate}
-                      isNext={op.id === nextOpId}
-                    />
-                  ))
+                  // Cada card usa a CHAVE ESTÁVEL da OP (não o id posicional): assim, quando a
+                  // OP muda de coluna ao avançar, o AnimatePresence a vê "sair" de uma coluna e
+                  // "entrar" na outra — a transição de etapa que o operário enxerga.
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {column.items.map((op) => (
+                      <KanbanCardMotion key={getProductionOrderNavKey(op)} className="rounded-xl">
+                        <ChaoOpCard
+                          op={op}
+                          tone={tone}
+                          anchorDate={anchorDate}
+                          isNext={op.id === nextOpId}
+                          onAdvance={handleAdvanceOp}
+                          isAdvancing={isAdvancing}
+                        />
+                      </KanbanCardMotion>
+                    ))}
+                  </AnimatePresence>
                 )}
 
                 {hasMore ? (
@@ -644,11 +744,15 @@ function ChaoOpCard({
   tone,
   anchorDate,
   isNext,
+  onAdvance,
+  isAdvancing,
 }: {
   op: ProductionOrderRow;
   tone: (typeof KANBAN_TONE_STYLES)[KanbanTone];
   anchorDate: string;
   isNext: boolean;
+  onAdvance: (op: ProductionOrderRow) => void;
+  isAdvancing: boolean;
 }) {
   const progress = Math.max(0, Math.min(100, Math.round(op.progress)));
   const orderCount = op.ordersCount;
@@ -666,6 +770,8 @@ function ChaoOpCard({
   // Itens ainda não concluídos da OP.
   const pendingItems = op.items.filter((item) => item.status !== "concluido");
   const hasPendingItems = pendingItems.length > 0;
+  // Data de ENTREGA (dos pedidos), não a de produção.
+  const deliveryLabel = deriveOpDeliveryLabel(op);
   // PRÓXIMO passo CONCRETO ("Iniciar produção", "Enviar para forno"…) quando todos
   // os itens pendentes avançam para o mesmo passo; null se estiverem mistos (aí o
   // indicador read-only mostra apenas "Em andamento").
@@ -740,8 +846,12 @@ function ChaoOpCard({
         {formatKgValue(op.totalKg)} kg
         <span className="mx-1.5 opacity-50">·</span>
         {orderCount} {orderCount === 1 ? "pedido" : "pedidos"}
-        <span className="mx-1.5 opacity-50">·</span>
-        entrega {op.productionDateLabel}
+        {deliveryLabel ? (
+          <>
+            <span className="mx-1.5 opacity-50">·</span>
+            entrega {deliveryLabel}
+          </>
+        ) : null}
       </p>
 
       {hasBatches ? (
@@ -750,23 +860,27 @@ function ChaoOpCard({
         </p>
       ) : null}
 
-      {/* Indicador READ-ONLY do próximo passo. O board do chão é só leitura — o
-          avanço de etapa é dirigido pelo Gestor (aceitar/liberar) e, item a
-          item, pelo detalhe da OP. Sem botão de mutação aqui. */}
+      {/* Avanço de etapa DIRETO do board: abre o diálogo de status da OP (o mesmo do
+          gestor). Itens não-batidos têm "Avançar para {etapa}"; itens batidos aparecem
+          read-only ("geridas no Chão") com atalho p/ o detalhe. Quando os itens estão
+          em etapas diferentes, o rótulo cai para "Avançar etapa" (o diálogo resolve
+          item a item). */}
       {hasPendingItems ? (
-        <div
-          className="mt-1 flex min-h-[44px] items-center justify-center gap-2 rounded-lg bg-panel/60 px-3 py-2.5 ring-1 ring-border/60"
-          aria-label={
-            nextStepLabel
-              ? `Próximo passo — ${nextStepLabel}`
-              : "Em andamento — itens em etapas diferentes"
-          }
+        // Ação PRINCIPAL do card: botão primário cheio (antes era um <button> apagado que
+        // parecia desabilitado). `size="lg"` garante alvo de toque de 44px pro chão.
+        <Button
+          type="button"
+          size="lg"
+          onClick={() => onAdvance(op)}
+          disabled={isAdvancing}
+          className="mt-1 w-full"
+          aria-label={nextStepLabel ? `Avançar toda a OP — ${nextStepLabel}` : "Avançar toda a OP"}
         >
-          <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="truncate text-sm font-medium text-muted-foreground">
-            {nextStepLabel ? `Próximo: ${nextStepLabel}` : "Em andamento"}
+          <ArrowRight className="size-4 shrink-0" aria-hidden />
+          <span className="truncate">
+            {nextStepLabel ? `Avançar OP: ${nextStepLabel}` : "Avançar OP"}
           </span>
-        </div>
+        </Button>
       ) : (
         // OP concluída: nada a produzir no chão, mas o operário precisa de um
         // caminho claro para o checklist (a coluna de expedição saiu do board).
