@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import { listProductionOrderEvents } from "@/lib/supabase-data/production-order-events";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 export async function GET(
   request: Request,
@@ -24,7 +25,7 @@ export async function GET(
   const { opId } = await context.params;
   const { searchParams } = new URL(request.url);
   const referenceDate =
-    searchParams.get("referenceDate") ?? new Date().toISOString().slice(0, 10);
+    searchParams.get("referenceDate") ?? getTodayDateKey();
 
   if (!opId) {
     return NextResponse.json(

@@ -5,6 +5,7 @@ import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { autoReleaseEligibleOrders } from "@/lib/supabase-data/workflow";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 export async function POST(request: Request) {
   const authorization = await authorizeApiRequest({
@@ -25,9 +26,9 @@ export async function POST(request: Request) {
     referenceDate =
       typeof body.referenceDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.referenceDate)
         ? body.referenceDate
-        : new Date().toISOString().slice(0, 10);
+        : getTodayDateKey();
   } catch {
-    referenceDate = new Date().toISOString().slice(0, 10);
+    referenceDate = getTodayDateKey();
   }
 
   try {

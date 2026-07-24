@@ -5,6 +5,7 @@ import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 import { listActiveTenantIds } from "@/lib/supabase-data/tenants";
 import { autoReleaseEligibleOrders } from "@/lib/supabase-data/workflow";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 /**
  * AJ-A6.2 — endpoint para Vercel Cron / scheduler externo executar o
@@ -44,7 +45,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  const referenceDate = new Date().toISOString().slice(0, 10);
+  const referenceDate = getTodayDateKey();
   const adminClient = createSupabaseAdminClient();
 
   let tenantIds: string[];

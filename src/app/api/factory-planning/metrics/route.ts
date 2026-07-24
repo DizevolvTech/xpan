@@ -4,6 +4,7 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { computeFactoryMetrics } from "@/lib/supabase-data/factory-metrics";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const referenceDate =
-    searchParams.get("referenceDate") ?? new Date().toISOString().slice(0, 10);
+    searchParams.get("referenceDate") ?? getTodayDateKey();
   const windowDaysParam = searchParams.get("windowDays");
   const windowDays = windowDaysParam ? Number.parseInt(windowDaysParam, 10) : 7;
 

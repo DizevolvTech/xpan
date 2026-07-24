@@ -16,8 +16,8 @@
 import {
   buildActiveScheduleByLine,
   buildScheduleSkeletonItems,
-  getDeliveryDateByStoreRule,
   getWeekDayKey,
+  moveToNextAllowedWeekday,
   resolvePlanningSource,
   SCHEDULE_SKELETON_HORIZON_DAYS,
   type StoreProfile,
@@ -86,9 +86,9 @@ export function activeStoreDateKey(storeId: string, deliveryDate: string): strin
  *  1. Monta o cronograma ATIVO por linha + o `source` (lookups produto/linha/setor).
  *  2. `buildScheduleSkeletonItems(referenceDate, 7)` materializa os slots produto×linha×dia
  *     de PRODUÇÃO no horizonte (cobertura real do cronograma).
- *  3. Para cada loja, mapeia cada DATA DE PRODUÇÃO do esqueleto para a DATA DE ENTREGA da loja
- *     via `getDeliveryDateByStoreRule`, mantendo só as datas de entrega cujo dia-da-semana está
- *     em `getEnabledReceivingDays(store)` e dentro da janela rolante de 7 dias.
+ *  3. Para cada loja, mapeia cada SLOT do esqueleto (produto × linha × dia) para a DATA DE
+ *     ENTREGA usando o gap DO PRODUTO, mantendo só as datas cujo dia-da-semana está em
+ *     `getEnabledReceivingDays(store)` e dentro da janela rolante de 7 dias.
  *  4. Para cada (loja × deliveryDate) DISTINTA não presente em `existingActiveByStoreDate`,
  *     emite uma liberação com os `sourceScheduleIds` que a justificaram.
  */
@@ -126,13 +126,6 @@ export function planWeeklyStoreOrderReleases(
     input.referenceDate,
     horizon,
   );
-  const productionDates = Array.from(
-    new Set(
-      skeletonItems
-        .map((item) => item.productionDate)
-        .filter((date): date is string => Boolean(date)),
-    ),
-  );
 
   // Limite superior (exclusivo) do horizonte rolante de 7 dias para a data de ENTREGA.
   const horizonEnd = addDaysKey(input.referenceDate, horizon);
@@ -148,8 +141,24 @@ export function planWeeklyStoreOrderReleases(
     // deliveryDate (YYYY-MM-DD) → conjunto de cronogramas que a justificaram.
     const scheduleIdsByDelivery = new Map<string, Set<string>>();
 
-    for (const productionDate of productionDates) {
-      const deliveryDate = getDeliveryDateByStoreRule(productionDate, store, input.settings);
+    for (const item of skeletonItems) {
+      const productionDate = item.productionDate;
+      if (!productionDate) {
+        continue;
+      }
+      const product = source.productsById.get(item.productId);
+      if (!product) {
+        continue;
+      }
+
+      // O gap é DO PRODUTO, não o D+X global: é exatamente a regra que o catálogo ancorado
+      // aplica ao preencher o pedido (`resolveProductionDateInWindow` exige
+      // produção + gap do produto === entrega). Derivar o slot do lead global abria pedidos
+      // em datas que o catálogo depois recusava — o produto sumia do dia em que era pedido.
+      const deliveryDate = moveToNextAllowedWeekday(
+        addDaysKey(productionDate, product.expeditionLeadDays),
+        receivingDays,
+      );
 
       // Fora da janela rolante de 7 dias a partir da referência → ignora.
       if (deliveryDate < input.referenceDate || deliveryDate >= horizonEnd) {
@@ -160,17 +169,11 @@ export function planWeeklyStoreOrderReleases(
         continue;
       }
 
-      // Cronogramas que produzem nessa data de produção (justificam a entrega).
-      const justifying = skeletonItems
-        .filter((item) => item.productionDate === productionDate)
-        .map((item) => item.scheduleId)
-        .filter((id): id is string => Boolean(id));
-
-      const set = scheduleIdsByDelivery.get(deliveryDate) ?? new Set<string>();
-      for (const id of justifying) {
-        set.add(id);
+      if (item.scheduleId) {
+        const set = scheduleIdsByDelivery.get(deliveryDate) ?? new Set<string>();
+        set.add(item.scheduleId);
+        scheduleIdsByDelivery.set(deliveryDate, set);
       }
-      scheduleIdsByDelivery.set(deliveryDate, set);
     }
 
     if (scheduleIdsByDelivery.size === 0) {

@@ -4,10 +4,11 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
-  return searchParams.get("referenceDate") ?? new Date().toISOString().slice(0, 10);
+  return searchParams.get("referenceDate") ?? getTodayDateKey();
 }
 
 export async function GET(request: Request) {

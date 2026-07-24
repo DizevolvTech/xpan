@@ -116,8 +116,38 @@ export function getWeekDayKey(dateKey: string): ProductionWeekDay {
   return weekdayByIndex[date.getDay()];
 }
 
+/**
+ * Fuso operacional da fábrica. Fixo de propósito: a Vercel roda o processo em UTC, então
+ * `getHours()`/`toISOString().slice(0,10)` adiantam o "hoje" em 3h (e um dia inteiro à noite).
+ * Ver `getOperationalTodayKey` em `workflow-date-guard.ts`, que segue o mesmo critério.
+ */
+const OPERATIONAL_TIME_ZONE = "America/Sao_Paulo";
+
+const operationalPartsFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: OPERATIONAL_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** Data (YYYY-MM-DD) e hora local de um instante, no fuso operacional. */
+function getOperationalDateParts(date: Date): { dateKey: string; hour: number; minute: number } {
+  const parts = operationalPartsFormatter.formatToParts(date);
+  const valueOf = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return {
+    dateKey: `${valueOf("year")}-${valueOf("month")}-${valueOf("day")}`,
+    hour: Number(valueOf("hour")),
+    minute: Number(valueOf("minute")),
+  };
+}
+
 export function getTodayDateKey(): string {
-  return toDateKey(new Date());
+  return getOperationalDateParts(new Date()).dateKey;
 }
 
 export function formatDateKeyBr(dateKey: string) {
@@ -131,21 +161,21 @@ function formatDateTimeBr(dateTimeIso: string): string {
   ).padStart(2, "0")}`;
 }
 
+/**
+ * Data-base do pedido a partir do instante em que ele foi feito e do horário de corte.
+ *
+ * O corte é lido no FUSO OPERACIONAL, não no fuso do processo: `orderedAt` chega como
+ * instante UTC (`toISOString()` do browser ou `ordered_at` do banco) e o servidor roda em
+ * UTC, então comparar `getHours()` fazia o corte das 18:00 disparar às 15:00 em Brasília
+ * e virava o dia perto da meia-noite.
+ */
 export function getBaseDateByCutoff(orderedAt: string, cutoffTime: string): string {
-  const dateTime = new Date(orderedAt);
+  const { dateKey, hour, minute } = getOperationalDateParts(new Date(orderedAt));
   const [cutoffHour, cutoffMinute] = cutoffTime.split(":").map((part) => Number(part));
-  const baseDate = new Date(dateTime);
-  baseDate.setHours(0, 0, 0, 0);
 
-  const afterCutoff =
-    dateTime.getHours() > cutoffHour ||
-    (dateTime.getHours() === cutoffHour && dateTime.getMinutes() > cutoffMinute);
+  const afterCutoff = hour > cutoffHour || (hour === cutoffHour && minute > cutoffMinute);
 
-  if (afterCutoff) {
-    baseDate.setDate(baseDate.getDate() + 1);
-  }
-
-  return toDateKey(baseDate);
+  return afterCutoff ? addDays(dateKey, 1) : dateKey;
 }
 
 export function moveToNextAllowedWeekday(dateKey: string, allowedDays: ProductionWeekDay[]): string {
