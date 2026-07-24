@@ -15,6 +15,14 @@ export interface StoreOrderSummary {
   deliveryDateKey: string;
   status: StoreVisibleOrderStatus;
   store: string;
+  /** XPAN item 5: pedido já liberado para produção — a receita foi congelada e a OP já
+   * foi derivada dele, então o servidor recusa qualquer edição/cancelamento. */
+  releasedToProduction?: boolean;
+  /** XPAN item 5: mesma capability do detalhe (`buildStoreOrderCapabilities`), agora no
+   * resumo, para a LISTA não oferecer "Editar pedido" numa linha que o servidor recusa.
+   * Opcional: resumo montado sem a informação mantém a afordância (o gate real é do
+   * servidor, em `ensureOrderIsMutable`). */
+  canEdit?: boolean;
 }
 
 export interface StoreOrderDetailItem {

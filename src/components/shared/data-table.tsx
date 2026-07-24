@@ -36,6 +36,12 @@ interface Action<T> {
   onClick: (item: T) => void;
   variant?: "default" | "destructive" | "outline";
   allowInReadOnly?: boolean;
+  /** Predicado POR LINHA (opcional, aditivo): `true` desabilita a ação naquela linha.
+   * Componente compartilhado — ausente = comportamento de hoje, ação sempre ativa.
+   * Afordância desabilitada, NÃO removida (guard-rail R3, mesmo critério do read-only). */
+  isDisabled?: (item: T) => boolean;
+  /** Motivo exibido (title/aria-label) quando `isDisabled` devolve `true`. */
+  disabledLabel?: string;
 }
 
 interface DataTableProps<T> {
@@ -442,6 +448,9 @@ export function DataTable<T extends object>({
                           isReadOnlyTenantView &&
                           !action.allowInReadOnly &&
                           blocksReadOnlyAction(action.label);
+                        const isBlockedByRow = action.isDisabled?.(item) ?? false;
+                        const actionLabel =
+                          isBlockedByRow && action.disabledLabel ? action.disabledLabel : action.label;
                         return (
                           <Button
                             key={actionIndex}
@@ -454,17 +463,17 @@ export function DataTable<T extends object>({
                                 ? "text-danger-foreground/80 hover:bg-danger/40 hover:text-danger-foreground"
                                 : "text-muted-foreground hover:text-foreground",
                             )}
-                            disabled={isBlockedInReadOnly}
+                            disabled={isBlockedInReadOnly || isBlockedByRow}
                             allowInReadOnly={action.allowInReadOnly}
                             onClick={(event) => {
                               event.stopPropagation();
-                              if (isBlockedInReadOnly) {
+                              if (isBlockedInReadOnly || isBlockedByRow) {
                                 return;
                               }
                               action.onClick(item);
                             }}
-                            title={action.label}
-                            aria-label={action.label}
+                            title={actionLabel}
+                            aria-label={actionLabel}
                           >
                             <Icon className="size-4" />
                           </Button>
@@ -626,6 +635,9 @@ export function DataTable<T extends object>({
                           isReadOnlyTenantView &&
                           !action.allowInReadOnly &&
                           blocksReadOnlyAction(action.label);
+                        const isBlockedByRow = action.isDisabled?.(item) ?? false;
+                        const actionLabel =
+                          isBlockedByRow && action.disabledLabel ? action.disabledLabel : action.label;
                         return (
                           <Button
                             key={actionIndex}
@@ -638,17 +650,17 @@ export function DataTable<T extends object>({
                                 ? "text-danger-foreground/80 hover:bg-danger/40 hover:text-danger-foreground"
                                 : "text-muted-foreground hover:text-foreground",
                             )}
-                            disabled={isBlockedInReadOnly}
+                            disabled={isBlockedInReadOnly || isBlockedByRow}
                             allowInReadOnly={action.allowInReadOnly}
                             onClick={(event) => {
                               event.stopPropagation();
-                              if (isBlockedInReadOnly) {
+                              if (isBlockedInReadOnly || isBlockedByRow) {
                                 return;
                               }
                               action.onClick(item);
                             }}
-                            title={action.label}
-                            aria-label={action.label}
+                            title={actionLabel}
+                            aria-label={actionLabel}
                           >
                             <Icon className="size-4" />
                             <span>{action.label}</span>

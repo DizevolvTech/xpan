@@ -12,6 +12,7 @@ import { listStoreOrderEvents } from "@/lib/supabase-data/store-order-events";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import { updateStoreOrder } from "@/lib/supabase-data/store-orders";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 function formatDateTimeBr(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -22,7 +23,24 @@ function formatDateTimeBr(value: string) {
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
-  return searchParams.get("referenceDate") ?? new Date().toISOString().slice(0, 10);
+  return searchParams.get("referenceDate") ?? getTodayDateKey();
+}
+
+/* XPAN item 5 — a trava de edição/cancelamento é lançada em inglês na camada de dados
+ * (`ensureOrderIsMutable`, `cancelOrder`), compartilhada com outros callers. A loja precisa
+ * ler o motivo em português, então a tradução acontece aqui, na borda HTTP.
+ * ⚠️ As frases traduzidas TAMBÉM entram em `isClientValidationError` (que casa por
+ * SUBSTRING, hoje por "cannot") — sem isso a rejeição de regra de negócio vira HTTP 500. */
+const BUSINESS_RULE_MESSAGES_PT: Record<string, string> = {
+  "Cancelled orders cannot be edited": "Pedido cancelado não pode ser editado.",
+  "Orders already released to production cannot be edited":
+    "Pedido já liberado para produção não pode ser editado.",
+  "Orders already released to production cannot be cancelled":
+    "Pedido já liberado para produção não pode ser cancelado.",
+};
+
+function translateBusinessRuleMessage(message: string) {
+  return BUSINESS_RULE_MESSAGES_PT[message] ?? message;
 }
 
 function isClientValidationError(message: string) {
@@ -30,6 +48,8 @@ function isClientValidationError(message: string) {
 
   return (
     normalized.includes("cannot") ||
+    normalized.includes("não pode ser editado") ||
+    normalized.includes("não pode ser cancelado") ||
     normalized.includes("invalid") ||
     normalized.includes("sublinha") ||
     normalized.includes("cronograma") ||
@@ -260,7 +280,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ order
     invalidatePlanningCaches(authorization.effectiveTenantId);
     return NextResponse.json(updated);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update store order";
+    const message = translateBusinessRuleMessage(
+      error instanceof Error ? error.message : "Failed to update store order",
+    );
     return NextResponse.json(
       {
         message,
@@ -302,7 +324,9 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ord
     invalidatePlanningCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to cancel store order";
+    const message = translateBusinessRuleMessage(
+      error instanceof Error ? error.message : "Failed to cancel store order",
+    );
     return NextResponse.json(
       {
         message,

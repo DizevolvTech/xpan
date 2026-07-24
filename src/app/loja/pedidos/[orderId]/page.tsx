@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   Clock3,
   ListChecks,
@@ -31,12 +32,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import { getTodayDateKey } from "@/lib/order-planning";
+import { isStoreOrderOverdue } from "@/lib/store-order-window";
 import {
   useCancelStoreOrder,
   useStoreOrderCatalog,
   useStoreOrderDetail,
   useUpdateStoreOrder,
 } from "@/lib/use-store-orders";
+import { cn } from "@/lib/utils";
 
 type DraftAddedOrderItem = {
   id: string;
@@ -59,6 +62,17 @@ function sanitizeDateKey(raw: string | null) {
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
+}
+
+// XPAN item 6 — hidratação: `getTodayDateKey()` usa `new Date()` no fuso local; calculado
+// durante o render de SERVIDOR pode divergir do cliente perto da meia-noite. Snapshot de
+// servidor vazio (alerta desligado) e o valor real só no cliente, como em
+// `useOperationalDateScope`. A string é estável entre chamadas → sem re-render em loop.
+const subscribeToNothing = () => () => undefined;
+const getServerTodayDateKey = () => "";
+
+function useTodayDateKey() {
+  return useSyncExternalStore(subscribeToNothing, getTodayDateKey, getServerTodayDateKey);
 }
 
 function parseBrDate(dateLabel: string): Date | null {
@@ -140,6 +154,10 @@ export default function PedidoLojaDetailsPage() {
   );
   const deliveryDate = useMemo(() => (order ? parseBrDate(order.deliveryDate) : null), [order]);
   const deliveryOnSunday = deliveryDate ? deliveryDate.getDay() === 0 : false;
+  // XPAN item 6: atraso medido contra HOJE (nunca contra o `ref` da URL, que é só o
+  // recorte operacional escolhido na lista).
+  const todayDateKey = useTodayDateKey();
+  const isOverdue = order ? isStoreOrderOverdue(order, todayDateKey) : false;
 
   async function handleSave() {
     if (!order) {
@@ -349,6 +367,19 @@ export default function PedidoLojaDetailsPage() {
         </div>
       }
     >
+      {/* XPAN item 6: o recebimento previsto venceu e o pedido continua sem ser entregue
+          (tentativa de entrega falha também conta — a loja segue sem a mercadoria). */}
+      {isOverdue ? (
+        <div className="flex items-start gap-2.5 rounded-xl border border-danger/45 bg-danger/15 px-4 py-3 text-sm text-danger-foreground">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            <strong className="font-semibold">Entrega atrasada.</strong> O recebimento estava
+            previsto para <strong className="font-semibold">{order.deliveryDate}</strong> e o pedido
+            ainda não foi entregue.
+          </p>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <article className="rounded-xl border border-border/80 bg-card p-4 shadow-[var(--shadow-soft)]">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Itens</p>
@@ -389,7 +420,14 @@ export default function PedidoLojaDetailsPage() {
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/40 p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Entrega</p>
-            <p className="mt-1 text-sm font-semibold text-warning-foreground">{order.deliveryDate}</p>
+            <p
+              className={cn(
+                "mt-1 text-sm font-semibold",
+                isOverdue ? "text-danger-foreground" : "text-warning-foreground",
+              )}
+            >
+              {order.deliveryDate}
+            </p>
           </div>
           <div className="rounded-lg border border-border/70 bg-panel/40 p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">D+X</p>

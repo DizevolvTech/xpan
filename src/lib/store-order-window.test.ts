@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { findActiveWindowOrder } from "@/lib/store-order-window";
+import {
+  findActiveWindowOrder,
+  isStoreOrderEditable,
+  isStoreOrderOverdue,
+} from "@/lib/store-order-window";
 
 type Row = { id: string; storeId: string; deliveryDateKey: string; status: string };
 
@@ -42,4 +46,92 @@ test("findActiveWindowOrder — ignora status finalizados (cancelado/entregue/te
 test("findActiveWindowOrder — sem loja selecionada retorna null", () => {
   const found = findActiveWindowOrder(base, { storeId: null, deliveryDateKey: "2026-05-30" });
   assert.equal(found, null);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * XPAN item 6 — alerta de atraso.
+ * -----------------------------------------------------------------------------------------------*/
+
+const HOJE = "2026-05-30";
+
+test("isStoreOrderOverdue — vencido e não entregue é atraso", () => {
+  assert.equal(
+    isStoreOrderOverdue({ deliveryDateKey: "2026-05-29", status: "em_producao" }, HOJE),
+    true,
+  );
+});
+
+test("isStoreOrderOverdue — vencido e entregue NÃO é atraso", () => {
+  assert.equal(
+    isStoreOrderOverdue({ deliveryDateKey: "2026-05-29", status: "entregue" }, HOJE),
+    false,
+  );
+});
+
+test("isStoreOrderOverdue — vencido e cancelado NÃO é atraso", () => {
+  assert.equal(
+    isStoreOrderOverdue({ deliveryDateKey: "2026-05-29", status: "cancelado" }, HOJE),
+    false,
+  );
+});
+
+test("isStoreOrderOverdue — vencido com tentativa de entrega falha É atraso", () => {
+  // A tentativa falhou: a loja continua sem a mercadoria e a data já passou.
+  assert.equal(
+    isStoreOrderOverdue({ deliveryDateKey: "2026-05-29", status: "tentativa_falha" }, HOJE),
+    true,
+  );
+});
+
+test("isStoreOrderOverdue — entrega para HOJE ainda não é atraso", () => {
+  assert.equal(isStoreOrderOverdue({ deliveryDateKey: HOJE, status: "em_producao" }, HOJE), false);
+});
+
+test("isStoreOrderOverdue — entrega futura não é atraso", () => {
+  assert.equal(
+    isStoreOrderOverdue({ deliveryDateKey: "2026-05-31", status: "em_espera" }, HOJE),
+    false,
+  );
+});
+
+test("isStoreOrderOverdue — sem data de referência (SSR) nunca acusa atraso", () => {
+  // Guarda de hidratação: no render do servidor a data local ainda não é confiável.
+  assert.equal(isStoreOrderOverdue({ deliveryDateKey: "2026-05-29", status: "em_espera" }, ""), false);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * XPAN item 5 — afordância da trava de edição.
+ * -----------------------------------------------------------------------------------------------*/
+
+test("isStoreOrderEditable — pedido liberado para produção não é editável", () => {
+  assert.equal(
+    isStoreOrderEditable({ status: "em_producao", releasedToProduction: true, canEdit: false }),
+    false,
+  );
+});
+
+test("isStoreOrderEditable — `releasedToProduction` sozinho já bloqueia", () => {
+  assert.equal(isStoreOrderEditable({ status: "agendado", releasedToProduction: true }), false);
+});
+
+test("isStoreOrderEditable — pedido cancelado não é editável", () => {
+  assert.equal(isStoreOrderEditable({ status: "cancelado" }), false);
+});
+
+test("isStoreOrderEditable — pedido em espera e não liberado é editável", () => {
+  assert.equal(
+    isStoreOrderEditable({ status: "em_espera", releasedToProduction: false, canEdit: true }),
+    true,
+  );
+});
+
+test("isStoreOrderEditable — `canEdit: false` da API vence", () => {
+  assert.equal(
+    isStoreOrderEditable({ status: "em_espera", releasedToProduction: false, canEdit: false }),
+    false,
+  );
+});
+
+test("isStoreOrderEditable — sem os campos novos mantém a afordância (servidor é o gate real)", () => {
+  assert.equal(isStoreOrderEditable({ status: "em_espera" }), true);
 });
