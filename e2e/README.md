@@ -40,8 +40,29 @@ Saída termina com `===== RESUMO: N PASS · M FAIL · K SKIP =====`. **Exit 0 ss
 4. **Não** depender de `networkidle` — dashboards fazem polling, nunca ficam idle.
 5. Asserções por **locator com auto-wait** (`get_by_text(...).wait_for`), nunca `inner_text("body")` único em DOM pesado (timeout/falso-negativo).
 
+## `live_cycle.py` — ciclo real (modelo `FACTORY_OPENS_ORDERS`)
+
+Ciclo ponta-a-ponta do modelo ATUAL (flag default ON): **fábrica abre pedidos da semana
+→ loja preenche → fábrica libera → produção avança**. Substitui o cenário obsoleto de
+`full_flow_a1_a8.py` (que criava pedido do zero via `POST /store-orders` — hoje bloqueado
+pela flag). Valida os erros do cliente do checklist XPAN:
+
+- **F1 / falha-grave** — pedido preenchido deve ser liberável e liberar (não travar).
+- **Item 1** — mesma entrega bate entre catálogo, planning e expedição.
+- **Item 3** — cada produto entrega em produção + SEU lead, não no D+X global.
+- **Item 2** (mesmo-dia, gap 0) — coberto por unit test (`engine.test.ts`); ao vivo,
+  flipar `expedition_lead_days` de um produto p/ 0 mostra entrega = produção.
+
+**Mutativo** (abre pedidos da semana de 1 loja, preenche/libera 1, avança 1 OP). Imprime o
+**SQL de cleanup** no fim. Última run: `9 PASS · 0 FAIL · 0 SKIP`. Rodar só em dev.
+
+```bash
+python3 e2e/live_cycle.py    # E2E_STORES/E2E_REF/E2E_BASE p/ override
+```
+
 ## Notas
 
 - `npm run supabase:auth:bootstrap` é desnecessário (credenciais demo já funcionam) e bloqueado pelo harness.
 - AJ-0011 (produção→expedição) não é cobrível por E2E de UI — validação manual.
+- Playwright Python não tem wheels no python3.14 do sistema → usar venv dedicado (`python3 -m venv`), `pip install playwright requests`, `python -m playwright install chromium`.
 - Histórico/contexto: ver memória do projeto `e2e-playwright-setup`.
