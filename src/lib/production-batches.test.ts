@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { planBatches, deriveBatchStatus, computePreWeighBatchSplit } from "@/lib/production-batches";
+import { planBatches, deriveBatchStatus, computePreWeighBatchSplit, deriveCapacityPerBatchFromMainIngredient, deriveCapacityFromProductRecipe } from "@/lib/production-batches";
 
 test("planBatches — enche e sobra na ultima (456 un, cap 100)", () => {
   const plan = planBatches({ totalKg: 50.16, capacityPerBatch: 100, salesToKgFactor: 0.11, salesUnit: "Un" });
@@ -68,4 +68,112 @@ test("deriveBatchStatus — 0/parcial/completo", () => {
   assert.equal(deriveBatchStatus(2, 5), "em_producao");
   assert.equal(deriveBatchStatus(5, 5), "concluido");
   assert.equal(deriveBatchStatus(7, 5), "concluido"); // clamp
+});
+
+// XPAN-8 — capacidade por batida derivada do ingrediente principal.
+
+test("XPAN-8: deriveCapacityPerBatchFromMainIngredient — 50kg de trigo, receita usa 10kg e rende 100un → 500un/batida", () => {
+  assert.equal(
+    deriveCapacityPerBatchFromMainIngredient({
+      mainIngredientKgInRecipe: 10,
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: 50,
+    }),
+    500,
+  );
+});
+
+test("XPAN-8: deriveCapacityPerBatchFromMainIngredient — arredonda para baixo (rende fracionário)", () => {
+  // 50kg × 33un / 7kg = 235,7 → 235
+  assert.equal(
+    deriveCapacityPerBatchFromMainIngredient({
+      mainIngredientKgInRecipe: 7,
+      recipeYieldUnits: 33,
+      mainIngredientLimitKg: 50,
+    }),
+    235,
+  );
+});
+
+test("XPAN-8: deriveCapacityPerBatchFromMainIngredient — null quando limite pequeno demais (< 1 un/batida)", () => {
+  assert.equal(
+    deriveCapacityPerBatchFromMainIngredient({
+      mainIngredientKgInRecipe: 100,
+      recipeYieldUnits: 1,
+      mainIngredientLimitKg: 0.5,
+    }),
+    null,
+  );
+});
+
+test("XPAN-8: deriveCapacityPerBatchFromMainIngredient — null para insumos inválidos (zero/negativo)", () => {
+  assert.equal(
+    deriveCapacityPerBatchFromMainIngredient({ mainIngredientKgInRecipe: 0, recipeYieldUnits: 10, mainIngredientLimitKg: 50 }),
+    null,
+  );
+  assert.equal(
+    deriveCapacityPerBatchFromMainIngredient({ mainIngredientKgInRecipe: 10, recipeYieldUnits: 0, mainIngredientLimitKg: 50 }),
+    null,
+  );
+  assert.equal(
+    deriveCapacityPerBatchFromMainIngredient({ mainIngredientKgInRecipe: 10, recipeYieldUnits: 10, mainIngredientLimitKg: 0 }),
+    null,
+  );
+});
+
+// XPAN-8 — orquestração a partir da receita do produto.
+
+test("XPAN-8: deriveCapacityFromProductRecipe — principal em Kg (10kg/receita, rende 100un), limite 50kg → 500un", () => {
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [
+        { unit: "Kg", quantity: 10, isMain: true },
+        { unit: "Kg", quantity: 2 },
+      ],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: 50,
+    }),
+    500,
+  );
+});
+
+test("XPAN-8: deriveCapacityFromProductRecipe — sem ingrediente principal → null", () => {
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [{ unit: "Kg", quantity: 10 }],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: 50,
+    }),
+    null,
+  );
+});
+
+test("XPAN-8: deriveCapacityFromProductRecipe — principal fora de Kg → null (sem conversão automática)", () => {
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [{ unit: "Un", quantity: 10, isMain: true }],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: 50,
+    }),
+    null,
+  );
+});
+
+test("XPAN-8: deriveCapacityFromProductRecipe — limite não definido → null", () => {
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [{ unit: "Kg", quantity: 10, isMain: true }],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: null,
+    }),
+    null,
+  );
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [{ unit: "Kg", quantity: 10, isMain: true }],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: undefined,
+    }),
+    null,
+  );
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil, Plus, Star, Trash2 } from "lucide-react";
 
 import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
 import { IngredientFormDialog } from "@/components/production/ingredient-form-dialog";
@@ -48,10 +48,11 @@ import {
 } from "@/lib/operational-units";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
 import { normalizeSaleLeadDays } from "@/lib/order-planning";
-import { planBatches } from "@/lib/production-batches";
+import { deriveCapacityFromProductRecipe, planBatches } from "@/lib/production-batches";
 import {
   buildProductFormState,
   calculateQuantityPerPackage,
+  getInvalidFieldTarget,
   validateProductFormState,
   type ProductValidationField,
 } from "@/lib/product-form-logic";
@@ -342,6 +343,20 @@ export function ProductFormDialog({
   // discreta), agora consumida da fonte única em `getProductRecipeTotalsFromData`
   // (`finalFractionsQuantityPrecise`) — mesmo valor que propaga a jusante.
   const recipeFinalQuantityPrecise = recipeTotals.finalFractionsQuantityPrecise;
+  // XPAN-8: capacidade por batida derivada do ingrediente principal (⭐) + limite físico.
+  const hasMainIngredient = useMemo(
+    () => formState.recipe.some((item) => item.isMain),
+    [formState.recipe],
+  );
+  const derivedBatchCapacity = useMemo(
+    () =>
+      deriveCapacityFromProductRecipe({
+        recipe: formState.recipe,
+        recipeYieldUnits: recipeFinalQuantityPrecise,
+        mainIngredientLimitKg: formState.mainIngredientLimitKg,
+      }),
+    [formState.recipe, recipeFinalQuantityPrecise, formState.mainIngredientLimitKg],
+  );
   const recipeSourceOptionsForSearch = useMemo(
     () =>
       recipeSourceOptions.map((option) => ({
@@ -357,24 +372,6 @@ export function ProductFormDialog({
       })),
     [recipeSourceOptions, snapshot.ingredients, snapshot.products],
   );
-
-  function getInvalidFieldTarget(field: ProductValidationField) {
-    switch (field) {
-      case "name":
-        return { tab: "cadastro", id: "product-name" };
-      case "lineId":
-        return { tab: "cadastro", id: "product-line" };
-      case "packagingDescription":
-        return { tab: "cadastro", id: "product-packaging-description" };
-      case "packagingWeight":
-      case "packagingQuantity":
-        return { tab: "cadastro", id: "product-packaging-weight" };
-      case "preparationStages":
-        return { tab: "receita", id: "product-preparation-stages" };
-      default:
-        return null;
-    }
-  }
 
   function focusFirstInvalidField(fields: ProductValidationField[]) {
     const target = fields.map(getInvalidFieldTarget).find(Boolean);
@@ -518,6 +515,19 @@ export function ProductFormDialog({
             }
           : item,
       ),
+    }));
+  }
+
+  // XPAN-8: marca o ingrediente principal da receita (radio com toggle-off): clicar
+  // marca este e limpa os demais; clicar no já-principal desmarca. Garante ≤ 1 principal
+  // (o índice parcial no banco reforça a invariante).
+  function setMainRecipeItem(recipeId: string) {
+    setFormState((current) => ({
+      ...current,
+      recipe: current.recipe.map((item) => ({
+        ...item,
+        isMain: item.id === recipeId ? !item.isMain : false,
+      })),
     }));
   }
 
@@ -1182,6 +1192,11 @@ export function ProductFormDialog({
                 </div>
               </section>
 
+            </fieldset>
+          </TabsContent>
+
+          <TabsContent value="receita">
+            <fieldset disabled={isReadOnly} className="space-y-5">
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Resumo Operacional</h3>
@@ -1494,11 +1509,6 @@ export function ProductFormDialog({
                 </div>
               </section>
 
-            </fieldset>
-          </TabsContent>
-
-          <TabsContent value="receita">
-            <fieldset disabled={isReadOnly} className="space-y-5">
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Ingredientes da Receita</h3>
@@ -1651,6 +1661,24 @@ export function ProductFormDialog({
                                       type="button"
                                       variant="ghost"
                                       size="icon-sm"
+                                      className={cn(
+                                        "hover:text-foreground",
+                                        item.isMain ? "text-warning" : "text-muted-foreground/50",
+                                      )}
+                                      onClick={() => setMainRecipeItem(item.id)}
+                                      aria-pressed={item.isMain ?? false}
+                                      title={
+                                        item.isMain
+                                          ? "Ingrediente principal (clique para desmarcar)"
+                                          : "Marcar como ingrediente principal — base da capacidade por batida (XPAN-8)"
+                                      }
+                                    >
+                                      <Star className={cn("size-4", item.isMain ? "fill-current" : "")} />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-sm"
                                       className="text-muted-foreground hover:text-foreground"
                                       onClick={() => moveRecipeItem(item.id, "up")}
                                       disabled={
@@ -1782,6 +1810,50 @@ export function ProductFormDialog({
                             )} ${batchPreview.unitLabel}.`}
                       </p>
                     ) : null}
+                  </div>
+                  {/* XPAN-8: derivar a capacidade por batida do limite físico do ingrediente principal. */}
+                  <div className="grid gap-2">
+                    <Label>Limite do ingrediente principal por batida (Kg)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.001"
+                        placeholder="ex.: 50 (kg de trigo que a masseira comporta)"
+                        value={formState.mainIngredientLimitKg ?? ""}
+                        onChange={(event) =>
+                          setFormState((current) => ({
+                            ...current,
+                            mainIngredientLimitKg:
+                              event.target.value === "" ? null : Number(event.target.value),
+                          }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={derivedBatchCapacity === null}
+                        onClick={() =>
+                          setFormState((current) => ({ ...current, capacityPerBatch: derivedBatchCapacity }))
+                        }
+                        title="Calcular a capacidade por batida a partir do limite do ingrediente principal"
+                      >
+                        Derivar capacidade
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {!hasMainIngredient
+                        ? "Marque um ingrediente como principal (⭐) na lista de ingredientes da receita e informe o limite físico da masseira para derivar a capacidade por batida automaticamente."
+                        : formState.mainIngredientLimitKg == null
+                          ? "Informe o limite físico (kg) do ingrediente principal que a masseira comporta por batida."
+                          : derivedBatchCapacity === null
+                            ? "Não foi possível derivar: o ingrediente principal precisa estar em Kg e a receita precisa ter rendimento e quantidade válidos."
+                            : `Rende ~${formatLocaleNumber(derivedBatchCapacity)} ${salesUnitLabel} por batida (limite de ${formatLocaleNumber(
+                                formState.mainIngredientLimitKg,
+                              )} kg do ingrediente principal). Clique em “Derivar capacidade” para aplicar acima.`}
+                    </p>
                   </div>
                   <div className="grid gap-2">
                     <Label>Unidade do lote econômico</Label>

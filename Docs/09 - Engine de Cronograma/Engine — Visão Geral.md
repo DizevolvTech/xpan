@@ -70,7 +70,7 @@ Output (`FactoryPlanningData`, `types.ts:220`):
 | `getBaseDateByCutoff` | `engine.ts:114` | Avança 1 dia se pedido foi após `orderCutoffTime`. |
 | `moveToNextAllowedWeekday` | `engine.ts:131` | Pula até dia operacional permitido (loop de 7 dias). |
 | `getOperationalOrderWindow` | `engine.ts:165` | `{ baseDate, deliveryDate }`. |
-| `resolveProductionDateInWindow` | `engine.ts:328` | Busca regressiva de dia de produção válido; fallback delayed +14d. |
-| `resolveScheduledProductAvailability` | `engine.ts:206` | Determina se um produto entra no pedido (com 4 razões de bloqueio distintas). |
+| `resolveProductionDateInWindow` | `engine.ts:328` | Busca regressiva de dia de produção válido; **usada só no caminho da âncora AJ-A10**. |
+| `resolveScheduledProductAvailability` | `engine.ts:206` | Determina se um produto entra no pedido (com razões de bloqueio distintas). **XPAN-2/3: modelo production-driven** — o dia de produção do produto (≥ baseDate) determina a entrega (produção + gap do produto); o D+X global só é a "janela" do pedido. Ver `Regra — Lead Days.md`. |
 | `normalizeSaleLeadDays` | `engine.ts:188` | Força `saleLeadDays >= 1` (`Number(x) > 0 ? x : 1`) — **se vier 0 vira 1 silenciosamente**. |
 | `sanitizeFactor` | `engine.ts:365` | Força fator > 0 (senão 1). |

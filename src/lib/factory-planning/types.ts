@@ -45,13 +45,21 @@ export interface StoreOrder {
   storeId: string;
   orderedAt: string;
   /**
-   * AJ-A10: data de entrega PERSISTIDA do pedido (promessa firmada na criação /
-   * abertura pela fábrica). Preferida ao recomputo da janela na exibição —
-   * pedidos vazios e pedidos do cronograma para datas futuras devem mostrar a
-   * data gravada, não a "próxima" data da janela operacional. Opcional para
+   * AJ-A10: data de entrega PERSISTIDA do pedido (`delivery_date`). Usada para
+   * EXIBIÇÃO de pedidos vazios e como base do filtro operacional. NÃO deve mais
+   * ancorar a disponibilidade — ver `committedDeliveryDate`. Opcional para
    * compatibilidade com fixtures de teste.
    */
   deliveryDate?: string | null;
+  /**
+   * XPAN-2/3: data de entrega COMPROMETIDA — só existe quando a FÁBRICA abriu o
+   * pedido para uma data futura (`opened_at` preenchido). É a ÚNICA fonte que
+   * ancora a busca regressiva de disponibilidade (AJ-A10). Pedido criado pela
+   * loja do zero (`opened_at` nulo) → `null` → cada item entrega em
+   * produção + lead do próprio produto (modelo production-driven), evitando que
+   * a janela global (D+X) bloqueie/re-agende itens que produzem no seu dia.
+   */
+  committedDeliveryDate?: string | null;
   items: StoreOrderItem[];
 }
 

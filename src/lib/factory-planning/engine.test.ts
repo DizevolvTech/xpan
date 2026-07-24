@@ -259,11 +259,12 @@ test("operational timeline anchored at X sells X + saleLeadDays", () => {
   assert.equal(timeline.saleDate, "2026-04-03");
 });
 
-// Cenário do cliente — pedido PD-260429-0001:
-// pedido em quarta (29/04), entrega sexta (01/05), 3 bolos com gap=1 individual.
-// Só Bolo 5 (produz quinta) deveria estar disponível.
+// Cenário do cliente — pedido PD-260429-0001 (XPAN-2/3: modelo production-driven):
+// pedido em quarta (29/04). Cada bolo produz no SEU dia e entrega produção + gap (1),
+// INDEPENDENTE do D+2 global (que antes forçava entrega sexta 01/05 e bloqueava os
+// bolos 4 e 6). Agora bolo 4 entrega qui 30/04, bolo 5 sex 01/05, bolo 6 sáb 02/05.
 
-test("availability blocks product when production day + gap < deliveryDate (bolo 4 — produz quarta)", () => {
+test("XPAN-2/3: bolo 4 (produz quarta, gap 1) entrega qui 30/04 — production-driven", () => {
   const cakeStore: StoreProfile = {
     id: "store-cake",
     code: "LJ-002",
@@ -284,8 +285,10 @@ test("availability blocks product when production day + gap < deliveryDate (bolo
       scheduleItem: { id: "schedule-bolo4", productionDays: ["quarta"] },
     },
   );
-  assert.equal(availability.available, false);
-  assert.equal(availability.deliveryDate, "2026-05-01");
+  // Produz quarta 29/04; entrega = 29/04 + 1 = 30/04 (quinta). Disponível.
+  assert.equal(availability.available, true);
+  assert.equal(availability.productionDate, "2026-04-29");
+  assert.equal(availability.deliveryDate, "2026-04-30");
 });
 
 test("availability allows product when production day + gap = deliveryDate (bolo 5 — produz quinta)", () => {
@@ -314,7 +317,7 @@ test("availability allows product when production day + gap = deliveryDate (bolo
   assert.equal(availability.deliveryDate, "2026-05-01");
 });
 
-test("availability blocks product when production day + gap > deliveryDate (bolo 6 — produz sexta)", () => {
+test("XPAN-2/3: bolo 6 (produz sexta, gap 1) entrega sáb 02/05 — production-driven", () => {
   const cakeStore: StoreProfile = {
     id: "store-cake",
     code: "LJ-002",
@@ -335,11 +338,18 @@ test("availability blocks product when production day + gap > deliveryDate (bolo
       scheduleItem: { id: "schedule-bolo6", productionDays: ["sexta"] },
     },
   );
-  assert.equal(availability.available, false);
-  assert.equal(availability.deliveryDate, "2026-05-01");
+  // Produz sexta 01/05; entrega = 01/05 + 1 = 02/05 (sábado). Disponível.
+  assert.equal(availability.available, true);
+  assert.equal(availability.productionDate, "2026-05-01");
+  assert.equal(availability.deliveryDate, "2026-05-02");
 });
 
-test("AJ-0024: variante incompatível (produz só sexta, entrega sexta, lead 1) não agenda produção +7", () => {
+// AJ-0024 (âncora): o guard "não agenda produção +7" segue valendo no caminho da
+// ANCORAGEM (fábrica abriu o pedido para entrega X). Lá a busca é regressiva a partir
+// de X; se nenhuma produção do produto entrega em X, o item é bloqueado (delayed) e
+// NÃO devolve a próxima produção futura como productionDate. No caminho normal
+// (production-driven) este guard não se aplica — sempre há uma próxima produção.
+test("AJ-0024 (âncora): variante incompatível ancorada em X não agenda produção +7", () => {
   const cakeStore: StoreProfile = {
     id: "store-cake",
     code: "LJ-002",
@@ -350,6 +360,8 @@ test("AJ-0024: variante incompatível (produz só sexta, entrega sexta, lead 1) 
     receivingBlockedDays: [],
     receiveWindow: "07:00 - 10:00",
   };
+  // Produto produz só sexta, gap 1. Âncora X = sexta 01/05 (entrega pretendida).
+  // Nenhuma sexta + 1 = 01/05 (sexta+1 = sábado) → bloqueado, delayed, sem +7.
   const availability = resolveScheduledProductAvailability(
     "2026-04-29T09:00:00",
     cakeStore,
@@ -358,15 +370,41 @@ test("AJ-0024: variante incompatível (produz só sexta, entrega sexta, lead 1) 
       productProductionDays: ["sexta"],
       productExpeditionLeadDays: 1,
       scheduleItem: { id: "schedule-bolo6", productionDays: ["sexta"] },
+      targetDeliveryDate: "2026-05-01",
     },
   );
 
-  // Bloqueado (já era), mas o ponto do AJ-0024: NÃO pode devolver a sexta seguinte
-  // (+7) como `productionDate`. Caía no branch delayed e "agendava" 08/05 — a UI/o
-  // catálogo mostravam essa data futura como se o pedido fosse produzir lá.
   assert.equal(availability.available, false);
   assert.equal(availability.delayed, true);
   assert.equal(availability.productionDate, null);
+});
+
+test("XPAN-2/3: produto produz e entrega no mesmo dia (gap 0) — caso arroz/pão", () => {
+  const cakeStore: StoreProfile = {
+    id: "store-cake",
+    code: "LJ-002",
+    name: "Loja Bolo",
+    orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+    receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    receiveWindow: "07:00 - 10:00",
+  };
+  // Pedido sexta 29/05, arroz produz sexta, gap 0 → produção = entrega = 29/05.
+  // Não há mais "D+2 domingo" — o dia do produto é a fonte de verdade.
+  const availability = resolveScheduledProductAvailability(
+    "2026-05-29T09:00:00",
+    cakeStore,
+    settings,
+    {
+      productProductionDays: ["sexta"],
+      productExpeditionLeadDays: 0,
+      scheduleItem: { id: "schedule-arroz", productionDays: ["sexta"] },
+    },
+  );
+  assert.equal(availability.available, true);
+  assert.equal(availability.productionDate, "2026-05-29");
+  assert.equal(availability.deliveryDate, "2026-05-29");
 });
 
 test("AJ-0024: branch delayed não rouba a janela válida — variante compatível (quinta) segue na quinta", () => {
@@ -547,6 +585,208 @@ test("factory planning uses operational subcategory instead of cadastral subcate
   assert.equal(planning.orderItems[0]?.lineId, "line-operational");
   assert.equal(planning.orderItems[0]?.lineName, "Carteira Operacional");
   assert.equal(planning.orderItems[0]?.scheduleId, "schedule-1");
+});
+
+// ---------------------------------------------------------------------------
+// XPAN-2/3 — production-driven fim-a-fim (buildFactoryPlanningData).
+// O rewrite só valia no catálogo/leitura; a persistência+planejamento ainda
+// ancoravam na data global de todo pedido, então um item aceito pela loja voltava
+// bloqueado no planejamento e o pedido NUNCA liberava (regressão F1). O gate:
+// SÓ pedido comprometido pela fábrica (`committedDeliveryDate`, derivado de
+// `opened_at`) ancora na busca regressiva; pedido criado pela loja entrega cada
+// item em produção + lead do PRÓPRIO produto.
+// ---------------------------------------------------------------------------
+const boloStore: StoreProfile = {
+  id: "store-bolo",
+  code: "LJ-002",
+  name: "Loja Bolo",
+  orderingDays: ["segunda", "terca", "quarta", "quinta", "sexta"],
+  receivingDays: ["segunda", "terca", "quarta", "quinta", "sexta", "sabado"],
+  orderingBlockedDays: [],
+  receivingBlockedDays: [],
+  receiveWindow: "07:00 - 10:00",
+};
+const boloSectors: ProductionSector[] = [
+  { id: "sector-bolo", code: "SE-002", name: "Confeitaria", responsible: "Ana", status: "ativo" },
+];
+const boloLines: ProductionLine[] = [
+  {
+    id: "line-bolo",
+    code: "LP-003",
+    name: "Linha Bolos",
+    sectorId: "sector-bolo",
+    type: "Seco",
+    operatingHours: "05:00 - 14:00",
+    capacityPerDayKg: 1000,
+    status: "ativo",
+  },
+];
+function buildBoloProduct(overrides: {
+  id: string;
+  code: string;
+  productionDays: ProductionWeekDay[];
+  expeditionLeadDays: number;
+}): ProductionProduct {
+  return {
+    id: overrides.id,
+    code: overrides.code,
+    name: overrides.code,
+    description: "",
+    lineId: "line-bolo",
+    masterLineId: "line-bolo",
+    operationalLineId: "line-bolo",
+    active: true,
+    availableForOrdering: true,
+    validityDays: 2,
+    minimumProductionKg: 0,
+    economicProductionKg: 0,
+    allowsStorage: false,
+    productionDays: overrides.productionDays,
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 1 },
+      production: { unit: "Kg", description: "Kg", weightKg: 1 },
+      expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+    },
+    packagingProfile: undefined,
+    isSoldLoose: true,
+    recipe: [],
+    preparationStages: [...defaultProductPreparationStages],
+    preparationMode: "",
+    breakPercent: 0,
+    breakStage: "antes_divisao",
+    breakComment: "",
+    canBeIngredient: false,
+    ingredientProfile: undefined,
+    weight: "",
+    productionUnit: "Kg",
+    salesUnit: "Un",
+    salesToKgFactor: 1,
+    expeditionUnit: "Caixa",
+    expeditionToKgFactor: 1,
+    expeditionLeadDays: overrides.expeditionLeadDays,
+    isMpiIngredient: false,
+    capacityPerBatch: null,
+    economicBatchUnit: null,
+  };
+}
+function buildBoloSchedule(
+  items: { id: string; productId: string; productionDays: ProductionWeekDay[] }[],
+): WeeklyProductionSchedule[] {
+  return [
+    {
+      id: "schedule-bolo",
+      code: "SL-0002",
+      name: "Cronograma Bolos",
+      lineId: "line-bolo",
+      status: "ativo",
+      createdAt: "2026-04-27T10:00:00.000Z",
+      createdBy: "Ana",
+      items: items.map((item) => ({ ...item, minimumProduction: 0 })),
+    },
+  ];
+}
+
+test("XPAN-2/3: pedido da loja (sem committedDeliveryDate) é production-driven e liberável", () => {
+  // Bolo 4 produz quarta 29/04, gap 1 → entrega quinta 30/04. Antes do fix, o
+  // planejamento re-ancorava na janela global (sexta 01/05) e bloqueava o item
+  // (available:false), impedindo a liberação. Agora libera.
+  const bolo4 = buildBoloProduct({ id: "bolo4", code: "BL-004", productionDays: ["quarta"], expeditionLeadDays: 1 });
+  const planning = buildFactoryPlanningData("2026-04-29", {
+    stores: [boloStore],
+    storeOrders: [
+      {
+        id: "order-bolo-1",
+        code: "PD-BOLO-1",
+        storeId: "store-bolo",
+        orderedAt: "2026-04-29T09:00:00",
+        // createStoreOrder PERSISTE delivery_date = janela global (sexta 01/05),
+        // mas NÃO seta opened_at → committedDeliveryDate ausente. É a condição exata
+        // do bug F1: sem o gate, a data persistida re-ancorava e bloqueava o item.
+        deliveryDate: "2026-05-01",
+        items: [{ id: "item-1", productId: "bolo4", quantity: 10, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: boloSectors,
+    lines: boloLines,
+    products: [bolo4],
+    schedules: buildBoloSchedule([{ id: "sch-bolo4", productId: "bolo4", productionDays: ["quarta"] }]),
+  });
+
+  const item = planning.orderItems[0];
+  assert.equal(item?.availableForRelease, true);
+  assert.equal(item?.productionDate, "2026-04-29");
+  assert.equal(item?.deliveryDate, "2026-04-30");
+  assert.equal(planning.orders[0]?.availableForRelease, true);
+});
+
+test("XPAN-2/3 (âncora): pedido comprometido pela fábrica (committedDeliveryDate) ancora e bloqueia variante incompatível", () => {
+  // Mesmo bolo 4, mas a fábrica abriu o pedido comprometendo entrega sexta 01/05.
+  // Bolo 4 só produz quarta (quarta+1 = quinta ≠ sexta) → nenhuma produção entrega
+  // em X → bloqueado. O committedDeliveryDate reativa a busca regressiva (AJ-A10).
+  const bolo4 = buildBoloProduct({ id: "bolo4", code: "BL-004", productionDays: ["quarta"], expeditionLeadDays: 1 });
+  const planning = buildFactoryPlanningData("2026-04-29", {
+    stores: [boloStore],
+    storeOrders: [
+      {
+        id: "order-bolo-2",
+        code: "PD-BOLO-2",
+        storeId: "store-bolo",
+        orderedAt: "2026-04-29T09:00:00",
+        deliveryDate: "2026-05-01",
+        committedDeliveryDate: "2026-05-01",
+        items: [{ id: "item-1", productId: "bolo4", quantity: 10, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: boloSectors,
+    lines: boloLines,
+    products: [bolo4],
+    schedules: buildBoloSchedule([{ id: "sch-bolo4", productId: "bolo4", productionDays: ["quarta"] }]),
+  });
+
+  const item = planning.orderItems[0];
+  assert.equal(item?.availableForRelease, false);
+  assert.equal(item?.productionDate, null);
+  assert.equal(planning.orders[0]?.availableForRelease, false);
+});
+
+test("XPAN-2/3: pedido da loja com produtos em dias distintos entrega por item; pedido = data mais tardia", () => {
+  const bolo4 = buildBoloProduct({ id: "bolo4", code: "BL-004", productionDays: ["quarta"], expeditionLeadDays: 1 });
+  const bolo6 = buildBoloProduct({ id: "bolo6", code: "BL-006", productionDays: ["sexta"], expeditionLeadDays: 1 });
+  const planning = buildFactoryPlanningData("2026-04-29", {
+    stores: [boloStore],
+    storeOrders: [
+      {
+        id: "order-bolo-3",
+        code: "PD-BOLO-3",
+        storeId: "store-bolo",
+        orderedAt: "2026-04-29T09:00:00",
+        // Loja criou: delivery_date persistido (janela global) mas sem committed.
+        deliveryDate: "2026-05-01",
+        items: [
+          { id: "item-a", productId: "bolo4", quantity: 5, unit: "Un" },
+          { id: "item-b", productId: "bolo6", quantity: 5, unit: "Un" },
+        ],
+      },
+    ],
+    settings,
+    sectors: boloSectors,
+    lines: boloLines,
+    products: [bolo4, bolo6],
+    schedules: buildBoloSchedule([
+      { id: "sch-bolo4", productId: "bolo4", productionDays: ["quarta"] },
+      { id: "sch-bolo6", productId: "bolo6", productionDays: ["sexta"] },
+    ]),
+  });
+
+  const byProduct = new Map(planning.orderItems.map((item) => [item.productId, item]));
+  assert.equal(byProduct.get("bolo4")?.deliveryDate, "2026-04-30"); // quarta 29 + 1
+  assert.equal(byProduct.get("bolo6")?.deliveryDate, "2026-05-02"); // sexta 01/05 + 1 = sábado
+  assert.equal(byProduct.get("bolo4")?.availableForRelease, true);
+  assert.equal(byProduct.get("bolo6")?.availableForRelease, true);
+  // Pedido = entrega mais tardia dos itens (getLatestDate).
+  assert.equal(planning.orders[0]?.deliveryDate, "2026-05-02");
 });
 
 test("AJ-0006.1: OP sinaliza demanda consolidada abaixo do lote mínimo da fábrica", () => {

@@ -38,6 +38,9 @@ export interface StoreOrderTimelineEvent {
 }
 
 export interface StoreOrderDetail extends StoreOrderSummary {
+  /** XPAN-2/3: data comprometida pela fábrica (`opened_at` preenchido) — âncora do
+   * catálogo na edição. null = pedido criado pela loja → production-driven. */
+  committedDeliveryDate: string | null;
   orderedAtIso: string;
   dPlusLabel: string;
   cutoffTime: string;

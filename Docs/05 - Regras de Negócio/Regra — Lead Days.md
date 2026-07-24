@@ -12,35 +12,56 @@ Há **três** lead days no sistema. Esse é o ponto mais confuso do motor.
 
 ## Ordem de precedência (quem aplica onde)
 
-Nada se sobrepõe — cada um manda em seu próprio segmento da linha do tempo. Mas é fácil confundir.
+> **XPAN-2/3 (2026-07): regra INVERTIDA.** Até então o global (D+X) determinava a
+> entrega e o produto tinha que "caber" nela (quem não cabia era bloqueado — ver testes
+> dos bolos PD-260429-0001). A partir do XPAN-2/3 o modelo é **production-driven**: o
+> dia de produção do produto é a fonte de verdade; a entrega = produção + gap do produto.
+> O D+X global deixa de agendar a entrega (fica só como "janela" do pedido — escopo
+> operacional/display, calculado em `getOperationalOrderWindow`). Exceção: a **âncora
+> AJ-A10** (fábrica abriu pedido para entrega X) mantém a busca regressiva a partir de X.
 
 ```
-pedido ──[cutoff]──> baseDate ──[D+X global]──> deliveryDate ──[D+Y global]──> saleDate
-                                     ▲                          ▲
-                                     │ (regressão)              │
-                              productionDate                 (vender)
-                                     ▲
-                                     │ [D+G produto = expeditionLeadDays do produto]
-                                     │
-                                  busca regressiva: productionDate + G = deliveryDate
+pedido ──[cutoff]──> baseDate ──[D+X global]──> deliveryDate (JANELA do pedido, só escopo)
+                                      ▲
+                                      │
+                               productionDate  ◄── fonte de verdade (production-driven)
+                                      │ [D+G produto = expeditionLeadDays do produto]
+                                      ▼
+                            deliveryDate efetiva = produção + D+G (ajustada ao recebimento)
 ```
 
-### Fórmula efetiva
+### Fórmula efetiva (XPAN-2/3)
 
-- `deliveryDate = baseDate + settings.expeditionLeadDays` (depois ajustado pra dia de recebimento) — `engine.ts:152`
-- `productionDate` resolvido por **busca regressiva** de tal modo que `productionDate + product.expeditionLeadDays = deliveryDate` (`engine.ts:328-363`).
-  - Cursor parte de `deliveryDate` e vai recuando dia-a-dia até `baseDate`.
-  - Para cada dia da ficha (`productionDays`) intersectado com `scheduleItem.productionDays`, calcula a entrega candidata.
-  - Se nenhum casar, busca delayed no futuro até 14 dias.
-- `saleDate = deliveryDate + normalizeSaleLeadDays(settings.saleLeadDays)` — `engine.ts:322,574`.
+- **Caminho normal (production-driven)** — `resolveScheduledProductAvailability`, `engine.ts`:
+  - `productionDate` = primeiro dia de produção compatível (`product.productionDays ∩ scheduleItem.productionDays`) em `[baseDate, baseDate+14)`.
+  - `deliveryDate` = `moveToNextAllowedWeekday(productionDate + product.expeditionLeadDays, receivingDays)`.
+  - `saleDate` = `deliveryDate + normalizeSaleLeadDays(settings.saleLeadDays)` (`engine.ts`).
+  - Caso "mesmo dia" (gap 0, ex.: arroz/pão): `productionDate = deliveryDate`.
+- **Caminho âncora (AJ-A10)** — `targetDeliveryDate` informado (fábrica abriu p/ X):
+  - `deliveryDate = X`; `productionDate` por **busca regressiva** (`resolveProductionDateInWindow`): `productionDate + gap = X`. Se nenhuma produzir para X → bloqueado (delayed), **sem** agendar +7 (AJ-0024).
+- `baseDate`/`deliveryDate` da **janela do pedido** (`getOperationalOrderWindow`) seguem usando o global D+X — só para escopo operacional, `store-order-window` (1 pedido por janela) e display.
 
-### Caso paradigma (do test file)
+> **Discriminador do gate (XPAN-2/3, 2026-07):** o que decide âncora × production-driven é o
+> `opened_at` do `store_order` (→ `StoreOrder.committedDeliveryDate`), **não** a `delivery_date`
+> persistida. `createStoreOrder` grava `delivery_date` = janela global mas **nunca** seta
+> `opened_at` → `committedDeliveryDate = null` → production-driven. Só as aberturas pela FÁBRICA
+> (pedido p/ data futura / esqueleto da semana) setam `opened_at` → âncora. O gate vale nos TRÊS
+> pontos: planejamento (`buildPlannedItems`), validação de criação (`createStoreOrder` passa
+> `targetDeliveryDate: null`) e validação de edição (`updateStoreOrder` gateia por `opened_at`).
+> Sem esse gate, a `delivery_date` global re-ancorava pedidos da loja e travava a liberação
+> (regressão F1: item aceito no catálogo, pedido nunca liberável).
 
-`engine.test.ts:156-205` — pedido em quarta (29/04), entrega sexta (01/05), D+X=2:
-- **Bolo 4** (produz quarta, G=1): bloqueado — `quarta + 1 = quinta ≠ sexta`.
-- **Bolo 5** (produz quinta, G=1): OK — `quinta + 1 = sexta = deliveryDate`. ✓
-- **Bolo 6** (produz sexta, G=1): bloqueado — `sexta + 1 = sábado > sexta` (`delayed = true`).
-- **Pão fresco** (produz sexta, G=0): OK — produz e entrega no mesmo dia (`engine.test.ts:232-256`).
+### Caso paradigma (depois do XPAN-2/3)
+
+Pedido em quarta (29/04), 3 bolos com gap=1, **independente do D+2 global**:
+- **Bolo 4** (produz quarta): produção 29/04 → entrega **qui 30/04**. ✓ (antes: bloqueado)
+- **Bolo 5** (produz quinta): produção 30/04 → entrega **sex 01/05**. ✓
+- **Bolo 6** (produz sexta): produção 01/05 → entrega **sáb 02/05**. ✓ (antes: bloqueado)
+- **Pão fresco / arroz** (produz sexta, gap 0): produção 01/05 = entrega 01/05 (mesmo dia).
+
+> Consequência: um pedido pode ter ITENS com datas de entrega distintas (cada produto no
+> seu cronograma). A OP/expedição já trabalham com `deliveryDate` por item; o
+> `deliveryDate` do pedido = o mais tardio dos itens (`getLatestDate`, `buildOrders`).
 
 ## `normalizeSaleLeadDays` — armadilha
 

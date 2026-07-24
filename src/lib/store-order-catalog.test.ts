@@ -246,3 +246,41 @@ test("store catalog keeps blocked products when subline day and product day do n
     "Dias da ficha do produto não coincidem com a linha de produção ativa.",
   );
 });
+
+// XPAN-9: MPI (canBeIngredient) nunca é pedível direto — só via demanda do produto
+// que o consome. Mesmo se vier mal-cadastrado com availableForOrdering=true.
+test("XPAN-9: store catalog excludes MPI products (canBeIngredient) from the orderable list", () => {
+  const snapshot = buildSnapshot(["quinta"]);
+
+  // Clona o produto base e marca como MPI (canBeIngredient = true).
+  const baseProduct = snapshot.products[0]!;
+  const mpiProduct = {
+    ...baseProduct,
+    id: "product-mpi",
+    code: "MPI-0001",
+    name: "Massa de Pizza (MPI)",
+    canBeIngredient: true,
+    availableForOrdering: true,
+  };
+  snapshot.products.push(mpiProduct);
+  // O cronograma ativo também prevê o MPI (caso contrário ele seria bloqueado,
+  // não pedível — queremos provar que o filtro por canBeIngredient é o que age).
+  snapshot.schedules[0]!.items.push({
+    id: "schedule-item-mpi",
+    productId: "product-mpi",
+    productionDays: ["quinta"],
+    minimumProduction: 10,
+  });
+
+  const catalog = buildStoreOrderCatalog(snapshot, {
+    storeId: "store-1",
+    orderedAt: "2026-03-17T09:00:00Z",
+  });
+
+  assert.equal(catalog.length, 1, "MPI não deve aparecer no catálogo pedível");
+  assert.equal(catalog[0]?.productId, "product-1");
+  assert.ok(
+    catalog.every((entry) => entry.productId !== "product-mpi"),
+    "nenhum item do catálogo aponta para o MPI",
+  );
+});

@@ -341,7 +341,7 @@ export default function PedidosFabricaPage() {
     const confirmed = await confirm({
       title: `Auto-liberar ${eligibleCount} pedido(s) elegível(eis)?`,
       description:
-        "Pedidos que passem na validação serão liberados de uma vez. Pedidos bloqueados (capacidade / MPI / janela) ficam de fora e podem ser tratados manualmente.",
+        "Pedidos que passem na validação serão liberados de uma vez. Pedidos bloqueados (sem data de produção viável / MPI / janela) ficam de fora e podem ser tratados manualmente.",
       confirmLabel: "Auto-liberar",
       cancelLabel: "Voltar",
     });

@@ -63,6 +63,9 @@ export interface RecipeIngredientReference {
   quantity: number;
   unit: UnitCode;
   observation?: string;
+  /** XPAN-8: marca o ingrediente PRINCIPAL da receita (no máximo um por produto).
+   * Base para derivar a capacidade por batida a partir do limite físico da masseira. */
+  isMain?: boolean;
 }
 
 export interface ProductionIngredient {
@@ -179,6 +182,10 @@ export interface ProductionProduct {
   capacityPerBatch: number | null;
   /** Unidade do lote econômico (forma/maceira/pacote/unidade/kg). null = não definido. */
   economicBatchUnit: EconomicBatchUnit | null;
+  /** XPAN-8: limite físico (kg) do ingrediente principal por batida (ex.: kg de trigo
+   * na masseira). null/undefined = não definido → capacidade por batida segue manual.
+   * Opcional para não exigir o campo em todas as fixtures existentes. */
+  mainIngredientLimitKg?: number | null;
 }
 
 export type EconomicBatchUnit = "kg" | "forma" | "maceira" | "pacote" | "unidade";

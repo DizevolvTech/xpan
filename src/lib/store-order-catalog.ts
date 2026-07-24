@@ -80,7 +80,14 @@ export function buildStoreOrderCatalog(
   const entries = new Map<string, ApprovedCatalogEntry>();
 
   snapshot.products.forEach((product) => {
-    if (!product.active || !product.availableForOrdering || !product.operationalLineId) {
+    // XPAN-9: MPI (canBeIngredient) só se movimenta indiretamente, via expansão da
+    // receita do produto que o consome — nunca aparece como item pedível direto.
+    if (
+      !product.active ||
+      !product.availableForOrdering ||
+      !product.operationalLineId ||
+      product.canBeIngredient
+    ) {
       return;
     }
 

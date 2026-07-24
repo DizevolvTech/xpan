@@ -354,16 +354,25 @@ export default function PedidosLojaPage() {
     setActiveStoreId: setSelectedStoreId,
     shouldShowStoreSelector,
   } = useStoreScope(activeStores, profile?.allowedStoreIds);
+  const { order: editingOrderDetail, isLoading: isLoadingEditOrder } = useStoreOrderDetail(editingOrderId ?? "", anchorDate);
   // AJ-A10: ao PREENCHER um pedido aberto pela fábrica (data de entrega futura
   // comprometida), o catálogo deve ancorar nessa data — a loja vê os produtos
   // produzíveis para o dia comprometido, não para a próxima janela de hoje.
+  //
+  // XPAN-2/3: SÓ pedido comprometido pela fábrica ancora. Fast-path: pedido aberto ainda
+  // não preenchido (presente em `openOrders`). Fallback: `committedDeliveryDate` do
+  // detalhe (opened_at ? delivery_date : null) — cobre RE-EDITAR um pedido da fábrica já
+  // preenchido (que saiu de /open). Pedido criado pela LOJA → ambos null → catálogo
+  // production-driven, EXATAMENTE como o servidor (`updateStoreOrder` gateia por
+  // `opened_at`). Antes o fallback era `summary.deliveryDateKey` (janela global): o
+  // catálogo re-ancorava e ESCONDIA itens production-driven já aceitos → ao re-salvar,
+  // o item sumia do payload (F1 no cliente).
   const editingOrderTargetDelivery = useMemo(() => {
     if (!editingOrderId) return null;
     const open = openOrders.find((order) => order.id === editingOrderId);
     if (open?.deliveryDate) return open.deliveryDate;
-    const summary = storeOrderSummaries.find((order) => order.id === editingOrderId);
-    return summary?.deliveryDateKey ?? null;
-  }, [editingOrderId, openOrders, storeOrderSummaries]);
+    return editingOrderDetail?.committedDeliveryDate ?? null;
+  }, [editingOrderId, openOrders, editingOrderDetail?.committedDeliveryDate]);
   const { catalog } = useStoreOrderCatalog(selectedStoreId, orderedAtIso, editingOrderTargetDelivery);
   // 2.7-C — sugestão ADVISORY de quantidade por dia da semana (média histórica).
   // Nunca preenche o input nem altera o payload; só exibe um hint discreto.
@@ -406,7 +415,6 @@ export default function PedidosLojaPage() {
     setOrderNote("");
   });
   const isSubmitting = isCreating || isUpdating;
-  const { order: editingOrderDetail, isLoading: isLoadingEditOrder } = useStoreOrderDetail(editingOrderId ?? "", anchorDate);
   const isEditOrderLoading = Boolean(editingOrderId) && isLoadingEditOrder;
 
   useEffect(() => {
@@ -450,7 +458,15 @@ export default function PedidosLojaPage() {
 
   const highlightedDay = useMemo(() => getDayFieldByDate(saleDate), [saleDate]);
 
-  // Pre-fill the order grid when opening an existing order for editing
+  // Pre-fill the order grid when opening an existing order for editing.
+  // XPAN-2/3: depende de `catalog` (IDENTIDADE), não de `catalog.length`. Ao editar um
+  // pedido comprometido pela fábrica, o âncora chega ASSÍNCRONO (via committedDeliveryDate
+  // do detalhe) e o catálogo é RE-BUSCADO (production-driven → ancorado) com o MESMO
+  // tamanho — o efeito de reset (`setOrderProducts(catalog)`, dep `[catalog]`) zerava as
+  // quantidades e este pré-preenchimento não re-rodava (length igual), apagando o que a
+  // loja tinha. Reaplicar por identidade reаplica as quantidades salvas após cada reset.
+  // Seguro: durante a edição, o catálogo só muda no flip do âncora (na abertura, antes de
+  // o usuário digitar) — loja/ordered_at do pedido existente são fixos.
   useEffect(() => {
     if (!editingOrderDetail || !isNewOrderOpen || catalog.length === 0) return;
 
@@ -463,7 +479,7 @@ export default function PedidosLojaPage() {
         return { ...product, [highlightedDay]: existingItem.quantity };
       }),
     );
-  }, [editingOrderDetail, isNewOrderOpen, catalog.length, highlightedDay]);
+  }, [editingOrderDetail, isNewOrderOpen, catalog, highlightedDay]);
 
   const dayColumns = useMemo(() => rotateDays(highlightedDay), [highlightedDay]);
   const deliveryDateLabel = useMemo(() => formatDateWithWeekday(deliveryDate), [deliveryDate]);
@@ -649,6 +665,22 @@ export default function PedidosLojaPage() {
       ),
     [selectedOrderItems],
   );
+  // XPAN-2/3: a entrega é production-driven (produção + lead de cada produto), então
+  // os itens de um pedido podem entregar em datas distintas. O cabeçalho deixa de
+  // vender o D+X global como "a entrega" e passa a resumir as datas reais dos itens
+  // (igual à linha de venda) — fecha a divergência visível do item 1.
+  const selectedDeliverySummary = useMemo(
+    () =>
+      summarizeOperationalDates(
+        selectedOrderItems.map((item) => item.deliveryDate),
+        {
+          emptyValue: "Escolha os itens abaixo",
+          emptyHelper: "A entrega aparece por item conforme o lead de cada produto.",
+          mixedValue: "Varia por item",
+        },
+      ),
+    [selectedOrderItems],
+  );
   const orderSequenceSteps = useMemo(
     () => [
       {
@@ -673,8 +705,12 @@ export default function PedidosLojaPage() {
       {
         key: "delivery",
         label: "Receber na loja",
-        value: deliveryDateLabel,
-        helper: `Prazo global da fábrica: D+${snapshot.operationalSettings.expeditionLeadDays} a partir da base operacional.`,
+        value: selectedOrderItems.length > 0 ? selectedDeliverySummary.value : deliveryDateLabel,
+        helper:
+          selectedOrderItems.length > 0
+            ? selectedDeliverySummary.helper ??
+              "Cada produto entrega em produção + o lead do próprio produto."
+            : `Janela da fábrica: D+${snapshot.operationalSettings.expeditionLeadDays} a partir da base. A entrega real aparece por item conforme você escolhe os produtos.`,
         tone: "warning" as const,
       },
       {
@@ -695,6 +731,8 @@ export default function PedidosLojaPage() {
       effectiveBaseDateKey,
       orderCalendarDateKey,
       orderDateLabel,
+      selectedDeliverySummary.helper,
+      selectedDeliverySummary.value,
       selectedOrderItems.length,
       selectedSaleSummary.helper,
       selectedSaleSummary.value,
@@ -996,7 +1034,7 @@ export default function PedidosLojaPage() {
                   <p>
                     Já existe um pedido ativo (
                     <strong className="font-semibold">{duplicateActiveOrder.code}</strong>) para{" "}
-                    <strong className="font-semibold">{selectedStore?.name}</strong> na entrega de{" "}
+                    <strong className="font-semibold">{selectedStore?.name}</strong> na janela de{" "}
                     <strong className="font-semibold">{deliveryDateLabel}</strong>. Para não duplicar,
                     edite o pedido existente.
                   </p>
@@ -1056,13 +1094,19 @@ export default function PedidosLojaPage() {
                       <span className="text-muted-foreground/80">·</span>
                       <span className="text-foreground">
                         entrega{" "}
-                        <strong className="font-semibold tabular-nums">{deliveryDateLabel}</strong>{" "}
-                        <span className="text-muted-foreground">(D+{snapshot.operationalSettings.expeditionLeadDays})</span>
+                        <strong className="font-semibold tabular-nums">
+                          {selectedOrderItems.length > 0 ? selectedDeliverySummary.value : deliveryDateLabel}
+                        </strong>{" "}
+                        {selectedOrderItems.length === 0 ? (
+                          <span className="text-muted-foreground">(D+{snapshot.operationalSettings.expeditionLeadDays})</span>
+                        ) : null}
                       </span>
                       <span className="text-muted-foreground/80">·</span>
                       <span className="text-success-foreground">
                         venda{" "}
-                        <strong className="font-semibold tabular-nums">{saleDateLabel}</strong>
+                        <strong className="font-semibold tabular-nums">
+                          {selectedOrderItems.length > 0 ? selectedSaleSummary.value : saleDateLabel}
+                        </strong>
                       </span>
                       <span className="text-muted-foreground/80">·</span>
                       <span className="text-foreground">
@@ -1580,7 +1624,9 @@ export default function PedidosLojaPage() {
                     <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
                       Entrega prevista
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">{deliveryDateLabel}</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">
+                      {selectedOrderItems.length > 0 ? selectedDeliverySummary.value : deliveryDateLabel}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">

@@ -4,6 +4,7 @@ import test from "node:test";
 import type { ProductionLine, ProductionProduct } from "@/lib/production-planning";
 import {
   buildProductFormState,
+  getInvalidFieldTarget,
   validateProductFormState,
 } from "@/lib/product-form-logic";
 
@@ -77,6 +78,15 @@ test("new product form starts without a production line selected", () => {
   assert.equal(formState.shortName, "");
 });
 
+// XPAN-7: lote mínimo/econômico é opt-in — novo produto nasce com 0 para não
+// disparar a flag "abaixo do lote mínimo" sem o usuário ter configurado nada.
+test("XPAN-7: new product defaults lote mínimo/econômico to 0 (opt-in)", () => {
+  const formState = buildProductFormState(baseLines);
+
+  assert.equal(formState.minimumProductionKg, 0);
+  assert.equal(formState.economicProductionKg, 0);
+});
+
 test("product form validation returns required field markers", () => {
   const validation = validateProductFormState({
     product: {
@@ -89,4 +99,30 @@ test("product form validation returns required field markers", () => {
 
   assert.equal(validation.error, "Preencha os campos obrigatórios destacados antes de salvar.");
   assert.deepEqual(validation.invalidFields, ["name", "lineId", "preparationStages"]);
+});
+
+// XPAN-11: campos de embalagem migraram para a aba Receita; o foco de validação
+// deve levar para a aba certa (senão a radix desmonta a aba e o focus vira no-op).
+test("XPAN-11: getInvalidFieldTarget aponta campos de embalagem para a aba Receita", () => {
+  assert.deepEqual(getInvalidFieldTarget("packagingDescription"), {
+    tab: "receita",
+    id: "product-packaging-description",
+  });
+  assert.deepEqual(getInvalidFieldTarget("packagingWeight"), {
+    tab: "receita",
+    id: "product-packaging-weight",
+  });
+  assert.deepEqual(getInvalidFieldTarget("packagingQuantity"), {
+    tab: "receita",
+    id: "product-packaging-weight",
+  });
+});
+
+test("XPAN-11: getInvalidFieldTarget mantém identificação (name/lineId) na aba Cadastro e etapas na Receita", () => {
+  assert.deepEqual(getInvalidFieldTarget("name"), { tab: "cadastro", id: "product-name" });
+  assert.deepEqual(getInvalidFieldTarget("lineId"), { tab: "cadastro", id: "product-line" });
+  assert.deepEqual(getInvalidFieldTarget("preparationStages"), {
+    tab: "receita",
+    id: "product-preparation-stages",
+  });
 });

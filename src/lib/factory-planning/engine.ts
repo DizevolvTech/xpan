@@ -235,105 +235,107 @@ export function resolveScheduledProductAvailability(
   },
 ): OperationalAvailabilityResult {
   const window = getOperationalOrderWindow(orderedAt, store, settings);
-  const deliveryDate = options.targetDeliveryDate ?? window.deliveryDate;
-  // base operacional = quando o pedido entrou (só display); nunca ancora a busca.
   const baseDate = window.baseDate;
-  // Quando ancorado em X, a busca regressiva da data de produção precisa de um piso
-  // suficientemente anterior a X (lead do produto + folga semanal) para encontrar o
-  // dia de produção compatível. Sem âncora, mantém o piso legado (window.baseDate).
-  const searchFloor = options.targetDeliveryDate
-    ? addDays(deliveryDate, -(options.productExpeditionLeadDays + 7))
-    : window.baseDate;
-  const deliveryWeekDay = getWeekDayKey(deliveryDate);
-
-  if (!options.scheduleItem) {
-    return {
-      baseDate,
-      deliveryDate,
-      deliveryWeekDay,
-      productionDate: null,
-      available: false,
-      delayed: false,
-      blockedReason: "Produto fora da linha de produção ativa.",
-      matchingDays: [],
-      scheduleItemId: null,
-    };
-  }
-
-  const matchingDays = getMatchingProductionDays(
-    options.productProductionDays,
-    options.scheduleItem.productionDays,
-  );
-
-  if (matchingDays.length === 0) {
-    return {
-      baseDate,
-      deliveryDate,
-      deliveryWeekDay,
-      productionDate: null,
-      available: false,
-      delayed: false,
-      blockedReason: "Dias da ficha do produto não coincidem com a linha de produção ativa.",
-      matchingDays,
-      scheduleItemId: options.scheduleItem.id,
-    };
-  }
-
   const receivingDays = getEnabledReceivingDays(store);
-  const productionWindow = resolveProductionDateInWindow(
-    searchFloor,
-    deliveryDate,
-    matchingDays,
-    options.productExpeditionLeadDays,
-    receivingDays,
-  );
+  const productGap = options.productExpeditionLeadDays;
 
-  if (!productionWindow.date) {
+  // AJ-A10 — ANCORAGEM: pedido aberto pela fábrica para uma entrega futura
+  // comprometida (X). Entrega = X; produção = busca REGRESSIVA (dia da ficha tal
+  // que produção + gap = X). Preserva o contrato do modelo "fábrica abre pedido".
+  if (options.targetDeliveryDate) {
+    const deliveryDate = options.targetDeliveryDate;
+    const deliveryWeekDay = getWeekDayKey(deliveryDate);
+
+    if (!options.scheduleItem) {
+      return {
+        baseDate, deliveryDate, deliveryWeekDay, productionDate: null, available: false, delayed: false,
+        blockedReason: "Produto fora da linha de produção ativa.", matchingDays: [], scheduleItemId: null,
+      };
+    }
+    const matchingDays = getMatchingProductionDays(options.productProductionDays, options.scheduleItem.productionDays);
+    if (matchingDays.length === 0) {
+      return {
+        baseDate, deliveryDate, deliveryWeekDay, productionDate: null, available: false, delayed: false,
+        blockedReason: "Dias da ficha do produto não coincidem com a linha de produção ativa.",
+        matchingDays, scheduleItemId: options.scheduleItem.id,
+      };
+    }
+    const searchFloor = addDays(deliveryDate, -(productGap + 7));
+    const productionWindow = resolveProductionDateInWindow(searchFloor, deliveryDate, matchingDays, productGap, receivingDays);
+    if (!productionWindow.date) {
+      return {
+        baseDate, deliveryDate, deliveryWeekDay, productionDate: null, available: false, delayed: productionWindow.delayed,
+        blockedReason: `Sem data de produção compatível: o produto exige ${productGap} dia(s) entre produção e entrega, mas nenhum dia da ficha resulta em entrega ${formatDateKeyBr(deliveryDate)}.`,
+        matchingDays, scheduleItemId: options.scheduleItem.id,
+      };
+    }
+    if (productionWindow.delayed) {
+      // AJ-0024 (âncora): a busca regressiva não acha dia que entregue em X; a próxima
+      // produção cai DEPOIS de X. Não agendamos +7 — bloqueamos com motivo acionável.
+      const soonestProduction = productionWindow.date ? formatDateKeyBr(productionWindow.date) : "depois do horizonte de planejamento";
+      return {
+        baseDate, deliveryDate, deliveryWeekDay, productionDate: null, available: false, delayed: true,
+        blockedReason: `Esta variante só produz em dias que não entregam ${formatDateKeyBr(deliveryDate)} com ${productGap} dia(s) de lead — a próxima produção possível seria ${soonestProduction}, após a entrega. Escolha a variante que produz no dia compatível.`,
+        matchingDays, scheduleItemId: options.scheduleItem.id,
+      };
+    }
     return {
-      baseDate,
-      deliveryDate,
-      deliveryWeekDay,
-      productionDate: null,
-      available: false,
-      delayed: productionWindow.delayed,
-      blockedReason: `Sem data de produção compatível: o produto exige ${options.productExpeditionLeadDays} dia(s) entre produção e entrega, mas nenhum dia da ficha resulta em entrega ${formatDateKeyBr(deliveryDate)}.`,
-      matchingDays,
-      scheduleItemId: options.scheduleItem.id,
+      baseDate, deliveryDate, deliveryWeekDay, productionDate: productionWindow.date, available: true, delayed: false,
+      blockedReason: null, matchingDays, scheduleItemId: options.scheduleItem.id,
     };
   }
 
-  if (productionWindow.delayed) {
-    // AJ-0024: a busca regressiva não achou dia de produção que entregue na data
-    // pedida; a próxima produção possível (`productionWindow.date`) cai DEPOIS da
-    // entrega. NÃO devolvemos essa data como `productionDate` — senão o catálogo e
-    // o planejamento "agendam" a variante +7 dias como se fosse válida. O item fica
-    // bloqueado (available:false) com o motivo explicando a data inviável.
-    const soonestProduction = productionWindow.date
-      ? formatDateKeyBr(productionWindow.date)
-      : "depois do horizonte de planejamento";
+  // XPAN-2/3 — MODELO PRODUCTION-DRIVEN: o dia de produção do produto (≥ baseDate)
+  // é a fonte de verdade. deliveryDate = produção + gap do produto (ajustado aos dias
+  // de recebimento da loja). O parâmetro global (D+X) deixa de agendar a entrega —
+  // passa a ser só a "janela" do pedido (escopo operacional / display). Assim o
+  // produto produz no SEU dia e entrega produção+gap, mesmo que isso difira do D+X
+  // global. Cobre também o caso "mesmo dia" (gap 0): produção = entrega.
+  if (!options.scheduleItem) {
+    const fallbackDelivery = window.deliveryDate;
     return {
-      baseDate,
-      deliveryDate,
-      deliveryWeekDay,
-      productionDate: null,
-      available: false,
-      delayed: true,
-      blockedReason: `Esta variante só produz em dias que não entregam ${formatDateKeyBr(deliveryDate)} com ${options.productExpeditionLeadDays} dia(s) de lead — a próxima produção possível seria ${soonestProduction}, após a entrega. Escolha a variante que produz no dia compatível.`,
-      matchingDays,
-      scheduleItemId: options.scheduleItem.id,
+      baseDate, deliveryDate: fallbackDelivery, deliveryWeekDay: getWeekDayKey(fallbackDelivery),
+      productionDate: null, available: false, delayed: false,
+      blockedReason: "Produto fora da linha de produção ativa.", matchingDays: [], scheduleItemId: null,
     };
   }
 
+  const matchingDays = getMatchingProductionDays(options.productProductionDays, options.scheduleItem.productionDays);
+  if (matchingDays.length === 0) {
+    const fallbackDelivery = window.deliveryDate;
+    return {
+      baseDate, deliveryDate: fallbackDelivery, deliveryWeekDay: getWeekDayKey(fallbackDelivery),
+      productionDate: null, available: false, delayed: false,
+      blockedReason: "Dias da ficha do produto não coincidem com a linha de produção ativa.",
+      matchingDays, scheduleItemId: options.scheduleItem.id,
+    };
+  }
+
+  // Production-driven: primeiro dia de produção compatível em [baseDate, baseDate+14).
+  let cursor = baseDate;
+  let productionDate: string | null = null;
+  for (let offset = 0; offset < 14; offset += 1) {
+    if (matchingDays.includes(getWeekDayKey(cursor))) {
+      productionDate = cursor;
+      break;
+    }
+    cursor = addDays(cursor, 1);
+  }
+
+  if (!productionDate) {
+    const fallbackDelivery = window.deliveryDate;
+    return {
+      baseDate, deliveryDate: fallbackDelivery, deliveryWeekDay: getWeekDayKey(fallbackDelivery),
+      productionDate: null, available: false, delayed: true,
+      blockedReason: `Produto sem dia de produção compatível nos próximos 14 dias a partir de ${formatDateKeyBr(baseDate)}. Verifique os dias de produção do cadastro e do cronograma.`,
+      matchingDays, scheduleItemId: options.scheduleItem.id,
+    };
+  }
+
+  const deliveryDate = moveToNextAllowedWeekday(addDays(productionDate, productGap), receivingDays);
   return {
-    baseDate,
-    deliveryDate,
-    deliveryWeekDay,
-    productionDate: productionWindow.date,
-    available: true,
-    delayed: productionWindow.delayed,
-    blockedReason: null,
-    matchingDays,
-    scheduleItemId: options.scheduleItem.id,
+    baseDate, deliveryDate, deliveryWeekDay: getWeekDayKey(deliveryDate), productionDate,
+    available: true, delayed: false, blockedReason: null, matchingDays, scheduleItemId: options.scheduleItem.id,
   };
 }
 
@@ -604,10 +606,13 @@ function buildPlannedItems(
             productProductionDays: product.productionDays,
             productExpeditionLeadDays: product.expeditionLeadDays,
             scheduleItem,
-            // AJ-A10: ancora o item à data de entrega COMPROMETIDA do pedido (quando a
-            // fábrica abriu para data futura). Pedidos sem deliveryDate persistida →
-            // null → janela operacional legada.
-            targetDeliveryDate: order.deliveryDate ?? null,
+            // XPAN-2/3: ancora SÓ quando a fábrica comprometeu a entrega (pedido aberto
+            // p/ data futura → `committedDeliveryDate`). Pedido criado pela loja (sem
+            // committed, mesmo com `deliveryDate` persistida = janela global) → null →
+            // caminho production-driven: cada item entrega em produção + lead próprio.
+            // Sem esse gate, a data global re-ancorava e bloqueava itens já aceitos pela
+            // loja, travando a liberação do pedido (regressão F1).
+            targetDeliveryDate: order.committedDeliveryDate ?? null,
           },
         );
         const salesFactor = sanitizeFactor(product.salesToKgFactor);

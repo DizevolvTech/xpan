@@ -21,6 +21,38 @@ export type ProductValidationResult = {
   invalidFields: ProductValidationField[];
 };
 
+export type ProductInvalidFieldTarget = {
+  tab: "cadastro" | "receita";
+  id: string;
+};
+
+/**
+ * XPAN-11: mapeia um campo inválido para { aba, id do input } — usado ao salvar para
+ * focar o primeiro campo com erro. Os blocos "Resumo Operacional", "Unidades de Medida
+ * e Conversões" e a embalagem migraram da aba "Cadastro" para a aba "Receita" (item 11),
+ * então os campos de embalagem apontam para "receita". Antes apontavam para "cadastro":
+ * o form trocava para a aba errada e, como a radix DESMONTA o conteúdo da aba inativa,
+ * `getElementById(id)` não achava o input e o foco virava no-op (usuário ficava numa aba
+ * sem ver o campo destacado). Pura/testável para blindar esse mapeamento.
+ */
+export function getInvalidFieldTarget(field: ProductValidationField): ProductInvalidFieldTarget | null {
+  switch (field) {
+    case "name":
+      return { tab: "cadastro", id: "product-name" };
+    case "lineId":
+      return { tab: "cadastro", id: "product-line" };
+    case "packagingDescription":
+      return { tab: "receita", id: "product-packaging-description" };
+    case "packagingWeight":
+    case "packagingQuantity":
+      return { tab: "receita", id: "product-packaging-weight" };
+    case "preparationStages":
+      return { tab: "receita", id: "product-preparation-stages" };
+    default:
+      return null;
+  }
+}
+
 function createUnitProfile(
   unit: ProductUnitProfile["unit"],
   description: string,
@@ -91,8 +123,12 @@ export function buildProductFormState(
     active: true,
     availableForOrdering: true,
     validityDays: 5,
-    minimumProductionKg: 100,
-    economicProductionKg: 140,
+    // XPAN-7: lote mínimo/econômico é OPT-IN. Antes o novo produto já nascia com
+    // mínimo 100 → a flag "abaixo do lote mínimo" (engine.ts, guard `> 0`) aparecia
+    // por padrão em quase toda OP de baixa demanda, parecendo uma trava que o usuário
+    // nunca configurou. Zero por padrão: a regra só age quando explicitamente preenchida.
+    minimumProductionKg: 0,
+    economicProductionKg: 0,
     allowsStorage: false,
     productionDays: ["segunda", "quarta", "sexta"],
     expeditionLeadDays: 1,
@@ -132,6 +168,7 @@ export function buildProductFormState(
     isMpiIngredient: false,
     capacityPerBatch: null,
     economicBatchUnit: null,
+    mainIngredientLimitKg: null,
   };
 }
 

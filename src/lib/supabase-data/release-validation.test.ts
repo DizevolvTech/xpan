@@ -56,7 +56,7 @@ test("assertPlanningAllowsRelease — pedido sem availableForRelease bloqueia (o
   assert.equal(result.ok, false);
   if (!result.ok) {
     assert.equal(result.error.reason, "order_not_releasable");
-    assert.match(result.error.message, /capacidade|inviável/);
+    assert.match(result.error.message, /data de produção|cronograma/i);
   }
 });
 

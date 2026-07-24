@@ -25,7 +25,7 @@ import {
   planScheduleRevisionRebuild,
   type ScheduleRevisionRebuildImpact,
 } from "@/lib/supabase-data/schedule-revision-plan";
-import { diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
+import { changeAffectsCronograma, diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 type RecordStatus = "ativo" | "inativo";
@@ -791,6 +791,8 @@ async function replaceProductRecipeItems(
       unit: item.unit,
       sort_order: index,
       observation: item.observation ?? "",
+      // XPAN-8: ingrediente principal da receita (índice parcial garante ≤ 1 por produto).
+      is_main: item.isMain ?? false,
     })),
   );
 
@@ -845,6 +847,15 @@ function normalizeProductPayload(input: ProductInput) {
     economic_production_kg: input.economicProductionKg,
     capacity_per_batch: input.capacityPerBatch ?? null,
     economic_batch_unit: input.economicBatchUnit ?? null,
+    // XPAN-8: limite físico do ingrediente principal por batida (kg). null = manual.
+    // Normaliza 0/negativo/NaN → null (opt-out): a coluna tem CHECK (> 0), então gravar
+    // 0 estouraria a constraint e derrubaria o save inteiro do produto.
+    main_ingredient_limit_kg:
+      typeof input.mainIngredientLimitKg === "number" &&
+      Number.isFinite(input.mainIngredientLimitKg) &&
+      input.mainIngredientLimitKg > 0
+        ? input.mainIngredientLimitKg
+        : null,
     allows_storage: input.allowsStorage,
     production_days: input.productionDays,
     // sale_lead_days é deprecated por produto (atributo global em operational_settings).
@@ -1371,6 +1382,10 @@ export async function updateProduct(
   await replaceProductRecipeItems(String(row.id), input.recipe, supabase);
   await replaceProductPreparationSteps(String(row.id), input.preparationStages, supabase);
 
+  // XPAN-6.3: diff dos campos sempre (não só quando há changeDescription) — decide
+  // se a edição exige reauditoria do cronograma. Reutilizado no changelog abaixo.
+  const changedFields = diffProductFields(row, normalizeProductPayload(input));
+
   // Record changelog entry if a change description was provided
   if (input.changeDescription?.trim()) {
     const versionResult = await supabase
@@ -1386,11 +1401,6 @@ export async function updateProduct(
       ? ((await supabase.from("profiles").select("name").eq("id", options.actingProfileId).maybeSingle()).data as { name: string } | null)?.name ?? ""
       : "";
 
-    // AJ-0003.1: registra também QUAIS campos mudaram (de/para), além do motivo,
-    // para a auditoria de cronograma destacar o que foi alterado. `row` é a versão
-    // anterior (carregada antes do update); diffamos contra o payload normalizado.
-    const changedFields = diffProductFields(row, normalizeProductPayload(input));
-
     await supabase.from("product_changelog").insert({
       tenant_id: row.tenant_id,
       product_id: productId,
@@ -1400,6 +1410,27 @@ export async function updateProduct(
       changed_by_name: actingProfileName,
       snapshot_data: { name: input.name, description: input.description, changedFields },
     });
+  }
+
+  // XPAN-6.3: a reauditoria do cronograma só é exigida quando a edição afeta a
+  // composição/timing da grade (campos cronograma-relevantes) ou quando o produto
+  // troca de linha executora. Mudança só de receita/dados não-cronograma NÃO
+  // reconstrói a revisão pendente — OPs já liberadas e prioridades da auditoria
+  // ficam intactas (fecha também o XPAN-6.2).
+  //
+  // XPAN-6.1 (parte 1 do item 6 do checklist): como a edição de receita não toca a
+  // revisão do cronograma, o "lote em preparação" (a grade/revisão pendente que já
+  // estava em curso) NÃO é invalidado nem desativado, e o pedido segue LIBERÁVEL após
+  // a alteração — que é o objetivo de "eliminar/restaurar o lote em preparação para
+  // permitir a liberação correta do pedido". Antes (AJ-0025) uma revisão nova era
+  // criada com id diferente → planningKey mudava → ativo desativado + OPs órfãs →
+  // pedido preso. Reaproveitar o pendente (AJ-0025) + não reconstruir por receita
+  // (XPAN-6.3) cobrem a parte 1. Ver `Regra — Alteração de Receita.md`.
+  const lineChanged = operationalSubcategoryId !== nextOperationalSubcategoryId;
+  const cronogramaAffected = lineChanged || changeAffectsCronograma(changedFields);
+
+  if (!cronogramaAffected) {
+    return { scheduleRevisionImpact: null };
   }
 
   const affectedOperationalSubcategoryIds = [
@@ -1463,6 +1494,8 @@ export async function cloneProduct(
       minimum_production_kg: row.minimum_production_kg,
       economic_production_kg: row.economic_production_kg,
       economic_batch_unit: row.economic_batch_unit ?? null,
+      // XPAN-8: preserva o limite do ingrediente principal ao copiar o produto.
+      main_ingredient_limit_kg: (row as Record<string, unknown>).main_ingredient_limit_kg ?? null,
       allows_storage: row.allows_storage,
       production_days: row.production_days,
       sale_lead_days: row.sale_lead_days,
@@ -1507,6 +1540,8 @@ export async function cloneProduct(
       quantity: item.quantity,
       unit: item.unit,
       sort_order: item.sort_order,
+      // XPAN-8: preserva o ingrediente principal ao copiar a receita.
+      is_main: (item as Record<string, unknown>).is_main ?? false,
       tenant_id: item.tenant_id,
     }));
     const insertRecipeResult = await supabase.from("product_recipe_items").insert(clonedRecipeItems);

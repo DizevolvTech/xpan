@@ -9,6 +9,7 @@ import {
   GripVertical,
   History,
   PauseCircle,
+  Pencil,
   PlayCircle,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ import { PaginatedSection } from "@/components/shared/paginated-section";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
+import { ProductFormDialog } from "@/components/production/product-form-dialog";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -412,6 +414,7 @@ export default function SublinhasProducaoPage() {
   } | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const linesById = useMemo(() => buildLineById(snapshot.lines), [snapshot.lines]);
   const sectorNameById = useMemo(() => buildSectorNameById(snapshot.sectors), [snapshot.sectors]);
   const lineNameById = useMemo(
@@ -493,6 +496,18 @@ export default function SublinhasProducaoPage() {
   const selectedLineProducts = useMemo(
     () => selectedSchedule?.snapshotProducts ?? [],
     [selectedSchedule],
+  );
+
+  // XPAN-10: produto da revisão sem nenhum dia de produção no cadastro — fica de fora
+  // de toda a grade e travava a auditoria. Aqui apenas sinalizamos (não bloqueia o
+  // fluxo); o atalho "Editar produto" abre o cadastro direto da auditoria.
+  const productsWithoutDays = useMemo(
+    () => selectedLineProducts.filter((product) => product.productionDays.length === 0),
+    [selectedLineProducts],
+  );
+  const editingProduct = useMemo(
+    () => (editingProductId ? productsById.get(editingProductId) ?? null : null),
+    [editingProductId, productsById],
   );
 
   // A6: a última edição (motivo + campos alterados) de cada produto vem embutida no
@@ -826,11 +841,11 @@ export default function SublinhasProducaoPage() {
       return;
     }
 
-    // AJ-0013: validação defensiva client-side — todo produto da revisão
-    // precisa aparecer em pelo menos um dia após o drag-drop. O backend já
-    // rejeita o caso com 400 em pt-BR, mas validar aqui evita ida ao servidor
-    // e dá feedback imediato apontando o produto órfão.
-    if (canEditDailyPriority) {
+    // AJ-0013 / XPAN-10: validação defensiva client-side — todo produto da revisão
+    // precisa aparecer em pelo menos um dia após o drag-drop. Só bloqueia a APROVAÇÃO
+    // (ativar); "solicitar ajuste" e "salvar pendente" seguem liberados, pois devolver
+    // a revisão é justamente o caminho para sinalizar o problema.
+    if (canEditDailyPriority && nextStatus === "ativo") {
       const orphanProduct = selectedLineProducts.find(
         (product) =>
           !draftDayBoards.some((day) =>
@@ -839,7 +854,7 @@ export default function SublinhasProducaoPage() {
       );
       if (orphanProduct) {
         setPageError(
-          `O produto ${orphanProduct.code} · ${orphanProduct.name} precisa ficar em pelo menos um dia. Arraste de volta antes de salvar.`,
+          `Não é possível aprovar: o produto ${orphanProduct.code} · ${orphanProduct.name} está sem dia de produção na grade. Ajuste o cadastro ou devolva a revisão para ajuste.`,
         );
         return;
       }
@@ -1316,6 +1331,45 @@ export default function SublinhasProducaoPage() {
                 </div>
               </div>
 
+              {productsWithoutDays.length > 0 ? (
+                <div className="rounded-lg border border-warning/40 bg-warning/15 p-4">
+                  <p className="text-sm font-semibold text-warning-foreground">
+                    {productsWithoutDays.length} produto(s) sem dia de produção definido no cadastro
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Eles não entram em nenhum dia da grade e não podem ser aprovados assim. Edite o
+                    cadastro para definir os dias, ou devolva a revisão para ajuste — salvar como
+                    pendente segue liberado.
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {productsWithoutDays.map((product) => {
+                      const canEdit = productsById.has(product.productId);
+                      return (
+                        <li
+                          key={product.snapshotId}
+                          className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-2.5 py-1.5"
+                        >
+                          <span className="text-xs text-foreground">
+                            <span className="font-semibold">{product.code}</span> · {product.name}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingProductId(product.productId)}
+                            disabled={!canEdit}
+                            title={canEdit ? "Editar cadastro do produto" : "Produto não encontrado no cadastro atual"}
+                          >
+                            <Pencil className="size-3.5" aria-hidden />
+                            Editar produto
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
               <Card>
                 <CardHeader>
                   <CardTitle>Grade auditável do cronograma</CardTitle>
@@ -1700,6 +1754,19 @@ export default function SublinhasProducaoPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProductFormDialog
+        open={Boolean(editingProductId) && editingProduct !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingProductId(null);
+          }
+        }}
+        product={editingProduct}
+        mode="edit"
+        snapshot={snapshot}
+        refresh={refresh}
+      />
     </PageLayout>
   );
 }

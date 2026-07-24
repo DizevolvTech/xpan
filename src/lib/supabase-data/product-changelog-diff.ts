@@ -24,6 +24,7 @@ const AUDITED_FIELDS: Array<{ field: string; label: string }> = [
   { field: "economic_production_kg", label: "Produção econômica (Kg)" },
   { field: "capacity_per_batch", label: "Capacidade por batida" },
   { field: "economic_batch_unit", label: "Unidade do lote econômico" },
+  { field: "main_ingredient_limit_kg", label: "Limite do ingrediente principal (Kg)" },
   { field: "validity_days", label: "Validade (dias)" },
   { field: "production_days", label: "Dias de produção" },
   { field: "expedition_lead_days", label: "Lead de expedição" },
@@ -76,4 +77,27 @@ export function diffProductFields(
   }
 
   return changes;
+}
+
+/**
+ * Campos cuja alteração impacta o cronograma de produção — composição da grade
+ * (produtos ativos/pedíveis), timing (dias/lead) ou capacidade por batida.
+ * Usado para decidir se a edição de um produto exige reauditoria do cronograma.
+ */
+export const SCHEDULE_RELEVANT_FIELDS = new Set<string>([
+  "active",
+  "available_for_ordering",
+  "production_days",
+  "expedition_lead_days",
+  "minimum_production_kg",
+  "capacity_per_batch",
+]);
+
+/**
+ * XPAN-6.3 — TRUE se alguma mudança de campo toca o cronograma de produção.
+ * Alterações só de receita (ingredientes/quantidades), nome, descrição, modo de
+ * preparo, quebra, embalagem ou validade NÃO exigem reauditoria do cronograma.
+ */
+export function changeAffectsCronograma(changes: ProductFieldChange[]): boolean {
+  return changes.some((change) => SCHEDULE_RELEVANT_FIELDS.has(change.field));
 }

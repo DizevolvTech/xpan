@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, CalendarClock, CalendarRange, ClipboardList, Factory, PackageCheck, ShoppingCart, Truck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CalendarClock, CalendarRange, ClipboardList, Factory, PackageCheck, Pencil, ShoppingCart, Truck } from "lucide-react";
 
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
@@ -44,6 +44,8 @@ import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { ProductFormDialog } from "@/components/production/product-form-dialog";
+import { DayPrintButton } from "@/components/production/day-print-button";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 
 type OpQueueRow = ProductionOrderRow & {
@@ -150,18 +152,38 @@ export default function OrdensProducaoPage() {
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
+  // XPAN-4: atalho para editar o produto/receita direto da OP quando o lote mínimo
+  // configurado sinaliza a OP — sem sair da tela de produção.
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const { planningData: planningSnapshot, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
   const tryFutureDateOverride = useFutureDateOverride();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
   );
-  const { snapshot } = useMasterDataSnapshot();
+  const { snapshot, refresh } = useMasterDataSnapshot();
 
   const capacityByLineId = useMemo(
     () => new Map(snapshot.lines.map((line) => [line.id, line.capacityPerDayKg])),
     [snapshot.lines],
   );
+  const editingProduct = useMemo(
+    () => (editingProductId ? snapshot.products.find((product) => product.id === editingProductId) ?? null : null),
+    [editingProductId, snapshot.products],
+  );
+  // XPAN-5: resumo das folhas do dia (âncora do escopo) para a impressão em lote.
+  // Usa o snapshot bruto do dia (mesma base que a página de impressão em lote busca).
+  const dayPrintSummary = useMemo(() => {
+    const dayOps = planningSnapshot.productionOrders.filter(
+      (op) => op.productionDate === anchorDate && op.hasDemand !== false,
+    );
+    return {
+      opCount: dayOps.length,
+      productCount: dayOps.reduce((sum, op) => sum + op.itemsCount, 0),
+      totalKg: dayOps.reduce((sum, op) => sum + op.totalKg, 0),
+      dayLabel: dayOps[0]?.productionDateLabel ?? anchorDate,
+    };
+  }, [planningSnapshot.productionOrders, anchorDate]);
 
   const opRows = useMemo<OpQueueRow[]>(
     () =>
@@ -552,15 +574,29 @@ export default function OrdensProducaoPage() {
             {formatKgLabel(item.totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           {item.belowMinimum ? (
-            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 text-[11px] font-medium text-warning">
-              <AlertTriangle className="size-3" aria-hidden />
-              Abaixo do lote mínimo
-              <InfoHint
-                size="xs"
-                tone="warning"
-                content={`A demanda consolidada de todas as lojas (${formatKgLabel(item.totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) está abaixo do lote mínimo de produção (${formatKgLabel(item.minimumProductionKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). Avalie consolidar com outra data ou produzir o mínimo.`}
-              />
-            </span>
+            <div className="flex w-fit flex-col gap-1">
+              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 text-[11px] font-medium text-warning">
+                <AlertTriangle className="size-3" aria-hidden />
+                Abaixo do lote mínimo
+                <InfoHint
+                  size="xs"
+                  tone="warning"
+                  content={`A demanda consolidada de todas as lojas (${formatKgLabel(item.totalKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) está abaixo do lote mínimo de produção (${formatKgLabel(item.minimumProductionKg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) definido no cadastro. Isso NÃO trava a OP — é só um aviso. Ajuste o lote mínimo (ou zere para desativar a regra) no cadastro do produto.`}
+                />
+              </span>
+              {/* XPAN-4: atalho direto para o cadastro do produto/receita a partir da OP. */}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-auto w-fit gap-1 px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={() => setEditingProductId(item.productId)}
+                title="Editar cadastro/receita do produto"
+              >
+                <Pencil className="size-3" aria-hidden />
+                Editar produto
+              </Button>
+            </div>
           ) : null}
         </div>
       ),
@@ -649,12 +685,21 @@ export default function OrdensProducaoPage() {
         { label: "Ordens de Produção" },
       ]}
       actions={
-        <Button asChild type="button" variant="outline">
-          <Link href="/gestor-fabrica/pedidos">
-            <ArrowLeft className="size-4" />
-            Voltar para pedidos
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <DayPrintButton
+            date={anchorDate}
+            dayLabel={dayPrintSummary.dayLabel}
+            opCount={dayPrintSummary.opCount}
+            productCount={dayPrintSummary.productCount}
+            totalKg={dayPrintSummary.totalKg}
+          />
+          <Button asChild type="button" variant="outline">
+            <Link href="/gestor-fabrica/pedidos">
+              <ArrowLeft className="size-4" />
+              Voltar para pedidos
+            </Link>
+          </Button>
+        </div>
       }
     >
       {/* Action bar — escopo em pílula popover (alinhado ao dashboard). */}
@@ -1005,6 +1050,19 @@ export default function OrdensProducaoPage() {
         pendingItemKey={pendingItemKey}
         error={workflowError}
         onUpdateStatus={handleWorkflowAction}
+      />
+
+      <ProductFormDialog
+        open={Boolean(editingProductId) && editingProduct !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingProductId(null);
+          }
+        }}
+        product={editingProduct}
+        mode="edit"
+        snapshot={snapshot}
+        refresh={refresh}
       />
     </PageLayout>
   );

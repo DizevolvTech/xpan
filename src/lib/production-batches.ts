@@ -83,3 +83,74 @@ export function deriveBatchStatus(batchesDone: number, batchCount: number): Prod
   if (batchesDone >= batchCount) return "concluido";
   return "em_producao";
 }
+
+/**
+ * XPAN-8 — Deriva a capacidade por batida (em unidades de venda) a partir do limite
+ * físico do ingrediente principal (ex.: kg de trigo que a masseira comporta).
+ *
+ * A receita base usa `mainIngredientKgInRecipe` do ingrediente principal e rende
+ * `recipeYieldUnits` unidades de venda. Se a masseira comporta `mainIngredientLimitKg`
+ * do ingrediente principal, a batida escala a receita por (limite / kgNaReceita) e
+ * rende: limite × rendimento / kgNaReceita unidades (arredondado p/ baixo).
+ *
+ * Retorna `null` quando os insumos são inválidos (zero/negativos) ou o resultado
+ * seria < 1 unidade — nesse caso o limite é pequeno demais para uma batida viável.
+ */
+export function deriveCapacityPerBatchFromMainIngredient(input: {
+  mainIngredientKgInRecipe: number;
+  recipeYieldUnits: number;
+  mainIngredientLimitKg: number;
+}): number | null {
+  const { mainIngredientKgInRecipe, recipeYieldUnits, mainIngredientLimitKg } = input;
+
+  if (
+    !Number.isFinite(mainIngredientKgInRecipe) ||
+    mainIngredientKgInRecipe <= 0 ||
+    !Number.isFinite(recipeYieldUnits) ||
+    recipeYieldUnits <= 0 ||
+    !Number.isFinite(mainIngredientLimitKg) ||
+    mainIngredientLimitKg <= 0
+  ) {
+    return null;
+  }
+
+  const capacity = Math.floor(
+    (mainIngredientLimitKg * recipeYieldUnits) / mainIngredientKgInRecipe,
+  );
+
+  return capacity >= 1 ? capacity : null;
+}
+
+/**
+ * XPAN-8 — Orquestra a derivação a partir da RECEITA do produto: acha o ingrediente
+ * marcado como principal (`isMain`), exige que ele esteja em Kg (para casar com o
+ * limite físico em kg da masseira) e delega para `deriveCapacityPerBatchFromMainIngredient`.
+ *
+ * Este é o único ponto que a UI (e futuros consumidores) chamam. Retorna `null` quando:
+ * - `mainIngredientLimitKg` não está definido (não dá para derivar → capacidade manual);
+ * - nenhum ingrediente da receita está marcado como principal;
+ * - o ingrediente principal não está em Kg (sem conversão automática — evita cálculo errado);
+ * - o rendimento/quantidade são inválidos ou o resultado seria < 1 unidade.
+ */
+export function deriveCapacityFromProductRecipe(input: {
+  recipe: Array<{ unit: string; quantity: number; isMain?: boolean }>;
+  recipeYieldUnits: number;
+  mainIngredientLimitKg: number | null | undefined;
+}): number | null {
+  const { recipe, recipeYieldUnits, mainIngredientLimitKg } = input;
+
+  if (mainIngredientLimitKg == null || !Number.isFinite(mainIngredientLimitKg) || mainIngredientLimitKg <= 0) {
+    return null;
+  }
+
+  const mainItem = recipe.find((item) => item.isMain);
+  if (!mainItem || mainItem.unit !== "Kg") {
+    return null;
+  }
+
+  return deriveCapacityPerBatchFromMainIngredient({
+    mainIngredientKgInRecipe: mainItem.quantity,
+    recipeYieldUnits,
+    mainIngredientLimitKg,
+  });
+}

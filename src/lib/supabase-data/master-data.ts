@@ -348,6 +348,8 @@ async function loadMasterDataSnapshot(
       quantity: Number(row.quantity),
       unit: row.unit as ProductionProduct["recipe"][number]["unit"],
       observation: (row as Record<string, unknown>).observation as string ?? "",
+      // XPAN-8: ingrediente principal da receita (base p/ derivar capacidade da batida).
+      isMain: Boolean((row as Record<string, unknown>).is_main),
     });
     acc.set(key, current);
     return acc;
@@ -387,6 +389,11 @@ async function loadMasterDataSnapshot(
         : Number(row.capacity_per_batch),
     economicBatchUnit:
       (row.economic_batch_unit as ProductionProduct["economicBatchUnit"]) ?? null,
+    // XPAN-8: limite físico (kg) do ingrediente principal por batida. null = manual.
+    mainIngredientLimitKg:
+      (row as Record<string, unknown>).main_ingredient_limit_kg == null
+        ? null
+        : Number((row as Record<string, unknown>).main_ingredient_limit_kg),
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
     expeditionLeadDays:

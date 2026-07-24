@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
+import {
+  changeAffectsCronograma,
+  diffProductFields,
+} from "@/lib/supabase-data/product-changelog-diff";
 
 test("diffProductFields — detecta mudança de campos primitivos com rótulo e de/para legível", () => {
   const before = { name: "Pão Francês", minimum_production_kg: 900, active: true };
@@ -50,4 +53,28 @@ test("diffProductFields — ignora campos fora da lista auditada", () => {
   const after = { internal_flag: 2, name: "X" };
 
   assert.deepEqual(diffProductFields(before, after), []);
+});
+
+// XPAN-6.3: auditoria de cronograma só exigida em mudanças cronograma-relevantes.
+
+test("XPAN-6.3: changeAffectsCronograma — TRUE quando muda dias de produção / lead / mínimo / capacity / active / disponível", () => {
+  assert.ok(changeAffectsCronograma(diffProductFields({ production_days: ["segunda"] }, { production_days: ["segunda", "quarta"] })));
+  assert.ok(changeAffectsCronograma(diffProductFields({ expedition_lead_days: 1 }, { expedition_lead_days: 0 })));
+  assert.ok(changeAffectsCronograma(diffProductFields({ minimum_production_kg: 10 }, { minimum_production_kg: 20 })));
+  assert.ok(changeAffectsCronograma(diffProductFields({ capacity_per_batch: 50 }, { capacity_per_batch: 100 })));
+  assert.ok(changeAffectsCronograma(diffProductFields({ active: true }, { active: false })));
+  assert.ok(changeAffectsCronograma(diffProductFields({ available_for_ordering: true }, { available_for_ordering: false })));
+});
+
+test("XPAN-6.3: changeAffectsCronograma — FALSE quando muda só receita/dados não-cronograma", () => {
+  assert.equal(changeAffectsCronograma(diffProductFields({ name: "A" }, { name: "B" })), false);
+  assert.equal(changeAffectsCronograma(diffProductFields({ description: "x" }, { description: "y" })), false);
+  assert.equal(changeAffectsCronograma(diffProductFields({ preparation_mode: "manual" }, { preparation_mode: "automático" })), false);
+  assert.equal(changeAffectsCronograma(diffProductFields({ break_percent: 5 }, { break_percent: 7 })), false);
+  assert.equal(changeAffectsCronograma(diffProductFields({ validity_days: 3 }, { validity_days: 5 })), false);
+  assert.equal(changeAffectsCronograma(diffProductFields({ economic_production_kg: 100 }, { economic_production_kg: 140 })), false);
+});
+
+test("XPAN-6.3: changeAffectsCronograma — lista vazia retorna false", () => {
+  assert.equal(changeAffectsCronograma([]), false);
 });

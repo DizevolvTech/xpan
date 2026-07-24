@@ -64,6 +64,9 @@ type ResolvedStoreOrderRow = {
   store_id: string;
   ordered_at: string;
   delivery_date: string | null;
+  // XPAN-2/3: discriminador de pedido COMPROMETIDO pela fábrica (abertura p/ data
+  // futura). Só quando preenchido a validação ancora na `delivery_date`.
+  opened_at: string | null;
   management_status: "ativo" | "cancelado";
   note: string;
   status: StoreOrderLifecycleStatus;
@@ -93,7 +96,7 @@ async function resolveStoreOrderRow(
 ): Promise<ResolvedStoreOrderRow> {
   const query = supabase
     .from("store_orders")
-    .select("id, legacy_id, code, store_id, ordered_at, delivery_date, management_status, note, status");
+    .select("id, legacy_id, code, store_id, ordered_at, delivery_date, opened_at, management_status, note, status");
   const result = await (isUuid(orderId) ? query.eq("id", orderId) : query.eq("legacy_id", orderId)).maybeSingle();
 
   return assertSupabaseResult(
@@ -284,7 +287,7 @@ export async function listFactoryStoreOrders(
   const [ordersResult, itemsResult, storesResult, productsResult] = await Promise.all([
     supabase
       .from("store_orders")
-      .select("id, legacy_id, code, store_id, ordered_at, delivery_date")
+      .select("id, legacy_id, code, store_id, ordered_at, delivery_date, opened_at")
       .order("ordered_at", { ascending: false }),
     supabase
       .from("store_order_items")
@@ -321,6 +324,11 @@ export async function listFactoryStoreOrders(
     // AJ-A10: data de entrega gravada (promessa firmada) — usada na exibição da
     // lista em vez de recomputar a janela operacional.
     deliveryDate: row.delivery_date ?? null,
+    // XPAN-2/3: só a data COMPROMETIDA pela fábrica (`opened_at` preenchido) ancora
+    // a disponibilidade. Pedido criado pela loja (`opened_at` nulo) → null →
+    // production-driven. `createStoreOrder` nunca seta `opened_at`; as aberturas da
+    // fábrica setam (store-orders.ts abertura/semana).
+    committedDeliveryDate: row.opened_at ? (row.delivery_date ?? null) : null,
     items: itemsByOrderId.get(row.id) ?? [],
   }));
 }
@@ -799,11 +807,12 @@ export async function updateStoreOrder(
     orderedAt: orderRow.ordered_at,
     tenantId: input.tenantId ?? "",
     supabase,
-    // AJ-A10: PREENCHER um pedido (aberto pela fábrica p/ data futura) ancora a
-    // disponibilidade na entrega COMPROMETIDA persistida (`delivery_date`), não na
-    // próxima janela operacional derivada de `ordered_at`. Pedidos legados sem
-    // delivery_date → null → comportamento idêntico ao atual.
-    targetDeliveryDate: orderRow.delivery_date ?? null,
+    // XPAN-2/3: ancorar na entrega COMPROMETIDA só quando a FÁBRICA abriu o pedido
+    // (`opened_at` preenchido). Editar um pedido criado pela LOJA (`opened_at` nulo,
+    // mas `delivery_date` = janela global persistida) NÃO deve re-ancorar — senão a
+    // validação de edição reintroduz o bug F1 e rejeita itens production-driven já
+    // aceitos na criação. Sem committed → null → production-driven (igual ao create).
+    targetDeliveryDate: orderRow.opened_at ? (orderRow.delivery_date ?? null) : null,
   });
 
   const updateOrderResult = await supabase

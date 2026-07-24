@@ -94,7 +94,7 @@ export function assertPlanningAllowsRelease(
       ok: false,
       error: new OrderReleaseValidationError(
         "order_not_releasable",
-        "pedido contém item(ns) sem produção planejável hoje — capacidade ou data inviável.",
+        "pedido tem item(ns) sem data de produção viável para a janela de hoje — verifique os dias de produção no cadastro do produto e o cronograma ativo da linha.",
       ),
     };
   }

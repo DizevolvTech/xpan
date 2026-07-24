@@ -42,7 +42,7 @@ async function loadOrderAccessContext(orderId: string, tenantId: string | null |
   const supabase = createTenantScopedSupabaseClient(tenantId, createSupabaseAdminClient());
   const orderQuery = supabase
     .from("store_orders")
-    .select("id, legacy_id, code, store_id, ordered_at, delivery_date, note, receive_window_snapshot, expedition_lead_days_snapshot, management_status");
+    .select("id, legacy_id, code, store_id, ordered_at, delivery_date, opened_at, note, receive_window_snapshot, expedition_lead_days_snapshot, management_status");
   const [orderResult, storeRowsResult, settingsResult] = await Promise.all([
     (isUuid(orderId) ? orderQuery.eq("id", orderId) : orderQuery.eq("legacy_id", orderId)).maybeSingle(),
     supabase.from("stores").select("id, legacy_id, name, receiving_days"),
@@ -181,6 +181,13 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       orderedAtKey: orderRow.ordered_at.slice(0, 10),
       deliveryDate: formatDateBr(orderRow.delivery_date),
       deliveryDateKey: orderRow.delivery_date,
+      // XPAN-2/3: só a data COMPROMETIDA pela fábrica (`opened_at` preenchido) ancora o
+      // catálogo de disponibilidade na edição. Pedido criado pela loja → null →
+      // production-driven, coerente com `updateStoreOrder`. Cobre também o re-editar de
+      // um pedido da fábrica JÁ preenchido (que não está mais em /open).
+      committedDeliveryDate: (orderRow as { opened_at?: string | null }).opened_at
+        ? (orderRow.delivery_date ?? null)
+        : null,
       status: visibleStatus,
       store: storeRow?.name ?? "-",
       dPlusLabel: `D+${orderRow.expedition_lead_days_snapshot}`,
