@@ -13,7 +13,18 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
+import type { ProductionOrderItem } from "@/lib/order-planning";
 import { hierarchyLabels } from "@/lib/production-planning";
 import {
   getNextProductionActionLabel,
@@ -24,7 +35,11 @@ import {
 } from "@/lib/production-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
-import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import {
+  ReleaseOrderBlockedError,
+  useFactoryPlanningSnapshot,
+  type ReleaseBlockReason,
+} from "@/lib/use-factory-planning";
 import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { getOperationalTodayKey } from "@/lib/workflow-date-guard";
@@ -33,14 +48,95 @@ function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
 }
 
+/**
+ * Alvo do diálogo de conclusão: o item que está fechando e os números que o
+ * operador precisa ver para confirmar/corrigir a quantidade produzida.
+ * `mode` distingue o item comum (avança para `concluido`) do item batido (a
+ * ÚLTIMA batida é o que fecha o item).
+ */
+type ConclusionTarget = {
+  productionItemKey: string;
+  productLabel: string;
+  unitLabel: string;
+  plannedQuantity: number;
+  estimatedQuantity: number;
+  mode: "status" | "batch";
+  batchCount: number;
+};
+
+/**
+ * Espelho client-side da estimativa do servidor (`calculateProductionLeftover`,
+ * server-only): com mais de uma batida a padaria assa FORMAS INTEIRAS, então sai
+ * capacidade cheia × nº de batidas. Serve só para PRÉ-PREENCHER o campo — o
+ * número que vale é o que o operador confirma.
+ */
+function estimateProducedQuantity(batchSizes: number[]) {
+  const planned = batchSizes.reduce((sum, size) => sum + size, 0);
+  if (batchSizes.length <= 1) {
+    return Math.round(planned * 1000) / 1000;
+  }
+  return Math.round((batchSizes[0] ?? 0) * batchSizes.length * 1000) / 1000;
+}
+
+/** Aceita vírgula ou ponto; `null` quando não é uma quantidade válida. */
+function parseQuantityInput(raw: string): number | null {
+  const normalized = raw.trim().replace(",", ".");
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function formatQuantityInput(value: number) {
+  return String(value).replace(".", ",");
+}
+
+type WorkflowErrorBody = { message?: string; reason?: ReleaseBlockReason; forceable?: boolean };
+
+/**
+ * Chamada direta ao endpoint de workflow, com o MESMO mapeamento de erro do
+ * `readJson` do hook (400 + reason → ReleaseOrderBlockedError), para o override
+ * de data futura seguir funcionando. Existe porque o hook de planejamento ainda
+ * não trafega a quantidade produzida informada.
+ */
+async function patchWorkflow(body: Record<string, unknown>) {
+  const response = await fetch("/api/factory-planning/workflow", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (response.ok) {
+    return;
+  }
+  const payload = (await response.json().catch(() => null)) as WorkflowErrorBody | null;
+  if (response.status === 400 && payload?.reason) {
+    throw new ReleaseOrderBlockedError(
+      payload.message ?? "Ação bloqueada",
+      payload.reason,
+      payload.forceable ?? true,
+    );
+  }
+  throw new Error(payload?.message ?? `Request failed with status ${response.status}`);
+}
+
 export default function OrdemProducaoDetailsPage() {
   const params = useParams<{ opId: string }>();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
-  const { planningData, isLoading, updateProductionItemStatus, completeProductionBatch, undoProductionBatch } =
-    useFactoryPlanningSnapshot(anchorDate);
+  // Item aguardando confirmação da quantidade produzida (diálogo de conclusão).
+  const [conclusionTarget, setConclusionTarget] = useState<ConclusionTarget | null>(null);
+  const [conclusionQuantity, setConclusionQuantity] = useState("");
+  const {
+    planningData,
+    isLoading,
+    refresh,
+    updateProductionItemStatus,
+    completeProductionBatch,
+    undoProductionBatch,
+  } = useFactoryPlanningSnapshot(anchorDate);
   const { snapshot } = useMasterDataSnapshot();
   const toast = useToast();
   const tryFutureDateOverride = useFutureDateOverride();
@@ -152,6 +248,87 @@ export default function OrdemProducaoDetailsPage() {
       );
       if (!handled) {
         setWorkflowError(error instanceof Error ? error.message : "Falha ao concluir a batida.");
+      }
+    } finally {
+      setPendingItemKey(null);
+    }
+  }
+
+  /**
+   * Abre a confirmação de conclusão do item com a quantidade PRÉ-PREENCHIDA pela
+   * estimativa: quem não mexe no número mantém exatamente o comportamento antigo;
+   * quem mexe registra a produção real (e a falta passa a existir no relatório).
+   */
+  function openConclusionDialog(item: ProductionOrderItem, mode: "status" | "batch") {
+    setWorkflowError(null);
+    const estimated = estimateProducedQuantity(item.batchSizes);
+    setConclusionQuantity(formatQuantityInput(estimated));
+    setConclusionTarget({
+      productionItemKey: item.productionItemKey,
+      productLabel: `${item.productCode} · ${item.productName}`,
+      unitLabel: item.batchUnitLabel,
+      plannedQuantity:
+        Math.round(item.batchSizes.reduce((sum, size) => sum + size, 0) * 1000) / 1000,
+      estimatedQuantity: estimated,
+      mode,
+      batchCount: item.batchCount,
+    });
+  }
+
+  async function submitConclusion(
+    target: ConclusionTarget,
+    reportedProducedQuantity: number,
+    options: { force?: boolean } = {},
+  ) {
+    await patchWorkflow(
+      target.mode === "batch"
+        ? {
+            action: "complete-production-batch",
+            productionItemKey: target.productionItemKey,
+            batchCount: target.batchCount,
+            force: options.force === true,
+            reportedProducedQuantity,
+          }
+        : {
+            action: "update-production-item-status",
+            productionItemKey: target.productionItemKey,
+            status: "concluido",
+            force: options.force === true,
+            reportedProducedQuantity,
+          },
+    );
+    await refresh();
+  }
+
+  async function handleConfirmConclusion() {
+    const target = conclusionTarget;
+    if (!target) {
+      return;
+    }
+    const reported = parseQuantityInput(conclusionQuantity);
+    if (reported === null) {
+      setWorkflowError("Informe a quantidade produzida (número maior ou igual a zero).");
+      return;
+    }
+
+    // Fecha o diálogo ANTES de enviar: o override de data futura abre a própria
+    // confirmação, e dois modais empilhados atrapalham o operador.
+    setConclusionTarget(null);
+    setWorkflowError(null);
+    setPendingItemKey(target.productionItemKey);
+    try {
+      await submitConclusion(target, reported);
+    } catch (error) {
+      const handled = await tryFutureDateOverride(
+        error,
+        () => submitConclusion(target, reported, { force: true }),
+        (message) => {
+          setWorkflowError(message);
+          toast.error(message);
+        },
+      );
+      if (!handled) {
+        setWorkflowError(error instanceof Error ? error.message : "Falha ao concluir o item.");
       }
     } finally {
       setPendingItemKey(null);
@@ -392,7 +569,15 @@ export default function OrdemProducaoDetailsPage() {
                                       type="button"
                                       size="sm"
                                       disabled={busy}
-                                      onClick={() => void handleCompleteBatch(item.productionItemKey, item.batchCount)}
+                                      onClick={() => {
+                                        // A ÚLTIMA batida é a que fecha o item: aí o
+                                        // operador confirma a quantidade produzida.
+                                        if (done + 1 >= item.batchCount) {
+                                          openConclusionDialog(item, "batch");
+                                          return;
+                                        }
+                                        void handleCompleteBatch(item.productionItemKey, item.batchCount);
+                                      }}
                                     >
                                       Concluir batida {done + 1}
                                     </Button>
@@ -425,12 +610,19 @@ export default function OrdemProducaoDetailsPage() {
                                 type="button"
                                 size="sm"
                                 disabled={pendingItemKey === item.productionItemKey}
-                                onClick={() =>
-                                  void handleWorkflowAction(
-                                    item.productionItemKey,
-                                    getNextProductionItemStatus(item.status, item.preparationStages)!,
-                                  )
-                                }
+                                onClick={() => {
+                                  const next = getNextProductionItemStatus(
+                                    item.status,
+                                    item.preparationStages,
+                                  )!;
+                                  // Fechar o item pede a quantidade produzida real;
+                                  // as demais etapas seguem em um clique.
+                                  if (next === "concluido") {
+                                    openConclusionDialog(item, "status");
+                                    return;
+                                  }
+                                  void handleWorkflowAction(item.productionItemKey, next);
+                                }}
                               >
                                 {getNextProductionActionLabel(item.status, item.preparationStages) ??
                                   `Avançar para ${getProductionStatusLabel(getNextProductionItemStatus(item.status, item.preparationStages)!)}`}
@@ -498,6 +690,112 @@ export default function OrdemProducaoDetailsPage() {
           </PaginatedSection>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={conclusionTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConclusionTarget(null);
+          }
+        }}
+      >
+        <DialogContent size="md">
+          {conclusionTarget ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Concluir {conclusionTarget.productLabel}</DialogTitle>
+                <DialogDescription>
+                  Confirme quanto saiu de verdade. O campo já vem preenchido com o previsto —
+                  só mexa se a produção rendeu diferente.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-border/80 bg-panel/30 p-3">
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+                    Planejado
+                  </p>
+                  <p className="mt-1 text-sm font-semibold tabular-nums">
+                    {formatQuantityInput(conclusionTarget.plannedQuantity)}{" "}
+                    {conclusionTarget.unitLabel}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/80 bg-panel/30 p-3">
+                  <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">
+                    Previsto sair
+                  </p>
+                  <p className="mt-1 text-sm font-semibold tabular-nums">
+                    {formatQuantityInput(conclusionTarget.estimatedQuantity)}{" "}
+                    {conclusionTarget.unitLabel}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="reported-produced-quantity">
+                  Quantidade produzida ({conclusionTarget.unitLabel})
+                </Label>
+                <Input
+                  id="reported-produced-quantity"
+                  inputMode="decimal"
+                  autoFocus
+                  value={conclusionQuantity}
+                  onChange={(event) => setConclusionQuantity(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleConfirmConclusion();
+                    }
+                  }}
+                />
+                {(() => {
+                  const reported = parseQuantityInput(conclusionQuantity);
+                  if (reported === null) {
+                    return (
+                      <p className="text-xs text-warning-foreground">
+                        Informe um número maior ou igual a zero.
+                      </p>
+                    );
+                  }
+                  const delta =
+                    Math.round((reported - conclusionTarget.plannedQuantity) * 1000) / 1000;
+                  if (delta === 0) {
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        Bateu com o planejado — sem sobra nem falta.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p className="text-xs font-medium text-foreground">
+                      {delta > 0 ? "Sobra de " : "Falta de "}
+                      {formatQuantityInput(Math.abs(delta))} {conclusionTarget.unitLabel} em
+                      relação ao planejado.
+                    </p>
+                  );
+                })()}
+                <p className="text-xs text-muted-foreground">
+                  Registro interno para o gestor acompanhar o desvio: não altera o pedido, não
+                  volta para a loja e não realimenta o planejamento.
+                </p>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConclusionTarget(null)}
+                >
+                  Cancelar
+                </Button>
+                <Button type="button" onClick={() => void handleConfirmConclusion()}>
+                  Confirmar conclusão
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </PageLayout>
   );
 }

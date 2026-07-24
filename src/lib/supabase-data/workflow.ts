@@ -25,7 +25,10 @@ import {
   isSkeletonOrderId,
 } from "@/lib/supabase-data/release-validation";
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
-import { recordProductionLeftover } from "@/lib/supabase-data/production-leftovers";
+import {
+  calculateProductionLeftover,
+  recordProductionLeftover,
+} from "@/lib/supabase-data/production-leftovers";
 import { deriveBatchStatus } from "@/lib/production-batches";
 import { assertProductionNotInFuture } from "@/lib/workflow-date-guard";
 
@@ -156,6 +159,9 @@ async function appendOrderEventsForProductionItem(
   updatedByProfileId: string | null | undefined,
   tenantId: string,
   supabase: SupabaseDataClient,
+  // Quantidade EFETIVAMENTE produzida informada pelo operador ao concluir o item.
+  // `null` = não informada → o registro de sobra cai na estimativa do plano.
+  reportedProducedQuantity: number | null = null,
 ) {
   const [referenceDate] = productionItemKey.split("|");
   if (!referenceDate || !/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
@@ -203,39 +209,31 @@ async function appendOrderEventsForProductionItem(
       supabase,
     );
 
-    // 2.3-B: REGISTRAR + RELATAR APENAS. Quando o item atinge `concluido`,
-    // gravamos um snapshot de sobra para o relatório do gestor. NÃO realimenta
-    // o planejamento nem deduz de pedidos futuros.
+    // 2.3-B: REGISTRO INTERNO + RELATÓRIO. Quando o item atinge `concluido`,
+    // gravamos um snapshot de sobra/falta para a trilha de observação do gestor.
+    // NÃO realimenta o planejamento, NÃO deduz de pedidos futuros e NÃO gera
+    // crédito para a loja — pedido entregue (ou não) morreu ali; a sobra/falta
+    // serve para o gestor enxergar desvio de produção, nada mais.
     //
-    // Cálculo (tudo na UNIDADE DE VENDA, batchUnitLabel) com o que está
-    // confiavelmente disponível no item de OP na conclusão
-    // (ProductionOrderItem.batchSizes — o plano de batidas do planBatches):
-    //   demandado (planejado) = soma dos tamanhos das batidas (batchSizes) — a
-    //                           necessidade real vinda dos pedidos.
-    //   produzido             = quando a produção é batida (batchCount > 1), a
-    //                           padaria assa FORMAS/MACEIRAS INTEIRAS (não dá
-    //                           pra assar meia forma). Logo o que sai do forno é
-    //                           a capacidade cheia × nº de batidas (a 1ª batida
-    //                           está sempre cheia = capacidade da forma). Sem
-    //                           batida (1 lote) não há arredondamento:
-    //                           produzido = demandado.
-    //   sobra (leftover)      = produzido - demandado ( >= 0 ): excedente gerado
-    //                           ao arredondar a última batida para uma forma
-    //                           inteira — insumo para "ajustes em pedidos futuros".
+    // Cálculo (tudo na UNIDADE DE VENDA, batchUnitLabel) em
+    // `calculateProductionLeftover`, a partir do plano de batidas do item
+    // (ProductionOrderItem.batchSizes) e da quantidade que o operador informou:
+    //   planejado = soma das batidas — a necessidade real vinda dos pedidos.
+    //   produzido = o que o operador INFORMOU no fechamento do item; sem número
+    //               informado cai na ESTIMATIVA (formas inteiras: a padaria não
+    //               assa meia forma, então saem capacidade cheia × nº de batidas).
+    //   sobra     = produzido - planejado. Com quantidade informada pode ser
+    //               NEGATIVA = falta (ex.: OP de 100 pães que rendeu 98 porque a
+    //               massa crua foi pesada errado).
     if (status === "concluido") {
       const opItem = owningOp.items.find(
         (item) => item.productionItemKey === productionItemKey,
       );
       if (opItem) {
-        const demandedQuantity = opItem.batchSizes.reduce(
-          (sum, size) => sum + size,
-          0,
-        );
-        const fullBatchSize = opItem.batchSizes[0] ?? 0;
-        const producedQuantity =
-          opItem.batchSizes.length > 1
-            ? fullBatchSize * opItem.batchSizes.length
-            : demandedQuantity;
+        const leftover = calculateProductionLeftover({
+          batchSizes: opItem.batchSizes,
+          reportedProducedQuantity,
+        });
         await recordProductionLeftover(
           {
             tenantId,
@@ -243,8 +241,9 @@ async function appendOrderEventsForProductionItem(
             productId: opItem.productId,
             productName: opItem.productName,
             productionDate: owningOp.productionDate,
-            plannedQuantity: demandedQuantity,
-            producedQuantity,
+            plannedQuantity: leftover.plannedQuantity,
+            producedQuantity: leftover.producedQuantity,
+            reportedProducedQuantity: leftover.isReported ? leftover.producedQuantity : null,
             unit: opItem.batchUnitLabel,
             recordedByProfileId: updatedByProfileId ?? null,
           },
@@ -573,6 +572,10 @@ export async function updateProductionItemStatus(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
   // Override de gestor: pula a trava de data futura (autorização de role é no route).
   force = false,
+  // Quantidade EFETIVAMENTE produzida informada pelo operador ao concluir o item
+  // (só usada quando `status === "concluido"`). `null` = não informada → o
+  // registro de sobra cai na estimativa do plano de batidas, como antes.
+  reportedProducedQuantity: number | null = null,
 ) {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   // Chave CANÔNICA (3 partes, sem scheduleId): persistimos e validamos sempre por
@@ -653,6 +656,7 @@ export async function updateProductionItemStatus(
       updatedByProfileId,
       tenantId,
       supabase,
+      reportedProducedQuantity,
     );
   }
 }
@@ -704,6 +708,9 @@ export async function completeProductionBatch(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
   // Override de gestor: pula a trava de data futura (autorização de role é no route).
   force = false,
+  // Quantidade EFETIVAMENTE produzida informada pelo operador. Só tem efeito na
+  // ÚLTIMA batida (a que fecha o item em `concluido`); `null` = usar a estimativa.
+  reportedProducedQuantity: number | null = null,
 ) {
   const updatedBy = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   const canonicalKey = canonicalProductionItemKey(productionItemKey);
@@ -755,7 +762,15 @@ export async function completeProductionBatch(
   const before = deriveBatchStatus(current, cap);
   const after = deriveBatchStatus(next, cap);
   if (tenantId && before !== after) {
-    await appendOrderEventsForProductionItem(canonicalKey, after, before, updatedByProfileId, tenantId, supabase);
+    await appendOrderEventsForProductionItem(
+      canonicalKey,
+      after,
+      before,
+      updatedByProfileId,
+      tenantId,
+      supabase,
+      reportedProducedQuantity,
+    );
   }
 }
 

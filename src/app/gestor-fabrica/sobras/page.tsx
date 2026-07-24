@@ -25,6 +25,8 @@ interface ProductionLeftoverRow {
   plannedQuantity: number;
   producedQuantity: number;
   leftoverQuantity: number;
+  /** true = quantidade medida no chão; false = estimativa do plano de batidas. */
+  isReported: boolean;
   unit: string;
 }
 
@@ -97,19 +99,25 @@ export default function SobrasPage() {
     void loadLeftovers();
   }, [loadLeftovers]);
 
-  const rows = data?.leftovers ?? [];
+  const rows = useMemo(() => data?.leftovers ?? [], [data?.leftovers]);
 
   const totals = useMemo(() => {
     let sobra = 0;
     let falta = 0;
+    // Quantidades medidas no chão (o operador informou). O resto é estimativa do
+    // plano de batidas, que por construção nunca produz falta.
+    let reportedCount = 0;
     for (const row of rows) {
       if (row.leftoverQuantity > 0) {
         sobra += row.leftoverQuantity;
       } else if (row.leftoverQuantity < 0) {
         falta += Math.abs(row.leftoverQuantity);
       }
+      if (row.isReported) {
+        reportedCount += 1;
+      }
     }
-    return { sobra, falta };
+    return { sobra, falta, reportedCount };
   }, [rows]);
 
   const columns = useMemo(
@@ -153,6 +161,30 @@ export default function SobrasPage() {
         ),
       },
       {
+        // Sem essa distinção o gestor não sabe se o número saiu da balança ou de
+        // uma conta do sistema — e só o informado consegue gerar falta.
+        key: "isReported",
+        header: "Origem",
+        sortable: true,
+        sortValue: (item: ProductionLeftoverRow) => (item.isReported ? 1 : 0),
+        render: (item: ProductionLeftoverRow) =>
+          item.isReported ? (
+            <span
+              className="inline-flex items-center rounded-full border border-border/70 bg-panel px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-foreground"
+              title="Quantidade informada pelo operador ao concluir o item da OP."
+            >
+              Informado
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+              title="Ninguém informou a quantidade: o sistema estimou pelo plano de batidas (formas inteiras), que nunca gera falta."
+            >
+              Estimado
+            </span>
+          ),
+      },
+      {
         key: "leftoverQuantity",
         header: "Sobra/Falta",
         sortable: true,
@@ -194,7 +226,7 @@ export default function SobrasPage() {
   return (
     <PageLayout
       title="Sobras e Desvios"
-      description="Registro de sobras e faltas por item de produção concluído no período. Apenas observação — não altera pedidos ou planejamento futuros."
+      description="Registro INTERNO de sobras e faltas por item de produção concluído no período. Serve só para acompanhar o desvio da fábrica: não altera pedidos, não gera crédito para a loja e não realimenta o planejamento — pedido fechado não volta atrás."
       badge="Operacional"
       breadcrumbs={[
         { label: "Início", href: "/" },
@@ -240,18 +272,22 @@ export default function SobrasPage() {
           <KPICard
             title="Itens registrados"
             value={String(rows.length)}
+            subtitle={`${totals.reportedCount} com quantidade informada pelo chão`}
             icon={ClipboardList}
             isLoading={isLoading}
           />
           <KPICard
             title="Total de sobras"
             value={formatQuantity(totals.sobra)}
+            subtitle="Produziu a mais que o planejado"
             icon={TrendingUp}
             isLoading={isLoading}
           />
           <KPICard
             title="Total de faltas"
             value={formatQuantity(totals.falta)}
+            subtitle="Produziu a menos — só aparece com quantidade informada"
+            tone={totals.falta > 0 ? "warning" : "neutral"}
             icon={TrendingDown}
             isLoading={isLoading}
           />
