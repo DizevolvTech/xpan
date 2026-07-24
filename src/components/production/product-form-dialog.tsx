@@ -31,8 +31,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  defaultRecipeStage,
   hierarchyLabels,
   productionWeekDays,
+  recipeStageLabels,
+  recipeStages,
   type BreakStage,
   type IngredientCompositionItem,
   type PackagingProfile,
@@ -40,6 +43,7 @@ import {
   type ProductionLine,
   type ProductionProduct,
   type RecipeIngredientReference,
+  type RecipeStage,
 } from "@/lib/production-planning";
 import {
   getOperationalUnitLabel,
@@ -145,6 +149,7 @@ export function ProductFormDialog({
   const [draftRecipeSourceId, setDraftRecipeSourceId] = useState("");
   const [draftRecipeQuantity, setDraftRecipeQuantity] = useState("");
   const [draftRecipeUnit, setDraftRecipeUnit] = useState<RecipeIngredientReference["unit"]>("Kg");
+  const [draftRecipeStage, setDraftRecipeStage] = useState<RecipeStage>(defaultRecipeStage);
   const [formError, setFormError] = useState<string | null>(null);
   const [invalidFields, setInvalidFields] = useState<ProductValidationField[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -165,6 +170,7 @@ export function ProductFormDialog({
       draftRecipeSourceId,
       draftRecipeQuantity,
       draftRecipeUnit,
+      draftRecipeStage,
     }) !== formBaseline;
   const formGuard = useUnsavedChangesGuard({
     enabled: open && !isReadOnly,
@@ -192,12 +198,14 @@ export function ProductFormDialog({
     setDraftRecipeSourceId("");
     setDraftRecipeQuantity("");
     setDraftRecipeUnit("Kg");
+    setDraftRecipeStage(defaultRecipeStage);
     setFormBaseline(
       JSON.stringify({
         formState: nextFormState,
         draftRecipeSourceId: "",
         draftRecipeQuantity: "",
         draftRecipeUnit: "Kg",
+        draftRecipeStage: defaultRecipeStage,
       }),
     );
     setFormError(null);
@@ -480,12 +488,16 @@ export function ProductFormDialog({
       recipe: [
         ...current.recipe,
         {
-          id: `recipe-${Date.now()}`,
+          // `recipe-${Date.now()}` colidia em dois cliques no mesmo milissegundo — com o
+          // mesmo insumo repetido em etapas diferentes (incentivado agora), editar uma
+          // linha editava as duas. UUID mata a colisão.
+          id: crypto.randomUUID(),
           sourceId: sourceOption.id,
           sourceType: sourceOption.sourceType,
           label: sourceOption.label,
           quantity,
           unit: draftRecipeUnit,
+          stage: draftRecipeStage,
         },
       ],
     }));
@@ -502,7 +514,7 @@ export function ProductFormDialog({
 
   function updateRecipeItem(
     recipeId: string,
-    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit">>,
+    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit" | "stage">>,
   ) {
     setFormState((current) => ({
       ...current,
@@ -512,6 +524,7 @@ export function ProductFormDialog({
               ...item,
               quantity: patch.quantity ?? item.quantity,
               unit: patch.unit ?? item.unit,
+              stage: patch.stage ?? item.stage ?? defaultRecipeStage,
             }
           : item,
       ),
@@ -1513,10 +1526,12 @@ export function ProductFormDialog({
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Ingredientes da Receita</h3>
                   <p className="text-xs text-muted-foreground">
-                    Monte a receita técnica do produto com ingredientes comuns ou produtos MPI.
+                    Monte a receita técnica do produto com ingredientes comuns ou produtos MPI. O
+                    mesmo insumo pode entrar em mais de uma etapa (ex.: farinha na esponja e na
+                    massa) com pesos próprios.
                   </p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-5">
                   <div className="grid gap-2 md:col-span-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <Label>Ingrediente / Produto MPI</Label>
@@ -1580,6 +1595,27 @@ export function ProductFormDialog({
                     </p>
                   </div>
                   <div className="grid gap-2">
+                    <Label>Etapa</Label>
+                    <Select
+                      value={draftRecipeStage}
+                      onValueChange={(value) => setDraftRecipeStage(value as RecipeStage)}
+                    >
+                      <SelectTrigger aria-label="Etapa do ingrediente">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {recipeStages.map((stage) => (
+                          <SelectItem key={stage} value={stage}>
+                            {recipeStageLabels[stage]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Função do insumo no produto — agrupa a pesagem na impressão.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
                     <Label>Quantidade</Label>
                     <Input
                       type="number"
@@ -1606,11 +1642,14 @@ export function ProductFormDialog({
                 </div>
 
                 <div className="overflow-x-auto rounded-xl border border-border/70">
-                  <table className="w-full min-w-[640px] border-collapse">
+                  <table className="w-full min-w-[760px] border-collapse">
                     <thead className="bg-card">
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                           Referência
+                            </th>
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                              Etapa
                             </th>
                             <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                               Qtd
@@ -1627,7 +1666,7 @@ export function ProductFormDialog({
                           {formState.recipe.length === 0 ? (
                             <tr>
                               <td
-                                colSpan={4}
+                                colSpan={5}
                                 className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground"
                               >
                                 Nenhum item na receita.
@@ -1638,6 +1677,25 @@ export function ProductFormDialog({
                               <tr key={item.id}>
                                 <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
                                   {item.label}
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                  <Select
+                                    value={item.stage ?? defaultRecipeStage}
+                                    onValueChange={(value) =>
+                                      updateRecipeItem(item.id, { stage: value as RecipeStage })
+                                    }
+                                  >
+                                    <SelectTrigger aria-label={`Etapa de ${item.label}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {recipeStages.map((stage) => (
+                                        <SelectItem key={stage} value={stage}>
+                                          {recipeStageLabels[stage]}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </td>
                                 <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
                                   <Input

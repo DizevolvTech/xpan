@@ -133,7 +133,7 @@ export function deriveCapacityPerBatchFromMainIngredient(input: {
  * - o rendimento/quantidade são inválidos ou o resultado seria < 1 unidade.
  */
 export function deriveCapacityFromProductRecipe(input: {
-  recipe: Array<{ unit: string; quantity: number; isMain?: boolean }>;
+  recipe: Array<{ unit: string; quantity: number; isMain?: boolean; sourceType?: string; sourceId?: string }>;
   recipeYieldUnits: number;
   mainIngredientLimitKg: number | null | undefined;
 }): number | null {
@@ -148,8 +148,23 @@ export function deriveCapacityFromProductRecipe(input: {
     return null;
   }
 
+  // Etapa na receita: o mesmo insumo pode entrar em mais de uma etapa (farinha na
+  // esponja + farinha na massa). A masseira é limitada pelo TOTAL do principal, então
+  // somamos TODAS as linhas da mesma fonte — contar só a linha marcada superestimaria a
+  // batida. Linhas em outra unidade ficam de fora (mesma regra do principal fora de Kg:
+  // sem conversão automática, para não gerar cálculo errado).
+  const mainIngredientKgInRecipe = recipe
+    .filter(
+      (item) =>
+        item.unit === "Kg" &&
+        (mainItem.sourceId == null
+          ? item === mainItem
+          : item.sourceId === mainItem.sourceId && item.sourceType === mainItem.sourceType),
+    )
+    .reduce((total, item) => total + Number(item.quantity ?? 0), 0);
+
   return deriveCapacityPerBatchFromMainIngredient({
-    mainIngredientKgInRecipe: mainItem.quantity,
+    mainIngredientKgInRecipe,
     recipeYieldUnits,
     mainIngredientLimitKg,
   });

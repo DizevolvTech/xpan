@@ -177,3 +177,51 @@ test("XPAN-8: deriveCapacityFromProductRecipe — limite não definido → null"
     null,
   );
 });
+
+test("etapa na receita: deriveCapacityFromProductRecipe SOMA todas as linhas do ingrediente principal", () => {
+  // Farinha na esponja (2 kg) + farinha na massa (8 kg) = 10 kg por receita.
+  // Considerar só a linha marcada (8 kg) superestimaria a batida (625 un).
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [
+        { sourceType: "ingrediente", sourceId: "ing-farinha", unit: "Kg", quantity: 2 },
+        { sourceType: "ingrediente", sourceId: "ing-farinha", unit: "Kg", quantity: 8, isMain: true },
+        { sourceType: "ingrediente", sourceId: "ing-sal", unit: "Kg", quantity: 1 },
+      ],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: 50,
+    }),
+    500,
+  );
+});
+
+test("etapa na receita: só soma linhas da MESMA fonte e em Kg (sem conversão automática)", () => {
+  // A linha em `g` do mesmo ingrediente é ignorada (mesma regra do principal fora de Kg)
+  // e a linha de outra fonte não entra na soma.
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [
+        { sourceType: "ingrediente", sourceId: "ing-farinha", unit: "Kg", quantity: 10, isMain: true },
+        { sourceType: "ingrediente", sourceId: "ing-farinha", unit: "g", quantity: 500 },
+        { sourceType: "produto", sourceId: "ing-farinha", unit: "Kg", quantity: 5 },
+      ],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: 50,
+    }),
+    500,
+  );
+});
+
+test("etapa na receita: sem sourceId (chamador legado) usa só a linha marcada", () => {
+  assert.equal(
+    deriveCapacityFromProductRecipe({
+      recipe: [
+        { unit: "Kg", quantity: 10, isMain: true },
+        { unit: "Kg", quantity: 10 },
+      ],
+      recipeYieldUnits: 100,
+      mainIngredientLimitKg: 50,
+    }),
+    500,
+  );
+});

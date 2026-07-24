@@ -1,4 +1,7 @@
+import { Fragment } from "react";
+
 import type { PrintIngredientRow, buildProductionSheetDocument } from "@/lib/printing-documents";
+import { groupPrintRowsByStage } from "@/lib/printing-documents";
 import { formatKgValue, formatLocaleNumber } from "@/lib/utils";
 
 type ProductionSheetDocument = ReturnType<typeof buildProductionSheetDocument>;
@@ -75,14 +78,22 @@ export function ProductionSheetSections({ document }: { document: ProductionShee
           </header>
 
           <div className="space-y-2 px-3 py-3">
-            <RecipeTable
-              rows={[
-                ...section.items.filter((item) => item.sectionKind !== "additional"),
-                ...section.items
-                  .filter((item) => item.sectionKind === "additional")
-                  .map((item) => ({ ...item, isAdditional: true })),
-              ]}
-            />
+            {groupPrintRowsByStage([
+              ...section.items.filter((item) => item.sectionKind !== "additional"),
+              ...section.items
+                .filter((item) => item.sectionKind === "additional")
+                .map((item) => ({ ...item, isAdditional: true })),
+            ]).map((group) => (
+              // Receita não migrada = um grupo só, sem cabeçalho: a folha sai idêntica à de hoje.
+              <Fragment key={group.stage}>
+                {group.showStageHeader ? (
+                  <div className="border-b border-stone-300 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-600">
+                    {group.label}
+                  </div>
+                ) : null}
+                <RecipeTable rows={group.rows} />
+              </Fragment>
+            ))}
             {section.items.length === 0 ? (
               <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
                 Este produto não possui receita cadastrada para a folha de produção.

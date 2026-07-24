@@ -55,6 +55,61 @@ export interface IngredientProfileMirror {
   observation: string;
 }
 
+/**
+ * Etapa/função do ingrediente dentro do produto. O mesmo insumo pode entrar mais de uma
+ * vez com pesos diferentes (farinha na esponja + farinha na massa; chantilly no recheio
+ * + na cobertura) e o padeiro precisa pesar por etapa, não só o total.
+ *
+ * A ORDEM DESTE ENUM é a ordem canônica de exibição/pesagem — não existe coluna de ordem
+ * separada; o `sort_order` da receita ordena DENTRO da etapa.
+ */
+export type RecipeStage =
+  | "esponja"
+  | "massa"
+  | "recheio"
+  | "cobertura"
+  | "acabamento"
+  | "montagem";
+
+export const recipeStages: RecipeStage[] = [
+  "esponja",
+  "massa",
+  "recheio",
+  "cobertura",
+  "acabamento",
+  "montagem",
+];
+
+export const recipeStageLabels: Record<RecipeStage, string> = {
+  esponja: "Esponja / Pré-fermento",
+  massa: "Massa",
+  recheio: "Recheio",
+  cobertura: "Cobertura",
+  acabamento: "Decoração / Acabamento",
+  montagem: "Montagem",
+};
+
+/** Etapa das receitas legadas — é o default da coluna `stage` no banco. */
+export const defaultRecipeStage: RecipeStage = "massa";
+
+export function normalizeRecipeStage(value: unknown): RecipeStage {
+  return recipeStages.includes(value as RecipeStage) ? (value as RecipeStage) : defaultRecipeStage;
+}
+
+/** Posição na ordem canônica — usada para ordenar os grupos de etapa na impressão. */
+export function getRecipeStageOrder(stage: RecipeStage | undefined) {
+  return recipeStages.indexOf(normalizeRecipeStage(stage));
+}
+
+/**
+ * Receita MIGRADA: tem ao menos uma linha fora de `massa`. Enquanto for falso, as
+ * impressões mantêm o comportamento legado (heurística de "Adic." por palavra-chave e
+ * sem cabeçalho de etapa) — quem não preencheu etapa vê exatamente a folha de hoje.
+ */
+export function hasStagedRecipe(recipe: { stage?: RecipeStage }[]) {
+  return recipe.some((item) => normalizeRecipeStage(item.stage) !== defaultRecipeStage);
+}
+
 export interface RecipeIngredientReference {
   id: string;
   sourceType: RecipeSourceType;
@@ -66,6 +121,8 @@ export interface RecipeIngredientReference {
   /** XPAN-8: marca o ingrediente PRINCIPAL da receita (no máximo um por produto).
    * Base para derivar a capacidade por batida a partir do limite físico da masseira. */
   isMain?: boolean;
+  /** Etapa/função desta linha no produto. Ausente = `massa` (receita legada). */
+  stage?: RecipeStage;
 }
 
 export interface ProductionIngredient {

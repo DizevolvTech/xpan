@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
+import { groupPrintRowsByStage } from "@/lib/printing-documents";
 import type { PreWeighBatchSplit } from "@/lib/production-batches";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
@@ -131,6 +132,33 @@ function RecipeTable({
   );
 }
 
+/**
+ * Blocos da receita por ETAPA, na ordem canônica. Receita não migrada volta como um
+ * único grupo sem cabeçalho — a impressão sai idêntica à de hoje.
+ */
+function StagedRecipeTables({
+  rows,
+  batchSplit,
+}: {
+  rows: RecipeTableRow[];
+  batchSplit?: PreWeighBatchSplit | null;
+}) {
+  return (
+    <>
+      {groupPrintRowsByStage(rows).map((group) => (
+        <Fragment key={group.stage}>
+          {group.showStageHeader ? (
+            <div className="border-b border-stone-300 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-600">
+              {group.label}
+            </div>
+          ) : null}
+          <RecipeTable rows={group.rows} batchSplit={batchSplit} />
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
 function formatBatchLegend(split: PreWeighBatchSplit) {
   const fullKg = formatKgValue(split.fullBatchKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   const partialKg = formatKgValue(split.partialKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -205,13 +233,24 @@ export default function PrePesagemPrintPage() {
       {document.ingredientProducts.length > 0 ? (
         <section className="space-y-3 print:space-y-1.5">
           {document.ingredientProducts.map((section) => (
-            <article key={section.productId} className="overflow-hidden border border-stone-400">
+            // Chave inclui a etapa: o mesmo MPI pode render duas seções (ex.: recheio e cobertura).
+            <article
+              key={`${section.productId}-${section.stage}`}
+              className="overflow-hidden border border-stone-400"
+            >
               <header className="grid grid-cols-[132px_84px_1fr_180px] border-b border-stone-400 bg-stone-300 text-stone-900">
                 <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
                   Produto Ingrediente
                 </div>
                 <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
-                <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">{section.productName}</div>
+                <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">
+                  {section.productName}
+                  {section.stageLabel ? (
+                    <span className="ml-2 border border-stone-400 px-1 text-[9px] font-semibold uppercase tracking-wide text-stone-600">
+                      {section.stageLabel}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
                   <div>Peso finalizado: {formatKgValue(section.requiredKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</div>
                 </div>
@@ -221,7 +260,7 @@ export default function PrePesagemPrintPage() {
                 <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
                   Usado por: {section.usedBy.join(", ")}
                 </div>
-                <RecipeTable rows={section.items} />
+                <StagedRecipeTables rows={section.items} />
               </div>
             </article>
           ))}
@@ -255,7 +294,7 @@ export default function PrePesagemPrintPage() {
                   {formatBatchLegend(section.batchSplit)}
                 </div>
               ) : null}
-              <RecipeTable
+              <StagedRecipeTables
                 rows={[
                   ...section.baseIngredients,
                   ...section.additionalIngredients.map((row) => ({ ...row, isAdditional: true })),

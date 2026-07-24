@@ -2,6 +2,14 @@ import type {
   ProductionIngredient,
   ProductionProduct,
   RecipeIngredientReference,
+  RecipeStage,
+} from "@/lib/production-planning";
+import {
+  defaultRecipeStage,
+  getRecipeStageOrder,
+  hasStagedRecipe,
+  normalizeRecipeStage,
+  recipeStageLabels,
 } from "@/lib/production-planning";
 import type { ProductionOrderRow } from "@/lib/order-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
@@ -16,6 +24,8 @@ export type PrintIngredientRow = {
   sourceType: "ingrediente" | "produto";
   kind: PrintIngredientKind;
   sectionKind?: PrintIngredientSectionKind;
+  /** Etapa/função da linha na receita. Receita legada = `massa` em tudo. */
+  stage: RecipeStage;
   label: string;
   unit: UnitCode;
   estimatedQuantity: number;
@@ -44,6 +54,10 @@ export type ProductIngredientSection = {
   productId: string;
   productCode: string;
   productName: string;
+  /** Etapa em que este MPI é consumido — a agregação é por (produto, etapa). */
+  stage: RecipeStage;
+  /** Rótulo da etapa para impressão; `null` na receita legada (tudo em massa). */
+  stageLabel: string | null;
   requiredQuantity: number;
   requiredUnit: UnitCode;
   requiredKg: number;
@@ -153,20 +167,92 @@ function isAdditionalIngredient(
   ].some((keyword) => combinedText.includes(keyword));
 }
 
+export type PrintIngredientStageGroup<TRow> = {
+  stage: RecipeStage;
+  label: string;
+  /**
+   * `false` = receita legada (tudo em `massa`): imprime em bloco único e SEM cabeçalho
+   * de etapa, exatamente como antes de existir a coluna `stage`.
+   */
+  showStageHeader: boolean;
+  rows: TRow[];
+};
+
+/**
+ * Agrupa as linhas de uma receita por etapa, na ordem canônica do enum. Dentro do grupo
+ * a ordem de entrada é preservada (é o `sort_order` da receita).
+ *
+ * Receita não migrada (nenhuma linha fora de `massa`) devolve UM grupo com as linhas
+ * intactas e sem cabeçalho — garantia de que a folha de quem não preencheu etapa sai
+ * idêntica à de hoje.
+ */
+export function groupPrintRowsByStage<TRow extends { stage?: RecipeStage }>(
+  rows: TRow[],
+): PrintIngredientStageGroup<TRow>[] {
+  if (rows.length === 0) {
+    return [];
+  }
+
+  if (!hasStagedRecipe(rows)) {
+    return [
+      {
+        stage: defaultRecipeStage,
+        label: recipeStageLabels[defaultRecipeStage],
+        showStageHeader: false,
+        rows,
+      },
+    ];
+  }
+
+  const rowsByStage = new Map<RecipeStage, TRow[]>();
+  rows.forEach((row) => {
+    const stage = normalizeRecipeStage(row.stage);
+    const current = rowsByStage.get(stage) ?? [];
+    current.push(row);
+    rowsByStage.set(stage, current);
+  });
+
+  return Array.from(rowsByStage.entries())
+    .sort(([left], [right]) => getRecipeStageOrder(left) - getRecipeStageOrder(right))
+    .map(([stage, stageRows]) => ({
+      stage,
+      label: recipeStageLabels[stage],
+      showStageHeader: true,
+      rows: stageRows,
+    }));
+}
+
+/**
+ * Produto a usar na impressão: com a receita CONGELADA na liberação quando o item da OP
+ * traz uma (`frozenRecipe`). Sem isso, a OP de MPI sairia da receita do momento da
+ * liberação e a folha do padeiro listaria a receita editada depois.
+ */
+function withFrozenRecipe(
+  product: ProductionProduct,
+  frozenRecipe?: ProductionProduct["recipe"] | null,
+): ProductionProduct {
+  return frozenRecipe ? { ...product, recipe: frozenRecipe } : product;
+}
+
 function buildScaledRecipeRowsForProduct(
-  product: ProductionProduct | undefined,
+  baseProduct: ProductionProduct | undefined,
   outputKg: number,
   source: {
     products: ProductionProduct[];
     ingredients: ProductionIngredient[];
   },
   batchKgs?: { fullBatchKg?: number; partialKg?: number },
+  frozenRecipe?: ProductionProduct["recipe"] | null,
 ) {
-  if (!product) {
+  if (!baseProduct) {
     return [] as PrintIngredientRow[];
   }
+  const product = withFrozenRecipe(baseProduct, frozenRecipe);
 
   const { productsById, ingredientsById } = buildSourceMaps(source);
+  // A heurística de "Adic." por palavra-chave só continua valendo para receita NÃO
+  // migrada. Quem preencheu etapa passa a ser agrupado pela etapa real.
+  const staged = hasStagedRecipe(product.recipe);
 
   return product.recipe.map<PrintIngredientRow>((recipeItem) => {
     const ingredient = recipeItem.sourceType === "ingrediente" ? ingredientsById.get(recipeItem.sourceId) : undefined;
@@ -197,7 +283,9 @@ function buildScaledRecipeRowsForProduct(
           : ingredient?.type === "misturado"
             ? "ingrediente_misturado"
             : "ingrediente",
-      sectionKind: isAdditionalIngredient(recipeItem, ingredient, sourceProduct) ? "additional" : "base",
+      sectionKind:
+        !staged && isAdditionalIngredient(recipeItem, ingredient, sourceProduct) ? "additional" : "base",
+      stage: normalizeRecipeStage(recipeItem.stage),
       label: recipeItem.label,
       unit: recipeItem.unit,
       estimatedQuantity,
@@ -241,10 +329,14 @@ export function buildPreWeighingDocument(
   },
 ) {
   const { productsById, ingredientsById } = buildSourceMaps(source);
+  // Chave = (produto MPI, ETAPA). O mesmo chantilly no recheio e na cobertura vira duas
+  // seções com pesos próprios em vez de uma soma — é o peso por etapa que o padeiro pesa.
+  // Como toda linha legada nasce em `massa`, a chave não muda até alguém preencher etapa.
   const ingredientProductMap = new Map<
     string,
     {
       product: ProductionProduct;
+      stage: RecipeStage;
       requiredQuantity: number;
       requiredUnit: UnitCode;
       requiredKg: number;
@@ -253,7 +345,10 @@ export function buildPreWeighingDocument(
   >();
 
   const productSections: PreWeighingProductSection[] = op.items.map((item) => {
-    const product = productsById.get(item.productId);
+    // Receita congelada na liberação, quando houver: a folha tem que casar com a OP de
+    // MPI que o motor gerou, não com a receita editada depois.
+    const baseProduct = productsById.get(item.productId);
+    const product = baseProduct ? withFrozenRecipe(baseProduct, item.frozenRecipe) : undefined;
     const split = computePreWeighBatchSplit({
       totalKg: item.totalKg,
       capacityPerBatch: product?.capacityPerBatch ?? null,
@@ -292,7 +387,8 @@ export function buildPreWeighingDocument(
       const isProductIngredient = row.sourceType === "produto" && Boolean(sourceProduct?.canBeIngredient);
 
       if (isProductIngredient && sourceProduct) {
-        const current = ingredientProductMap.get(sourceProduct.id);
+        const stageKey = `${sourceProduct.id}::${row.stage}`;
+        const current = ingredientProductMap.get(stageKey);
         const requiredKg = convertRecipeRowToKg(row, sourceProduct);
 
         if (current) {
@@ -302,8 +398,9 @@ export function buildPreWeighingDocument(
             current.usedBy.push(item.productName);
           }
         } else {
-          ingredientProductMap.set(sourceProduct.id, {
+          ingredientProductMap.set(stageKey, {
             product: sourceProduct,
+            stage: row.stage,
             requiredQuantity: row.estimatedQuantity,
             requiredUnit: row.unit,
             requiredKg,
@@ -353,13 +450,20 @@ export function buildPreWeighingDocument(
       productId: entry.product.id,
       productCode: entry.product.code,
       productName: entry.product.name,
+      stage: entry.stage,
+      // Receita legada (massa) não ganha rótulo: a impressão segue igual à de hoje.
+      stageLabel: entry.stage === defaultRecipeStage ? null : recipeStageLabels[entry.stage],
       requiredQuantity: round3(entry.requiredQuantity),
       requiredUnit: entry.requiredUnit,
       requiredKg: round3(entry.requiredKg),
       usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
       items: buildScaledRecipeRowsForProduct(entry.product, entry.requiredKg, source),
     }))
-    .sort((a, b) => a.productName.localeCompare(b.productName));
+    .sort(
+      (a, b) =>
+        getRecipeStageOrder(a.stage) - getRecipeStageOrder(b.stage) ||
+        a.productName.localeCompare(b.productName),
+    );
 
   return {
     productSections,
@@ -377,7 +481,9 @@ export function buildProductionSheetDocument(
   const { productsById } = buildSourceMaps(source);
 
   const productSections: ProductionSheetProductSection[] = op.items.map((item) => {
-    const product = productsById.get(item.productId);
+    const baseProduct = productsById.get(item.productId);
+    // Mesma regra da pré-pesagem: OP de pedido liberado imprime a receita congelada.
+    const product = baseProduct ? withFrozenRecipe(baseProduct, item.frozenRecipe) : undefined;
     const requestedSummary = buildRequestedSummary(op, item.productId);
 
     return {

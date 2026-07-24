@@ -23,6 +23,7 @@ import type {
   WeeklyProductionSchedule,
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
+import { normalizeRecipeStage } from "@/lib/production-planning";
 import { normalizeScheduleDayPriorities } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 import {
@@ -350,6 +351,8 @@ async function loadMasterDataSnapshot(
       observation: (row as Record<string, unknown>).observation as string ?? "",
       // XPAN-8: ingrediente principal da receita (base p/ derivar capacidade da batida).
       isMain: Boolean((row as Record<string, unknown>).is_main),
+      // Etapa/função da linha; ausente (base sem a migration) = massa.
+      stage: normalizeRecipeStage((row as Record<string, unknown>).stage),
     });
     acc.set(key, current);
     return acc;

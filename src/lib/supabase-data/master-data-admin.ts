@@ -10,6 +10,7 @@ import type {
   RecipeIngredientReference,
   StoreMasterData,
 } from "@/lib/production-planning";
+import { normalizeRecipeStage } from "@/lib/production-planning";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   buildDefaultScheduleDayPriorities,
@@ -793,6 +794,8 @@ async function replaceProductRecipeItems(
       observation: item.observation ?? "",
       // XPAN-8: ingrediente principal da receita (índice parcial garante ≤ 1 por produto).
       is_main: item.isMain ?? false,
+      // Etapa/função da linha; `sort_order` ordena DENTRO da etapa.
+      stage: normalizeRecipeStage(item.stage),
     })),
   );
 
@@ -1542,6 +1545,9 @@ export async function cloneProduct(
       sort_order: item.sort_order,
       // XPAN-8: preserva o ingrediente principal ao copiar a receita.
       is_main: (item as Record<string, unknown>).is_main ?? false,
+      // Etapa da linha + observação (esta última o clone perdia silenciosamente).
+      stage: normalizeRecipeStage((item as Record<string, unknown>).stage),
+      observation: (item as Record<string, unknown>).observation ?? "",
       tenant_id: item.tenant_id,
     }));
     const insertRecipeResult = await supabase.from("product_recipe_items").insert(clonedRecipeItems);
