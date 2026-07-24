@@ -40,3 +40,30 @@ quando a edição muda a **composição/timing da grade** — não em toda alter
 Ver `SCHEDULE_RELEVANT_FIELDS` em
 `src/lib/supabase-data/product-changelog-diff.ts`. Qualquer campo fora dessa lista é
 tratado como alteração que **não** afeta o cronograma.
+
+## Receita congelada na liberação (snapshot)
+
+`workflow_release_recipe_snapshots` guarda a árvore de receita de cada produto do pedido
+**como estava na liberação**; `expandRecipeIntoItems` usa essa versão para pedido liberado,
+ignorando edições posteriores.
+
+### Ajustes de 2026-07-24 (call com o cliente)
+
+- **Ausência de linha deixou de virar receita ao vivo.** `frozenRecipe ?? liveProduct.recipe`
+  caía no vivo quando o produto não tinha linha no snapshot. Como `collectRecipeTree` pulava
+  produto de receita vazia, "não tinha receita na liberação" era indistinguível de "não
+  congelado": adicionar um MPI depois criava OP nova para pedido **já liberado** (produção
+  duplicada). Agora a linha é gravada mesmo com receita vazia, e um pedido que **tem**
+  snapshot trata produto ausente como receita vazia — se o pedido foi congelado, o que não
+  está no congelamento não existia. Coberto em `recipe-expansion.test.ts`.
+- **Backfill dos pedidos liberados antes da migration.** Rota
+  `POST /api/admin/backfill-release-recipes` (auth `CRON_SECRET`, `GET` = dry-run). Reusa
+  `captureReleaseRecipeSnapshot`, então não há segunda implementação da árvore de receita.
+  ⚠️ Congela a receita **atual**, não a do momento da liberação — essa informação não existe.
+  Idempotente; pedido já congelado é pulado.
+
+### Limitação conhecida
+
+O congelamento cobre a **expansão do motor**. Se a folha impressa precisar refletir a receita
+congelada, ver `printing-documents.ts` — a pré-pesagem e a ficha de produção leem o master data
+ao vivo do cliente.

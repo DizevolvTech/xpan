@@ -626,3 +626,41 @@ void test("expandRecipeIntoItems — pedido LIBERADO expande a receita CONGELADA
     "pedido sem snapshot usa a receita ao vivo",
   );
 });
+
+void test("expandRecipeIntoItems — produto SEM linha num pedido congelado não cai na receita ao vivo", () => {
+  // Regressão 24/07: o produto não tinha receita na liberação (logo, nenhuma linha no
+  // snapshot). Ao adicionar um MPI à receita depois, `frozenRecipe ?? liveProduct.recipe`
+  // caía na receita NOVA e criava OP de MPI para um pedido JÁ LIBERADO (produção duplicada).
+  const farinha = makeIngredient("farinha", "Farinha");
+  const massaNova = makeMpiProduct({ id: "mpi-massa-nova", name: "Massa Nova" });
+  const pizza = {
+    ...makePizzaProduct(),
+    recipe: [
+      { id: "r1", sourceType: "ingrediente", sourceId: "farinha", label: "Farinha", quantity: 0.6, unit: "Kg" },
+      { id: "r2", sourceType: "produto", sourceId: "mpi-massa-nova", label: "Massa Nova", quantity: 0.4, unit: "Kg" },
+    ],
+  } as ProductionProduct;
+  const productsById = new Map([
+    [pizza.id, pizza],
+    [massaNova.id, massaNova],
+  ]);
+
+  // O pedido TEM snapshot, mas a pizza não tem linha nele (não tinha receita na liberação).
+  const releasedRecipeByOrderProduct = new Map([
+    ["order-1", new Map<string, ProductionProduct["recipe"]>()],
+  ]);
+
+  const liberado = expandRecipeIntoItems(
+    [makePlannedItem({ orderId: "order-1", releasedToProduction: true })],
+    productsById,
+    [farinha],
+    [pizza, massaNova],
+    { releasedRecipeByOrderProduct },
+  );
+
+  assert.deepEqual(
+    liberado.filter((item) => item.productId !== "pizza").map((item) => item.productId),
+    [],
+    "pedido congelado sem linha do produto não expande MPI adicionado depois",
+  );
+});

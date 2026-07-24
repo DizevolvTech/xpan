@@ -856,9 +856,49 @@ export function buildScheduleSkeletonItems(
   return items;
 }
 
+/**
+ * Receita EFETIVA de um item de OP: a congelada na liberação, quando todos os pedidos
+ * liberados que alimentam o item concordam. A OP agrega várias lojas/pedidos, então:
+ *  - nenhum pedido congelado          → `null` (a impressão usa a receita ao vivo);
+ *  - todos os congelados são iguais   → essa receita (a folha bate com a OP de MPI);
+ *  - congelados DIVERGENTES           → `null`, porque não existe uma folha só que sirva
+ *    para as duas versões — mantém o comportamento anterior em vez de escolher uma.
+ */
+function resolveFrozenRecipeForOpItem(
+  sourceOrderIds: string[],
+  productId: string,
+  releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>,
+): ProductionProduct["recipe"] | null {
+  if (!releasedRecipeByOrderProduct) {
+    return null;
+  }
+
+  let resolved: ProductionProduct["recipe"] | null = null;
+  let resolvedSignature: string | null = null;
+
+  for (const orderId of sourceOrderIds) {
+    const frozen = releasedRecipeByOrderProduct.get(orderId)?.get(productId);
+    if (!frozen) {
+      continue;
+    }
+    const signature = JSON.stringify(frozen);
+    if (resolvedSignature === null) {
+      resolved = frozen;
+      resolvedSignature = signature;
+      continue;
+    }
+    if (signature !== resolvedSignature) {
+      return null;
+    }
+  }
+
+  return resolved;
+}
+
 export function buildProductionOrdersFromPlannedItems(
   plannedItems: PlannedOrderItem[],
   referenceDate: string,
+  releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>,
 ): {
   productionOrders: ProductionOrderRow[];
   opsByOrderId: Map<string, Set<string>>;
@@ -1052,6 +1092,14 @@ export function buildProductionOrdersFromPlannedItems(
           batchesDone,
           status,
           progress,
+          // XPAN #6: a folha impressa (pré-pesagem/ficha) precisa da MESMA receita que
+          // gerou a OP; sem isso a OP de MPI sai da receita congelada e a folha lista a
+          // receita nova. `null` = imprime a receita ao vivo (comportamento anterior).
+          frozenRecipe: resolveFrozenRecipeForOpItem(
+            Array.from(group.orderIds),
+            opItem.productId,
+            releasedRecipeByOrderProduct,
+          ),
         };
       })
       .sort((a, b) => {
@@ -1347,6 +1395,7 @@ export function buildFactoryPlanningData(
   const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(
     [...expandedItems, ...skeletonItems],
     referenceDate,
+    source.releasedRecipeByOrderProduct,
   );
   const orderItemsWithOpCodes = [...orderItems, ...skeletonItems].map((item) => {
     const planningKey = getPlanningKey(item);
