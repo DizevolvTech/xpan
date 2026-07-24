@@ -48,5 +48,8 @@ next-env.d.ts
 # Claude Code — estado local por desenvolvedor (settings, worktrees, cache, locks)
 .claude/
 
+# Grok — config local por desenvolvedor (pode conter tokens/segredos; NÃO commitar)
+.grok/
+
 # artefato/manifesto gerado
 xpan-software.xml 
