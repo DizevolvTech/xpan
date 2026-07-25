@@ -101,10 +101,7 @@ export function PrintDocument({
       <style jsx global>{`
         @page {
           size: auto;
-          /* A margem SUPERIOR maior é o que reserva a faixa do cabeçalho que repete em toda
-             página (.print-running-header, fixado no topo). Margem de @page vale por PÁGINA,
-             então a reserva existe da 1ª à última — diferente de um padding no container. */
-          margin: 18mm 6mm 6mm;
+          margin: 6mm 6mm;
         }
 
         @media print {
@@ -126,15 +123,18 @@ export function PrintDocument({
              position:fixed dentro de @media print é o que faz o navegador repetir o bloco em
              cada página; o padding-top no container reserva a altura para o conteúdo não
              passar por baixo dele. */
-          .print-doc .print-running-header {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: white;
-            /* A reserva de espaço é a margem de @page abaixo, NÃO um padding no container:
-               padding de bloco em fluxo só empurra o conteúdo onde o bloco começa (página 1);
-               da página 2 em diante o fluxo recomeça no topo e passaria por baixo do header. */
+          /* O halo quente em volta da folha vinha dos dois radial-gradient do body
+             (globals.css, um deles em --accent) com background-attachment: fixed — o
+             background:white acima não estava zerando na prática. Some com a imagem de fundo
+             e com qualquer sombra dentro do documento: folha de chão é preto no branco. */
+          html,
+          body {
+            background-image: none !important;
+          }
+          .print-doc,
+          .print-doc * {
+            box-shadow: none !important;
+            text-shadow: none !important;
           }
           .print-doc h1 {
             font-size: 17px !important;
@@ -248,11 +248,13 @@ export function PrintDocument({
           // Cabeçalho enxuto: só o nome da linha (title) + uma linha minúscula de
           // contexto (documento/data) pra folha de chão não ficar sem data. Sem
           // logo/marca/setor/cartões — economia máxima de altura por folha.
-          // `print-running-header` repete este cabeçalho no topo de CADA página impressa. Na
-          // ficha do cliente ele repete (a página 2 traz linha, produzir e entregar de novo), e
-          // faz diferença no chão: quem pega a folha 2 de uma OP longa precisa saber de qual OP
-          // e de que dia ela é. Ver a regra em `globals.css`.
-          <header className="print-running-header flex items-center justify-between gap-3 border-b-2 border-stone-700 px-4 py-2 print:px-4 print:py-1">
+          // NÃO usar `position: fixed` para repetir este cabeçalho por página: o elemento sai do
+          // fluxo e passa a ocupar o mesmo topo da área de conteúdo, cobrindo a primeira faixa
+          // (visto na prova de impressão de 25/07 — a faixa do MPI ficava atrás do cabeçalho).
+          // Repetir de verdade exige `display: table-header-group`, o que significa remontar o
+          // documento como tabela. Enquanto isso o cabeçalho sai UMA vez; o que já repete por
+          // página são os `<thead>` das tabelas, que o navegador reemite ao quebrar.
+          <header className="flex items-center justify-between gap-3 border-b-2 border-stone-700 px-4 py-2 print:px-4 print:py-1">
             <div className="min-w-0">
               <h1 className="text-2xl font-bold uppercase leading-none text-stone-900">{title}</h1>
               {meta ? (

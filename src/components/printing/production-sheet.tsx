@@ -175,7 +175,9 @@ function IngredientProductSection({ section }: { section: ProductIngredientSecti
             Usado por: {section.usedBy.join(", ")}
           </div>
         </div>
-        <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
+        {/* Mesma razão da faixa do produto: sem `nowrap` o "Kg" desgruda do número e a faixa
+            ganha uma segunda linha só para ele. Ver a prova de impressão de 25/07. */}
+        <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
           <div>Peso finalizado: {formatKgCell(section.requiredKg)}</div>
         </div>
       </header>
@@ -203,7 +205,7 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
   return (
     <article className="overflow-hidden border border-stone-400">
       {/* Faixa do produto: código, nome, unidade de venda + quantidade pedida e o peso unitário. */}
-      <header className="grid grid-cols-[96px_84px_1fr_120px_160px] border-b border-stone-400 bg-stone-300 text-stone-900 print:break-inside-avoid">
+      <header className="grid grid-cols-[96px_84px_1fr_120px_190px] border-b border-stone-400 bg-stone-300 text-stone-900 print:break-inside-avoid">
         <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
           Produto
         </div>
@@ -215,11 +217,13 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
             {formatOrderedQuantity(section.requestedQuantity)}
           </div>
         </div>
-        {/* `whitespace-nowrap`: sem isso o "Kg" cai numa segunda linha ("0,110 / KG") e a faixa
-            do produto fica com três alturas diferentes na mesma folha. */}
+        {/* Rótulos CURTOS + `whitespace-nowrap`: na prova de impressão de 25/07 o texto longo
+            ("CARGA PLANEJADA: 150,800 KG") ora quebrava em duas linhas, ora era CORTADO no meio
+            ("150,8"), que é pior — perde o número. Encurtar o rótulo é o que faz caber de fato
+            na largura da coluna; o nowrap só garante que o "Kg" não desgruda do valor. */}
         <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-          <div>Peso unitário: {formatKgCell(section.unitWeightKg)}</div>
-          <div className="mt-1">Carga planejada: {formatKgCell(section.plannedKg)}</div>
+          <div>Peso un.: {formatKgCell(section.unitWeightKg)}</div>
+          <div className="mt-1">Carga: {formatKgCell(section.plannedKg)}</div>
         </div>
       </header>
 
