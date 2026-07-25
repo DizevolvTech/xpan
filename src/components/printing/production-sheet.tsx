@@ -28,7 +28,9 @@ function formatQuantityCell(value: number | null | undefined, unit: string) {
 }
 
 function formatKgCell(value: number) {
-  return `${formatKgValue(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
+  // "Kg" com K maiúsculo: é o rótulo de unidade que as linhas da receita usam (`row.unit`), e
+  // o subtotal do bloco fica na MESMA coluna — minúsculo destoava na folha.
+  return `${formatKgValue(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} Kg`;
 }
 
 /** Quantidade pedida: inteiro sai inteiro (6), fracionada mostra até 3 casas (12,5). */
@@ -213,7 +215,9 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
             {formatOrderedQuantity(section.requestedQuantity)}
           </div>
         </div>
-        <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
+        {/* `whitespace-nowrap`: sem isso o "Kg" cai numa segunda linha ("0,110 / KG") e a faixa
+            do produto fica com três alturas diferentes na mesma folha. */}
+        <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
           <div>Peso unitário: {formatKgCell(section.unitWeightKg)}</div>
           <div className="mt-1">Carga planejada: {formatKgCell(section.plannedKg)}</div>
         </div>
