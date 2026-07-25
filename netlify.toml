@@ -1,0 +1,17 @@
+# Configuração da Netlify.
+#
+# DE PROPÓSITO SEM SEÇÃO [build]: o comando de build e o diretório publicado continuam vindo
+# do painel da Netlify, onde já estão configurados e funcionando. Declarar `publish` aqui
+# sobrescreveria aquilo e conflitaria com o runtime de Next.js da plataforma — o risco de
+# quebrar o deploy não compensa a explicitude.
+#
+# Este arquivo existe para uma coisa só: registrar que os agendamentos de cron NÃO vivem mais
+# em `vercel.json`. Aquele arquivo é ignorado pela Netlify, então `auto-release` e
+# `divergence-alerts` nunca rodaram neste deploy. Agora são Scheduled Functions em
+# `netlify/functions/`, com o schedule declarado em cada arquivo (junto da função, não aqui).
+#
+# PRÉ-REQUISITO: `CRON_SECRET` precisa estar nas variáveis de ambiente do site. Sem ela as
+# rotas de cron respondem 503 e o agendamento falha em silêncio.
+
+[functions]
+  directory = "netlify/functions"
