@@ -76,6 +76,19 @@ export type ProductIngredientSection = {
   items: PrintIngredientRow[];
 };
 
+/**
+ * Linha da folha de produção: a linha da receita + quanto dela entra em CADA unidade
+ * produzida (a coluna "Unidades" da ficha do cliente).
+ */
+export type ProductionSheetRow = PrintIngredientRow & {
+  /**
+   * Quanto desta linha vai em UMA unidade produzida. Vale para qualquer linha — pode ser um
+   * MPI (0,234 kg de massa por cuca) ou um ingrediente simples (0,120 kg de farofa por cuca).
+   * `null` quando o produto não tem peso unitário/carga para derivar a conta.
+   */
+  quantityPerUnit: number | null;
+};
+
 export type ProductionSheetProductSection = {
   productId: string;
   productCode: string;
@@ -84,9 +97,33 @@ export type ProductionSheetProductSection = {
   requestedQuantity: number;
   requestedUnit: UnitCode;
   unitWeightKg: number;
+  /**
+   * Quantas unidades a carga planejada rende (`plannedKg / unitWeightKg`) — é o divisor da
+   * coluna "Unidades". Sai da carga PLANEJADA, não do pedido: se a fábrica arredondou para
+   * cima, o quanto vai em cada unidade continua o mesmo.
+   */
+  unitsCount: number;
   /** Ver `PreWeighingProductSection.recipeStageConfig`: ordem dos blocos + modo de preparo por etapa. */
   recipeStageConfig?: RecipeStageConfigEntry[];
-  items: PrintIngredientRow[];
+  items: ProductionSheetRow[];
+};
+
+/** Gap entre PRODUZIR e ENTREGAR desta OP — o "Dia+1" que a ficha imprime no cabeçalho. */
+export type ProductionSheetDeliveryGap = {
+  /** Dias distintos, em ordem crescente. Vazio quando a OP não tem entrega conhecida. */
+  days: number[];
+  /** "Dia+1" (ou "Mesmo dia"; mais de uma data de entrega vira "Dia+1 / Dia+2"). */
+  label: string | null;
+};
+
+export type ProductionSheetDocument = {
+  deliveryGap: ProductionSheetDeliveryGap;
+  /**
+   * Seção do MPI, que na ficha do cliente vem ANTES dos produtos: o MPI é batido UMA vez,
+   * agregando o consumo de todos os produtos da OP.
+   */
+  ingredientSections: ProductIngredientSection[];
+  productSections: ProductionSheetProductSection[];
 };
 
 function getOperationalUnitWeight(product: ProductionProduct | undefined) {
@@ -378,14 +415,20 @@ function convertRecipeRowToKg(
   );
 }
 
-export function buildPreWeighingDocument(
+/**
+ * Seções de MPI da OP inteira, agregadas por (produto ingrediente, ETAPA) e escaladas para o
+ * peso que a OP toda consome. É a MESMA agregação que a pré-pesagem sempre fez — extraída
+ * daqui porque a folha de produção passou a abrir a seção do MPI no topo (ficha do cliente).
+ * Uma agregação só, dois documentos: o padeiro pesa e produz exatamente o mesmo MPI.
+ */
+function collectIngredientProductSections(
   op: ProductionOrderRow,
   source: {
     products: ProductionProduct[];
     ingredients: ProductionIngredient[];
   },
-) {
-  const { productsById, ingredientsById } = buildSourceMaps(source);
+): ProductIngredientSection[] {
+  const { productsById } = buildSourceMaps(source);
   // Sequência de etapas desta OP: ordena as seções de MPI pela ordem que as fichas dos
   // produtos consumidores definiram, não mais pela ordem canônica do enum.
   const opStageOrder = resolveOpStageOrder(
@@ -408,6 +451,78 @@ export function buildPreWeighingDocument(
       usedBy: string[];
     }
   >();
+
+  op.items.forEach((item) => {
+    // Receita congelada na liberação, quando houver — mesma regra das duas folhas.
+    const baseProduct = productsById.get(item.productId);
+    const product = baseProduct ? withFrozenRecipe(baseProduct, item.frozenRecipe) : undefined;
+    if (!product) {
+      return;
+    }
+
+    // As quantidades agregadas saem de `estimatedQuantity`, que não depende do desdobramento
+    // de batidas — por isso a agregação roda sem `batchKgs`.
+    buildScaledRecipeRowsForProduct(product, item.totalKg, source).forEach((row, index) => {
+      const recipeItem = product.recipe[index];
+      const sourceProduct = recipeItem?.sourceType === "produto" ? productsById.get(recipeItem.sourceId) : undefined;
+      if (row.sourceType !== "produto" || !sourceProduct?.canBeIngredient) {
+        return;
+      }
+
+      const stageKey = `${sourceProduct.id}::${row.stage}`;
+      const current = ingredientProductMap.get(stageKey);
+      const requiredKg = convertRecipeRowToKg(row, sourceProduct);
+
+      if (current) {
+        current.requiredQuantity = round3(current.requiredQuantity + row.estimatedQuantity);
+        current.requiredKg = round3(current.requiredKg + requiredKg);
+        if (!current.usedBy.includes(item.productName)) {
+          current.usedBy.push(item.productName);
+        }
+        return;
+      }
+
+      ingredientProductMap.set(stageKey, {
+        product: sourceProduct,
+        stage: row.stage,
+        requiredQuantity: row.estimatedQuantity,
+        requiredUnit: row.unit,
+        requiredKg,
+        usedBy: [item.productName],
+      });
+    });
+  });
+
+  return Array.from(ingredientProductMap.values())
+    .map((entry) => ({
+      productId: entry.product.id,
+      productCode: entry.product.code,
+      productName: entry.product.name,
+      stage: entry.stage,
+      // Receita legada (massa) não ganha rótulo: a impressão segue igual à de hoje.
+      stageLabel: entry.stage === defaultRecipeStage ? null : recipeStageLabels[entry.stage],
+      requiredQuantity: round3(entry.requiredQuantity),
+      requiredUnit: entry.requiredUnit,
+      requiredKg: round3(entry.requiredKg),
+      usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
+      recipeStageConfig: entry.product.recipeStageConfig,
+      items: buildScaledRecipeRowsForProduct(entry.product, entry.requiredKg, source),
+    }))
+    .sort(
+      (a, b) =>
+        opStageOrder.indexOf(a.stage) - opStageOrder.indexOf(b.stage) ||
+        a.productName.localeCompare(b.productName),
+    );
+}
+
+export function buildPreWeighingDocument(
+  op: ProductionOrderRow,
+  source: {
+    products: ProductionProduct[];
+    ingredients: ProductionIngredient[];
+  },
+) {
+  const { productsById, ingredientsById } = buildSourceMaps(source);
 
   const productSections: PreWeighingProductSection[] = op.items.map((item) => {
     // Receita congelada na liberação, quando houver: a folha tem que casar com a OP de
@@ -452,27 +567,8 @@ export function buildPreWeighingDocument(
       const sourceProduct = recipeItem?.sourceType === "produto" ? productsById.get(recipeItem.sourceId) : undefined;
       const isProductIngredient = row.sourceType === "produto" && Boolean(sourceProduct?.canBeIngredient);
 
+      // MPI sai do bloco do produto e vira seção própria (`collectIngredientProductSections`).
       if (isProductIngredient && sourceProduct) {
-        const stageKey = `${sourceProduct.id}::${row.stage}`;
-        const current = ingredientProductMap.get(stageKey);
-        const requiredKg = convertRecipeRowToKg(row, sourceProduct);
-
-        if (current) {
-          current.requiredQuantity = round3(current.requiredQuantity + row.estimatedQuantity);
-          current.requiredKg = round3(current.requiredKg + requiredKg);
-          if (!current.usedBy.includes(item.productName)) {
-            current.usedBy.push(item.productName);
-          }
-        } else {
-          ingredientProductMap.set(stageKey, {
-            product: sourceProduct,
-            stage: row.stage,
-            requiredQuantity: row.estimatedQuantity,
-            requiredUnit: row.unit,
-            requiredKg,
-            usedBy: [item.productName],
-          });
-        }
         return;
       }
 
@@ -512,31 +608,80 @@ export function buildPreWeighingDocument(
     };
   });
 
-  const ingredientProducts: ProductIngredientSection[] = Array.from(ingredientProductMap.values())
-    .map((entry) => ({
-      productId: entry.product.id,
-      productCode: entry.product.code,
-      productName: entry.product.name,
-      stage: entry.stage,
-      // Receita legada (massa) não ganha rótulo: a impressão segue igual à de hoje.
-      stageLabel: entry.stage === defaultRecipeStage ? null : recipeStageLabels[entry.stage],
-      requiredQuantity: round3(entry.requiredQuantity),
-      requiredUnit: entry.requiredUnit,
-      requiredKg: round3(entry.requiredKg),
-      usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
-      recipeStageConfig: entry.product.recipeStageConfig,
-      items: buildScaledRecipeRowsForProduct(entry.product, entry.requiredKg, source),
-    }))
-    .sort(
-      (a, b) =>
-        opStageOrder.indexOf(a.stage) - opStageOrder.indexOf(b.stage) ||
-        a.productName.localeCompare(b.productName),
-    );
-
   return {
     productSections,
-    ingredientProducts,
+    ingredientProducts: collectIngredientProductSections(op, source),
   };
+}
+
+/** Diferença em dias entre duas chaves `YYYY-MM-DD`. `null` quando alguma não é uma data. */
+function diffDaysBetweenDateKeys(from: string | null | undefined, to: string | null | undefined) {
+  const parse = (value: string | null | undefined) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
+    return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
+  };
+
+  const start = parse(from);
+  const end = parse(to);
+  if (start == null || end == null) {
+    return null;
+  }
+  // UTC dos dois lados: sem horário e sem fuso, a subtração é exata em dias.
+  return Math.round((end - start) / 86_400_000);
+}
+
+/**
+ * "Dia+1" do cabeçalho: o gap entre PRODUZIR e ENTREGAR desta OP. Sai das datas da própria
+ * OP (produção × entrega dos itens de pedido) para nunca contradizer as duas datas impressas
+ * ao lado. OP sem item de pedido (ex.: só MPI) não tem gap — o cabeçalho simplesmente omite.
+ */
+export function resolveProductionDeliveryGap(op: ProductionOrderRow): ProductionSheetDeliveryGap {
+  const days = Array.from(
+    new Set(
+      op.sourceItems
+        .map((item) => diffDaysBetweenDateKeys(op.productionDate, item.deliveryDate))
+        .filter((value): value is number => value != null),
+    ),
+  ).sort((a, b) => a - b);
+
+  return {
+    days,
+    label:
+      days.length === 0
+        ? null
+        : days.map((value) => (value === 0 ? "Mesmo dia" : `Dia+${value}`)).join(" / "),
+  };
+}
+
+/** Unidades de peso/volume convertidas para kg — o resto (Un, Forma…) não entra em soma de kg. */
+const weightUnitFactorsKg: Partial<Record<UnitCode, number>> = {
+  Kg: 1,
+  g: 0.001,
+  L: 1,
+  ml: 0.001,
+};
+
+/**
+ * Subtotal POR UNIDADE de um bloco — o "0,165 kg" que a ficha imprime no sub-cabeçalho
+ * "Ingredientes recheio:". Só soma linha em peso/volume; linha contada em unidade (ex.: ovo
+ * em "Un") ficaria fora de escala numa soma em kg. `null` quando não há nada somável.
+ */
+export function sumStageQuantityPerUnitKg(
+  rows: { unit: UnitCode; quantityPerUnit?: number | null }[],
+): number | null {
+  let total = 0;
+  let hasValue = false;
+
+  rows.forEach((row) => {
+    const factor = weightUnitFactorsKg[row.unit];
+    if (factor == null || row.quantityPerUnit == null) {
+      return;
+    }
+    total += row.quantityPerUnit * factor;
+    hasValue = true;
+  });
+
+  return hasValue ? round3(total) : null;
 }
 
 export function buildProductionSheetDocument(
@@ -545,14 +690,27 @@ export function buildProductionSheetDocument(
     products: ProductionProduct[];
     ingredients: ProductionIngredient[];
   },
-) {
+): ProductionSheetDocument {
   const { productsById } = buildSourceMaps(source);
 
-  const productSections: ProductionSheetProductSection[] = op.items.map((item) => {
+  // O MPI já é impresso na seção "Produto Ingrediente" (com "Peso finalizado"), então ele NÃO
+  // pode voltar como bloco de produto: quando o MPI herda a linha do pai, o motor o coloca como
+  // item da MESMA OP e o padeiro receberia a mesma massa duas vezes — a segunda com a faixa
+  // "Pedido · Kg 0", que não quer dizer nada. A ficha do cliente tem UMA seção de MPI.
+  const ingredientSections = collectIngredientProductSections(op, source);
+  const productIdsInIngredientSections = new Set(ingredientSections.map((section) => section.productId));
+
+  const productSections: ProductionSheetProductSection[] = op.items
+    .filter((item) => !productIdsInIngredientSections.has(item.productId))
+    .map((item) => {
     const baseProduct = productsById.get(item.productId);
     // Mesma regra da pré-pesagem: OP de pedido liberado imprime a receita congelada.
     const product = baseProduct ? withFrozenRecipe(baseProduct, item.frozenRecipe) : undefined;
     const requestedSummary = buildRequestedSummary(op, item.productId);
+    const unitWeightKg = getOperationalUnitWeight(product);
+    // Divisor da coluna "Unidades". Produto vendido a granel tem peso unitário 1 kg — a
+    // "unidade" dele é o quilo, e a coluna vira o quanto de cada insumo há por quilo.
+    const unitsCount = unitWeightKg > 0 ? item.totalKg / unitWeightKg : 0;
 
     return {
       productId: item.productId,
@@ -561,15 +719,25 @@ export function buildProductionSheetDocument(
       plannedKg: item.totalKg,
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
-      unitWeightKg: getOperationalUnitWeight(product),
+      unitWeightKg,
+      unitsCount: round3(unitsCount),
       // Config vem do produto AO VIVO (`withFrozenRecipe` só troca a receita): a sequência
       // dos blocos é editorial e não faz parte do congelamento de quantidades.
       recipeStageConfig: product?.recipeStageConfig,
-      items: buildScaledRecipeRowsForProduct(product, item.totalKg, source),
+      items: buildScaledRecipeRowsForProduct(product, item.totalKg, source).map<ProductionSheetRow>(
+        (row) => ({
+          ...row,
+          quantityPerUnit: unitsCount > 0 ? round3(row.estimatedQuantity / unitsCount) : null,
+        }),
+      ),
     };
-  });
+    });
 
   return {
+    deliveryGap: resolveProductionDeliveryGap(op),
+    // O MPI vem primeiro na ficha: é batido uma vez para a OP inteira e só depois cada
+    // produto o consome. Mesma agregação da pré-pesagem, para as duas folhas baterem.
+    ingredientSections,
     productSections,
   };
 }

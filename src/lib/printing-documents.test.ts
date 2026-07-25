@@ -5,6 +5,8 @@ import {
   buildPreWeighingDocument,
   buildProductionSheetDocument,
   groupPrintRowsByStage,
+  resolveProductionDeliveryGap,
+  sumStageQuantityPerUnitKg,
 } from "@/lib/printing-documents";
 import type { ProductionOrderItem, ProductionOrderRow } from "@/lib/factory-planning/types";
 import type {
@@ -429,8 +431,52 @@ const configuredSource = { products: [stagedWithConfig, mpiChantilly], ingredien
 test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` imprime exatamente como antes", () => {
   const document = buildProductionSheetDocument(buildOp(legacyProduct, 10), source);
 
-  // Documento inteiro pinado: nada da ficha em blocos pode vazar para quem não configurou.
+  /*
+   * BASELINE RE-FIXADO em 2026-07-25, quando a folha passou a sair no formato da ficha que o
+   * cliente já usa. A ESTRUTURA do documento mudou de propósito; o CONTEÚDO por produto, não:
+   *
+   *  - `deliveryGap`: novo. É o "Dia+1" do cabeçalho (produzir 24/07 → entregar 25/07).
+   *  - `ingredientSections`: novo. A folha absorveu a seção do MPI, que na ficha vem ANTES dos
+   *    produtos. É a MESMA agregação da pré-pesagem (ver teste logo abaixo) — o MPI continua
+   *    aparecendo também como linha dentro do bloco do produto que o consome, como na ficha.
+   *  - `unitsCount` + `quantityPerUnit`: novos. Alimentam a coluna "Unidades" (quanto vai em
+   *    CADA unidade produzida). Aqui o produto é vendido a granel (peso unitário 1 kg), então
+   *    a "unidade" é o quilo: 5 kg de farinha em 10 kg de carga = 0,500 kg por kg.
+   *
+   * O que NÃO pode mudar e segue pinado: as linhas do produto, na mesma ordem, com as mesmas
+   * quantidades, a mesma heurística de "Adic." e sem nenhum vestígio de ficha em blocos.
+   */
   assert.deepEqual(document, {
+    deliveryGap: { days: [1], label: "Dia+1" },
+    ingredientSections: [
+      {
+        productId: "mpi-chantilly",
+        productCode: "PR-00090",
+        productName: "Chantilly",
+        stage: "massa",
+        stageLabel: null,
+        requiredQuantity: 3,
+        requiredUnit: "Kg",
+        requiredKg: 3,
+        usedBy: ["Pão doce"],
+        recipeStageConfig: undefined,
+        items: [
+          {
+            key: "mpi-chantilly-m1-3",
+            sourceType: "ingrediente",
+            kind: "ingrediente",
+            sectionKind: "base",
+            stage: "massa",
+            label: "Creme de leite",
+            unit: "Kg",
+            estimatedQuantity: 3,
+            batchQuantity: undefined,
+            partialQuantity: undefined,
+            notes: undefined,
+          },
+        ],
+      },
+    ],
     productSections: [
       {
         productId: "product-pao",
@@ -440,6 +486,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
         requestedQuantity: 10,
         requestedUnit: "Kg",
         unitWeightKg: 1,
+        unitsCount: 10,
         recipeStageConfig: undefined,
         items: [
           {
@@ -454,6 +501,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
             batchQuantity: undefined,
             partialQuantity: undefined,
             notes: undefined,
+            quantityPerUnit: 0.5,
           },
           {
             key: "product-pao-l2-10",
@@ -467,6 +515,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
             batchQuantity: undefined,
             partialQuantity: undefined,
             notes: undefined,
+            quantityPerUnit: 0.2,
           },
           {
             key: "product-pao-l3-10",
@@ -480,6 +529,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
             batchQuantity: undefined,
             partialQuantity: undefined,
             notes: "",
+            quantityPerUnit: 0.2,
           },
           {
             key: "product-pao-l4-10",
@@ -493,6 +543,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
             batchQuantity: undefined,
             partialQuantity: undefined,
             notes: "",
+            quantityPerUnit: 0.1,
           },
         ],
       },
@@ -638,5 +689,219 @@ test("a sequência dos blocos vem da ficha AO VIVO, mesmo com a receita congelad
       ["recheio", "Bater o creme até o ponto de espalhar."],
       ["massa", "Assar em tabuleiro raso."],
     ],
+  );
+});
+
+/* -------------------------------------------------------------------------------------------------
+ * FORMATO DA FICHA DO CLIENTE — a folha da OP passou a sair como a ficha que ele já usa:
+ * seção do MPI primeiro (batido uma vez para a OP inteira), depois um bloco por produto com a
+ * coluna "Unidades" (quanto vai em CADA unidade) e o cabeçalho com o gap "Dia+N".
+ * -----------------------------------------------------------------------------------------------*/
+
+test("folha de produção: a seção do MPI é a MESMA agregação da pré-pesagem", () => {
+  const op = buildOp(stagedProduct, 10);
+  const folha = buildProductionSheetDocument(op, source);
+  const prePesagem = buildPreWeighingDocument(op, source);
+
+  // Uma agregação só para as duas folhas: o padeiro pesa e produz exatamente o mesmo MPI.
+  assert.deepEqual(folha.ingredientSections, prePesagem.ingredientProducts);
+  assert.deepEqual(
+    folha.ingredientSections.map((section) => [section.productCode, section.stage, section.requiredKg]),
+    [
+      ["PR-00090", "recheio", 2],
+      ["PR-00090", "cobertura", 1],
+    ],
+  );
+
+  // E o MPI CONTINUA como linha dentro do bloco de quem o consome — é assim na ficha: a
+  // seção diz quanto bater no total, a linha diz quanto entra naquele produto.
+  assert.deepEqual(
+    folha.productSections[0]!.items.filter((row) => row.kind === "produto_mpi").map((row) => [
+      row.stage,
+      row.estimatedQuantity,
+    ]),
+    [
+      ["cobertura", 1],
+      ["recheio", 2],
+    ],
+  );
+});
+
+/** MPI de massa, como o "MPI MASSA CUCA CASEIRA" da ficha. */
+const mpiMassaCuca = buildProduct(
+  "mpi-massa-cuca",
+  "PR-00091",
+  "MPI Massa cuca",
+  [{ id: "mc1", sourceType: "ingrediente", sourceId: "ing-farinha", label: "Farinha de trigo", quantity: 1, unit: "Kg" }],
+  { canBeIngredient: true, isMpiIngredient: true },
+);
+
+/** Produto vendido em UNIDADES, como a cuca da ficha: massa (bloco base) + cobertura de farofa. */
+const cucaProduct = buildProduct(
+  "product-cuca",
+  "PR-00003",
+  "Cuca caseira banana",
+  [
+    {
+      id: "c1",
+      sourceType: "produto",
+      sourceId: "mpi-massa-cuca",
+      label: "MPI Massa cuca",
+      quantity: 1,
+      unit: "Kg",
+      stage: "massa",
+    },
+    {
+      id: "c2",
+      sourceType: "ingrediente",
+      sourceId: "ing-cobertura",
+      label: "Farofa doce",
+      quantity: 0.5,
+      unit: "Kg",
+      stage: "cobertura",
+    },
+  ],
+  {
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.5 },
+      production: { unit: "Kg", description: "Produção", weightKg: 1 },
+      expedition: { unit: "Un", description: "Expedição", weightKg: 0.5 },
+    },
+    isSoldLoose: false,
+    salesUnit: "Un",
+    salesToKgFactor: 0.5,
+  },
+);
+
+const cucaSource = { products: [cucaProduct, mpiMassaCuca], ingredients };
+
+/** OP de 6 cucas: 3 kg de carga, pedido de 6 Un. */
+function buildCucaOp(): ProductionOrderRow {
+  const op = buildOp(cucaProduct, 3);
+  return {
+    ...op,
+    sourceItems: op.sourceItems.map((item) => ({ ...item, requestedQuantity: 6, requestedUnit: "Un" as const })),
+  };
+}
+
+test("coluna Unidades: quanto vai em CADA unidade produzida, por linha (MPI ou ingrediente simples)", () => {
+  const document = buildProductionSheetDocument(buildCucaOp(), cucaSource);
+  const [section] = document.productSections;
+
+  // 3 kg de carga ÷ 0,5 kg por cuca = 6 cucas. É o divisor da coluna.
+  assert.equal(section!.unitWeightKg, 0.5);
+  assert.equal(section!.unitsCount, 6);
+  assert.equal(section!.requestedQuantity, 6);
+  assert.equal(section!.requestedUnit, "Un");
+
+  assert.deepEqual(
+    section!.items.map((row) => [row.label, row.estimatedQuantity, row.quantityPerUnit]),
+    [
+      // Vale para o MPI (0,333 kg de massa por cuca)...
+      ["MPI Massa cuca", 2, 0.333],
+      // ...e para o ingrediente simples (0,167 kg de farofa por cuca).
+      ["Farofa doce", 1, 0.167],
+    ],
+  );
+
+  // Prova de que a coluna fecha: a soma do que vai em cada unidade é o peso unitário.
+  assert.equal(
+    sumStageQuantityPerUnitKg(section!.items),
+    section!.unitWeightKg,
+    "o que vai em uma unidade tem que somar o peso unitário",
+  );
+});
+
+test("subtotal por unidade do bloco: soma só peso/volume e ignora linha contada em unidade", () => {
+  const document = buildProductionSheetDocument(buildCucaOp(), cucaSource);
+  const groups = groupPrintRowsByStage(document.productSections[0]!.items);
+
+  // Cada bloco tem seu subtotal — é o "0,165 kg" que a ficha imprime no sub-cabeçalho.
+  assert.deepEqual(
+    groups.map((group) => [group.stage, sumStageQuantityPerUnitKg(group.rows)]),
+    [
+      ["massa", 0.333],
+      ["cobertura", 0.167],
+    ],
+  );
+
+  // g vira kg; linha em "Un" (ex.: 6 ovos) não entra numa soma em kg; bloco sem nada
+  // somável devolve null em vez de um zero enganoso.
+  assert.equal(
+    sumStageQuantityPerUnitKg([
+      { unit: "Kg", quantityPerUnit: 0.25 },
+      { unit: "g", quantityPerUnit: 30 },
+      { unit: "Un", quantityPerUnit: 6 },
+      { unit: "Kg", quantityPerUnit: null },
+    ]),
+    0.28,
+  );
+  assert.equal(sumStageQuantityPerUnitKg([{ unit: "Un", quantityPerUnit: 6 }]), null);
+  assert.equal(sumStageQuantityPerUnitKg([]), null);
+});
+
+test("cabeçalho: o gap produção→entrega sai das datas da própria OP", () => {
+  const op = buildOp(legacyProduct, 10);
+
+  // Produzir 24/07, entregar 25/07 → "Dia+1".
+  assert.deepEqual(resolveProductionDeliveryGap(op), { days: [1], label: "Dia+1" });
+  assert.deepEqual(
+    buildProductionSheetDocument(op, source).deliveryGap,
+    { days: [1], label: "Dia+1" },
+    "a folha carrega o gap para as duas rotas de impressão imprimirem o mesmo cabeçalho",
+  );
+
+  // Entrega no mesmo dia da produção não vira "Dia+0".
+  assert.deepEqual(
+    resolveProductionDeliveryGap({
+      ...op,
+      sourceItems: op.sourceItems.map((item) => ({ ...item, deliveryDate: "2026-07-24" })),
+    }),
+    { days: [0], label: "Mesmo dia" },
+  );
+
+  // Mais de uma data de entrega na mesma OP: mostra as duas, em ordem, sem inventar média.
+  assert.deepEqual(
+    resolveProductionDeliveryGap({
+      ...op,
+      sourceItems: [
+        { ...op.sourceItems[0]!, deliveryDate: "2026-07-26" },
+        { ...op.sourceItems[0]!, id: "item-2", deliveryDate: "2026-07-25" },
+      ],
+    }),
+    { days: [1, 2], label: "Dia+1 / Dia+2" },
+  );
+
+  // OP sem item de pedido (só MPI) não tem gap — o cabeçalho omite em vez de chutar.
+  assert.deepEqual(resolveProductionDeliveryGap({ ...op, sourceItems: [] }), { days: [], label: null });
+});
+
+test("folha de produção: MPI que também é item da OP NÃO sai duas vezes", () => {
+  // Quando o MPI não tem linha nativa própria, ele herda a linha do pai e o motor o coloca
+  // como ITEM da mesma OP. Sem filtro, o padeiro recebia a mesma massa em dois lugares: a
+  // seção "Produto Ingrediente" (com Peso finalizado) e mais um bloco de produto com a faixa
+  // "Pedido · Kg 0", que não quer dizer nada. A ficha do cliente tem UMA seção de MPI.
+  const op = buildOp(stagedProduct, 10);
+  const mpi = source.products.find((product) => product.canBeIngredient)!;
+  const opComMpiComoItem: ProductionOrderRow = {
+    ...op,
+    items: [...op.items, { ...buildOpItem(mpi, 3), isIntermediate: true }],
+  };
+
+  const folha = buildProductionSheetDocument(opComMpiComoItem, source);
+
+  assert.ok(
+    folha.ingredientSections.some((section) => section.productId === mpi.id),
+    "o MPI tem de aparecer na seção Produto Ingrediente",
+  );
+  assert.deepEqual(
+    folha.productSections.filter((section) => section.productId === mpi.id),
+    [],
+    "e NÃO pode voltar como bloco de produto",
+  );
+  // O produto final segue impresso normalmente.
+  assert.deepEqual(
+    folha.productSections.map((section) => section.productId),
+    [stagedProduct.id],
   );
 });
