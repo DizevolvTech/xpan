@@ -57,8 +57,12 @@ function collectRecipeTree(
   if (visited.has(productId)) return;
   visited.add(productId);
   const product = productsById.get(productId);
-  if (!product || product.recipe.length === 0) return;
+  if (!product) return;
+  // Grava a linha MESMO com receita vazia: "sem receita na liberação" precisa ser
+  // distinguível de "não congelado". Sem isso, adicionar um MPI à receita depois da
+  // liberação fazia a OP do pedido já liberado ganhar produção nova (duplicada).
   acc.set(productId, product.recipe);
+  if (product.recipe.length === 0) return;
   for (const ref of product.recipe) {
     // Só produtos (MPI) recursam — ingredientes misturados ficam na pré-pesagem, não viram
     // sub-receita expandida (mesma regra da expansão).

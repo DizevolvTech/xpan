@@ -1,4 +1,4 @@
--- 2.3-B: Registro de sobras e ajustes para futuros pedidos.
+-- 2.3-B: Registro INTERNO de sobras e faltas de produção (rastreabilidade).
 -- DECISÃO DO PRODUCT OWNER: REGISTRAR + RELATAR APENAS. Esta tabela apenas
 -- registra a sobra/falta de cada item de produção CONCLUÍDO e a expõe num
 -- relatório. NÃO realimenta o motor de planejamento nem deduz de pedidos

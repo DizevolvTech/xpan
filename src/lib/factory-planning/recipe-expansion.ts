@@ -17,6 +17,12 @@ import type { PlannedOrderItem } from "./types";
  */
 const MAX_EXPANSION_DEPTH = 4;
 
+/**
+ * Receita congelada de um produto AUSENTE do snapshot de um pedido que TEM snapshot:
+ * ele não estava na árvore no momento da liberação, logo não expande nada.
+ */
+const EMPTY_FROZEN_RECIPE: ProductionProduct["recipe"] = [];
+
 export interface ExpandRecipeOptions {
   /** Profundidade máxima. Default = MAX_EXPANSION_DEPTH (4). */
   maxDepth?: number;
@@ -112,7 +118,13 @@ export function expandRecipeIntoItems(
       // XPAN #6: pedido liberado → usa a receita CONGELADA (snapshot); senão a receita ao
       // vivo. Quando há snapshot, também escalamos as quantidades pela receita congelada
       // (produto efetivo com a receita do snapshot), para os kg de MPI baterem com ela.
-      const frozenRecipe = options.releasedRecipeByOrderProduct?.get(parent.orderId)?.get(parent.productId);
+      // Um pedido COM snapshot está inteiramente congelado: produto sem linha no snapshot
+      // não fazia parte da árvore na liberação, então expande como receita VAZIA em vez de
+      // cair na receita ao vivo — senão editar a receita depois cria OP para pedido liberado.
+      const frozenByProduct = options.releasedRecipeByOrderProduct?.get(parent.orderId);
+      const frozenRecipe = frozenByProduct
+        ? (frozenByProduct.get(parent.productId) ?? EMPTY_FROZEN_RECIPE)
+        : undefined;
       const recipe = frozenRecipe ?? liveProduct.recipe;
       if (recipe.length === 0) {
         return;

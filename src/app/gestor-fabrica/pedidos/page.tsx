@@ -41,6 +41,7 @@ import { aggregateOrderItems } from "@/lib/order-item-aggregation";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
   formatDateKeyBr,
+  getTodayDateKey,
   type PlannedOrderItem,
   type PlannedOrderRow,
 } from "@/lib/order-planning";
@@ -110,7 +111,9 @@ export default function PedidosFabricaPage() {
   const [openMode, setOpenMode] = useState<"week" | "manual">("week");
   const [openDeliveryDate, setOpenDeliveryDate] = useState("");
   // Data de referência (início da semana rolante) no modo "semana". Default: hoje.
-  const [openReferenceDate, setOpenReferenceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Fuso operacional: `toISOString()` é UTC e viraria o dia após as 21h em Brasília,
+  // abrindo o lote da semana com um dia de referência adiantado.
+  const [openReferenceDate, setOpenReferenceDate] = useState(() => getTodayDateKey());
   const [openStoreIds, setOpenStoreIds] = useState<string[]>([]);
   const [isOpeningOrders, setIsOpeningOrders] = useState(false);
   const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder, refresh } = useFactoryPlanningSnapshot(anchorDate);

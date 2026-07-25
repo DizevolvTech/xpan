@@ -67,7 +67,9 @@ export default function ProducaoPrintPage() {
 
   return (
     <PrintDocument
-      title={op.lineName}
+      // Cabeçalho da ficha do cliente: linha de produção + o GAP produção→entrega ("Dia+1"),
+      // que é o que o padeiro lê primeiro para saber se a carga é do dia seguinte.
+      title={document.deliveryGap.label ? `${op.lineName} · ${document.deliveryGap.label}` : op.lineName}
       variant="industrial"
       autoPrint
       meta={`Produção · ${op.code} · Produzir ${op.productionDateLabel} · Entregar ${deliveryDateLabel}`}

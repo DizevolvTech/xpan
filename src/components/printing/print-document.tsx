@@ -116,6 +116,26 @@ export function PrintDocument({
             font-size: 10.5px;
             line-height: 1.2;
           }
+
+          /* Cabeçalho que REPETE em toda página impressa, como na ficha do cliente (a página 2
+             traz linha, produzir e entregar de novo). Sem isso, quem pega a folha 2 de uma OP
+             longa não sabe de qual OP nem de que dia ela é.
+             position:fixed dentro de @media print é o que faz o navegador repetir o bloco em
+             cada página; o padding-top no container reserva a altura para o conteúdo não
+             passar por baixo dele. */
+          /* O halo quente em volta da folha vinha dos dois radial-gradient do body
+             (globals.css, um deles em --accent) com background-attachment: fixed — o
+             background:white acima não estava zerando na prática. Some com a imagem de fundo
+             e com qualquer sombra dentro do documento: folha de chão é preto no branco. */
+          html,
+          body {
+            background-image: none !important;
+          }
+          .print-doc,
+          .print-doc * {
+            box-shadow: none !important;
+            text-shadow: none !important;
+          }
           .print-doc h1 {
             font-size: 17px !important;
             margin: 0 !important;
@@ -228,6 +248,12 @@ export function PrintDocument({
           // Cabeçalho enxuto: só o nome da linha (title) + uma linha minúscula de
           // contexto (documento/data) pra folha de chão não ficar sem data. Sem
           // logo/marca/setor/cartões — economia máxima de altura por folha.
+          // NÃO usar `position: fixed` para repetir este cabeçalho por página: o elemento sai do
+          // fluxo e passa a ocupar o mesmo topo da área de conteúdo, cobrindo a primeira faixa
+          // (visto na prova de impressão de 25/07 — a faixa do MPI ficava atrás do cabeçalho).
+          // Repetir de verdade exige `display: table-header-group`, o que significa remontar o
+          // documento como tabela. Enquanto isso o cabeçalho sai UMA vez; o que já repete por
+          // página são os `<thead>` das tabelas, que o navegador reemite ao quebrar.
           <header className="flex items-center justify-between gap-3 border-b-2 border-stone-700 px-4 py-2 print:px-4 print:py-1">
             <div className="min-w-0">
               <h1 className="text-2xl font-bold uppercase leading-none text-stone-900">{title}</h1>

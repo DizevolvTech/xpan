@@ -2,16 +2,17 @@ import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, canAccessStore, getAllowedStoreIds } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
-import { resolveStoreVisibleOrderStatus } from "@/lib/store-order-workflow";
+import { canEditStoreOrder, resolveStoreVisibleOrderStatus } from "@/lib/store-order-workflow";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getPersistedDeliveryExecutions } from "@/lib/supabase-data/delivery";
 import { createStoreOrder, listFactoryStoreOrders } from "@/lib/supabase-data/store-orders";
 import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapshot";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
-  return searchParams.get("referenceDate") ?? new Date().toISOString().slice(0, 10);
+  return searchParams.get("referenceDate") ?? getTodayDateKey();
 }
 
 function isClientValidationError(message: string) {
@@ -84,6 +85,15 @@ export async function GET(request: Request) {
           deliveryDateKey: order.deliveryDate,
           status: resolveStoreVisibleOrderStatus(order.status, execution?.status),
           store: order.storeName,
+          // XPAN item 5: a LISTA da loja precisa da mesma capability que o detalhe já
+          // devolve, senão a linha oferece "Editar pedido" para um pedido que
+          // `ensureOrderIsMutable` vai recusar no submit. O snapshot de planejamento já
+          // traz `releasedToProduction` — nenhuma consulta extra.
+          releasedToProduction: order.releasedToProduction,
+          canEdit: canEditStoreOrder(
+            order.status === "cancelado" ? "cancelado" : "ativo",
+            order.releasedToProduction,
+          ),
         };
       });
 

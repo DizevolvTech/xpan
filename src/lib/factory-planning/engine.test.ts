@@ -4,6 +4,7 @@ import test from "node:test";
 import { applyFactoryWorkflowState } from "@/lib/factory-workflow-logic";
 import {
   buildFactoryPlanningData,
+  getBaseDateByCutoff,
   getOperationalOrderWindow,
   getOperationalTimeline,
   getWeekDayKey,
@@ -40,12 +41,27 @@ const settings: OperationalSettings = {
 };
 
 test("operational order window respects cutoff and blocked weekdays", () => {
-  const window = getOperationalOrderWindow("2026-03-17T19:30:00", baseStore, settings);
+  // 19:30 em Brasília (offset explícito): o corte é lido no fuso operacional, então um
+  // instante sem offset seria ambíguo e o resultado dependeria do TZ do processo.
+  const window = getOperationalOrderWindow("2026-03-17T19:30:00-03:00", baseStore, settings);
 
   assert.deepEqual(window, {
     baseDate: "2026-03-19",
     deliveryDate: "2026-03-21",
   });
+});
+
+test("corte das 18:00 é avaliado em America/Sao_Paulo, não no fuso do processo", () => {
+  // Regressão da call 24/07: a Vercel roda em UTC e o corte era comparado com getHours()
+  // do processo — 18:00 disparava às 15:00 em Brasília e o dia virava perto da meia-noite.
+  // 20:00Z = 17:00 BRT → AINDA no dia, antes do corte.
+  assert.equal(getBaseDateByCutoff("2026-03-17T20:00:00Z", "18:00"), "2026-03-17");
+  // 22:00Z = 19:00 BRT → depois do corte, empurra para o dia seguinte.
+  assert.equal(getBaseDateByCutoff("2026-03-17T22:00:00Z", "18:00"), "2026-03-18");
+  // 02:00Z do dia 18 = 23:00 BRT do dia 17 → o "hoje" operacional ainda é 17, após o corte.
+  assert.equal(getBaseDateByCutoff("2026-03-18T02:00:00Z", "18:00"), "2026-03-18");
+  // 11:00Z = 08:00 BRT → manhã do mesmo dia, antes do corte.
+  assert.equal(getBaseDateByCutoff("2026-03-17T11:00:00Z", "18:00"), "2026-03-17");
 });
 
 test("production date resolves inside the base/delivery window when possible", () => {

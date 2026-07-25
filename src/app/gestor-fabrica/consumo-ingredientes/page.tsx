@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatKgLabel } from "@/lib/utils";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 interface IngredientConsumptionRow {
   ingredientId: string;
@@ -40,7 +41,7 @@ const WINDOW_OPTIONS = [
 ];
 
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return getTodayDateKey();
 }
 
 function formatDateBr(isoDate: string) {

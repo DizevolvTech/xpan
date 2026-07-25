@@ -18,6 +18,15 @@ import {
 } from "@/lib/supabase-data/workflow";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
+/**
+ * Sanitiza a quantidade produzida informada pelo chão: só número finito e
+ * não-negativo conta como "informada". Qualquer outra coisa vira `null` e o
+ * registro de sobra cai na estimativa do plano de batidas (comportamento antigo).
+ */
+function parseReportedProducedQuantity(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 export async function PATCH(request: Request) {
   try {
     const body = (await request.json()) as
@@ -41,6 +50,9 @@ export async function PATCH(request: Request) {
           status: ProductionItemStatus;
           // Override de gestor/admin: força concluir produção em data futura.
           force?: boolean;
+          // Quantidade EFETIVAMENTE produzida informada pelo operador ao concluir
+          // o item. Ausente = registro de sobra cai na estimativa do plano.
+          reportedProducedQuantity?: number | null;
         }
       | {
           action: "start-production-item";
@@ -52,6 +64,8 @@ export async function PATCH(request: Request) {
           batchCount: number;
           // Override de gestor/admin: força fechar a produção em data futura.
           force?: boolean;
+          // Idem: só vale na ÚLTIMA batida (a que fecha o item em `concluido`).
+          reportedProducedQuantity?: number | null;
         }
       | {
           action: "undo-production-batch";
@@ -157,6 +171,7 @@ export async function PATCH(request: Request) {
           authorization.effectiveTenantId,
           supabase,
           body.force === true,
+          parseReportedProducedQuantity(body.reportedProducedQuantity),
         );
       } catch (error) {
         if (error instanceof FutureWorkflowDateError) {
@@ -239,6 +254,7 @@ export async function PATCH(request: Request) {
             authorization.effectiveTenantId,
             supabase,
             body.force === true,
+            parseReportedProducedQuantity(body.reportedProducedQuantity),
           );
         } catch (error) {
           if (error instanceof FutureWorkflowDateError) {

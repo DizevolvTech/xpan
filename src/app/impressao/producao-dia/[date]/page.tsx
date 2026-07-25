@@ -83,7 +83,10 @@ export default function ProducaoDiaPrintPage() {
             className={index > 0 ? "break-before-page" : undefined}
           >
             <header className="mb-2 border-b-2 border-stone-700 pb-1">
-              <h2 className="text-lg font-bold uppercase leading-none text-stone-900">{op.lineName}</h2>
+              {/* Mesmo cabeçalho da impressão individual: linha + gap produção→entrega ("Dia+1"). */}
+              <h2 className="text-lg font-bold uppercase leading-none text-stone-900">
+                {document.deliveryGap.label ? `${op.lineName} · ${document.deliveryGap.label}` : op.lineName}
+              </h2>
               <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-stone-500">
                 {op.code} · Produzir {op.productionDateLabel} · Entregar {deliveryDateLabel}
               </p>

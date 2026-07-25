@@ -23,6 +23,7 @@ import type {
   WeeklyProductionSchedule,
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
+import { normalizeRecipeStage, normalizeRecipeStageConfig } from "@/lib/production-planning";
 import { normalizeScheduleDayPriorities } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 import {
@@ -350,6 +351,8 @@ async function loadMasterDataSnapshot(
       observation: (row as Record<string, unknown>).observation as string ?? "",
       // XPAN-8: ingrediente principal da receita (base p/ derivar capacidade da batida).
       isMain: Boolean((row as Record<string, unknown>).is_main),
+      // Etapa/função da linha; ausente (base sem a migration) = massa.
+      stage: normalizeRecipeStage((row as Record<string, unknown>).stage),
     });
     acc.set(key, current);
     return acc;
@@ -408,6 +411,12 @@ async function loadMasterDataSnapshot(
     packagingProfile: coercePackagingProfile(row.packaging_profile),
     isSoldLoose: row.is_sold_loose,
     recipe: recipeByProductId.get(row.legacy_id ?? row.id) ?? [],
+    // Sequência das etapas da ficha + modo de preparo de cada bloco. Coluna ausente
+    // (base sem a migration 20260725110000) ou JSONB com lixo ⇒ array vazio, que é a
+    // ordem canônica do enum e sem instrução por etapa — o comportamento de hoje.
+    recipeStageConfig: normalizeRecipeStageConfig(
+      (row as Record<string, unknown>).recipe_stage_config,
+    ),
     preparationStages: normalizeProductPreparationStages(
       preparationStagesByProductId.get(row.legacy_id ?? row.id),
     ),

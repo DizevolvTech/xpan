@@ -1,4 +1,8 @@
-import type { ProductPreparationStageKey, ProductionWeekDay } from "@/lib/production-planning";
+import type {
+  ProductionProduct,
+  ProductPreparationStageKey,
+  ProductionWeekDay,
+} from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 
 export type OrderStatus =
@@ -179,6 +183,14 @@ export interface ProductionOrderItem {
   capacityPerBatch: number | null;
   preparationStages: ProductPreparationStageKey[];
   sourceItemsCount: number;
+  /**
+   * XPAN #6: receita CONGELADA na liberação, quando todos os pedidos liberados que
+   * alimentam este item concordam. A pré-pesagem e a ficha de produção imprimem esta
+   * versão, para a folha do padeiro bater com a OP de MPI que o motor gerou.
+   * `null` = imprime a receita ao vivo (pedido não liberado, sem snapshot, ou pedidos
+   * liberados com receitas congeladas divergentes).
+   */
+  frozenRecipe?: ProductionProduct["recipe"] | null;
 }
 
 export interface ProductionOrderSourceItem {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { motion } from "framer-motion";
 import {
   AlertCircle,
@@ -55,6 +55,7 @@ import {
   getBaseDateByCutoff,
   getDeliveryDateByStoreRule,
   getOperationalBaseDateByStoreRule,
+  getTodayDateKey,
   normalizeSaleLeadDays,
 } from "@/lib/order-planning";
 import {
@@ -71,7 +72,11 @@ import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSuggestions, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
-import { findActiveWindowOrder } from "@/lib/store-order-window";
+import {
+  findActiveWindowOrder,
+  isStoreOrderEditable,
+  isStoreOrderOverdue,
+} from "@/lib/store-order-window";
 import { buildCoveredDaysFill, sumOrderDayQuantities } from "@/lib/store-order-coverage";
 
 type EditableDayField = "sex" | "sab" | "dom" | "seg" | "ter" | "qua" | "qui";
@@ -225,6 +230,29 @@ function buildOrderDetailPath(orderId: string, referenceDate: string) {
   return `/loja/pedidos/${orderId}?ref=${referenceDate}`;
 }
 
+// XPAN item 5 — motivo da trava. O gate real é do servidor (`ensureOrderIsMutable`): depois
+// de liberado a receita está congelada e a OP já foi derivada do pedido. Aqui só evitamos
+// abrir o formulário para falhar no submit. O motivo é POR LINHA porque liberado e cancelado
+// travam pelo mesmo predicado — texto fixo anunciaria a justificativa errada em metade dos
+// casos.
+function getLockedOrderReason(order: StoreOrderSummary): string {
+  if (order.status === "cancelado") {
+    return "Pedido cancelado — não pode ser editado";
+  }
+  return "Pedido liberado para produção — não pode mais ser editado";
+}
+
+// XPAN item 6 — hidratação: o "hoje" é resolvido no cliente porque o render de SERVIDOR não
+// deve decidir se um pedido está atrasado (o snapshot inicial vazio desliga o alerta e o
+// valor real chega na hidratação). Mesmo padrão de `useOperationalDateScope`. String estável
+// entre chamadas → `useSyncExternalStore` não re-renderiza em loop.
+const subscribeToNothing = () => () => undefined;
+const getServerTodayDateKey = () => "";
+
+function useTodayDateKey() {
+  return useSyncExternalStore(subscribeToNothing, getTodayDateKey, getServerTodayDateKey);
+}
+
 // Refino visual local (escopo só desta tela): KPI "flat" — sem borda dura,
 // hierarquia por superfície sutil + sombra suave + número protagonista.
 // Não altera o KPICard compartilhado (preserva as demais telas).
@@ -298,6 +326,9 @@ export default function PedidosLojaPage() {
   const { profile } = useCurrentProfile();
   const { snapshot } = useMasterDataSnapshot();
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  // XPAN item 6: o atraso é medido contra HOJE, nunca contra `anchorDate` (o usuário escolhe
+  // data passada/futura no escopo operacional e o alerta apareceria/sumiria ao filtrar).
+  const todayDateKey = useTodayDateKey();
   const [searchTerm, setSearchTerm] = useState("");
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
   const [isOrderConfirmationOpen, setIsOrderConfirmationOpen] = useState(false);
@@ -585,8 +616,12 @@ export default function PedidosLojaPage() {
       ocorrenciasAbertas: occurrences.filter(
         (item) => item.status === "aberta" || item.status === "em_analise",
       ).length,
+      // XPAN item 6: recebimento previsto vencido e pedido ainda não entregue.
+      atrasados: scopedStoreOrderSummaries.filter((item) =>
+        isStoreOrderOverdue(item, todayDateKey),
+      ).length,
     }),
-    [occurrences, scopedStoreOrderSummaries],
+    [occurrences, scopedStoreOrderSummaries, todayDateKey],
   );
 
   const categoryOptions = useMemo(
@@ -759,11 +794,32 @@ export default function PedidosLojaPage() {
       header: "Recebimento previsto",
       sortable: true,
       sortValue: (item: StoreOrderSummary) => item.deliveryDate,
-      render: (item: StoreOrderSummary) => (
-        <span className="rounded-md bg-warning/30 px-2 py-1 text-xs font-semibold text-warning-foreground">
-          {item.deliveryDate}
-        </span>
-      ),
+      // XPAN item 6: quando a data prevista venceu e o pedido não foi entregue, a própria
+      // célula muda de tom e ganha o selo "Atrasado" — o alerta fica onde a loja já olha.
+      render: (item: StoreOrderSummary) => {
+        const isOverdue = isStoreOrderOverdue(item, todayDateKey);
+
+        return (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <span
+              className={cn(
+                "rounded-md px-2 py-1 text-xs font-semibold",
+                isOverdue
+                  ? "bg-danger/30 text-danger-foreground"
+                  : "bg-warning/30 text-warning-foreground",
+              )}
+            >
+              {item.deliveryDate}
+            </span>
+            {isOverdue ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-danger/[var(--opacity-subtle)] px-2 py-0.5 text-[11px] font-semibold text-danger">
+                <AlertTriangle className="size-3" aria-hidden />
+                Atrasado
+              </span>
+            ) : null}
+          </span>
+        );
+      },
     },
     {
       key: "status",
@@ -788,6 +844,11 @@ export default function PedidosLojaPage() {
     {
       icon: "edit" as const,
       label: "Editar pedido",
+      // XPAN item 5: a linha só oferece edição enquanto o servidor ainda aceita alterar o
+      // pedido (não liberado e não cancelado). Antes a ação abria o formulário 100% editável
+      // e a loja só descobria a trava ao salvar — com os itens já zerados na tela.
+      isDisabled: (item: StoreOrderSummary) => !isStoreOrderEditable(item),
+      disabledLabel: getLockedOrderReason,
       onClick: (item: StoreOrderSummary) => handleOpenEditOrder(item),
     },
     {
@@ -999,10 +1060,18 @@ export default function PedidosLojaPage() {
                   {activeOrderInScope.code}
                 </strong>
               </p>
+              {/* XPAN item 5: o pedido em andamento pode já estar liberado (a janela de
+                  edição fechou). O atalho continua visível, mas desabilitado com o motivo. */}
               <Button
                 type="button"
                 variant="outline"
                 className="shrink-0"
+                disabled={!isStoreOrderEditable(activeOrderInScope)}
+                title={
+                  isStoreOrderEditable(activeOrderInScope)
+                    ? "Editar pedido"
+                    : getLockedOrderReason(activeOrderInScope)
+                }
                 onClick={() => handleOpenEditOrder(activeOrderInScope)}
               >
                 <Pencil className="size-4" />
@@ -1602,11 +1671,12 @@ export default function PedidosLojaPage() {
         </section>
 
         {/* KPIs: fita de métricas flat — número protagonista, ícone discreto.
-            "Total" removido (redundante com a tabela). 5 → 4. */}
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+            "Total" removido (redundante com a tabela); "Atrasados" entrou (XPAN item 6). */}
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
           <FlatKpi title="Agendado" value={orderKpis.agendado} icon={Clock3} tone="warning" />
           <FlatKpi title="Em Produção" value={orderKpis.emProducao} icon={Package} tone="neutral" />
           <FlatKpi title="Entregas" value={orderKpis.entregas} icon={Truck} tone="success" />
+          <FlatKpi title="Atrasados" value={orderKpis.atrasados} icon={AlertTriangle} tone="danger" />
           <FlatKpi title="Ocorrências" value={orderKpis.ocorrenciasAbertas} icon={AlertCircle} tone="danger" />
         </div>
 

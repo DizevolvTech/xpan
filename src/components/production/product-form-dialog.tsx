@@ -31,8 +31,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  defaultRecipeStage,
   hierarchyLabels,
   productionWeekDays,
+  recipeStageLabels,
+  recipeStages,
   type BreakStage,
   type IngredientCompositionItem,
   type PackagingProfile,
@@ -40,7 +43,21 @@ import {
   type ProductionLine,
   type ProductionProduct,
   type RecipeIngredientReference,
+  type RecipeStage,
+  type RecipeStageConfigEntry,
 } from "@/lib/production-planning";
+import {
+  addRecipeStage,
+  canRemoveRecipeStage,
+  getAddableRecipeStages,
+  getRecipeStageBlocks,
+  insertRecipeItemInStage,
+  moveRecipeItemToStage,
+  moveRecipeItemWithinStage,
+  moveRecipeStage,
+  removeRecipeStage,
+  setRecipeStageInstructions,
+} from "@/lib/recipe-stage-editor";
 import {
   getOperationalUnitLabel,
   getOperationalUnitOptions,
@@ -80,6 +97,19 @@ type RecipeSourceOption = {
   label: string;
   sourceType: RecipeIngredientReference["sourceType"];
 };
+
+/**
+ * Rascunho do "adicionar ingrediente" — um POR BLOCO. A ficha é editada em blocos (etapa), então
+ * o formulário de adição mora dentro do bloco e o item já nasce naquela etapa; não existe mais um
+ * formulário solto no topo pedindo a etapa num dropdown.
+ */
+type RecipeDraftState = {
+  sourceId: string;
+  quantity: string;
+  unit: RecipeIngredientReference["unit"];
+};
+
+const emptyRecipeDraft: RecipeDraftState = { sourceId: "", quantity: "", unit: "Kg" };
 
 type ProductFormDialogProps = {
   open: boolean;
@@ -142,9 +172,11 @@ export function ProductFormDialog({
   const [lineDraft, setLineDraft] = useState<LineDraftState>(() =>
     buildLineDraft(snapshot.sectors[0]?.id ?? ""),
   );
-  const [draftRecipeSourceId, setDraftRecipeSourceId] = useState("");
-  const [draftRecipeQuantity, setDraftRecipeQuantity] = useState("");
-  const [draftRecipeUnit, setDraftRecipeUnit] = useState<RecipeIngredientReference["unit"]>("Kg");
+  const [recipeDrafts, setRecipeDrafts] = useState<Partial<Record<RecipeStage, RecipeDraftState>>>(
+    {},
+  );
+  // Bloco que abriu o cadastro de ingrediente inline — o insumo criado volta pro rascunho dele.
+  const [ingredientDialogStage, setIngredientDialogStage] = useState<RecipeStage>(defaultRecipeStage);
   const [formError, setFormError] = useState<string | null>(null);
   const [invalidFields, setInvalidFields] = useState<ProductValidationField[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -162,9 +194,7 @@ export function ProductFormDialog({
     !isReadOnly &&
     JSON.stringify({
       formState,
-      draftRecipeSourceId,
-      draftRecipeQuantity,
-      draftRecipeUnit,
+      recipeDrafts,
     }) !== formBaseline;
   const formGuard = useUnsavedChangesGuard({
     enabled: open && !isReadOnly,
@@ -189,15 +219,12 @@ export function ProductFormDialog({
     const nextFormState = buildProductFormState(snapshotLinesRef.current, productRef.current);
     setFormState(nextFormState);
     setLineDraft(buildLineDraft(snapshotSectorsRef.current[0]?.id ?? ""));
-    setDraftRecipeSourceId("");
-    setDraftRecipeQuantity("");
-    setDraftRecipeUnit("Kg");
+    setRecipeDrafts({});
+    setIngredientDialogStage(defaultRecipeStage);
     setFormBaseline(
       JSON.stringify({
         formState: nextFormState,
-        draftRecipeSourceId: "",
-        draftRecipeQuantity: "",
-        draftRecipeUnit: "Kg",
+        recipeDrafts: {},
       }),
     );
     setFormError(null);
@@ -261,6 +288,12 @@ export function ProductFormDialog({
       ),
     [formState.packagingProfile?.unit, formState.unitProfiles.sales.unit],
   );
+  // Unidade dos rascunhos abertos em cada bloco — mantém a unidade legada do insumo escolhido
+  // na lista de opções enquanto o item ainda não foi adicionado à receita.
+  const recipeDraftUnits = useMemo(
+    () => Object.values(recipeDrafts).map((draft) => draft?.unit),
+    [recipeDrafts],
+  );
   const productUnitOptions = useMemo(
     () =>
       getOperationalUnitOptions(
@@ -268,11 +301,11 @@ export function ProductFormDialog({
         formState.unitProfiles.production.unit,
         formState.unitProfiles.expedition.unit,
         formState.ingredientProfile?.unit,
-        draftRecipeUnit,
+        ...recipeDraftUnits,
         ...formState.recipe.map((item) => item.unit),
       ),
     [
-      draftRecipeUnit,
+      recipeDraftUnits,
       formState.ingredientProfile?.unit,
       formState.recipe,
       formState.unitProfiles.expedition.unit,
@@ -372,6 +405,17 @@ export function ProductFormDialog({
       })),
     [recipeSourceOptions, snapshot.ingredients, snapshot.products],
   );
+  // A ficha técnica renderizada em BLOCOS (ponto do Adriano: "ingredientes", "ingredientes do
+  // recheio", "ingredientes para a montagem"). A ordem vem da config do produto; receita legada
+  // sem config cai num bloco Massa único, idêntico à tabela plana de antes.
+  const recipeStageBlocks = useMemo(
+    () => getRecipeStageBlocks(formState.recipeStageConfig, formState.recipe),
+    [formState.recipeStageConfig, formState.recipe],
+  );
+  const addableRecipeStages = useMemo(
+    () => getAddableRecipeStages(formState.recipeStageConfig, formState.recipe),
+    [formState.recipeStageConfig, formState.recipe],
+  );
 
   function focusFirstInvalidField(fields: ProductValidationField[]) {
     const target = fields.map(getInvalidFieldTarget).find(Boolean);
@@ -460,37 +504,83 @@ export function ProductFormDialog({
     }));
   }
 
-  function addRecipeItem() {
-    if (!draftRecipeSourceId || !draftRecipeQuantity) {
+  function getRecipeDraft(stage: RecipeStage): RecipeDraftState {
+    return recipeDrafts[stage] ?? emptyRecipeDraft;
+  }
+
+  /** Rascunho zerado SAI do mapa — senão o guard de alterações não salvas continuaria acusando
+   * o formulário como sujo depois de o usuário desfazer a seleção. */
+  function clearRecipeDraft(stage: RecipeStage) {
+    setRecipeDrafts((current) => {
+      if (!current[stage]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[stage];
+      return next;
+    });
+  }
+
+  function updateRecipeDraft(stage: RecipeStage, patch: Partial<RecipeDraftState>) {
+    const nextDraft = { ...getRecipeDraft(stage), ...patch };
+    if (!nextDraft.sourceId && !nextDraft.quantity) {
+      clearRecipeDraft(stage);
+      return;
+    }
+    setRecipeDrafts((current) => ({ ...current, [stage]: nextDraft }));
+  }
+
+  /** Escolher a referência já traz a unidade do cadastro do insumo (não é digitável aqui). */
+  function selectRecipeDraftSource(stage: RecipeStage, sourceId: string) {
+    const source = recipeSourceOptions.find((option) => option.id === sourceId);
+    const unit =
+      source?.sourceType === "ingrediente"
+        ? snapshot.ingredients.find((ingredient) => ingredient.id === sourceId)?.unit
+        : source?.sourceType === "produto"
+          ? snapshot.products.find((candidate) => candidate.id === sourceId)?.salesUnit
+          : undefined;
+
+    updateRecipeDraft(stage, { sourceId, unit: unit ?? getRecipeDraft(stage).unit });
+  }
+
+  function addRecipeItem(stage: RecipeStage) {
+    const draft = getRecipeDraft(stage);
+    if (!draft.sourceId || !draft.quantity) {
       return;
     }
 
-    const quantity = Number(draftRecipeQuantity);
+    const quantity = Number(draft.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return;
     }
 
-    const sourceOption = recipeSourceOptions.find((option) => option.id === draftRecipeSourceId);
+    const sourceOption = recipeSourceOptions.find((option) => option.id === draft.sourceId);
     if (!sourceOption) {
       return;
     }
 
     setFormState((current) => ({
       ...current,
-      recipe: [
-        ...current.recipe,
-        {
-          id: `recipe-${Date.now()}`,
-          sourceId: sourceOption.id,
-          sourceType: sourceOption.sourceType,
-          label: sourceOption.label,
-          quantity,
-          unit: draftRecipeUnit,
-        },
-      ],
+      // O item nasce na etapa do bloco e entra no FIM daquele bloco — não no fim da receita
+      // inteira, que visualmente seria outro bloco.
+      recipe: insertRecipeItemInStage(current.recipe, {
+        // `recipe-${Date.now()}` colidia em dois cliques no mesmo milissegundo — com o
+        // mesmo insumo repetido em etapas diferentes (incentivado agora), editar uma
+        // linha editava as duas. UUID mata a colisão.
+        // `crypto.randomUUID` só existe em secure context: a tela aberta por
+        // `http://<ip-da-lan>` (tablet do chão, `next dev -H 0.0.0.0`) devolveria
+        // undefined e quebraria "Adicionar item". O fallback ainda evita a colisão do
+        // `Date.now()` puro, que dava id igual em dois cliques no mesmo milissegundo.
+        id: globalThis.crypto?.randomUUID?.() ?? `recipe-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        sourceId: sourceOption.id,
+        sourceType: sourceOption.sourceType,
+        label: sourceOption.label,
+        quantity,
+        unit: draft.unit,
+        stage,
+      }),
     }));
-    setDraftRecipeSourceId("");
-    setDraftRecipeQuantity("");
+    clearRecipeDraft(stage);
   }
 
   function removeRecipeItem(recipeId: string) {
@@ -512,9 +602,18 @@ export function ProductFormDialog({
               ...item,
               quantity: patch.quantity ?? item.quantity,
               unit: patch.unit ?? item.unit,
+              stage: item.stage ?? defaultRecipeStage,
             }
           : item,
       ),
+    }));
+  }
+
+  /** Troca o ingrediente de bloco: ele reaparece no fim da etapa de destino. */
+  function changeRecipeItemStage(recipeId: string, stage: RecipeStage) {
+    setFormState((current) => ({
+      ...current,
+      recipe: moveRecipeItemToStage(current.recipe, recipeId, stage),
     }));
   }
 
@@ -531,27 +630,46 @@ export function ProductFormDialog({
     }));
   }
 
+  /** Sequenciamento DENTRO do bloco — o vizinho é o item da mesma etapa, não o do array. */
   function moveRecipeItem(recipeId: string, direction: "up" | "down") {
-    setFormState((current) => {
-      const currentIndex = current.recipe.findIndex((item) => item.id === recipeId);
-      if (currentIndex === -1) {
-        return current;
-      }
+    setFormState((current) => ({
+      ...current,
+      recipe: moveRecipeItemWithinStage(current.recipe, recipeId, direction),
+    }));
+  }
 
-      const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-      if (nextIndex < 0 || nextIndex >= current.recipe.length) {
-        return current;
-      }
+  /**
+   * Toda edição de bloco passa por aqui: os helpers materializam a ordem visível na config
+   * (`recipeStageConfig`) antes de mexer, então a sequência salva é exatamente a que está na tela.
+   */
+  function updateRecipeStageConfig(
+    mutate: (
+      config: RecipeStageConfigEntry[] | undefined,
+      recipe: RecipeIngredientReference[],
+    ) => RecipeStageConfigEntry[],
+  ) {
+    setFormState((current) => ({
+      ...current,
+      recipeStageConfig: mutate(current.recipeStageConfig, current.recipe),
+    }));
+  }
 
-      const nextRecipe = [...current.recipe];
-      const [movedItem] = nextRecipe.splice(currentIndex, 1);
-      nextRecipe.splice(nextIndex, 0, movedItem);
+  function moveRecipeStageBlock(stage: RecipeStage, direction: "up" | "down") {
+    updateRecipeStageConfig((config, recipe) => moveRecipeStage(config, recipe, stage, direction));
+  }
 
-      return {
-        ...current,
-        recipe: nextRecipe,
-      };
-    });
+  function addRecipeStageBlock(stage: RecipeStage) {
+    updateRecipeStageConfig((config, recipe) => addRecipeStage(config, recipe, stage));
+  }
+
+  function removeRecipeStageBlock(stage: RecipeStage) {
+    updateRecipeStageConfig((config, recipe) => removeRecipeStage(config, recipe, stage));
+  }
+
+  function updateRecipeStageInstructions(stage: RecipeStage, instructions: string) {
+    updateRecipeStageConfig((config, recipe) =>
+      setRecipeStageInstructions(config, recipe, stage, instructions),
+    );
   }
 
   async function handleSaveProduct() {
@@ -1510,216 +1628,354 @@ export function ProductFormDialog({
               </section>
 
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Ingredientes da Receita</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Monte a receita técnica do produto com ingredientes comuns ou produtos MPI.
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Ingredientes da Receita</h3>
+                    <p className="text-xs text-muted-foreground">
+                      A ficha é montada em BLOCOS, na mesma ordem em que a produção executa: cada
+                      etapa tem os ingredientes dela e o seu próprio modo de preparo. O mesmo insumo
+                      pode entrar em mais de um bloco (ex.: farinha na esponja e na massa) com pesos
+                      próprios.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-border/70 bg-panel/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                    {recipeStageBlocks.length} bloco(s) · {formState.recipe.length} ingrediente(s)
+                  </span>
                 </div>
-                <div className="grid gap-4 md:grid-cols-4">
-                  <div className="grid gap-2 md:col-span-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Label>Ingrediente / Produto MPI</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setIsIngredientDialogOpen(true)}
+
+                <div className="space-y-4">
+                  {recipeStageBlocks.map((block, blockIndex) => {
+                    const draft = getRecipeDraft(block.stage);
+                    const blockCanBeRemoved = canRemoveRecipeStage(
+                      formState.recipeStageConfig,
+                      formState.recipe,
+                      block.stage,
+                    );
+
+                    return (
+                      <div
+                        key={block.stage}
+                        className="space-y-3 rounded-xl border border-border/70 bg-panel/15 p-4"
                       >
-                        <Plus className="size-4" />
-                        Novo ingrediente
-                      </Button>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-info/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-info-foreground">
+                              {blockIndex + 1}º
+                            </span>
+                            <h4 className="text-sm font-semibold text-foreground">
+                              {recipeStageLabels[block.stage]}
+                            </h4>
+                            <span className="text-xs text-muted-foreground">
+                              {block.items.length === 0
+                                ? "sem ingredientes"
+                                : `${block.items.length} ingrediente(s)`}
+                            </span>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon-sm"
+                              onClick={() => moveRecipeStageBlock(block.stage, "up")}
+                              disabled={blockIndex === 0}
+                              title="Mover este bloco para cima na sequência da ficha"
+                              aria-label={`Mover bloco ${recipeStageLabels[block.stage]} para cima`}
+                            >
+                              <ChevronUp className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon-sm"
+                              onClick={() => moveRecipeStageBlock(block.stage, "down")}
+                              disabled={blockIndex === recipeStageBlocks.length - 1}
+                              title="Mover este bloco para baixo na sequência da ficha"
+                              aria-label={`Mover bloco ${recipeStageLabels[block.stage]} para baixo`}
+                            >
+                              <ChevronDown className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
+                              onClick={() => removeRecipeStageBlock(block.stage)}
+                              disabled={!blockCanBeRemoved}
+                              title={
+                                block.items.length > 0
+                                  ? "Remova os ingredientes antes de excluir o bloco"
+                                  : "Remover este bloco da ficha"
+                              }
+                              aria-label={`Remover bloco ${recipeStageLabels[block.stage]}`}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="grid gap-2">
+                          <Label htmlFor={`recipe-stage-instructions-${block.stage}`}>
+                            Modo de preparo desta etapa
+                          </Label>
+                          <Textarea
+                            id={`recipe-stage-instructions-${block.stage}`}
+                            value={block.instructions}
+                            onChange={(event) =>
+                              updateRecipeStageInstructions(block.stage, event.target.value)
+                            }
+                            className="min-h-[72px]"
+                            placeholder={`Como executar ${recipeStageLabels[block.stage].toLowerCase()}: mistura, tempo, ponto...`}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Instrução deste bloco — sai junto dos ingredientes dele na folha. A
+                            instrução geral do produto continua em “Instruções de preparo”, no fim
+                            desta aba.
+                          </p>
+                        </div>
+
+                        {block.items.length === 0 ? (
+                          <p className="rounded-lg border border-dashed border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
+                            Nenhum ingrediente neste bloco ainda.
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto rounded-xl border border-border/70">
+                            <table className="w-full min-w-[720px] border-collapse">
+                              <thead className="bg-card">
+                                <tr>
+                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                                    Referência
+                                  </th>
+                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                                    Qtd
+                                  </th>
+                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                                    Unidade
+                                  </th>
+                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                                    Mover para outra etapa
+                                  </th>
+                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
+                                    Ações
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {block.items.map((item, itemIndex) => (
+                                  <tr key={item.id}>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      {item.label}
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.001"
+                                        aria-label={`Quantidade de ${item.label}`}
+                                        value={item.quantity}
+                                        onChange={(event) =>
+                                          updateRecipeItem(item.id, {
+                                            quantity: Number(event.target.value),
+                                          })
+                                        }
+                                      />
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
+                                      {getOperationalUnitLabel(item.unit)}
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      <Select
+                                        value={item.stage ?? defaultRecipeStage}
+                                        onValueChange={(value) =>
+                                          changeRecipeItemStage(item.id, value as RecipeStage)
+                                        }
+                                      >
+                                        <SelectTrigger aria-label={`Etapa de ${item.label}`}>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {recipeStages.map((stage) => (
+                                            <SelectItem key={stage} value={stage}>
+                                              {recipeStageLabels[stage]}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
+                                      <div className="flex justify-end gap-1">
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className={cn(
+                                            "hover:text-foreground",
+                                            item.isMain
+                                              ? "text-warning"
+                                              : "text-muted-foreground/50",
+                                          )}
+                                          onClick={() => setMainRecipeItem(item.id)}
+                                          aria-pressed={item.isMain ?? false}
+                                          title={
+                                            item.isMain
+                                              ? "Ingrediente principal (clique para desmarcar)"
+                                              : "Marcar como ingrediente principal — base da capacidade por batida (XPAN-8)"
+                                          }
+                                        >
+                                          <Star
+                                            className={cn("size-4", item.isMain ? "fill-current" : "")}
+                                          />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-muted-foreground hover:text-foreground"
+                                          onClick={() => moveRecipeItem(item.id, "up")}
+                                          disabled={itemIndex === 0}
+                                          title="Mover para cima dentro do bloco"
+                                        >
+                                          <ChevronUp className="size-4" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-muted-foreground hover:text-foreground"
+                                          onClick={() => moveRecipeItem(item.id, "down")}
+                                          disabled={itemIndex === block.items.length - 1}
+                                          title="Mover para baixo dentro do bloco"
+                                        >
+                                          <ChevronDown className="size-4" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
+                                          onClick={() => removeRecipeItem(item.id)}
+                                          title="Remover ingrediente"
+                                        >
+                                          <Trash2 className="size-4" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        <div className="grid gap-3 rounded-lg border border-border/70 bg-card p-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                          <div className="grid gap-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <Label>Ingrediente / Produto MPI</Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => {
+                                  setIngredientDialogStage(block.stage);
+                                  setIsIngredientDialogOpen(true);
+                                }}
+                              >
+                                <Plus className="size-3.5" />
+                                Novo ingrediente
+                              </Button>
+                            </div>
+                            {recipeSourceOptions.length >= 8 ? (
+                              <SearchableSelect
+                                value={draft.sourceId}
+                                onValueChange={(id) => selectRecipeDraftSource(block.stage, id)}
+                                options={recipeSourceOptionsForSearch}
+                                placeholder="Selecione a referência"
+                                searchPlaceholder="Buscar ingrediente ou produto MPI..."
+                                emptyMessage="Nenhuma referência encontrada."
+                                title={`Adicionar em ${recipeStageLabels[block.stage]}`}
+                                description="Busque pelo nome ou código do ingrediente ou produto MPI."
+                              />
+                            ) : (
+                              <Select
+                                value={draft.sourceId}
+                                onValueChange={(id) => selectRecipeDraftSource(block.stage, id)}
+                              >
+                                <SelectTrigger
+                                  aria-label={`Referência para ${recipeStageLabels[block.stage]}`}
+                                >
+                                  <SelectValue placeholder="Selecione a referência" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {recipeSourceOptions.map((option) => (
+                                    <SelectItem key={option.id} value={option.id}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Quantidade</Label>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              aria-label={`Quantidade para ${recipeStageLabels[block.stage]}`}
+                              value={draft.quantity}
+                              onChange={(event) =>
+                                updateRecipeDraft(block.stage, { quantity: event.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Unidade</Label>
+                            <div className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground">
+                              {getOperationalUnitLabel(draft.unit)}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            onClick={() => addRecipeItem(block.stage)}
+                            disabled={!draft.sourceId || !draft.quantity}
+                            title={`Adicionar ingrediente em ${recipeStageLabels[block.stage]}`}
+                          >
+                            <Plus className="size-4" />
+                            Adicionar
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {addableRecipeStages.length > 0 ? (
+                  <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-dashed border-border/70 bg-panel/20 p-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">Adicionar etapa à ficha</p>
+                      <p className="text-xs text-muted-foreground">
+                        O bloco novo entra no fim da sequência e pode ser movido. Bloco vazio pode ser
+                        removido a qualquer momento.
+                      </p>
                     </div>
-                    {recipeSourceOptions.length >= 8 ? (
-                      <SearchableSelect
-                        value={draftRecipeSourceId}
-                        onValueChange={(id) => {
-                          setDraftRecipeSourceId(id);
-                          const source = recipeSourceOptions.find((o) => o.id === id);
-                          if (source?.sourceType === "ingrediente") {
-                            const ingredient = snapshot.ingredients.find((i) => i.id === id);
-                            if (ingredient) setDraftRecipeUnit(ingredient.unit);
-                          } else if (source?.sourceType === "produto") {
-                            const product = snapshot.products.find((p) => p.id === id);
-                            if (product) setDraftRecipeUnit(product.salesUnit);
-                          }
-                        }}
-                        options={recipeSourceOptionsForSearch}
-                        placeholder="Selecione a referência"
-                        searchPlaceholder="Buscar ingrediente ou produto MPI..."
-                        emptyMessage="Nenhuma referência encontrada."
-                        title="Selecionar referência da receita"
-                        description="Busque pelo nome ou código do ingrediente ou produto MPI."
-                      />
-                    ) : (
-                      <Select value={draftRecipeSourceId} onValueChange={(id) => {
-                        setDraftRecipeSourceId(id);
-                        const source = recipeSourceOptions.find((o) => o.id === id);
-                        if (source?.sourceType === "ingrediente") {
-                          const ingredient = snapshot.ingredients.find((i) => i.id === id);
-                          if (ingredient) setDraftRecipeUnit(ingredient.unit);
-                        } else if (source?.sourceType === "produto") {
-                          const product = snapshot.products.find((p) => p.id === id);
-                          if (product) setDraftRecipeUnit(product.salesUnit);
-                        }
-                      }}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione a referência" />
+                    <div className="w-full sm:w-72">
+                      <Select
+                        value=""
+                        onValueChange={(value) => addRecipeStageBlock(value as RecipeStage)}
+                      >
+                        <SelectTrigger aria-label="Adicionar etapa à ficha">
+                          <SelectValue placeholder="Selecione a etapa" />
                         </SelectTrigger>
                         <SelectContent>
-                          {recipeSourceOptions.map((option) => (
-                            <SelectItem key={option.id} value={option.id}>
-                              {option.label}
+                          {addableRecipeStages.map((stage) => (
+                            <SelectItem key={stage} value={stage}>
+                              {recipeStageLabels[stage]}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      Se o ingrediente ainda não existir, cadastre-o aqui sem sair do produto.
-                    </p>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Quantidade</Label>
-                    <Input
-                      type="number"
-                      step="0.001"
-                      value={draftRecipeQuantity}
-                      onChange={(event) => setDraftRecipeQuantity(event.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Unidade</Label>
-                    <div className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground">
-                      {getOperationalUnitLabel(draftRecipeUnit)}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Definida no cadastro do ingrediente.
-                    </p>
                   </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button type="button" onClick={addRecipeItem}>
-                    <Plus className="size-4" />
-                    Adicionar item
-                  </Button>
-                </div>
-
-                <div className="overflow-x-auto rounded-xl border border-border/70">
-                  <table className="w-full min-w-[640px] border-collapse">
-                    <thead className="bg-card">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                          Referência
-                            </th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                              Qtd
-                            </th>
-                            <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                              Unidade
-                            </th>
-                            <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
-                              Ações
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {formState.recipe.length === 0 ? (
-                            <tr>
-                              <td
-                                colSpan={4}
-                                className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground"
-                              >
-                                Nenhum item na receita.
-                              </td>
-                            </tr>
-                          ) : (
-                            formState.recipe.map((item) => (
-                              <tr key={item.id}>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                  {item.label}
-                                </td>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    step="0.001"
-                                    value={item.quantity}
-                                    onChange={(event) =>
-                                      updateRecipeItem(item.id, {
-                                        quantity: Number(event.target.value),
-                                      })
-                                    }
-                                  />
-                                </td>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
-                                  {getOperationalUnitLabel(item.unit)}
-                                </td>
-                                <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
-                                  <div className="flex justify-end gap-1">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon-sm"
-                                      className={cn(
-                                        "hover:text-foreground",
-                                        item.isMain ? "text-warning" : "text-muted-foreground/50",
-                                      )}
-                                      onClick={() => setMainRecipeItem(item.id)}
-                                      aria-pressed={item.isMain ?? false}
-                                      title={
-                                        item.isMain
-                                          ? "Ingrediente principal (clique para desmarcar)"
-                                          : "Marcar como ingrediente principal — base da capacidade por batida (XPAN-8)"
-                                      }
-                                    >
-                                      <Star className={cn("size-4", item.isMain ? "fill-current" : "")} />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon-sm"
-                                      className="text-muted-foreground hover:text-foreground"
-                                      onClick={() => moveRecipeItem(item.id, "up")}
-                                      disabled={
-                                        formState.recipe.findIndex((entry) => entry.id === item.id) ===
-                                        0
-                                      }
-                                      title="Mover para cima"
-                                    >
-                                      <ChevronUp className="size-4" />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon-sm"
-                                      className="text-muted-foreground hover:text-foreground"
-                                      onClick={() => moveRecipeItem(item.id, "down")}
-                                      disabled={
-                                        formState.recipe.findIndex((entry) => entry.id === item.id) ===
-                                        formState.recipe.length - 1
-                                      }
-                                      title="Mover para baixo"
-                                    >
-                                      <ChevronDown className="size-4" />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon-sm"
-                                      className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
-                                      onClick={() => removeRecipeItem(item.id)}
-                                    >
-                                      <Trash2 className="size-4" />
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                </div>
+                ) : null}
               </section>
 
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
@@ -2023,8 +2279,13 @@ export function ProductFormDialog({
               </div>
 
               <section className="grid gap-2">
-                <Label>Instruções de preparo</Label>
+                <Label htmlFor="product-preparation-mode">Instruções de preparo (produto)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Instrução GERAL do produto, válida para a ficha inteira. O passo a passo de cada
+                  etapa fica no campo “Modo de preparo desta etapa”, dentro do bloco correspondente.
+                </p>
                 <Textarea
+                  id="product-preparation-mode"
                   value={formState.preparationMode}
                   onChange={(event) =>
                     setFormState((current) => ({
@@ -2360,8 +2621,11 @@ export function ProductFormDialog({
         refresh={refresh}
         allowSaveAndCreateAnother={false}
         onSaved={(ingredient) => {
-          setDraftRecipeSourceId(ingredient.id);
-          setDraftRecipeUnit(ingredient.unit);
+          // Volta pro rascunho do bloco que abriu o cadastro — o insumo novo já entra na etapa certa.
+          updateRecipeDraft(ingredientDialogStage, {
+            sourceId: ingredient.id,
+            unit: ingredient.unit,
+          });
           setIsIngredientDialogOpen(false);
         }}
       />

@@ -116,8 +116,38 @@ export function getWeekDayKey(dateKey: string): ProductionWeekDay {
   return weekdayByIndex[date.getDay()];
 }
 
+/**
+ * Fuso operacional da fábrica. Fixo de propósito: a Vercel roda o processo em UTC, então
+ * `getHours()`/`toISOString().slice(0,10)` adiantam o "hoje" em 3h (e um dia inteiro à noite).
+ * Ver `getOperationalTodayKey` em `workflow-date-guard.ts`, que segue o mesmo critério.
+ */
+const OPERATIONAL_TIME_ZONE = "America/Sao_Paulo";
+
+const operationalPartsFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: OPERATIONAL_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/** Data (YYYY-MM-DD) e hora local de um instante, no fuso operacional. */
+function getOperationalDateParts(date: Date): { dateKey: string; hour: number; minute: number } {
+  const parts = operationalPartsFormatter.formatToParts(date);
+  const valueOf = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return {
+    dateKey: `${valueOf("year")}-${valueOf("month")}-${valueOf("day")}`,
+    hour: Number(valueOf("hour")),
+    minute: Number(valueOf("minute")),
+  };
+}
+
 export function getTodayDateKey(): string {
-  return toDateKey(new Date());
+  return getOperationalDateParts(new Date()).dateKey;
 }
 
 export function formatDateKeyBr(dateKey: string) {
@@ -131,21 +161,21 @@ function formatDateTimeBr(dateTimeIso: string): string {
   ).padStart(2, "0")}`;
 }
 
+/**
+ * Data-base do pedido a partir do instante em que ele foi feito e do horário de corte.
+ *
+ * O corte é lido no FUSO OPERACIONAL, não no fuso do processo: `orderedAt` chega como
+ * instante UTC (`toISOString()` do browser ou `ordered_at` do banco) e o servidor roda em
+ * UTC, então comparar `getHours()` fazia o corte das 18:00 disparar às 15:00 em Brasília
+ * e virava o dia perto da meia-noite.
+ */
 export function getBaseDateByCutoff(orderedAt: string, cutoffTime: string): string {
-  const dateTime = new Date(orderedAt);
+  const { dateKey, hour, minute } = getOperationalDateParts(new Date(orderedAt));
   const [cutoffHour, cutoffMinute] = cutoffTime.split(":").map((part) => Number(part));
-  const baseDate = new Date(dateTime);
-  baseDate.setHours(0, 0, 0, 0);
 
-  const afterCutoff =
-    dateTime.getHours() > cutoffHour ||
-    (dateTime.getHours() === cutoffHour && dateTime.getMinutes() > cutoffMinute);
+  const afterCutoff = hour > cutoffHour || (hour === cutoffHour && minute > cutoffMinute);
 
-  if (afterCutoff) {
-    baseDate.setDate(baseDate.getDate() + 1);
-  }
-
-  return toDateKey(baseDate);
+  return afterCutoff ? addDays(dateKey, 1) : dateKey;
 }
 
 export function moveToNextAllowedWeekday(dateKey: string, allowedDays: ProductionWeekDay[]): string {
@@ -826,9 +856,49 @@ export function buildScheduleSkeletonItems(
   return items;
 }
 
+/**
+ * Receita EFETIVA de um item de OP: a congelada na liberação, quando todos os pedidos
+ * liberados que alimentam o item concordam. A OP agrega várias lojas/pedidos, então:
+ *  - nenhum pedido congelado          → `null` (a impressão usa a receita ao vivo);
+ *  - todos os congelados são iguais   → essa receita (a folha bate com a OP de MPI);
+ *  - congelados DIVERGENTES           → `null`, porque não existe uma folha só que sirva
+ *    para as duas versões — mantém o comportamento anterior em vez de escolher uma.
+ */
+function resolveFrozenRecipeForOpItem(
+  sourceOrderIds: string[],
+  productId: string,
+  releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>,
+): ProductionProduct["recipe"] | null {
+  if (!releasedRecipeByOrderProduct) {
+    return null;
+  }
+
+  let resolved: ProductionProduct["recipe"] | null = null;
+  let resolvedSignature: string | null = null;
+
+  for (const orderId of sourceOrderIds) {
+    const frozen = releasedRecipeByOrderProduct.get(orderId)?.get(productId);
+    if (!frozen) {
+      continue;
+    }
+    const signature = JSON.stringify(frozen);
+    if (resolvedSignature === null) {
+      resolved = frozen;
+      resolvedSignature = signature;
+      continue;
+    }
+    if (signature !== resolvedSignature) {
+      return null;
+    }
+  }
+
+  return resolved;
+}
+
 export function buildProductionOrdersFromPlannedItems(
   plannedItems: PlannedOrderItem[],
   referenceDate: string,
+  releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>,
 ): {
   productionOrders: ProductionOrderRow[];
   opsByOrderId: Map<string, Set<string>>;
@@ -1022,6 +1092,14 @@ export function buildProductionOrdersFromPlannedItems(
           batchesDone,
           status,
           progress,
+          // XPAN #6: a folha impressa (pré-pesagem/ficha) precisa da MESMA receita que
+          // gerou a OP; sem isso a OP de MPI sai da receita congelada e a folha lista a
+          // receita nova. `null` = imprime a receita ao vivo (comportamento anterior).
+          frozenRecipe: resolveFrozenRecipeForOpItem(
+            Array.from(group.orderIds),
+            opItem.productId,
+            releasedRecipeByOrderProduct,
+          ),
         };
       })
       .sort((a, b) => {
@@ -1317,6 +1395,7 @@ export function buildFactoryPlanningData(
   const { productionOrders, opsByOrderId, opCodeByPlanningKey } = buildProductionOrdersFromPlannedItems(
     [...expandedItems, ...skeletonItems],
     referenceDate,
+    source.releasedRecipeByOrderProduct,
   );
   const orderItemsWithOpCodes = [...orderItems, ...skeletonItems].map((item) => {
     const planningKey = getPlanningKey(item);

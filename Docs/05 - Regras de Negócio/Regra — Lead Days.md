@@ -40,6 +40,15 @@ pedido ──[cutoff]──> baseDate ──[D+X global]──> deliveryDate (JA
 - **Caminho âncora (AJ-A10)** — `targetDeliveryDate` informado (fábrica abriu p/ X):
   - `deliveryDate = X`; `productionDate` por **busca regressiva** (`resolveProductionDateInWindow`): `productionDate + gap = X`. Se nenhuma produzir para X → bloqueado (delayed), **sem** agendar +7 (AJ-0024).
 - `baseDate`/`deliveryDate` da **janela do pedido** (`getOperationalOrderWindow`) seguem usando o global D+X — só para escopo operacional, `store-order-window` (1 pedido por janela) e display.
+- **O lote da semana usa o gap DO PRODUTO** (`store-order-weekly-release-plan.ts`, corrigido em 2026-07-24): cada slot do esqueleto vira `deliveryDate = moveToNextAllowedWeekday(productionDate + product.expeditionLeadDays, receivingDays)`. Antes ele aplicava o **D+X global** sobre a data de produção, e como o pedido do lote nasce comprometido (`opened_at`), o catálogo depois rodava ancorado exigindo `produção + gap do produto` — descasamento de `(lead global − gap do produto)` dias. Sintoma relatado pelo cliente: *"o item que está sendo pedido hoje deveria ser amanhã, e vice-versa"*. Produtos com gaps diferentes na mesma linha agora abrem slots distintos. Coberto por `store-order-weekly-release-plan.test.ts` casos (f)/(g)/(h).
+
+### Fuso horário (corrigido em 2026-07-24)
+
+O corte (`getBaseDateByCutoff`) e o "hoje" do planejamento (`getTodayDateKey`) são avaliados em **`America/Sao_Paulo`**, não no fuso do processo. A Vercel roda em UTC: antes, o corte das 18:00 disparava às 15:00 em Brasília e a data-base virava um dia perto da meia-noite. Os `new Date().toISOString().slice(0,10)` das rotas de planejamento foram trocados por `getTodayDateKey()`.
+
+> ⚠️ Isso **mudou o comportamento efetivo do corte para todos os tenants**. Quem operava com o corte "adiantado" de fato passa a ter 3 horas a mais para pedir.
+>
+> Consequência para testes: instante sem offset (`"2026-03-17T19:30:00"`) é ambíguo — depende do TZ do processo. Use offset explícito (`-03:00`) ou `Z`.
 
 > **Discriminador do gate (XPAN-2/3, 2026-07):** o que decide âncora × production-driven é o
 > `opened_at` do `store_order` (→ `StoreOrder.committedDeliveryDate`), **não** a `delivery_date`
@@ -63,16 +72,16 @@ Pedido em quarta (29/04), 3 bolos com gap=1, **independente do D+2 global**:
 > seu cronograma). A OP/expedição já trabalham com `deliveryDate` por item; o
 > `deliveryDate` do pedido = o mais tardio dos itens (`getLatestDate`, `buildOrders`).
 
-## `normalizeSaleLeadDays` — armadilha
+## `normalizeSaleLeadDays` — piso 0 (corrigido em `5743f3b`)
 
-`engine.ts:188-190`:
 ```ts
-function normalizeSaleLeadDays(saleLeadDays: number | undefined) {
-  return Number.isFinite(saleLeadDays) && Number(saleLeadDays) > 0 ? Number(saleLeadDays) : 1;
+export function normalizeSaleLeadDays(saleLeadDays: number | undefined) {
+  const n = Number(saleLeadDays);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
 ```
 
-> ⚠️ Frágil: o motor **força saleLeadDays ≥ 1**. Mesmo que o tenant cadastre `0`, o cálculo vira 1. Mas o constraint do DB aceita `>= 0` (migration `20260505180000`:9). Resultado: gestor cadastra 0 (esperando "venda no mesmo dia da entrega"), mas o motor entrega `saleDate = deliveryDate + 1`. Não há aviso.
+`saleLeadDays = 0` significa **vende no mesmo dia da entrega**, coerente com o constraint do DB (`>= 0`, migration `20260505180000`:9). A versão antiga forçava ≥ 1 e fazia o gestor cadastrar 0 e o motor entregar `deliveryDate + 1` sem aviso — essa armadilha não existe mais. Fonte única exportada pelo engine e reusada pela tela e pelo card.
 
 ## Validação na UI
 

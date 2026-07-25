@@ -55,6 +55,161 @@ export interface IngredientProfileMirror {
   observation: string;
 }
 
+/**
+ * Etapa/função do ingrediente dentro do produto. O mesmo insumo pode entrar mais de uma
+ * vez com pesos diferentes (farinha na esponja + farinha na massa; chantilly no recheio
+ * + na cobertura) e o padeiro precisa pesar por etapa, não só o total.
+ *
+ * A ORDEM DESTE ENUM é a ordem canônica de exibição/pesagem — não existe coluna de ordem
+ * separada; o `sort_order` da receita ordena DENTRO da etapa.
+ */
+export type RecipeStage =
+  | "esponja"
+  | "massa"
+  | "recheio"
+  | "cobertura"
+  | "acabamento"
+  | "montagem";
+
+export const recipeStages: RecipeStage[] = [
+  "esponja",
+  "massa",
+  "recheio",
+  "cobertura",
+  "acabamento",
+  "montagem",
+];
+
+export const recipeStageLabels: Record<RecipeStage, string> = {
+  esponja: "Esponja / Pré-fermento",
+  massa: "Massa",
+  recheio: "Recheio",
+  cobertura: "Cobertura",
+  acabamento: "Decoração / Acabamento",
+  montagem: "Montagem",
+};
+
+/** Etapa das receitas legadas — é o default da coluna `stage` no banco. */
+export const defaultRecipeStage: RecipeStage = "massa";
+
+export function normalizeRecipeStage(value: unknown): RecipeStage {
+  return recipeStages.includes(value as RecipeStage) ? (value as RecipeStage) : defaultRecipeStage;
+}
+
+/** Posição na ordem canônica — usada para ordenar os grupos de etapa na impressão. */
+export function getRecipeStageOrder(stage: RecipeStage | undefined) {
+  return recipeStages.indexOf(normalizeRecipeStage(stage));
+}
+
+/**
+ * Receita MIGRADA: tem ao menos uma linha fora de `massa`. Enquanto for falso, as
+ * impressões mantêm o comportamento legado (heurística de "Adic." por palavra-chave e
+ * sem cabeçalho de etapa) — quem não preencheu etapa vê exatamente a folha de hoje.
+ */
+export function hasStagedRecipe(recipe: { stage?: RecipeStage }[]) {
+  return recipe.some((item) => normalizeRecipeStage(item.stage) !== defaultRecipeStage);
+}
+
+/**
+ * RECIPIENTE de cada etapa — quais etapas dividem fisicamente a mesma masseira/tigela.
+ *
+ * Serve para dimensionar a batida: o limite do ingrediente principal é físico (o quanto cabe
+ * num carregamento), então o que importa é o maior volume presente em UM recipiente por vez.
+ *
+ * `esponja` e `massa` compartilham recipiente porque o pré-fermento é batido à parte,
+ * fermenta e depois entra INTEIRO na massa — a massa final carrega a farinha das duas.
+ * `recheio`, `cobertura` e `acabamento` são preparos separados, cada um na sua tigela: a
+ * farinha da farofa de cobertura de uma cuca nunca encontra a farinha da massa. `montagem`
+ * é a junção dos componentes já prontos, não uma mistura nova.
+ */
+const recipeStageVessels: Record<RecipeStage, string> = {
+  esponja: "massa",
+  massa: "massa",
+  recheio: "recheio",
+  cobertura: "cobertura",
+  acabamento: "acabamento",
+  montagem: "montagem",
+};
+
+export function getRecipeStageVessel(stage: RecipeStage | undefined): string {
+  return recipeStageVessels[normalizeRecipeStage(stage)];
+}
+
+/**
+ * Configuração de uma etapa na ficha do produto: a POSIÇÃO dela (índice no array) e o modo de
+ * preparo daquele bloco. Ver migration `20260725110000_product_recipe_stage_config`.
+ */
+export interface RecipeStageConfigEntry {
+  stage: RecipeStage;
+  instructions: string;
+}
+
+/** Normaliza o JSONB do banco: descarta lixo, remove etapa repetida, preserva a ordem. */
+export function normalizeRecipeStageConfig(value: unknown): RecipeStageConfigEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<RecipeStage>();
+  const entries: RecipeStageConfigEntry[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") {
+      continue;
+    }
+    const candidate = (raw as { stage?: unknown }).stage;
+    if (!recipeStages.includes(candidate as RecipeStage)) {
+      continue;
+    }
+    const stage = candidate as RecipeStage;
+    if (seen.has(stage)) {
+      continue;
+    }
+    seen.add(stage);
+    const instructions = (raw as { instructions?: unknown }).instructions;
+    entries.push({ stage, instructions: typeof instructions === "string" ? instructions : "" });
+  }
+  return entries;
+}
+
+/**
+ * Ordem em que as etapas de um produto devem aparecer — no cadastro, na pré-pesagem e na folha.
+ *
+ * Regra: quem está na config vem primeiro, NA ORDEM DA CONFIG (é a sequência que a ficha
+ * definiu). Etapa que tem ingrediente mas não está na config entra depois, na ordem canônica do
+ * enum — assim adicionar um ingrediente numa etapa nova nunca faz ele sumir da tela.
+ *
+ * `includeEmpty` traz também as etapas configuradas que ainda não têm ingrediente (o cadastro
+ * precisa mostrar o bloco vazio para o usuário conseguir preencher; a impressão, não).
+ */
+export function resolveRecipeStageOrder(
+  config: RecipeStageConfigEntry[] | undefined,
+  recipe: { stage?: RecipeStage }[],
+  options: { includeEmpty?: boolean } = {},
+): RecipeStage[] {
+  const configured = normalizeRecipeStageConfig(config);
+  const stagesInRecipe = new Set(recipe.map((item) => normalizeRecipeStage(item.stage)));
+
+  const ordered: RecipeStage[] = [];
+  for (const entry of configured) {
+    if (options.includeEmpty || stagesInRecipe.has(entry.stage)) {
+      ordered.push(entry.stage);
+    }
+  }
+  for (const stage of recipeStages) {
+    if (!ordered.includes(stage) && stagesInRecipe.has(stage)) {
+      ordered.push(stage);
+    }
+  }
+  return ordered;
+}
+
+/** Modo de preparo daquele bloco; string vazia quando a etapa não tem instrução própria. */
+export function getRecipeStageInstructions(
+  config: RecipeStageConfigEntry[] | undefined,
+  stage: RecipeStage,
+): string {
+  return normalizeRecipeStageConfig(config).find((entry) => entry.stage === stage)?.instructions ?? "";
+}
+
 export interface RecipeIngredientReference {
   id: string;
   sourceType: RecipeSourceType;
@@ -66,6 +221,8 @@ export interface RecipeIngredientReference {
   /** XPAN-8: marca o ingrediente PRINCIPAL da receita (no máximo um por produto).
    * Base para derivar a capacidade por batida a partir do limite físico da masseira. */
   isMain?: boolean;
+  /** Etapa/função desta linha no produto. Ausente = `massa` (receita legada). */
+  stage?: RecipeStage;
 }
 
 export interface ProductionIngredient {
@@ -164,6 +321,12 @@ export interface ProductionProduct {
   packagingProfile?: PackagingProfile;
   isSoldLoose: boolean;
   recipe: RecipeIngredientReference[];
+  /**
+   * Sequência das etapas da receita + modo de preparo de cada bloco. Ausente/vazio = ordem
+   * canônica do enum e sem instrução por etapa (comportamento de quem não configurou). Não
+   * substitui `preparationMode`, que segue sendo a instrução geral do produto.
+   */
+  recipeStageConfig?: RecipeStageConfigEntry[];
   preparationStages: ProductPreparationStageKey[];
   preparationMode: string;
   breakPercent: number;

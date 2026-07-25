@@ -10,6 +10,7 @@ import {
   listStoreOccurrences,
 } from "@/lib/supabase-data/store-occurrences";
 import { listActiveTenantIds } from "@/lib/supabase-data/tenants";
+import { getTodayDateKey } from "@/lib/order-planning";
 
 /**
  * 2.6-F — Alertas automáticos para inconsistências e falhas operacionais.
@@ -75,7 +76,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  const referenceDate = new Date().toISOString().slice(0, 10);
+  const referenceDate = getTodayDateKey();
   const adminClient = createSupabaseAdminClient();
   const minRank = SEVERITY_RANK[AUTO_ALERT_MIN_SEVERITY];
 
