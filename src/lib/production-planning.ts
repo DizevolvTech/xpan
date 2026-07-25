@@ -110,6 +110,31 @@ export function hasStagedRecipe(recipe: { stage?: RecipeStage }[]) {
   return recipe.some((item) => normalizeRecipeStage(item.stage) !== defaultRecipeStage);
 }
 
+/**
+ * RECIPIENTE de cada etapa — quais etapas dividem fisicamente a mesma masseira/tigela.
+ *
+ * Serve para dimensionar a batida: o limite do ingrediente principal é físico (o quanto cabe
+ * num carregamento), então o que importa é o maior volume presente em UM recipiente por vez.
+ *
+ * `esponja` e `massa` compartilham recipiente porque o pré-fermento é batido à parte,
+ * fermenta e depois entra INTEIRO na massa — a massa final carrega a farinha das duas.
+ * `recheio`, `cobertura` e `acabamento` são preparos separados, cada um na sua tigela: a
+ * farinha da farofa de cobertura de uma cuca nunca encontra a farinha da massa. `montagem`
+ * é a junção dos componentes já prontos, não uma mistura nova.
+ */
+const recipeStageVessels: Record<RecipeStage, string> = {
+  esponja: "massa",
+  massa: "massa",
+  recheio: "recheio",
+  cobertura: "cobertura",
+  acabamento: "acabamento",
+  montagem: "montagem",
+};
+
+export function getRecipeStageVessel(stage: RecipeStage | undefined): string {
+  return recipeStageVessels[normalizeRecipeStage(stage)];
+}
+
 export interface RecipeIngredientReference {
   id: string;
   sourceType: RecipeSourceType;

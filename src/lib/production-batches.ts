@@ -1,4 +1,5 @@
 import type { ProductionItemStatus } from "@/lib/factory-planning/types";
+import { getRecipeStageVessel, type RecipeStage } from "@/lib/production-planning";
 
 export interface BatchPlan {
   batchCount: number;
@@ -133,7 +134,14 @@ export function deriveCapacityPerBatchFromMainIngredient(input: {
  * - o rendimento/quantidade são inválidos ou o resultado seria < 1 unidade.
  */
 export function deriveCapacityFromProductRecipe(input: {
-  recipe: Array<{ unit: string; quantity: number; isMain?: boolean; sourceType?: string; sourceId?: string }>;
+  recipe: Array<{
+    unit: string;
+    quantity: number;
+    isMain?: boolean;
+    sourceType?: string;
+    sourceId?: string;
+    stage?: RecipeStage;
+  }>;
   recipeYieldUnits: number;
   mainIngredientLimitKg: number | null | undefined;
 }): number | null {
@@ -148,20 +156,38 @@ export function deriveCapacityFromProductRecipe(input: {
     return null;
   }
 
-  // Etapa na receita: o mesmo insumo pode entrar em mais de uma etapa (farinha na
-  // esponja + farinha na massa). A masseira é limitada pelo TOTAL do principal, então
-  // somamos TODAS as linhas da mesma fonte — contar só a linha marcada superestimaria a
-  // batida. Linhas em outra unidade ficam de fora (mesma regra do principal fora de Kg:
-  // sem conversão automática, para não gerar cálculo errado).
-  const mainIngredientKgInRecipe = recipe
-    .filter(
-      (item) =>
-        item.unit === "Kg" &&
-        (mainItem.sourceId == null
-          ? item === mainItem
-          : item.sourceId === mainItem.sourceId && item.sourceType === mainItem.sourceType),
-    )
-    .reduce((total, item) => total + Number(item.quantity ?? 0), 0);
+  // O limite é FÍSICO: quanto do ingrediente principal cabe num carregamento da masseira.
+  // Logo o que importa é o maior volume presente em UM MESMO recipiente de cada vez — não o
+  // total da ficha nem uma linha isolada.
+  //
+  //  - Somar tudo subdimensiona a batida quando as etapas são tigelas separadas. Caso real
+  //    da call: cuca com farofa — farinha na massa E farinha na farofa de cobertura, que
+  //    nunca se encontram.
+  //  - Contar só a linha marcada superdimensiona quando as etapas convergem: a esponja é
+  //    batida à parte, fermenta e depois entra INTEIRA na massa, então a massa final carrega
+  //    a farinha das duas linhas — e a batida estouraria a masseira.
+  //
+  // Por isso agrupamos por RECIPIENTE, somamos dentro do grupo e tomamos o MAIOR grupo.
+  // Receita legada (tudo em `massa`) cai num grupo só → resultado idêntico ao de antes.
+  const kgByVessel = new Map<string, number>();
+  for (const item of recipe) {
+    // Linhas em outra unidade ficam de fora: sem conversão automática, para não inventar
+    // número (mesma regra do principal fora de Kg).
+    if (item.unit !== "Kg") {
+      continue;
+    }
+    const isSameSource =
+      mainItem.sourceId == null
+        ? item === mainItem
+        : item.sourceId === mainItem.sourceId && item.sourceType === mainItem.sourceType;
+    if (!isSameSource) {
+      continue;
+    }
+    const vessel = getRecipeStageVessel(item.stage);
+    kgByVessel.set(vessel, (kgByVessel.get(vessel) ?? 0) + Number(item.quantity ?? 0));
+  }
+
+  const mainIngredientKgInRecipe = Math.max(0, ...kgByVessel.values());
 
   return deriveCapacityPerBatchFromMainIngredient({
     mainIngredientKgInRecipe,

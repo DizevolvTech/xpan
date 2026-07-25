@@ -27,6 +27,10 @@ import { invalidatePlanningCaches } from "@/lib/server-data-cache";
  *   curl -H "Authorization: Bearer $CRON_SECRET" .../api/admin/backfill-release-recipes
  *
  * Idempotente: pedido que já tem snapshot é pulado. Falha por pedido é isolada.
+ *
+ * NOTA: pedido SEM itens nunca sai da lista de pendentes — não há árvore de receita para
+ * congelar, então nenhuma linha é gravada e ele volta a aparecer no próximo dry-run. É
+ * inofensivo (sem itens não há o que expandir), não um backfill incompleto.
  */
 
 type OrderRow = {
