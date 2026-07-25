@@ -87,6 +87,71 @@ test("XPAN-7: new product defaults lote mínimo/econômico to 0 (opt-in)", () =>
   assert.equal(formState.economicProductionKg, 0);
 });
 
+// Ficha em blocos: a sequência das etapas + o modo de preparo de cada bloco é OPT-IN.
+// Produto novo nasce sem config ⇒ ordem canônica do enum e só `preparationMode` (geral).
+test("produto novo nasce com recipeStageConfig vazio (ordem canônica do enum)", () => {
+  const formState = buildProductFormState(baseLines);
+
+  assert.deepEqual(formState.recipeStageConfig, []);
+  assert.equal(formState.preparationMode, "");
+});
+
+// Retrocompatibilidade: produto legado (gravado antes da migration, sem a chave) abre
+// exatamente como hoje — nenhuma etapa configurada, nenhuma instrução por bloco.
+test("produto legado sem recipeStageConfig abre no form com config vazia", () => {
+  const legacy = buildBaseProduct();
+  assert.equal("recipeStageConfig" in legacy, false);
+
+  const formState = buildProductFormState(baseLines, legacy);
+
+  assert.deepEqual(formState.recipeStageConfig, []);
+  assert.equal(formState.preparationMode, legacy.preparationMode);
+});
+
+test("buildProductFormState clona recipeStageConfig (form não muta o snapshot)", () => {
+  const product: ProductionProduct = {
+    ...buildBaseProduct(),
+    recipeStageConfig: [
+      { stage: "massa", instructions: "Sovar 8 min." },
+      { stage: "recheio", instructions: "Cozinhar a maçã." },
+    ],
+  };
+
+  const formState = buildProductFormState(baseLines, product);
+  assert.deepEqual(formState.recipeStageConfig, product.recipeStageConfig);
+
+  // Reordenar e reescrever a instrução no form não pode vazar para o produto original.
+  const editedConfig = formState.recipeStageConfig ?? [];
+  editedConfig.reverse();
+  editedConfig[0].instructions = "editado no form";
+
+  assert.deepEqual(product.recipeStageConfig, [
+    { stage: "massa", instructions: "Sovar 8 min." },
+    { stage: "recheio", instructions: "Cozinhar a maçã." },
+  ]);
+});
+
+// Lixo no JSONB (etapa inexistente, duplicada, item não-objeto) não pode chegar ao form.
+test("buildProductFormState normaliza recipeStageConfig vindo do banco", () => {
+  const product = {
+    ...buildBaseProduct(),
+    recipeStageConfig: [
+      { stage: "montagem", instructions: "Rechear." },
+      { stage: "inexistente", instructions: "ignorar" },
+      { stage: "montagem", instructions: "duplicada" },
+      null,
+      { stage: "massa" },
+    ],
+  } as unknown as ProductionProduct;
+
+  const formState = buildProductFormState(baseLines, product);
+
+  assert.deepEqual(formState.recipeStageConfig, [
+    { stage: "montagem", instructions: "Rechear." },
+    { stage: "massa", instructions: "" },
+  ]);
+});
+
 test("product form validation returns required field markers", () => {
   const validation = validateProductFormState({
     product: {

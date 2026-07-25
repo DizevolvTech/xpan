@@ -11,6 +11,7 @@ import type {
   ProductionIngredient,
   ProductionProduct,
   RecipeIngredientReference,
+  RecipeStageConfigEntry,
 } from "@/lib/production-planning";
 
 const ingredients: ProductionIngredient[] = [
@@ -404,5 +405,238 @@ test("folha e pré-pesagem usam a receita CONGELADA quando o item da OP traz fro
   assert.deepEqual(
     aoVivo.productSections[0]!.items.map((row) => row.label),
     ["Farinha de trigo", "Creme de leite"],
+  );
+});
+
+/* -------------------------------------------------------------------------------------------------
+ * Ficha em BLOCOS — a impressão respeita a SEQUÊNCIA que a ficha do produto definiu
+ * (`recipeStageConfig`) e a folha de produção mostra o modo de preparo de cada bloco.
+ * -----------------------------------------------------------------------------------------------*/
+
+/** Ficha que reordena as etapas: cobertura primeiro, depois acabamento e massa. */
+const fichaSequenciada: RecipeStageConfigEntry[] = [
+  { stage: "cobertura", instructions: "Derreter o chocolate e cobrir ainda morno." },
+  { stage: "acabamento", instructions: "" },
+  { stage: "massa", instructions: "Bater 10 minutos em velocidade média." },
+];
+
+/** Mesma receita do `stagedProduct`, mas com a ficha declarando outra sequência de etapas. */
+const stagedWithConfig = buildProduct("product-torta", "PR-00002", "Torta de chocolate", stagedProduct.recipe, {
+  recipeStageConfig: fichaSequenciada,
+});
+const configuredSource = { products: [stagedWithConfig, mpiChantilly], ingredients };
+
+test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` imprime exatamente como antes", () => {
+  const document = buildProductionSheetDocument(buildOp(legacyProduct, 10), source);
+
+  // Documento inteiro pinado: nada da ficha em blocos pode vazar para quem não configurou.
+  assert.deepEqual(document, {
+    productSections: [
+      {
+        productId: "product-pao",
+        productCode: "PR-00001",
+        productName: "Pão doce",
+        plannedKg: 10,
+        requestedQuantity: 10,
+        requestedUnit: "Kg",
+        unitWeightKg: 1,
+        recipeStageConfig: undefined,
+        items: [
+          {
+            key: "product-pao-l1-10",
+            sourceType: "ingrediente",
+            kind: "ingrediente",
+            sectionKind: "base",
+            stage: "massa",
+            label: "Farinha de trigo",
+            unit: "Kg",
+            estimatedQuantity: 5,
+            batchQuantity: undefined,
+            partialQuantity: undefined,
+            notes: undefined,
+          },
+          {
+            key: "product-pao-l2-10",
+            sourceType: "ingrediente",
+            kind: "ingrediente",
+            sectionKind: "additional",
+            stage: "massa",
+            label: "Cobertura de chocolate",
+            unit: "Kg",
+            estimatedQuantity: 2,
+            batchQuantity: undefined,
+            partialQuantity: undefined,
+            notes: undefined,
+          },
+          {
+            key: "product-pao-l3-10",
+            sourceType: "produto",
+            kind: "produto_mpi",
+            sectionKind: "base",
+            stage: "massa",
+            label: "Chantilly",
+            unit: "Kg",
+            estimatedQuantity: 2,
+            batchQuantity: undefined,
+            partialQuantity: undefined,
+            notes: "",
+          },
+          {
+            key: "product-pao-l4-10",
+            sourceType: "produto",
+            kind: "produto_mpi",
+            sectionKind: "base",
+            stage: "massa",
+            label: "Chantilly",
+            unit: "Kg",
+            estimatedQuantity: 1,
+            batchQuantity: undefined,
+            partialQuantity: undefined,
+            notes: "",
+          },
+        ],
+      },
+    ],
+  });
+
+  const [section] = document.productSections;
+  const groups = groupPrintRowsByStage(section.items, section.recipeStageConfig);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].showStageHeader, false);
+  assert.equal(groups[0].instructions, "", "sem ficha configurada nenhum bloco imprime modo de preparo");
+
+  // Pré-pesagem idem: uma seção somada por MPI, sem rótulo de etapa e sem ficha.
+  const prePesagem = buildPreWeighingDocument(buildOp(legacyProduct, 10), source);
+  assert.equal(prePesagem.ingredientProducts.length, 1);
+  assert.equal(prePesagem.ingredientProducts[0]!.stageLabel, null);
+  assert.equal(prePesagem.ingredientProducts[0]!.recipeStageConfig, undefined);
+  assert.equal(prePesagem.productSections[0]!.recipeStageConfig, undefined);
+});
+
+test("folha de produção: blocos saem na sequência da ficha, cada um com seu modo de preparo", () => {
+  const document = buildProductionSheetDocument(buildOp(stagedWithConfig, 10), configuredSource);
+  const [section] = document.productSections;
+
+  assert.deepEqual(section.recipeStageConfig, fichaSequenciada);
+
+  const groups = groupPrintRowsByStage(section.items, section.recipeStageConfig);
+
+  // Configuradas primeiro, na ordem da ficha; o resto entra depois, na ordem canônica.
+  assert.deepEqual(
+    groups.map((group) => [group.stage, group.rows.map((row) => row.label)]),
+    [
+      ["cobertura", ["Chantilly"]],
+      ["acabamento", ["Cobertura de chocolate"]],
+      ["massa", ["Farinha de trigo"]],
+      ["esponja", ["Farinha de trigo"]],
+      ["recheio", ["Chantilly"]],
+    ],
+  );
+  assert.deepEqual(
+    groups.map((group) => group.instructions),
+    [
+      "Derreter o chocolate e cobrir ainda morno.",
+      "",
+      "Bater 10 minutos em velocidade média.",
+      "",
+      "",
+    ],
+  );
+  assert.equal(
+    groups.every((group) => group.showStageHeader),
+    true,
+  );
+});
+
+test("pré-pesagem: seções de MPI e blocos do produto seguem a sequência da ficha", () => {
+  const document = buildPreWeighingDocument(buildOp(stagedWithConfig, 10), configuredSource);
+
+  // Sem ficha a ordem seria recheio → cobertura (canônica); a ficha inverte.
+  assert.deepEqual(
+    document.ingredientProducts.map((section) => [section.stage, section.requiredKg]),
+    [
+      ["cobertura", 1],
+      ["recheio", 2],
+    ],
+  );
+
+  const [section] = document.productSections;
+  assert.deepEqual(
+    groupPrintRowsByStage(section.baseIngredients, section.recipeStageConfig).map((group) => group.stage),
+    ["acabamento", "massa", "esponja"],
+  );
+});
+
+test("a sequência dos blocos vem da ficha AO VIVO, mesmo com a receita congelada na liberação", () => {
+  // Ficha ao vivo põe o recheio antes da massa — e nem tem recheio na receita ao vivo.
+  const produto = buildProduct(
+    "prod-ficha-viva",
+    "PR-9002",
+    "Rocambole",
+    [
+      {
+        id: "v1",
+        sourceType: "ingrediente",
+        sourceId: "ing-farinha",
+        label: "Farinha de trigo",
+        quantity: 3,
+        unit: "Kg",
+        stage: "massa",
+      },
+    ] as RecipeIngredientReference[],
+    {
+      recipeStageConfig: [
+        { stage: "recheio", instructions: "Bater o creme até o ponto de espalhar." },
+        { stage: "massa", instructions: "Assar em tabuleiro raso." },
+      ],
+    },
+  );
+
+  const congelada = [
+    {
+      id: "f1",
+      sourceType: "ingrediente",
+      sourceId: "ing-farinha",
+      label: "Farinha de trigo",
+      quantity: 2,
+      unit: "Kg",
+      stage: "massa",
+    },
+    {
+      id: "f2",
+      sourceType: "ingrediente",
+      sourceId: "ing-creme",
+      label: "Creme de leite",
+      quantity: 1,
+      unit: "Kg",
+      stage: "recheio",
+    },
+  ] as RecipeIngredientReference[];
+
+  const localSource = { products: [produto], ingredients };
+  const op = buildOp(produto, 3);
+  const opCongelada: ProductionOrderRow = {
+    ...op,
+    items: op.items.map((item): ProductionOrderItem => ({ ...item, frozenRecipe: congelada })),
+  };
+
+  const folha = buildProductionSheetDocument(opCongelada, localSource);
+  const [section] = folha.productSections;
+
+  // Quantidades vêm da receita congelada; a sequência dos blocos, da ficha ao vivo.
+  assert.deepEqual(
+    section.items.map((row) => row.label),
+    ["Farinha de trigo", "Creme de leite"],
+  );
+  assert.deepEqual(section.recipeStageConfig, produto.recipeStageConfig);
+  assert.deepEqual(
+    groupPrintRowsByStage(section.items, section.recipeStageConfig).map((group) => [
+      group.stage,
+      group.instructions,
+    ]),
+    [
+      ["recheio", "Bater o creme até o ponto de espalhar."],
+      ["massa", "Assar em tabuleiro raso."],
+    ],
   );
 });

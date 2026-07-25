@@ -3,13 +3,16 @@ import type {
   ProductionProduct,
   RecipeIngredientReference,
   RecipeStage,
+  RecipeStageConfigEntry,
 } from "@/lib/production-planning";
 import {
   defaultRecipeStage,
-  getRecipeStageOrder,
+  getRecipeStageInstructions,
   hasStagedRecipe,
   normalizeRecipeStage,
   recipeStageLabels,
+  recipeStages,
+  resolveRecipeStageOrder,
 } from "@/lib/production-planning";
 import type { ProductionOrderRow } from "@/lib/order-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
@@ -46,6 +49,12 @@ export type PreWeighingProductSection = {
   unitWeightKg: number;
   /** Desdobramento de batidas (cheia ×N + parcial). null = não batido. */
   batchSplit: PreWeighBatchSplit | null;
+  /**
+   * Sequência de etapas + modo de preparo da FICHA AO VIVO do produto. É editorial (como a
+   * ficha é lida), por isso não entra no congelamento da receita: mesmo em OP com
+   * `frozenRecipe`, a ordem dos blocos vem daqui.
+   */
+  recipeStageConfig?: RecipeStageConfigEntry[];
   baseIngredients: PrintIngredientRow[];
   additionalIngredients: PrintIngredientRow[];
 };
@@ -62,6 +71,8 @@ export type ProductIngredientSection = {
   requiredUnit: UnitCode;
   requiredKg: number;
   usedBy: string[];
+  /** Ficha do próprio MPI — ordena os blocos da receita DELE. */
+  recipeStageConfig?: RecipeStageConfigEntry[];
   items: PrintIngredientRow[];
 };
 
@@ -73,6 +84,8 @@ export type ProductionSheetProductSection = {
   requestedQuantity: number;
   requestedUnit: UnitCode;
   unitWeightKg: number;
+  /** Ver `PreWeighingProductSection.recipeStageConfig`: ordem dos blocos + modo de preparo por etapa. */
+  recipeStageConfig?: RecipeStageConfigEntry[];
   items: PrintIngredientRow[];
 };
 
@@ -175,12 +188,20 @@ export type PrintIngredientStageGroup<TRow> = {
    * de etapa, exatamente como antes de existir a coluna `stage`.
    */
   showStageHeader: boolean;
+  /**
+   * Modo de preparo DESTE bloco (`products.recipe_stage_config`). String vazia quando a
+   * etapa não tem instrução própria — quem imprime não deve renderizar nada nesse caso.
+   * Não substitui `preparationMode`, que segue sendo a instrução geral do produto.
+   */
+  instructions: string;
   rows: TRow[];
 };
 
 /**
- * Agrupa as linhas de uma receita por etapa, na ordem canônica do enum. Dentro do grupo
- * a ordem de entrada é preservada (é o `sort_order` da receita).
+ * Agrupa as linhas de uma receita por etapa, na SEQUÊNCIA que a ficha do produto definiu
+ * (`recipeStageConfig`). Sem config, cai na ordem canônica do enum — resultado idêntico ao
+ * de antes de existir a sequência manual. Dentro do grupo a ordem de entrada é preservada
+ * (é o `sort_order` da receita).
  *
  * Receita não migrada (nenhuma linha fora de `massa`) devolve UM grupo com as linhas
  * intactas e sem cabeçalho — garantia de que a folha de quem não preencheu etapa sai
@@ -188,6 +209,7 @@ export type PrintIngredientStageGroup<TRow> = {
  */
 export function groupPrintRowsByStage<TRow extends { stage?: RecipeStage }>(
   rows: TRow[],
+  stageConfig?: RecipeStageConfigEntry[],
 ): PrintIngredientStageGroup<TRow>[] {
   if (rows.length === 0) {
     return [];
@@ -199,6 +221,8 @@ export function groupPrintRowsByStage<TRow extends { stage?: RecipeStage }>(
         stage: defaultRecipeStage,
         label: recipeStageLabels[defaultRecipeStage],
         showStageHeader: false,
+        // Sem config o modo de preparo por etapa é vazio: nada muda para quem não configurou.
+        instructions: getRecipeStageInstructions(stageConfig, defaultRecipeStage),
         rows,
       },
     ];
@@ -212,14 +236,47 @@ export function groupPrintRowsByStage<TRow extends { stage?: RecipeStage }>(
     rowsByStage.set(stage, current);
   });
 
-  return Array.from(rowsByStage.entries())
-    .sort(([left], [right]) => getRecipeStageOrder(left) - getRecipeStageOrder(right))
-    .map(([stage, stageRows]) => ({
-      stage,
-      label: recipeStageLabels[stage],
-      showStageHeader: true,
-      rows: stageRows,
-    }));
+  // `resolveRecipeStageOrder` só devolve etapa que tem linha — a impressão não abre bloco vazio.
+  return resolveRecipeStageOrder(stageConfig, rows).map((stage) => ({
+    stage,
+    label: recipeStageLabels[stage],
+    showStageHeader: true,
+    instructions: getRecipeStageInstructions(stageConfig, stage),
+    rows: rowsByStage.get(stage) ?? [],
+  }));
+}
+
+/**
+ * Ordem de etapas válida para a OP INTEIRA — usada nas seções de MPI, que são agregadas por
+ * (produto, etapa) e cuja etapa vem da receita de QUEM CONSOME, podendo ser mais de um
+ * produto. Funde as sequências das fichas na ordem em que os produtos aparecem na OP (a
+ * primeira ficha que posicionou a etapa manda) e completa com a ordem canônica do enum.
+ *
+ * Sem nenhuma ficha configurada o resultado é exatamente `recipeStages` — a ordem de hoje.
+ */
+function resolveOpStageOrder(products: (ProductionProduct | undefined)[]): RecipeStage[] {
+  const ordered: RecipeStage[] = [];
+
+  products.forEach((product) => {
+    if (!product) {
+      return;
+    }
+    // `includeEmpty` respeita a sequência declarada inteira, mesmo que a etapa ainda não
+    // tenha ingrediente naquele produto — o que importa aqui é a posição relativa.
+    resolveRecipeStageOrder(product.recipeStageConfig, product.recipe, { includeEmpty: true }).forEach((stage) => {
+      if (!ordered.includes(stage)) {
+        ordered.push(stage);
+      }
+    });
+  });
+
+  recipeStages.forEach((stage) => {
+    if (!ordered.includes(stage)) {
+      ordered.push(stage);
+    }
+  });
+
+  return ordered;
 }
 
 /**
@@ -329,6 +386,14 @@ export function buildPreWeighingDocument(
   },
 ) {
   const { productsById, ingredientsById } = buildSourceMaps(source);
+  // Sequência de etapas desta OP: ordena as seções de MPI pela ordem que as fichas dos
+  // produtos consumidores definiram, não mais pela ordem canônica do enum.
+  const opStageOrder = resolveOpStageOrder(
+    op.items.map((item) => {
+      const baseProduct = productsById.get(item.productId);
+      return baseProduct ? withFrozenRecipe(baseProduct, item.frozenRecipe) : undefined;
+    }),
+  );
   // Chave = (produto MPI, ETAPA). O mesmo chantilly no recheio e na cobertura vira duas
   // seções com pesos próprios em vez de uma soma — é o peso por etapa que o padeiro pesa.
   // Como toda linha legada nasce em `massa`, a chave não muda até alguém preencher etapa.
@@ -370,6 +435,7 @@ export function buildPreWeighingDocument(
         requestedUnit: requestedSummary.requestedUnit,
         unitWeightKg: 0,
         batchSplit: null,
+        recipeStageConfig: undefined,
         baseIngredients,
         additionalIngredients,
       };
@@ -440,6 +506,7 @@ export function buildPreWeighingDocument(
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg: getOperationalUnitWeight(product),
       batchSplit: split.batched ? split : null,
+      recipeStageConfig: product.recipeStageConfig,
       baseIngredients,
       additionalIngredients,
     };
@@ -457,11 +524,12 @@ export function buildPreWeighingDocument(
       requiredUnit: entry.requiredUnit,
       requiredKg: round3(entry.requiredKg),
       usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
+      recipeStageConfig: entry.product.recipeStageConfig,
       items: buildScaledRecipeRowsForProduct(entry.product, entry.requiredKg, source),
     }))
     .sort(
       (a, b) =>
-        getRecipeStageOrder(a.stage) - getRecipeStageOrder(b.stage) ||
+        opStageOrder.indexOf(a.stage) - opStageOrder.indexOf(b.stage) ||
         a.productName.localeCompare(b.productName),
     );
 
@@ -494,6 +562,9 @@ export function buildProductionSheetDocument(
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg: getOperationalUnitWeight(product),
+      // Config vem do produto AO VIVO (`withFrozenRecipe` só troca a receita): a sequência
+      // dos blocos é editorial e não faz parte do congelamento de quantidades.
+      recipeStageConfig: product?.recipeStageConfig,
       items: buildScaledRecipeRowsForProduct(product, item.totalKg, source),
     };
   });

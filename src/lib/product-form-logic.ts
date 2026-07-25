@@ -1,6 +1,7 @@
 import { formatKgLabel } from "@/lib/utils";
 import {
   defaultProductPreparationStages,
+  normalizeRecipeStageConfig,
   type PackagingProfile,
   type ProductUnitProfile,
   type ProductionLine,
@@ -86,6 +87,11 @@ export function buildProductFormState(
     return {
       ...product,
       recipe: product.recipe.map((item) => ({ ...item })),
+      // Cópia própria (como a receita): o form reordena etapas e edita o modo de preparo de
+      // cada bloco in-place; sem clonar, isso mutaria o snapshot compartilhado. Normalizar
+      // aqui também garante que produto legado (sem config) entre no form como array vazio
+      // — que é a ordem canônica do enum, o comportamento de hoje.
+      recipeStageConfig: normalizeRecipeStageConfig(product.recipeStageConfig),
       preparationStages: normalizeProductPreparationStages(product.preparationStages),
       unitProfiles: {
         sales: { ...product.unitProfiles.sales },
@@ -145,6 +151,9 @@ export function buildProductFormState(
     },
     isSoldLoose: false,
     recipe: [],
+    // Produto novo nasce SEM sequência configurada: as etapas aparecem na ordem canônica do
+    // enum e sem modo de preparo por bloco (só `preparationMode`, a instrução geral).
+    recipeStageConfig: [],
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "",
     breakPercent: 0,

@@ -10,7 +10,7 @@ import type {
   RecipeIngredientReference,
   StoreMasterData,
 } from "@/lib/production-planning";
-import { normalizeRecipeStage } from "@/lib/production-planning";
+import { normalizeRecipeStage, normalizeRecipeStageConfig } from "@/lib/production-planning";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   buildDefaultScheduleDayPriorities,
@@ -22,6 +22,7 @@ import {
   isSupabaseMissingSchemaError,
   isUuid,
   type SupabaseDataClient,
+  type SupabaseError,
 } from "@/lib/supabase-data/common";
 import {
   planScheduleRevisionRebuild,
@@ -895,6 +896,10 @@ function normalizeProductPayload(input: ProductInput) {
     unit_profiles: input.unitProfiles,
     packaging_profile: input.isSoldLoose ? null : input.packagingProfile ?? null,
     is_sold_loose: input.isSoldLoose,
+    // Sequência das etapas da ficha + modo de preparo de CADA bloco. Não substitui
+    // `preparation_mode`, que segue sendo a instrução geral do produto. Normaliza aqui
+    // para nunca gravar etapa desconhecida/duplicada no JSONB (migration 20260725110000).
+    recipe_stage_config: normalizeRecipeStageConfig(input.recipeStageConfig),
     preparation_mode: input.preparationMode.trim(),
     break_percent: input.breakPercent,
     break_stage: input.breakStage,
@@ -919,6 +924,35 @@ function normalizeProductPayload(input: ProductInput) {
     expedition_to_kg_factor: input.expeditionToKgFactor,
     is_mpi_ingredient: input.isMpiIngredient,
   };
+}
+
+/* -------------------------------------------------------------------------------------------------
+ * Tolerância à ausência de `products.recipe_stage_config` (migration 20260725110000).
+ *
+ * O risco aqui é DIFERENTE do de `replaceProductRecipeItems`: lá a gravação é DELETE + INSERT sem
+ * transação, então um INSERT que falha PERDE a receita já apagada. Aqui é um único INSERT/UPDATE
+ * em `products` — instrução atômica: se falhar, nada foi gravado e nada se perde. O estrago seria
+ * outro: enquanto a migration não estiver aplicada, o save INTEIRO do produto (nome, receita,
+ * unidades, tudo) passaria a quebrar por causa de uma coluna nova. Por isso repetimos a gravação
+ * sem a coluna: perde-se só a sequência/modo de preparo por etapa, o cadastro é salvo.
+ * -----------------------------------------------------------------------------------------------*/
+
+/** TRUE quando o erro é "a coluna `recipe_stage_config` não existe" (base sem a migration). */
+function isMissingRecipeStageConfigColumn(error: SupabaseError | null | undefined) {
+  return isSupabaseMissingSchemaError(error, ["recipe_stage_config"]);
+}
+
+/** Copia o payload sem a coluna nova, para a segunda tentativa. */
+function withoutRecipeStageConfig<T extends Record<string, unknown>>(payload: T) {
+  const { recipe_stage_config: droppedStageConfig, ...rest } = payload;
+  void droppedStageConfig;
+  return rest;
+}
+
+function warnMissingRecipeStageConfigColumn() {
+  console.warn(
+    "[master-data-admin] coluna `recipe_stage_config` ausente em products — produto gravado sem a sequência/modo de preparo por etapa. Aplique a migration 20260725110000_product_recipe_stage_config.",
+  );
 }
 
 function buildScheduleRevisionName(subcategoryName: string, activeScheduleName?: string | null) {
@@ -1347,19 +1381,28 @@ export async function createProduct(input: ProductInput, options: MutationOption
   const legacyId = buildGeneratedLegacyId("product");
   await assertExternalCodeAvailable("products", normalizeOptionalCode(input.externalCode), undefined, supabase);
 
-  const insertResult = await supabase
-    .from("products")
-    .insert({
-      legacy_id: legacyId,
-      code,
-      subcategory_id: subcategoryId,
-      // New products start outside the operational portfolio until a subcategory
-      // explicitly adds them to the audited schedule.
-      operational_subcategory_id: null,
-      ...normalizeProductPayload(input),
-    })
-    .select("id")
-    .single();
+  const insertPayload = {
+    legacy_id: legacyId,
+    code,
+    subcategory_id: subcategoryId,
+    // New products start outside the operational portfolio until a subcategory
+    // explicitly adds them to the audited schedule.
+    operational_subcategory_id: null,
+    ...normalizeProductPayload(input),
+  };
+
+  let insertResult = await supabase.from("products").insert(insertPayload).select("id").single();
+
+  // O INSERT é atômico: se falhou por falta da coluna `recipe_stage_config`, nenhuma linha
+  // foi criada (o `code` continua livre) e regravar sem a coluna é seguro.
+  if (isMissingRecipeStageConfigColumn(insertResult.error)) {
+    warnMissingRecipeStageConfigColumn();
+    insertResult = await supabase
+      .from("products")
+      .insert(withoutRecipeStageConfig(insertPayload))
+      .select("id")
+      .single();
+  }
 
   const product = assertSupabaseResult(insertResult, "Failed to create product");
   await replaceProductRecipeItems(product.id, input.recipe, supabase);
@@ -1392,15 +1435,24 @@ export async function updateProduct(
   await assertProductExternalCodeEditable(productId, externalCode, supabase);
   await assertExternalCodeAvailable("products", externalCode, productId, supabase);
 
-  const result = await supabase
-    .from("products")
-    .update({
-      subcategory_id: subcategoryId,
-      operational_subcategory_id: nextOperationalSubcategoryId,
-      ...normalizeProductPayload(input),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", productId);
+  const updatePayload = {
+    subcategory_id: subcategoryId,
+    operational_subcategory_id: nextOperationalSubcategoryId,
+    ...normalizeProductPayload(input),
+    updated_at: new Date().toISOString(),
+  };
+
+  let result = await supabase.from("products").update(updatePayload).eq("id", productId);
+
+  // UPDATE também é atômico: falhou por falta da coluna ⇒ nada foi alterado. Repete sem ela
+  // para não derrubar o save inteiro do produto num ambiente sem a migration.
+  if (isMissingRecipeStageConfigColumn(result.error)) {
+    warnMissingRecipeStageConfigColumn();
+    result = await supabase
+      .from("products")
+      .update(withoutRecipeStageConfig(updatePayload))
+      .eq("id", productId);
+  }
 
   if (result.error) {
     throw new Error(`Failed to update product: ${result.error.message}`);
@@ -1504,49 +1556,64 @@ export async function cloneProduct(
   const legacyId = buildGeneratedLegacyId("product");
 
   // Copy product (all columns except id, code, legacy_id, external_code, timestamps)
-  const insertResult = await supabase
-    .from("products")
-    .insert({
-      legacy_id: legacyId,
-      code,
-      name: `[Cópia] ${row.name}`,
-      description: row.description,
-      short_name: row.short_name,
-      subcategory_id: row.subcategory_id,
-      operational_subcategory_id: null,
-      external_code: null,
-      active: false,
-      available_for_ordering: false,
-      validity_days: row.validity_days,
-      minimum_production_kg: row.minimum_production_kg,
-      economic_production_kg: row.economic_production_kg,
-      economic_batch_unit: row.economic_batch_unit ?? null,
-      // XPAN-8: preserva o limite do ingrediente principal ao copiar o produto.
-      main_ingredient_limit_kg: (row as Record<string, unknown>).main_ingredient_limit_kg ?? null,
-      allows_storage: row.allows_storage,
-      production_days: row.production_days,
-      sale_lead_days: row.sale_lead_days,
-      expedition_lead_days: Number(row.expedition_lead_days ?? 1),
-      unit_profiles: row.unit_profiles,
-      packaging_profile: row.packaging_profile,
-      is_sold_loose: row.is_sold_loose,
-      preparation_mode: row.preparation_mode,
-      break_percent: row.break_percent,
-      break_stage: row.break_stage,
-      break_comment: row.break_comment,
-      can_be_ingredient: row.can_be_ingredient,
-      ingredient_profile: row.ingredient_profile,
-      is_mpi_ingredient: row.is_mpi_ingredient,
-      weight_label: row.weight_label,
-      production_unit: row.production_unit,
-      sales_unit: row.sales_unit,
-      sales_to_kg_factor: row.sales_to_kg_factor,
-      expedition_unit: row.expedition_unit,
-      expedition_to_kg_factor: row.expedition_to_kg_factor,
-      tenant_id: row.tenant_id,
-    })
-    .select("id")
-    .single();
+  const clonePayload = {
+    legacy_id: legacyId,
+    code,
+    name: `[Cópia] ${row.name}`,
+    description: row.description,
+    short_name: row.short_name,
+    subcategory_id: row.subcategory_id,
+    operational_subcategory_id: null,
+    external_code: null,
+    active: false,
+    available_for_ordering: false,
+    validity_days: row.validity_days,
+    minimum_production_kg: row.minimum_production_kg,
+    economic_production_kg: row.economic_production_kg,
+    economic_batch_unit: row.economic_batch_unit ?? null,
+    // XPAN-8: preserva o limite do ingrediente principal ao copiar o produto.
+    main_ingredient_limit_kg: (row as Record<string, unknown>).main_ingredient_limit_kg ?? null,
+    allows_storage: row.allows_storage,
+    production_days: row.production_days,
+    sale_lead_days: row.sale_lead_days,
+    expedition_lead_days: Number(row.expedition_lead_days ?? 1),
+    unit_profiles: row.unit_profiles,
+    packaging_profile: row.packaging_profile,
+    is_sold_loose: row.is_sold_loose,
+    preparation_mode: row.preparation_mode,
+    // A cópia enumera colunas na mão (já perdeu campo antes): a sequência das etapas e o
+    // modo de preparo de cada bloco têm de vir junto, senão a ficha clonada volta à ordem
+    // canônica e sem instrução por bloco. Normaliza para não propagar lixo do JSONB.
+    recipe_stage_config: normalizeRecipeStageConfig(
+      (row as Record<string, unknown>).recipe_stage_config,
+    ),
+    break_percent: row.break_percent,
+    break_stage: row.break_stage,
+    break_comment: row.break_comment,
+    can_be_ingredient: row.can_be_ingredient,
+    ingredient_profile: row.ingredient_profile,
+    is_mpi_ingredient: row.is_mpi_ingredient,
+    weight_label: row.weight_label,
+    production_unit: row.production_unit,
+    sales_unit: row.sales_unit,
+    sales_to_kg_factor: row.sales_to_kg_factor,
+    expedition_unit: row.expedition_unit,
+    expedition_to_kg_factor: row.expedition_to_kg_factor,
+    tenant_id: row.tenant_id,
+  };
+
+  let insertResult = await supabase.from("products").insert(clonePayload).select("id").single();
+
+  // Mesma tolerância do create/update: sem a migration, a cópia sai sem a config de etapas
+  // em vez de falhar. O INSERT é atômico, então nada ficou pela metade.
+  if (isMissingRecipeStageConfigColumn(insertResult.error)) {
+    warnMissingRecipeStageConfigColumn();
+    insertResult = await supabase
+      .from("products")
+      .insert(withoutRecipeStageConfig(clonePayload))
+      .select("id")
+      .single();
+  }
 
   const cloned = assertSupabaseResult(insertResult, "Failed to clone product");
 

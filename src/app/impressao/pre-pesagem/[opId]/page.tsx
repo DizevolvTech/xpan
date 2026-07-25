@@ -7,6 +7,7 @@ import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
 import { groupPrintRowsByStage } from "@/lib/printing-documents";
 import type { PreWeighBatchSplit } from "@/lib/production-batches";
+import type { RecipeStageConfigEntry } from "@/lib/production-planning";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPreWeighingDocument } from "@/lib/printing-documents";
@@ -133,19 +134,26 @@ function RecipeTable({
 }
 
 /**
- * Blocos da receita por ETAPA, na ordem canônica. Receita não migrada volta como um
- * único grupo sem cabeçalho — a impressão sai idêntica à de hoje.
+ * Blocos da receita por ETAPA, na SEQUÊNCIA que a ficha do produto definiu (sem ficha
+ * configurada, a ordem canônica de sempre). Receita não migrada volta como um único grupo
+ * sem cabeçalho — a impressão sai idêntica à de hoje.
+ *
+ * O modo de preparo por etapa (`group.instructions`) existe aqui, mas NÃO é impresso: a
+ * pré-pesagem é a folha de PESAR (o padeiro separa os insumos na balança), o preparo é lido
+ * na folha de produção. Repetir o texto aqui só encheria a folha da balança.
  */
 function StagedRecipeTables({
   rows,
   batchSplit,
+  stageConfig,
 }: {
   rows: RecipeTableRow[];
   batchSplit?: PreWeighBatchSplit | null;
+  stageConfig?: RecipeStageConfigEntry[];
 }) {
   return (
     <>
-      {groupPrintRowsByStage(rows).map((group) => (
+      {groupPrintRowsByStage(rows, stageConfig).map((group) => (
         <Fragment key={group.stage}>
           {group.showStageHeader ? (
             <div className="border-b border-stone-300 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-600">
@@ -260,7 +268,8 @@ export default function PrePesagemPrintPage() {
                 <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
                   Usado por: {section.usedBy.join(", ")}
                 </div>
-                <StagedRecipeTables rows={section.items} />
+                {/* Ficha do próprio MPI: os blocos DELE saem na sequência que ele definiu. */}
+                <StagedRecipeTables rows={section.items} stageConfig={section.recipeStageConfig} />
               </div>
             </article>
           ))}
@@ -300,6 +309,7 @@ export default function PrePesagemPrintPage() {
                   ...section.additionalIngredients.map((row) => ({ ...row, isAdditional: true })),
                 ]}
                 batchSplit={section.batchSplit}
+                stageConfig={section.recipeStageConfig}
               />
               {section.baseIngredients.length === 0 && section.additionalIngredients.length === 0 ? (
                 <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
