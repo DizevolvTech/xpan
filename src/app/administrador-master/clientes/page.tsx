@@ -33,6 +33,7 @@ import type {
   CreateMasterClientResult,
   MasterClient,
 } from "@/lib/master-clients";
+import { isValidCnpj, maskCnpjInput, normalizeCnpj } from "@/lib/cnpj";
 import { isMasterClientAdminEmailConflictMessage } from "@/lib/master-clients";
 import { getTenantIdentifier } from "@/lib/tenant";
 import { useMasterClients } from "@/lib/use-master-clients";
@@ -42,6 +43,7 @@ function buildInitialForm(): CreateMasterClientPayload {
   return {
     tenant: {
       name: "",
+      cnpj: "",
       status: "ativo",
     },
     admin: {
@@ -256,10 +258,17 @@ export default function AdministradorMasterClientesPage() {
       return;
     }
 
+    // CNPJ é opcional; se preenchido, precisa fechar o dígito verificador.
+    if (form.tenant.cnpj?.trim() && !isValidCnpj(form.tenant.cnpj)) {
+      setFormError("CNPJ inválido. Confira as 14 posições — o formato alfanumérico aceita letras e números.");
+      return;
+    }
+
     try {
       const created = await createClient({
         tenant: {
           name: tenantName,
+          cnpj: normalizeCnpj(form.tenant.cnpj) || null,
           status: form.tenant.status,
         },
         admin: {
@@ -467,6 +476,22 @@ export default function AdministradorMasterClientesPage() {
                   onChange={(event) => updateTenantForm("name", event.target.value)}
                   placeholder="Padaria Exemplo"
                 />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="tenant-cnpj">CNPJ</Label>
+                <Input
+                  id="tenant-cnpj"
+                  value={form.tenant.cnpj ?? ""}
+                  onChange={(event) => updateTenantForm("cnpj", maskCnpjInput(event.target.value))}
+                  // Alfanumérico: nada de type="number" nem inputMode numérico.
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="00.000.000/0000-00 ou 12.ABC.345/01DE-35"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Opcional. Aceita o formato numérico e o alfanumérico, válido desde julho/2026.
+                </p>
               </div>
 
               <div className="grid gap-2">

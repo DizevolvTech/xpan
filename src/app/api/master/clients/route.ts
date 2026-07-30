@@ -25,7 +25,7 @@ function normalizePayload(payload: unknown): CreateMasterClientPayload | null {
   }
 
   const candidate = payload as {
-    tenant?: { name?: unknown; status?: unknown };
+    tenant?: { name?: unknown; cnpj?: unknown; status?: unknown };
     admin?: { name?: unknown; email?: unknown; status?: unknown };
   };
 
@@ -42,6 +42,8 @@ function normalizePayload(payload: unknown): CreateMasterClientPayload | null {
   return {
     tenant: {
       name: candidate.tenant.name.trim(),
+      // Opcional: normalizado e validado em createTenantWithAdmin.
+      cnpj: typeof candidate.tenant.cnpj === "string" ? candidate.tenant.cnpj : null,
       status: candidate.tenant.status,
     },
     admin: {
@@ -111,9 +113,14 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Não foi possível criar o cliente.";
 
+    if (isMasterClientAdminEmailConflictMessage(message)) {
+      return NextResponse.json({ message }, { status: 409 });
+    }
+
+    // CNPJ inválido é erro do formulário, não falha de servidor.
     return NextResponse.json(
       { message },
-      { status: isMasterClientAdminEmailConflictMessage(message) ? 409 : 500 },
+      { status: message.toLowerCase().includes("cnpj") ? 400 : 500 },
     );
   }
 }

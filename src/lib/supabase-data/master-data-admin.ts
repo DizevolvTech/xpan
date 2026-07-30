@@ -11,6 +11,7 @@ import type {
   StoreMasterData,
 } from "@/lib/production-planning";
 import { normalizeRecipeStage, normalizeRecipeStageConfig } from "@/lib/production-planning";
+import { resolveCnpjForStorage } from "@/lib/cnpj";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   buildDefaultScheduleDayPriorities,
@@ -375,6 +376,16 @@ export async function updateSubcategory(
   }
 }
 
+export const DUPLICATED_STORE_CNPJ_MESSAGE =
+  "Este CNPJ já está cadastrado em outra loja. Selecione outro CNPJ para continuar.";
+
+/** Traduz a violação do índice único (tenant_id, cnpj) em erro de formulário. */
+function assertStoreCnpjNotDuplicated(error: SupabaseError | null) {
+  if (error?.message?.includes("idx_stores_tenant_cnpj")) {
+    throw new Error(DUPLICATED_STORE_CNPJ_MESSAGE);
+  }
+}
+
 export async function createStore(input: StoreInput, options: MutationOptions = {}) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const existingCodesResult = await supabase.from("stores").select("code");
@@ -383,6 +394,9 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
   const responsibleProfile = responsibleProfileId
     ? await resolveStoreResponsibleProfile(responsibleProfileId, supabase)
     : null;
+  // CNPJ alfanumérico: normaliza pra forma canônica e recusa inválido aqui,
+  // não só no formulário.
+  const cnpj = resolveCnpjForStorage(input.cnpj);
 
   const result = await supabase.from("stores").insert({
     legacy_id: buildGeneratedLegacyId("store"),
@@ -392,6 +406,7 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
     responsible_profile_id: responsibleProfile?.id ?? null,
     email: input.email.trim(),
     phone: input.phone.trim(),
+    cnpj,
     status: input.status,
     receive_window: input.receiveWindow.trim(),
     ordering_days: input.orderingDays,
@@ -403,6 +418,7 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
     delivery_zone: input.deliveryZone?.trim() || null,
   }).select("id").single();
 
+  assertStoreCnpjNotDuplicated(result.error);
   const createdStore = assertSupabaseResult(result, "Failed to create store");
 
   await syncStoreResponsibleAccess(createdStore.id, responsibleProfile?.id ?? null, null, supabase);
@@ -419,6 +435,7 @@ export async function updateStore(
   const responsibleProfile = responsibleProfileId
     ? await resolveStoreResponsibleProfile(responsibleProfileId, supabase)
     : null;
+  const cnpj = resolveCnpjForStorage(input.cnpj);
 
   const result = await supabase
     .from("stores")
@@ -428,6 +445,7 @@ export async function updateStore(
       responsible_profile_id: responsibleProfile?.id ?? null,
       email: input.email.trim(),
       phone: input.phone.trim(),
+      cnpj,
       status: input.status,
       receive_window: input.receiveWindow.trim(),
       ordering_days: input.orderingDays,
@@ -439,6 +457,8 @@ export async function updateStore(
       updated_at: new Date().toISOString(),
     })
     .eq("id", String(row.id));
+
+  assertStoreCnpjNotDuplicated(result.error);
 
   if (result.error) {
     throw new Error(`Failed to update store: ${result.error.message}`);

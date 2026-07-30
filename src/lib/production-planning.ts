@@ -259,6 +259,9 @@ export interface StoreMasterData {
   responsibleProfileId?: string | null;
   email: string;
   phone: string;
+  /** CNPJ da unidade, normalizado (14 posições, sem máscara, caixa alta).
+   * Aceita formato numérico legado e alfanumérico — ver src/lib/cnpj.ts. */
+  cnpj?: string | null;
   status: RecordStatus;
   receiveWindow: string;
   orderingDays: ProductionWeekDay[];

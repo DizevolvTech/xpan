@@ -29,6 +29,7 @@ import {
   productionWeekDays,
   type StoreMasterData,
 } from "@/lib/production-planning";
+import { formatCnpj, isValidCnpj, maskCnpjInput, normalizeCnpj } from "@/lib/cnpj";
 import { formatBrazilPhone } from "@/lib/phone-mask";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useStoreUserCandidates } from "@/lib/use-store-user-candidates";
@@ -55,6 +56,7 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
     responsibleProfileId: store?.responsibleProfileId ?? null,
     email: store?.email ?? "",
     phone: formatBrazilPhone(store?.phone ?? ""),
+    cnpj: maskCnpjInput(store?.cnpj ?? ""),
     status: store?.status ?? "ativo",
     receiveWindow: store?.receiveWindow ?? "07:00 - 10:00",
     orderingDays: store?.orderingDays ?? ["segunda", "terca", "quarta", "quinta", "sexta"],
@@ -144,6 +146,11 @@ export default function LojasPage() {
           <span className="block text-[11px] text-muted-foreground/80">
             {item.responsible?.trim() ? `Resp.: ${item.responsible}` : "Sem responsável vinculado"}
           </span>
+          {item.cnpj ? (
+            <span className="block text-[11px] tabular-nums text-muted-foreground/80">
+              {formatCnpj(item.cnpj)}
+            </span>
+          ) : null}
         </div>
       ),
     },
@@ -286,6 +293,13 @@ export default function LojasPage() {
       return;
     }
 
+    // CNPJ é opcional, mas se preenchido precisa fechar o dígito verificador.
+    // Vale para o formato numérico legado e para o alfanumérico.
+    if (formState.cnpj?.trim() && !isValidCnpj(formState.cnpj)) {
+      setFormError("CNPJ inválido. Confira as 14 posições — o formato alfanumérico aceita letras e números.");
+      return;
+    }
+
     setIsSubmitting(true);
     setFormError(null);
 
@@ -299,7 +313,11 @@ export default function LojasPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formState),
+          body: JSON.stringify({
+            ...formState,
+            // Persiste sempre na forma canônica (sem máscara, caixa alta).
+            cnpj: normalizeCnpj(formState.cnpj) || null,
+          }),
         },
       );
 
@@ -564,6 +582,24 @@ export default function LojasPage() {
                     }
                     placeholder="(99) 99999-9999"
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="store-cnpj">CNPJ</Label>
+                  <Input
+                    id="store-cnpj"
+                    value={formState.cnpj ?? ""}
+                    onChange={(event) =>
+                      setFormState((current) => ({ ...current, cnpj: maskCnpjInput(event.target.value) }))
+                    }
+                    // Alfanumérico: não pode ser type="number" nem inputMode numérico.
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="00.000.000/0000-00 ou 12.ABC.345/01DE-35"
+                    readOnly={isReadOnly}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Opcional. Aceita o formato numérico e o alfanumérico (letras e números), válido desde julho/2026.
+                  </p>
                 </div>
                 <div className="grid gap-2">
                   <Label>Janela de Recebimento</Label>

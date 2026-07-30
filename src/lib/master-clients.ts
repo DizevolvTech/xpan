@@ -22,6 +22,8 @@ export type MasterClient = TenantSummary & {
 export type CreateMasterClientPayload = {
   tenant: {
     name: string;
+    /** CNPJ da rede, opcional. Normalizado no servidor — ver src/lib/cnpj.ts. */
+    cnpj?: string | null;
     status: TenantStatus;
   };
   admin: {

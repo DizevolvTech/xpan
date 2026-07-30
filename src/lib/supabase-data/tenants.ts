@@ -11,6 +11,7 @@ import {
   isMasterClientAdminEmailConflictMessage,
   MASTER_CLIENT_ADMIN_EMAIL_CONFLICT_MESSAGE,
 } from "@/lib/master-clients";
+import { resolveCnpjForStorage } from "@/lib/cnpj";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createManagedUser } from "@/lib/supabase-data/admin-users";
 import {
@@ -34,6 +35,7 @@ function mapTenantSummary(row: TenantRow): TenantSummary {
     legacyId: row.legacy_id,
     slug: row.slug,
     name: row.name,
+    cnpj: (row as { cnpj?: string | null }).cnpj ?? null,
     status: row.status,
     logoUrl: (row as Record<string, unknown>).logo_url as string | null ?? null,
   };
@@ -225,6 +227,9 @@ export async function createTenantWithAdmin(
 ): Promise<CreateTenantResult> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const tenantName = input.tenant.name.trim();
+  // CNPJ alfanumérico: valida e normaliza antes de tocar no banco, pra não
+  // provisionar tenant e admin e só então falhar no check de formato.
+  const tenantCnpj = resolveCnpjForStorage(input.tenant.cnpj);
   const adminName = input.admin.name.trim();
   const adminEmail = input.admin.email.trim().toLowerCase();
 
@@ -240,6 +245,7 @@ export async function createTenantWithAdmin(
         legacy_id: `tenant-${crypto.randomUUID()}`,
         slug,
         name: tenantName,
+        cnpj: tenantCnpj,
         status: input.tenant.status,
       })
       .select("*")

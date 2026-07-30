@@ -8,6 +8,9 @@ export type TenantSummary = {
   legacyId: string | null;
   slug: string;
   name: string;
+  /** CNPJ da rede, normalizado (14 posições, sem máscara, caixa alta).
+   * Aceita numérico legado e alfanumérico — ver src/lib/cnpj.ts. */
+  cnpj?: string | null;
   status: TenantStatus;
   logoUrl?: string | null;
 };

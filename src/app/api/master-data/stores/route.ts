@@ -9,7 +9,11 @@ import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 function isClientValidationError(message: string) {
   const normalized = message.toLowerCase();
-  return normalized.includes("selecione") || normalized.includes("tipo loja");
+  return (
+    normalized.includes("selecione") ||
+    normalized.includes("tipo loja") ||
+    normalized.includes("cnpj")
+  );
 }
 
 export async function POST(request: Request) {

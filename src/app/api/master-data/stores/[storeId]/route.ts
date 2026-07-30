@@ -15,7 +15,11 @@ type RouteContext = {
 
 function isClientValidationError(message: string) {
   const normalized = message.toLowerCase();
-  return normalized.includes("selecione") || normalized.includes("tipo loja");
+  return (
+    normalized.includes("selecione") ||
+    normalized.includes("tipo loja") ||
+    normalized.includes("cnpj")
+  );
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

@@ -76,6 +76,7 @@ export type Database = {
           legacy_id: string | null;
           slug: string;
           name: string;
+          cnpj: string | null;
           status: "ativo" | "inativo";
           created_at: string;
           updated_at: string;
@@ -85,6 +86,7 @@ export type Database = {
           legacy_id?: string | null;
           slug: string;
           name: string;
+          cnpj?: string | null;
           status?: "ativo" | "inativo";
           created_at?: string;
           updated_at?: string;
@@ -192,6 +194,7 @@ export type Database = {
           responsible_profile_id: string | null;
           email: string;
           phone: string;
+          cnpj: string | null;
           status: "ativo" | "inativo";
           receive_window: string;
           ordering_days: string[];
@@ -211,6 +214,7 @@ export type Database = {
           responsible_profile_id?: string | null;
           email: string;
           phone: string;
+          cnpj?: string | null;
           status?: "ativo" | "inativo";
           receive_window: string;
           ordering_days?: string[];

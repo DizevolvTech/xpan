@@ -326,6 +326,7 @@ async function loadMasterDataSnapshot(
       : null,
     email: row.email,
     phone: row.phone,
+    cnpj: (row as { cnpj?: string | null }).cnpj ?? null,
     status: row.status,
     receiveWindow: row.receive_window,
     orderingDays: (row.ordering_days ?? []) as StoreMasterData["orderingDays"],
