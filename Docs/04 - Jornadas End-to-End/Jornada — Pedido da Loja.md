@@ -14,7 +14,7 @@
 >   (forçável). Override do gestor dispara evento `liberacao_forcada` no
 >   `store_order_events`. UI dialog "Liberar mesmo assim". Ver
 >   [[Runbook A1-A8#2. Pedido bloqueado para produção — quando o gestor pode forçar|Runbook §2]].
-> - **Auto-release diário (A6/A6.2):** o cron `0 20 * * *` (17:00 BRT) libera
+> - **Auto-release diário (A6/A6.2):** o cron `0 21 * * *` (18:00 BRT, logo após o corte) libera
 >   automaticamente todos os pedidos elegíveis. Evento gravado com
 >   `metadata.origin = "sistema"` (vs `"manual"` para release pela UI).
 >   Botão "Auto-liberar elegíveis" no gestor faz o mesmo on-demand.

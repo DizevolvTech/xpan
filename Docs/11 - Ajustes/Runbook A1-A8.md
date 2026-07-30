@@ -342,12 +342,22 @@ Possíveis causas:
 
 ### Cron não dispara
 
-1. **Verifique `vercel.json`** — `path` deve ser `/api/cron/auto-release` e
-   `schedule` deve ser `0 20 * * *`.
-2. **Verifique `CRON_SECRET`** — Vercel Dashboard → Settings → Environment
-   Variables → deve existir em produção. Sem ele, o endpoint devolve 503.
-3. **Verifique o painel "Cron Jobs"** no Vercel — Vercel desabilita cron em
-   alguns planos (Hobby) ou se o deploy não foi para produção.
+⚠️ **O deploy é Netlify, que IGNORA `vercel.json`.** O agendamento vive em
+`netlify/functions/cron-auto-release.mts` (Scheduled Function, `export const config`),
+não naquele arquivo. Schedule atual: `0 21 * * *` = 18:00 BRT, logo após o corte.
+
+1. **A função está publicada?** `curl -s -o /dev/null -w '%{http_code}'
+   https://<site>/.netlify/functions/cron-auto-release` → **403** = publicada (a Netlify
+   bloqueia invocação HTTP direta de scheduled function); **404** = não foi para o deploy.
+2. **`CRON_SECRET` chegou no runtime?** Bata na rota com um token PROPOSITALMENTE errado —
+   a rota checa a env ANTES do token, então nada é executado:
+   `curl -H 'Authorization: Bearer invalido' https://<site>/api/cron/auto-release`
+   → **401** = configurada; **503** = ausente no runtime.
+3. **Se der 503:** a variável só entra em runtime num novo build. Site configuration →
+   Environment variables → confirme scope cobrindo **Functions/Runtime** (não só Builds) e
+   context **Production**, e dispare **Trigger deploy → Deploy site**.
+4. **Logs:** a Scheduled Function não devolve body, então o `console.log` do `[cron]` é o
+   registro de auditoria — veja em Logs → Functions.
 4. **Inspecione o último log do path** `/api/cron/auto-release` no Vercel.
 
 ### Release falha de surpresa

@@ -4,11 +4,14 @@
  * Porta o agendamento que estava em `vercel.json` e NUNCA rodou aqui — a Netlify ignora
  * aquele arquivo.
  *
- * ⚠️ O cron da Netlify é avaliado em UTC, igual ao da Vercel: `0 20 * * *` é 20:00 UTC =
- * **17:00 em Brasília**, ANTES do corte de pedidos das 18:00 — a liberação automática rodaria
- * enquanto as lojas ainda podem pedir. A expressão foi mantida idêntica à do `vercel.json`
- * para não mudar comportamento declarado por conta própria; provavelmente precisa virar
- * `0 21 * * *` (18:00 BRT, logo após o corte). Decisão do cliente.
+ * ⚠️ O cron da Netlify é avaliado em UTC. A expressão nasceu como `0 20 * * *`, herdada do
+ * `vercel.json` — 20:00 UTC = **17:00 em Brasília**, ANTES do corte de pedidos das 18:00, ou
+ * seja, a liberação automática rodava enquanto as lojas ainda podiam pedir e os pedidos da
+ * última hora ficavam de fora do lote. Cliente decidiu em 30/07: roda 18:00 BRT, logo após o
+ * corte, com o dia já fechado. Daí `0 21 * * *`.
+ *
+ * O Brasil não tem mais horário de verão, então UTC-3 é fixo o ano todo e a expressão não
+ * precisa de ajuste sazonal. Se o corte das 18:00 mudar, esta expressão muda junto.
  */
 /**
  * Dispara a rota de cron do app.
@@ -67,5 +70,6 @@ const runAutoRelease = async () => {
 export default runAutoRelease;
 
 export const config = {
-  schedule: "0 20 * * *",
+  // 21:00 UTC = 18:00 BRT, logo após o corte de pedidos. Ver o cabeçalho do arquivo.
+  schedule: "0 21 * * *",
 };

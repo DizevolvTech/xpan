@@ -75,6 +75,8 @@ Botão "Auto-liberar elegíveis" no gestor.
 **Área:** `vercel.json` · `src/app/api/cron/auto-release/route.ts`
 
 Schedule `0 20 * * *` (17:00 BRT). Autenticação `Authorization: Bearer ${CRON_SECRET}`.
+⚠️ **Superado em 2026-07:** o agendamento saiu do `vercel.json` (ignorado pela Netlify) para
+`netlify/functions/`, e o horário virou `0 21 * * *` (18:00 BRT, após o corte).
 Iteração por tenant ativo com isolamento de falha. Bugfix de auditoria:
 evento `liberacao_producao` grava `metadata.origin = "manual" | "sistema"`.
 
