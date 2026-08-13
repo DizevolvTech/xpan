@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>xpan — Handover técnico</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* Direction: Espelha o product shell do xpan — canvas quente claro, primary azul-acinzentado,
+       accent âmbar (~5–10%), sidebar clara sticky, Sora (heading) + Plus Jakarta Sans (body) +
+       JetBrains Mono (código). Tokens OKLCH copiados de src/app/globals.css (:root). */
+
+    :root {
+      --radius: 0.9rem;
+      --space-unit: 0.25rem;
+
+      --canvas: oklch(0.975 0.008 85);
+      --surface: oklch(0.995 0.002 95);
+      --panel: oklch(0.984 0.004 90);
+      --panel-foreground: oklch(0.29 0.02 245);
+
+      --background: oklch(0.997 0.001 80);
+      --foreground: oklch(0.26 0.02 248);
+
+      --card: oklch(0.998 0.001 85);
+      --card-foreground: oklch(0.26 0.02 248);
+
+      --primary: oklch(0.44 0.06 238);
+      --primary-foreground: oklch(0.985 0.004 90);
+      --secondary: oklch(0.94 0.012 80);
+      --secondary-foreground: oklch(0.34 0.03 245);
+      --muted: oklch(0.95 0.01 85);
+      --muted-foreground: oklch(0.49 0.016 245);
+      --accent: oklch(0.66 0.12 78);
+      --accent-foreground: oklch(0.17 0.01 68);
+      --destructive: oklch(0.56 0.2 25);
+
+      --info: oklch(0.84 0.06 238);
+      --info-foreground: oklch(0.34 0.05 240);
+      --success: oklch(0.86 0.07 148);
+      --success-foreground: oklch(0.34 0.05 162);
+      --warning: oklch(0.89 0.09 90);
+      --warning-foreground: oklch(0.39 0.07 85);
+      --danger: oklch(0.9 0.07 20);
+      --danger-foreground: oklch(0.43 0.13 22);
+
+      --border: oklch(0.95 0.006 88);
+      --border-strong: oklch(0.78 0.02 246);
+      --ring: oklch(0.68 0.08 220);
+
+      --sidebar: oklch(0.94 0.01 88);
+      --sidebar-foreground: oklch(0.3 0.02 245);
+      --sidebar-primary: oklch(0.44 0.06 238);
+      --sidebar-accent: oklch(0.92 0.014 80);
+      --sidebar-border: oklch(0.84 0.013 88);
+
+      --ink: oklch(0.22 0.02 248);
+      --ink-fg: oklch(0.92 0.01 90);
+
+      --shadow-card:
+        0 1px 0 0 color-mix(in oklch, var(--foreground) 4%, transparent),
+        0 1px 2px -1px color-mix(in oklch, var(--foreground) 6%, transparent),
+        0 8px 24px -18px color-mix(in oklch, var(--foreground) 22%, transparent);
+      --shadow-soft:
+        0 1px 0 0 color-mix(in oklch, var(--foreground) 5%, transparent),
+        0 10px 30px -22px color-mix(in oklch, var(--foreground) 30%, transparent);
+
+      --font-heading: "Sora", system-ui, sans-serif;
+      --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+      --sidebar-w: 17.5rem;
+      --content-max: 52rem;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-sans);
+      font-size: 0.9375rem;
+      line-height: 1.55;
+      color: var(--foreground);
+      background-color: var(--canvas);
+      background-image:
+        radial-gradient(circle at 6% 8%, color-mix(in oklch, var(--accent) 24%, transparent) 0%, transparent 40%),
+        radial-gradient(circle at 96% -2%, color-mix(in oklch, var(--primary) 20%, transparent) 0%, transparent 36%);
+      background-attachment: fixed;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    h1, h2, h3, h4 {
+      font-family: var(--font-heading);
+      line-height: 1.15;
+      font-weight: 600;
+      color: var(--foreground);
+    }
+    h1 { letter-spacing: -0.028em; font-size: clamp(1.55rem, 2.4vw, 1.85rem); margin: 0; }
+    h2 {
+      letter-spacing: -0.022em;
+      font-size: 1.35rem;
+      margin: 0 0 0.85rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid color-mix(in oklch, var(--border-strong) 35%, transparent);
+    }
+    h3 { letter-spacing: -0.018em; font-size: 1.05rem; margin: 1.35rem 0 0.5rem; }
+    p { margin: 0 0 0.85rem; }
+    a { color: var(--primary); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+    a:hover { color: color-mix(in oklch, var(--primary) 80%, black); }
+    strong { font-weight: 600; }
+    ul, ol { margin: 0 0 0.85rem; padding-left: 1.2rem; }
+    li { margin-bottom: 0.35rem; }
+    li::marker { color: var(--muted-foreground); }
+
+    .app {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    /* —— Sidebar (chrome do produto: clara, não dark) —— */
+    .sidebar {
+      position: sticky;
+      top: 0;
+      align-self: start;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--sidebar);
+      border-right: 1px solid color-mix(in oklch, var(--sidebar-border) 78%, transparent);
+      z-index: 40;
+    }
+
+    .sidebar-brand {
+      margin: 1rem;
+      padding: 0.85rem 1rem;
+      border-radius: calc(var(--radius) + 2px);
+      border: 1px solid color-mix(in oklch, var(--sidebar-border) 65%, transparent);
+      background: color-mix(in oklch, var(--sidebar-accent) 45%, transparent);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: inherit;
+    }
+    .brand-mark {
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: 0.7rem;
+      background:
+        radial-gradient(circle at 30% 30%, oklch(0.88 0.08 85), oklch(0.62 0.12 78));
+      display: grid;
+      place-items: center;
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      color: var(--accent-foreground);
+      flex-shrink: 0;
+    }
+    .brand-eyebrow {
+      margin: 0;
+      font-size: 0.625rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      color: color-mix(in oklch, var(--muted-foreground) 90%, transparent);
+    }
+    .brand-name {
+      margin: 0.1rem 0 0;
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .sidebar-meta {
+      padding: 0 1.15rem 0.85rem;
+      border-bottom: 1px solid color-mix(in oklch, var(--sidebar-border) 78%, transparent);
+      font-size: 0.75rem;
+      color: var(--muted-foreground);
+    }
+    .sidebar-meta code {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--foreground);
+    }
+
+    .nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.85rem 0.75rem 1.5rem;
+      scrollbar-width: thin;
+    }
+    .nav-label {
+      margin: 0.65rem 0.65rem 0.35rem;
+      font-size: 0.625rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted-foreground);
+    }
+    .nav a {
+      display: block;
+      padding: 0.55rem 0.75rem;
+      margin-bottom: 0.15rem;
+      border-radius: 0.55rem;
+      color: color-mix(in oklch, var(--sidebar-foreground) 88%, transparent);
+      text-decoration: none;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .nav a:hover {
+      background: color-mix(in oklch, var(--sidebar-accent) 80%, transparent);
+      color: var(--foreground);
+    }
+    .nav a.active {
+      background: color-mix(in oklch, var(--primary) 12%, var(--sidebar-accent));
+      color: var(--primary);
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+
+    .sidebar-foot {
+      padding: 0.85rem 1.15rem 1.15rem;
+      border-top: 1px solid color-mix(in oklch, var(--sidebar-border) 78%, transparent);
+      font-size: 0.7rem;
+      color: var(--muted-foreground);
+    }
+
+    /* —— Main —— */
+    .main {
+      min-width: 0;
+      padding: 1.25rem 1.5rem 3.5rem;
+    }
+    .page {
+      max-width: var(--content-max);
+      margin: 0 auto;
+    }
+
+    .hero {
+      position: relative;
+      margin-bottom: 1.75rem;
+      padding: 1.35rem 1.4rem 1.25rem;
+      border-radius: calc(var(--radius) + 4px);
+      border: 1px solid color-mix(in oklch, var(--border-strong) 28%, transparent);
+      background: color-mix(in oklch, var(--card) 92%, white);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; top: 0;
+      height: 3px;
+      background: linear-gradient(
+        90deg,
+        color-mix(in oklch, var(--primary) 60%, transparent) 0%,
+        color-mix(in oklch, var(--accent) 70%, transparent) 50%,
+        transparent 100%
+      );
+    }
+    .hero-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.85rem;
+      margin-bottom: 0.85rem;
+    }
+    .eyebrow {
+      margin: 0 0 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      font-size: 0.6875rem;
+      color: var(--muted-foreground);
+    }
+    .hero-lead {
+      margin: 0.55rem 0 0;
+      max-width: 38rem;
+      color: var(--muted-foreground);
+      font-size: 0.9rem;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 1rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.28rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+      font-variant-numeric: tabular-nums;
+    }
+    .badge::before {
+      content: "";
+      width: 0.4rem;
+      height: 0.4rem;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.85;
+    }
+    .badge-ok {
+      background: var(--success);
+      color: var(--success-foreground);
+      border-color: color-mix(in oklch, var(--success-foreground) 18%, transparent);
+    }
+    .badge-warn {
+      background: var(--warning);
+      color: var(--warning-foreground);
+      border-color: color-mix(in oklch, var(--warning-foreground) 18%, transparent);
+    }
+    .badge-risk {
+      background: var(--danger);
+      color: var(--danger-foreground);
+      border-color: color-mix(in oklch, var(--danger-foreground) 18%, transparent);
+    }
+    .badge-info {
+      background: var(--info);
+      color: var(--info-foreground);
+      border-color: color-mix(in oklch, var(--info-foreground) 18%, transparent);
+    }
+    .badge-muted {
+      background: var(--muted);
+      color: var(--muted-foreground);
+      border-color: color-mix(in oklch, var(--border-strong) 30%, transparent);
+    }
+    .badge-legacy {
+      background: oklch(0.94 0.04 295);
+      color: oklch(0.43 0.08 293);
+      border-color: oklch(0.85 0.05 295);
+    }
+
+    .section {
+      margin-bottom: 2.25rem;
+      scroll-margin-top: 1.25rem;
+    }
+
+    .card {
+      padding: 1rem 1.15rem;
+      border-radius: var(--radius);
+      border: 1px solid color-mix(in oklch, var(--border-strong) 28%, transparent);
+      background: var(--card);
+      box-shadow: var(--shadow-card);
+      margin-bottom: 0.85rem;
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+    .stat-label {
+      margin: 0;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted-foreground);
+    }
+    .stat-value {
+      margin: 0.35rem 0 0;
+      font-family: var(--font-heading);
+      font-size: 1.05rem;
+      font-weight: 600;
+      letter-spacing: -0.012em;
+    }
+
+    .callout {
+      padding: 0.85rem 1rem;
+      border-radius: calc(var(--radius) - 3px);
+      border: 1px solid transparent;
+      margin: 0.85rem 0;
+      font-size: 0.875rem;
+    }
+    .callout-warn {
+      background: color-mix(in oklch, var(--warning) 55%, white);
+      border-color: color-mix(in oklch, var(--warning-foreground) 18%, transparent);
+      color: var(--warning-foreground);
+    }
+    .callout-risk {
+      background: color-mix(in oklch, var(--danger) 55%, white);
+      border-color: color-mix(in oklch, var(--danger-foreground) 18%, transparent);
+      color: var(--danger-foreground);
+    }
+    .callout-info {
+      background: color-mix(in oklch, var(--info) 50%, white);
+      border-color: color-mix(in oklch, var(--info-foreground) 18%, transparent);
+      color: var(--info-foreground);
+    }
+    .callout strong { color: inherit; }
+
+    .table-wrap {
+      overflow-x: auto;
+      margin: 0.75rem 0 1rem;
+      border-radius: calc(var(--radius) - 3px);
+      border: 1px solid color-mix(in oklch, var(--border-strong) 28%, transparent);
+      background: var(--surface);
+      box-shadow: var(--shadow-soft);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      font-variant-numeric: tabular-nums;
+    }
+    th, td {
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+      border-bottom: 1px solid color-mix(in oklch, var(--border) 90%, var(--border-strong));
+      vertical-align: top;
+    }
+    th {
+      font-size: 0.65625rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted-foreground);
+      background: color-mix(in oklch, var(--panel) 70%, white);
+    }
+    tr:last-child td { border-bottom: none; }
+    td code, p code, li code {
+      font-family: var(--font-mono);
+      font-size: 0.78em;
+      padding: 0.1em 0.35em;
+      border-radius: 0.3rem;
+      background: color-mix(in oklch, var(--muted) 80%, white);
+      color: var(--foreground);
+    }
+
+    pre {
+      margin: 0.75rem 0 1rem;
+      padding: 1rem 1.1rem;
+      border-radius: calc(var(--radius) - 3px);
+      background: var(--ink);
+      color: var(--ink-fg);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      line-height: 1.45;
+      overflow-x: auto;
+      box-shadow: var(--shadow-soft);
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      color: inherit;
+      font-size: inherit;
+    }
+
+    .checklist {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .checklist li {
+      display: grid;
+      grid-template-columns: 1.1rem 1fr;
+      gap: 0.65rem;
+      align-items: start;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
+      margin: 0;
+    }
+    .checklist li:last-child { border-bottom: none; }
+    .checklist input {
+      margin-top: 0.2rem;
+      accent-color: var(--primary);
+    }
+
+    .toc-mobile {
+      display: none;
+      margin-bottom: 1rem;
+    }
+    .menu-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.55rem 0.85rem;
+      border-radius: 0.55rem;
+      border: 1px solid color-mix(in oklch, var(--border-strong) 35%, transparent);
+      background: var(--card);
+      font-family: var(--font-sans);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--foreground);
+      cursor: pointer;
+      box-shadow: var(--shadow-card);
+    }
+
+    .drawer-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: color-mix(in oklch, var(--foreground) 35%, transparent);
+      z-index: 50;
+    }
+    .drawer-backdrop.open { display: block; }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar {
+        position: fixed;
+        left: 0; top: 0;
+        width: min(19rem, 88vw);
+        transform: translateX(-105%);
+        transition: transform 0.25s ease;
+        box-shadow: var(--shadow-soft);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .toc-mobile { display: block; }
+      .main { padding: 1rem 1rem 3rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media print {
+      body {
+        background: white;
+        background-image: none;
+        font-size: 11pt;
+      }
+      .sidebar, .toc-mobile, .menu-btn, .drawer-backdrop { display: none !important; }
+      .app { display: block; }
+      .main { padding: 0; }
+      .hero, .card, .table-wrap { box-shadow: none; break-inside: avoid; }
+      a { text-decoration: none; color: inherit; }
+      pre { white-space: pre-wrap; }
+    }
+  </style>
+</head>
+<body>
+  <div class="drawer-backdrop" id="backdrop" hidden></div>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="Navegação do handover">
+      <a class="sidebar-brand" href="#top">
+        <div class="brand-mark" aria-hidden="true">XP</div>
+        <div>
+          <p class="brand-eyebrow">Software</p>
+          <p class="brand-name">xpan</p>
+        </div>
+      </a>
+      <div class="sidebar-meta">
+        Handover técnico<br />
+        <code>develop</code> · 2026-08-13
+      </div>
+      <nav class="nav" id="nav">
+        <p class="nav-label">Seções</p>
+        <a href="#s1">1. Em uma frase</a>
+        <a href="#s2">2. Stack e repo</a>
+        <a href="#s3">3. Arquitetura</a>
+        <a href="#s4">4. Rodar local + envs</a>
+        <a href="#s5">5. Domínio / personas</a>
+        <a href="#s6">6. Dados críticos</a>
+        <a href="#s7">7. Estado do trabalho</a>
+        <a href="#s8">8. Remotes e branches</a>
+        <a href="#s9">9. Ops / deploy</a>
+        <a href="#s10">10. Convenções</a>
+        <a href="#s11">11. Contatos / negócio</a>
+        <a href="#s12">12. Checklist</a>
+        <a href="#s13">13. Docs críticos</a>
+      </nav>
+      <div class="sidebar-foot">
+        Tokens de <code>globals.css</code><br />
+        Fontes: Sora / Plus Jakarta / JetBrains Mono
+      </div>
+    </aside>
+
+    <main class="main" id="top">
+      <div class="page">
+        <div class="toc-mobile">
+          <button type="button" class="menu-btn" id="menuBtn" aria-controls="sidebar" aria-expanded="false">
+            Menu · seções
+          </button>
+        </div>
+
+        <header class="hero">
+          <div class="hero-top">
+            <div>
+              <p class="eyebrow">Handover técnico · Daniel Augusto v2</p>
+              <h1>xpan — plataforma de produção e pedidos</h1>
+              <p class="hero-lead">
+                Documento operacional para o próximo engineer. Fatos extraídos do repo em 2026-08-13
+                (branch <code>develop</code>, HEAD <code>794c780</code>). Itens incertos marcados como
+                <em>a confirmar</em>.
+              </p>
+            </div>
+          </div>
+          <div class="meta-row">
+            <span class="badge badge-info">branch develop</span>
+            <span class="badge badge-ok">origin + dizevolv</span>
+            <span class="badge badge-warn">CRON_SECRET / redeploy</span>
+            <span class="badge badge-muted">npm · Next 16</span>
+            <span class="badge badge-legacy">vercel.json = legado de cron</span>
+          </div>
+        </header>
+
+        <!-- 1 -->
+        <section class="section" id="s1">
+          <h2>1. Em uma frase</h2>
+          <div class="card">
+            <p style="margin:0">
+              <strong>xpan</strong> (projeto <em>Daniel Augusto v2</em>) é um ERP SaaS multi-tenant para
+              redes de padaria/confeitaria com <strong>uma fábrica central + N lojas</strong>: pedidos D+X,
+              cronograma de produção, execução no chão, expedição/entrega e ocorrências — sem PDV fiscal
+              nem financeiro.
+            </p>
+          </div>
+        </section>
+
+        <!-- 2 -->
+        <section class="section" id="s2">
+          <h2>2. Stack e estrutura do repo</h2>
+          <div class="card-grid">
+            <div class="card">
+              <p class="stat-label">App</p>
+              <p class="stat-value">Next.js 16 · React 19 · TS</p>
+            </div>
+            <div class="card">
+              <p class="stat-label">UI</p>
+              <p class="stat-value">Tailwind 4 · shadcn/ui</p>
+            </div>
+            <div class="card">
+              <p class="stat-label">Backend</p>
+              <p class="stat-value">Supabase (PG + Auth + RLS)</p>
+            </div>
+            <div class="card">
+              <p class="stat-label">Package manager</p>
+              <p class="stat-value">npm (<code>package-lock.json</code>)</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Camada</th><th>Tecnologia</th><th>Notas</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Framework</td><td>Next.js 16.1.6 (App Router)</td><td>RSC; route groups por persona</td></tr>
+                <tr><td>Runtime UI</td><td>React 19.2.3</td><td>Server + Client Components</td></tr>
+                <tr><td>Auth SSR</td><td>@supabase/ssr</td><td>Cookies; <code>middleware.ts</code></td></tr>
+                <tr><td>Motion / icons</td><td>framer-motion · lucide-react</td><td>—</td></tr>
+                <tr><td>Testes</td><td><code>tsx --test</code></td><td>439 testes passando (2026-08-13)</td></tr>
+                <tr><td>Node</td><td>v24.14.0 (máquina local)</td><td><span class="badge badge-warn">engines: a confirmar</span> — não declarado em <code>package.json</code></td></tr>
+                <tr><td>Monorepo</td><td>Não</td><td>App único na raiz; pasta <code>skills/</code> é material auxiliar</td></tr>
+              </tbody>
+            </table>
+          </div>
+<pre><code>daniel-augusto-v2-new/
+├── src/app/{login,administrador-master,administrador,
+│            gestor-dados,gestor-fabrica,chao-fabrica,loja}/
+├── src/app/(perfil-*)/          # telas multi-persona
+├── src/app/impressao/           # folhas A4 (pré-pesagem, OP, etc.)
+├── src/app/api/                 # REST
+├── src/lib/factory-planning/    # motor de cronograma
+├── src/lib/supabase-data/       # acesso a dados
+├── supabase/migrations/         # 45 arquivos SQL
+├── netlify/functions/           # Scheduled Functions (crons)
+├── Docs/                        # vault Obsidian (fonte de verdade)
+├── e2e/                         # scripts Python de fluxo
+├── vercel.json                  # crons LEGADOS (Netlify ignora)
+└── middleware.ts</code></pre>
+        </section>
+
+        <!-- 3 -->
+        <section class="section" id="s3">
+          <h2>3. Arquitetura runtime</h2>
+<pre><code>  [Browser]
+      │  Next App Router (Netlify)
+      ▼
+  middleware.ts ──► Auth cookie + tenant (master: da_master_tenant)
+      │
+      ├─ UI por persona  (src/app/{persona}/…)
+      ├─ API routes      (authorizeApiRequest → supabase-data)
+      └─ Cron HTTP       /api/cron/{auto-release,divergence-alerts}
+              ▲
+              │ Bearer CRON_SECRET
+   Netlify Scheduled Functions
+   (netlify/functions/*.mts) ── schedule UTC ──► URL do site
+
+              ▼
+         Supabase
+   PostgreSQL + Auth + RLS
+   (tenant_id · current_tenant_id())</code></pre>
+          <ul>
+            <li><strong>Deploy confirmado:</strong> Netlify (changelog 2026-07-24). <code>vercel.json</code> permanece no repo mas <strong>não agenda</strong> nada nesse host.</li>
+            <li><strong>Filas:</strong> não há broker; automação = HTTP cron + lógica em <code>src/lib</code>.</li>
+            <li><strong>Storage:</strong> Supabase Storage — uso pontual (logos de tenant); a confirmar cobertura completa.</li>
+            <li><strong>CI:</strong> sem <code>.github/workflows</code> no repo <span class="badge badge-risk">ausente</span>.</li>
+          </ul>
+        </section>
+
+        <!-- 4 -->
+        <section class="section" id="s4">
+          <h2>4. Como rodar local + envs</h2>
+          <h3>Install / scripts</h3>
+<pre><code>cp .env.local.example .env.local   # preencher URL + anon key + CRON_SECRET
+npm install
+npm run dev                        # http://localhost:3000
+npm run build && npm start
+npm test                           # tsx --test "src/**/*.test.ts"
+npm run lint</code></pre>
+          <p>Scripts Supabase úteis: <code>supabase:gen-types</code>, <code>supabase:seed:*</code>, <code>supabase:auth:bootstrap</code>, <code>supabase:master:bootstrap</code>, <code>supabase:remote:status</code>. Docker Compose dedicado <strong>não</strong> está no root — banco via projeto Supabase (local CLI ou cloud). <em>a confirmar</em> se o time usa <code>supabase start</code> no dia a dia.</p>
+
+          <h3>Variáveis de ambiente (nomes / uso — sem valores)</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Nome</th><th>Uso</th><th>Onde</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>NEXT_PUBLIC_SUPABASE_URL</code></td>
+                  <td>URL do projeto Supabase</td>
+                  <td><code>.env.local.example</code></td>
+                </tr>
+                <tr>
+                  <td><code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code></td>
+                  <td>Chave anon (client/SSR)</td>
+                  <td><code>.env.local.example</code></td>
+                </tr>
+                <tr>
+                  <td><code>CRON_SECRET</code></td>
+                  <td>Bearer para <code>/api/cron/*</code> e backfill admin; sem ela → <strong>503</strong></td>
+                  <td>example + Netlify / Vercel</td>
+                </tr>
+                <tr>
+                  <td><code>NEXT_PUBLIC_FACTORY_OPENS_ORDERS</code></td>
+                  <td>Modelo “fábrica abre pedido”. Código: default <strong>ON</strong> (<code>!== "false"</code>). Vault antigo ainda cita OFF — <em>a confirmar no ambiente</em></td>
+                  <td><code>src/lib/feature-flags.ts</code></td>
+                </tr>
+                <tr>
+                  <td><code>EXPAND_MPI_INTO_OPS</code></td>
+                  <td>Expansão MPI → OP (default ligado salvo <code>"false"</code>)</td>
+                  <td>engine</td>
+                </tr>
+                <tr>
+                  <td><code>EXPAND_MIXED_INGREDIENT_INTO_OPS</code></td>
+                  <td>Ingrediente misturado → OP</td>
+                  <td>engine</td>
+                </tr>
+                <tr>
+                  <td><code>SUPABASE_PROJECT_REF</code></td>
+                  <td>Geração de types</td>
+                  <td>script npm</td>
+                </tr>
+                <tr>
+                  <td><code>URL</code></td>
+                  <td>Injetada pela Netlify nas Scheduled Functions</td>
+                  <td>runtime Netlify</td>
+                </tr>
+                <tr>
+                  <td>Service role / secrets Supabase</td>
+                  <td>Scripts de bootstrap — <strong>só</strong> em <code>.env.local</code> (gitignored)</td>
+                  <td>Docs vault</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout callout-risk">
+            <strong>Nunca</strong> commitar <code>.env.local</code>. Chaves reais não entram neste HTML.
+          </div>
+        </section>
+
+        <!-- 5 -->
+        <section class="section" id="s5">
+          <h2>5. Domínio de produto</h2>
+          <h3>Personas (6)</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Persona</th><th>Papel</th><th>Área de app</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Administrador Master</td><td>SaaS / tenants</td><td><code>/administrador-master</code></td></tr>
+                <tr><td>Administrador</td><td>Governança no tenant</td><td><code>/administrador</code></td></tr>
+                <tr><td>Gestor de Dados</td><td>Catálogo (produtos, lojas…)</td><td><code>/gestor-dados</code></td></tr>
+                <tr><td>Gestor de Fábrica</td><td>Pedidos, cronograma, OPs, expedição</td><td><code>/gestor-fabrica</code></td></tr>
+                <tr><td>Chão de Fábrica</td><td>Execução, expedição, entregas</td><td><code>/chao-fabrica</code></td></tr>
+                <tr><td>Loja</td><td>Pedido D+X + ocorrências (não é caixa)</td><td><code>/loja</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>Golden path</h3>
+<pre><code>Loja pediu (D+X)
+  → Cronograma / motor (schedule + snapshots)
+  → Liberação (manual ou auto-release 18:00 BRT)
+  → OP no chão (drop antes/depois forno, batidas)
+  → Expedição (checklist por loja)
+  → Entrega / tentativas
+  ↔ Ocorrências (loja → fábrica)</code></pre>
+          <p>~26 módulos em <code>permission-modules.ts</code> (docs históricas falam 24 ou 27). Níveis: <code>sem_acesso</code> → <code>visualizar</code> → <code>operar</code> → <code>gerenciar</code>.</p>
+        </section>
+
+        <!-- 6 -->
+        <section class="section" id="s6">
+          <h2>6. Dados / domínio analítico crítico</h2>
+          <ul>
+            <li><strong>Motor:</strong> <code>src/lib/factory-planning/engine.ts</code> — lead days, gaps por produto, disponibilidade, snapshots, expansão MPI.</li>
+            <li><strong>Snapshots:</strong> pedidos/itens congelam fatores e (pós-jul/2026) receita na liberação; edição viva não deve “vazar” para OP já liberada.</li>
+            <li><strong>Códigos de negócio:</strong> sequências em BRT (<code>America/Sao_Paulo</code>) — bug UTC corrigido em jul/2026.</li>
+            <li><strong>Receita por etapa:</strong> enum <code>stage</code> (esponja→…→montagem); capacidade de batida pelo maior <em>recipiente</em>, não soma total da ficha.</li>
+            <li><strong>Métricas gestor:</strong> lead time, OTIF, ocupação, falhas (<code>factory-metrics</code>).</li>
+            <li><strong>Riscos de dado abertos (vault):</strong> D01 RLS sem role em 2 tabelas; D02 <code>list_profile_labels</code> cross-tenant; D03 sem UNIQUE anti-duplicidade de pedido.</li>
+          </ul>
+        </section>
+
+        <!-- 7 -->
+        <section class="section" id="s7">
+          <h2>7. Estado atual do trabalho</h2>
+          <div class="card-grid">
+            <div class="card">
+              <p class="stat-label">Feito (recente)</p>
+              <p class="stat-value" style="font-size:0.9rem;font-weight:500;line-height:1.4">
+                Checklist call 24/07 · receita por etapa · sobras reais · crons Netlify · auto-release 18:00 BRT · folha OP cliente · sequenciamento preparo
+              </p>
+            </div>
+            <div class="card">
+              <p class="stat-label">WIP / branches</p>
+              <p class="stat-value" style="font-size:0.9rem;font-weight:500;line-height:1.4">
+                <code>feat/cnpj-alfanumerico</code> (1 commit à frente de develop). Remotes: <code>feat/pre-pesagem-extra</code>, <code>feat/trava-data-futura</code>
+              </p>
+            </div>
+            <div class="card">
+              <p class="stat-label">Bloqueio externo</p>
+              <p class="stat-value" style="font-size:0.9rem;font-weight:500;line-height:1.4">
+                Em 2026-07-30: <code>CRON_SECRET</code> no painel mas runtime ainda 503 até <strong>Trigger deploy</strong>. Revalidar agora.
+              </p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Item</th><th>Status</th><th>Fonte</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>A1–A8 automação pedido→entrega</td>
+                  <td><span class="badge badge-ok">ok</span></td>
+                  <td>ADR + Runbook</td>
+                </tr>
+                <tr>
+                  <td>Crons em Netlify @ 18:00 BRT</td>
+                  <td><span class="badge badge-ok">código ok</span></td>
+                  <td><code>netlify/functions</code> + PR #10</td>
+                </tr>
+                <tr>
+                  <td><code>CRON_SECRET</code> no runtime prod</td>
+                  <td><span class="badge badge-warn">a confirmar</span></td>
+                  <td>Changelog 2026-07-30</td>
+                </tr>
+                <tr>
+                  <td><code>FACTORY_OPENS_ORDERS</code> default</td>
+                  <td><span class="badge badge-warn">código ON / docs OFF</span></td>
+                  <td><code>feature-flags.ts</code> vs vault</td>
+                </tr>
+                <tr>
+                  <td>CI / observabilidade</td>
+                  <td><span class="badge badge-risk">ausente</span></td>
+                  <td>Saúde do Sistema (parcialmente desatualizada — testes já existem)</td>
+                </tr>
+                <tr>
+                  <td>Dívida D01–D06</td>
+                  <td><span class="badge badge-risk">aberta</span></td>
+                  <td><code>Docs/99 - Auditoria/Dívida Técnica.md</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>Últimos commits em develop</h3>
+<pre><code>794c780 Merge PR #10 chore/cron-horario-brt
+5e3bea8 chore(cron): auto-release 18:00 BRT
+2517e17 Merge PR #8 feat/xpan-checklist-ajustes
+668e223 fix(impressao): cabeçalho / halo folha
+f3f2fd7 feat(folha-op): ficha de produção do cliente
+b8c9dc0 feat(receita): blocos por etapa + preparo
+cc41cf1 feat(cron): porta agendamentos → Netlify</code></pre>
+        </section>
+
+        <!-- 8 -->
+        <section class="section" id="s8">
+          <h2>8. Remotes e branches úteis</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Remote</th><th>URL</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>origin</code></td><td><code>git@github.com:giuseppedangelis/daniel-augusto.git</code></td></tr>
+                <tr><td><code>dizevolv</code></td><td><code>git@github.com:DizevolvTech/daniel-augusto.git</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <ul>
+            <li><strong>Atual:</strong> <code>develop</code> (tracking <code>origin/develop</code>, up to date).</li>
+            <li><strong>Locais:</strong> <code>main</code>, <code>feat/cnpj-alfanumerico</code>, <code>feat/xpan-checklist-ajustes</code> (já merged).</li>
+            <li><strong>Remotos de interesse:</strong> <code>origin/feat/pre-pesagem-extra</code>, <code>origin/feat/trava-data-futura</code>, <code>origin/chore/cron-horario-brt</code> (merged).</li>
+            <li>WIP local: apenas <code>repomix-2026-08-10.xml</code> untracked (não é código de produto).</li>
+          </ul>
+        </section>
+
+        <!-- 9 -->
+        <section class="section" id="s9">
+          <h2>9. Ops / deploy / backup</h2>
+          <ul>
+            <li><strong>Host:</strong> Netlify (Next runtime). <code>netlify.toml</code> sem <code>[build]</code> de propósito — build/publish vêm do painel.</li>
+            <li><strong>Crons:</strong>
+              <ul>
+                <li><code>cron-auto-release</code> — <code>0 21 * * *</code> UTC = <strong>18:00 BRT</strong></li>
+                <li><code>cron-divergence-alerts</code> — horário (<code>0 * * * *</code>)</li>
+              </ul>
+            </li>
+            <li><strong>Sonda:</strong> token errado em <code>/api/cron/*</code> → 401 se secret ok, <strong>503</strong> se secret ausente (checa env antes do token).</li>
+            <li><strong>Runbook:</strong> <code>Docs/11 - Ajustes/Runbook A1-A8.md</code> (partes ainda citam Vercel 17:00 — preferir changelog jul/2026).</li>
+            <li><strong>Backups DB:</strong> a confirmar (projeto Supabase / política do time — não documentado como runbook local).</li>
+            <li><strong>Staging vs prod:</strong> a confirmar (branch deploys Netlify).</li>
+          </ul>
+          <div class="callout callout-warn">
+            Após mudar env vars na Netlify, precisa de <strong>novo deploy</strong> para Functions/Runtime enxergarem o valor.
+          </div>
+        </section>
+
+        <!-- 10 -->
+        <section class="section" id="s10">
+          <h2>10. Convenções para quem assume</h2>
+          <ul>
+            <li>Vault <code>Docs/</code> é a fonte de verdade de negócio — atualizar no mesmo PR do código; changelog mensal em <code>10 - Changelog Vivo/</code>.</li>
+            <li>PT-BR; datas absolutas; caminhos <code>arquivo:linha</code>; diagramas Mermaid.</li>
+            <li>Server Components por padrão; mutações sensíveis via API + <code>authorizeApiRequest</code>; RLS é barreira final.</li>
+            <li>Fuso operacional: <code>America/Sao_Paulo</code> (não assumir UTC do host).</li>
+            <li>Não ligar/desligar <code>FACTORY_OPENS_ORDERS</code> sem alinhar com cliente — impacto direto no fluxo de pedido.</li>
+            <li>README raiz ainda é template create-next-app — <strong>não</strong> usar como guia; use este handover + vault.</li>
+            <li>Não há <code>CONVENTIONS.md</code> / <code>AGENTS.md</code> na raiz do produto (só dentro de <code>skills/</code>).</li>
+          </ul>
+        </section>
+
+        <!-- 11 -->
+        <section class="section" id="s11">
+          <h2>11. Contatos / contexto de negócio</h2>
+          <p>Nomes que aparecem no vault (não inventados):</p>
+          <ul>
+            <li><strong>Daniel, Adriano, Leonora</strong> — calls de produto / operação (ex.: 2026-05-13, 2026-07-24).</li>
+            <li>Org GitHub cliente/parceiro: <code>DizevolvTech/daniel-augusto</code> (remote <code>dizevolv</code>).</li>
+          </ul>
+          <h3>Credenciais de desenvolvimento (já documentadas no repo)</h3>
+          <p>Fonte: <code>Docs/06 - Permissões e Segurança/Credenciais de Desenvolvimento.md</code> · seed em <code>demo-credentials.ts</code>. <strong>Só local.</strong></p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Persona</th><th>Email</th><th>Senha (dev)</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Master</td><td><code>master@danielaugusto.com</code></td><td><code>Master@123</code></td></tr>
+                <tr><td>Admin</td><td><code>admin@danielaugusto.com</code></td><td><code>Admin@123</code></td></tr>
+                <tr><td>Gestor Dados</td><td><code>engenharia@danielaugusto.com</code></td><td><code>Engenharia@123</code></td></tr>
+                <tr><td>Gestor Fábrica</td><td><code>fabrica@danielaugusto.com</code></td><td><code>Fabrica@123</code></td></tr>
+                <tr><td>Chão</td><td><code>chao@danielaugusto.com</code></td><td><code>Chao@123</code></td></tr>
+                <tr><td>Loja</td><td><code>loja@danielaugusto.com</code></td><td><code>Loja@123</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout callout-info">
+            No Supabase dev, só <code>loja@</code> costuma vir seeded; rode <code>npm run supabase:auth:bootstrap</code> para as demais.
+          </div>
+        </section>
+
+        <!-- 12 -->
+        <section class="section" id="s12">
+          <h2>12. Checklist do próximo engineer</h2>
+          <div class="card">
+            <ul class="checklist">
+              <li><input type="checkbox" /> Clonar, <code>npm install</code>, copiar <code>.env.local.example</code>, subir <code>npm run dev</code> e logar como loja + gestor.</li>
+              <li><input type="checkbox" /> Ler <code>Docs/01 - Visão do Sistema/Visão Geral.md</code> + <code>Stack e Arquitetura.md</code> + jornadas em <code>04</code>.</li>
+              <li><input type="checkbox" /> Confirmar no painel Netlify: <code>CRON_SECRET</code> presente <em>e</em> sonda <code>/api/cron/auto-release</code> com token inválido retorna <strong>401</strong> (não 503).</li>
+              <li><input type="checkbox" /> Confirmar valor real de <code>NEXT_PUBLIC_FACTORY_OPENS_ORDERS</code> em prod vs default do código.</li>
+              <li><input type="checkbox" /> Rodar <code>npm test</code> (baseline ~439) e conhecer <code>factory-planning/engine.test.ts</code>.</li>
+              <li><input type="checkbox" /> Abrir Dívida Técnica D01–D03 (RLS / leak / unique pedido) e decidir prioridade com o time.</li>
+              <li><input type="checkbox" /> Revisar Runbook A1-A8 + ADR de automação antes de mexer em liberação/entrega.</li>
+              <li><input type="checkbox" /> Mapear branches remotas <code>feat/pre-pesagem-extra</code> e <code>feat/trava-data-futura</code>.</li>
+              <li><input type="checkbox" /> Atualizar vault/changelog no mesmo PR de qualquer ajuste de regra.</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 13 -->
+        <section class="section" id="s13">
+          <h2>13. Índice de docs críticos</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Doc</th><th>Por quê</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>Docs/README.md</code></td><td>Map of Content do vault</td></tr>
+                <tr><td><code>Docs/01 - Visão do Sistema/*</code></td><td>Produto, stack, multi-tenancy</td></tr>
+                <tr><td><code>Docs/02 - Personas/*</code></td><td>Roles e rotas</td></tr>
+                <tr><td><code>Docs/04 - Jornadas End-to-End/*</code></td><td>Golden path e handoffs frágeis</td></tr>
+                <tr><td><code>Docs/05 - Regras de Negócio/*</code></td><td>D+X, lead, drift, receita, domingo</td></tr>
+                <tr><td><code>Docs/06 - Permissões e Segurança/*</code></td><td>Auth, API, RLS, credenciais dev</td></tr>
+                <tr><td><code>Docs/07 - Banco de Dados/*</code></td><td>Schema, migrations, funções</td></tr>
+                <tr><td><code>Docs/09 - Engine de Cronograma/*</code></td><td>Motor</td></tr>
+                <tr><td><code>Docs/10 - Changelog Vivo/2026-07.md</code></td><td>Estado mais recente de ops</td></tr>
+                <tr><td><code>Docs/11 - Ajustes/Runbook A1-A8.md</code></td><td>Operação de automação</td></tr>
+                <tr><td><code>Docs/decisoes/ADR_*.md</code></td><td>Decisões estruturais</td></tr>
+                <tr><td><code>Docs/99 - Auditoria/*</code></td><td>Saúde, dívida, riscos</td></tr>
+                <tr><td><code>.env.local.example</code></td><td>Envs mínimas</td></tr>
+                <tr><td><code>netlify.toml</code> + <code>netlify/functions/</code></td><td>Crons reais</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p style="color:var(--muted-foreground);font-size:0.8rem;margin-top:1.5rem">
+            Gerado a partir do repositório · 2026-08-13 · self-contained · sem secrets de produção.
+          </p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var sidebar = document.getElementById("sidebar");
+      var backdrop = document.getElementById("backdrop");
+      var menuBtn = document.getElementById("menuBtn");
+      var links = Array.prototype.slice.call(document.querySelectorAll("#nav a"));
+      var sections = links.map(function (a) {
+        return document.querySelector(a.getAttribute("href"));
+      }).filter(Boolean);
+
+      function setOpen(open) {
+        sidebar.classList.toggle("open", open);
+        backdrop.hidden = !open;
+        backdrop.classList.toggle("open", open);
+        menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        document.body.style.overflow = open ? "hidden" : "";
+      }
+
+      menuBtn.addEventListener("click", function () {
+        setOpen(!sidebar.classList.contains("open"));
+      });
+      backdrop.addEventListener("click", function () { setOpen(false); });
+      links.forEach(function (a) {
+        a.addEventListener("click", function () {
+          if (window.matchMedia("(max-width: 900px)").matches) setOpen(false);
+        });
+      });
+
+      if ("IntersectionObserver" in window) {
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            var id = entry.target.id;
+            links.forEach(function (a) {
+              a.classList.toggle("active", a.getAttribute("href") === "#" + id);
+            });
+          });
+        }, { rootMargin: "-20% 0px -65% 0px", threshold: 0 });
+        sections.forEach(function (s) { observer.observe(s); });
+      }
+    })();
+  </script>
+</body>
+</html>
