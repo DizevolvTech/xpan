@@ -392,17 +392,26 @@ export function ProductFormDialog({
   );
   const recipeSourceOptionsForSearch = useMemo(
     () =>
-      recipeSourceOptions.map((option) => ({
-        value: option.id,
-        label: option.label,
-        description:
-          option.sourceType === "ingrediente" ? "Ingrediente cadastrado" : "Produto MPI",
-        keywords: [
+      recipeSourceOptions.map((option) => {
+        const source =
           option.sourceType === "ingrediente"
-            ? snapshot.ingredients.find((ingredient) => ingredient.id === option.id)?.shortName
-            : snapshot.products.find((product) => product.id === option.id)?.shortName,
-        ].filter((keyword): keyword is string => Boolean(keyword?.trim())),
-      })),
+            ? snapshot.ingredients.find((ingredient) => ingredient.id === option.id)
+            : snapshot.products.find((product) => product.id === option.id);
+        const externalCode = source?.externalCode?.trim();
+        return {
+          value: option.id,
+          label: option.label,
+          description: [
+            option.sourceType === "ingrediente" ? "Ingrediente cadastrado" : "Produto MPI",
+            externalCode ? `ERP ${externalCode}` : null,
+          ]
+            .filter((part): part is string => Boolean(part))
+            .join(" · "),
+          keywords: [source?.code, source?.name, source?.shortName, source?.externalCode].filter(
+            (keyword): keyword is string => Boolean(keyword?.trim()),
+          ),
+        };
+      }),
     [recipeSourceOptions, snapshot.ingredients, snapshot.products],
   );
   // A ficha técnica renderizada em BLOCOS (ponto do Adriano: "ingredientes", "ingredientes do
@@ -1884,36 +1893,16 @@ export function ProductFormDialog({
                                 Novo ingrediente
                               </Button>
                             </div>
-                            {recipeSourceOptions.length >= 8 ? (
-                              <SearchableSelect
+                            <SearchableSelect
                                 value={draft.sourceId}
                                 onValueChange={(id) => selectRecipeDraftSource(block.stage, id)}
                                 options={recipeSourceOptionsForSearch}
                                 placeholder="Selecione a referência"
-                                searchPlaceholder="Buscar ingrediente ou produto MPI..."
+                                searchPlaceholder="Buscar por nome, código XPAN ou código ERP..."
                                 emptyMessage="Nenhuma referência encontrada."
                                 title={`Adicionar em ${recipeStageLabels[block.stage]}`}
-                                description="Busque pelo nome ou código do ingrediente ou produto MPI."
+                                description="Busque por nome, código XPAN ou código ERP do ingrediente ou produto MPI."
                               />
-                            ) : (
-                              <Select
-                                value={draft.sourceId}
-                                onValueChange={(id) => selectRecipeDraftSource(block.stage, id)}
-                              >
-                                <SelectTrigger
-                                  aria-label={`Referência para ${recipeStageLabels[block.stage]}`}
-                                >
-                                  <SelectValue placeholder="Selecione a referência" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {recipeSourceOptions.map((option) => (
-                                    <SelectItem key={option.id} value={option.id}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            )}
                           </div>
                           <div className="grid gap-2">
                             <Label>Quantidade</Label>
@@ -2452,6 +2441,7 @@ export function ProductFormDialog({
                             ? 1
                             : (formState.ingredientProfile?.weightKg ??
                               formState.unitProfiles.sales.weightKg),
+                        recipeYieldKg: formState.ingredientProfile?.recipeYieldKg,
                         purchaseUnit:
                           formState.ingredientProfile?.purchaseUnit ??
                           formState.ingredientProfile?.unit ??
@@ -2463,6 +2453,9 @@ export function ProductFormDialog({
                       }}
                       unitOptions={productUnitOptions}
                       showPurchaseFields
+                      showWeightKg={(formState.ingredientProfile?.unit ?? "Kg") !== "Kg"}
+                      showRecipeYieldKg
+                      recipeYieldPlaceholderKg={recipeTotals.outputAfterBreakKg}
                       purchaseHelperText="1 unidade de compra equivale a este fator multiplicado pela unidade de consumo."
                       metadataPlaceholder="Ex: usar como base de sanduíches, consumir após resfriar"
                       onChange={(patch) =>
@@ -2476,9 +2469,14 @@ export function ProductFormDialog({
                             weightKg:
                               patch.unit === "Kg"
                                 ? 1
-                                : (patch.weightKg ??
-                                  current.ingredientProfile?.weightKg ??
-                                  current.unitProfiles.sales.weightKg),
+                                : "weightKg" in patch
+                                  ? (patch.weightKg ?? current.unitProfiles.sales.weightKg)
+                                  : (current.ingredientProfile?.weightKg ??
+                                    current.unitProfiles.sales.weightKg),
+                            recipeYieldKg:
+                              "recipeYieldKg" in patch
+                                ? patch.recipeYieldKg
+                                : current.ingredientProfile?.recipeYieldKg,
                             purchaseUnit:
                               (patch.purchaseUnit as ProductUnitProfile["unit"] | undefined) ??
                               current.ingredientProfile?.purchaseUnit ??

@@ -7,6 +7,7 @@ import {
   getProductOperationalStatusLabel,
   getProductRecipeTotalsFromData,
   normalizeScheduleDayPriorities,
+  resolveProductDiscreteUnitWeightKg,
   sortScheduleEntriesForDay,
 } from "@/lib/production-data-utils";
 import type { ProductionIngredient, ProductionProduct } from "@/lib/production-planning";
@@ -82,6 +83,152 @@ test("recipe totals convert purchase unit into consumption unit before weight ca
   const totals = getProductRecipeTotalsFromData(baseProduct, ingredients, []);
 
   assert.equal(totals.totalIngredientsKg, 12);
+});
+
+test("1 Un of MPI uses cadastrado unit weight instead of default 1 kg (Chama / Pão de ló)", () => {
+  const paoDeLo: ProductionProduct = {
+    ...baseProduct,
+    id: "mpi-pao-de-lo",
+    name: "Pão de ló",
+    canBeIngredient: true,
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.17 },
+      production: { unit: "Kg", description: "Produção", weightKg: 1 },
+      expedition: { unit: "Un", description: "Unidade", weightKg: 0.17 },
+    },
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 1,
+      purchaseUnit: "Kg",
+      purchaseToConsumptionFactor: 1,
+      metadata: "",
+      observation: "",
+    },
+    recipe: [],
+  };
+
+  const bolo: ProductionProduct = {
+    ...baseProduct,
+    id: "bolo-chama",
+    name: "Bolo Confeitado Chama Bento Cake Ninho CP kg",
+    recipe: [
+      {
+        id: "recipe-pao",
+        sourceType: "produto",
+        sourceId: "mpi-pao-de-lo",
+        label: "Pão de ló",
+        quantity: 1,
+        unit: "Un",
+      },
+      {
+        id: "recipe-recheio",
+        sourceType: "ingrediente",
+        sourceId: "missing-recheio",
+        label: "Recheio",
+        quantity: 0.221,
+        unit: "Kg",
+      },
+    ],
+  };
+
+  assert.equal(resolveProductDiscreteUnitWeightKg(paoDeLo, "Un"), 0.17);
+
+  const totals = getProductRecipeTotalsFromData(bolo, [], [paoDeLo]);
+  assert.equal(totals.totalIngredientsKg, 0.391);
+});
+
+test("sales Un weight wins over MPI profile default of 1 kg even if profile unit is Un", () => {
+  const paoDeLo: ProductionProduct = {
+    ...baseProduct,
+    id: "mpi-pao-de-lo-un",
+    canBeIngredient: true,
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.17 },
+      production: { unit: "Kg", description: "Produção", weightKg: 1 },
+      expedition: { unit: "Un", description: "Unidade", weightKg: 0.17 },
+    },
+    ingredientProfile: {
+      unit: "Un",
+      weightKg: 1,
+      purchaseUnit: "Un",
+      purchaseToConsumptionFactor: 1,
+      metadata: "",
+      observation: "",
+    },
+    recipe: [],
+  };
+
+  assert.equal(resolveProductDiscreteUnitWeightKg(paoDeLo, "Un"), 0.17);
+});
+
+test("ingredient discrete unit uses registered weightKg instead of 1 kg", () => {
+  const paoIngredient: ProductionIngredient = {
+    ...ingredients[0],
+    id: "ing-pao-de-lo",
+    name: "Pão de ló",
+    unit: "Un",
+    purchaseUnit: "Un",
+    purchaseToConsumptionFactor: 1,
+    weightKg: 0.17,
+  };
+
+  const bolo: ProductionProduct = {
+    ...baseProduct,
+    recipe: [
+      {
+        id: "recipe-pao",
+        sourceType: "ingrediente",
+        sourceId: "ing-pao-de-lo",
+        label: "Pão de ló",
+        quantity: 1,
+        unit: "Un",
+      },
+    ],
+  };
+
+  const totals = getProductRecipeTotalsFromData(bolo, [paoIngredient], []);
+  assert.equal(totals.totalIngredientsKg, 0.17);
+});
+
+test("MPI recipeYieldKg is used as Un weight when sales profile is locked to Kg", () => {
+  const recheio: ProductionProduct = {
+    ...baseProduct,
+    id: "mpi-recheio-ninho",
+    name: "Recheio de Bolo Ninho",
+    canBeIngredient: true,
+    unitProfiles: {
+      sales: { unit: "Kg", description: "Quilo", weightKg: 1 },
+      production: { unit: "Kg", description: "Produção", weightKg: 1 },
+      expedition: { unit: "Kg", description: "Expedição", weightKg: 1 },
+    },
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 1,
+      recipeYieldKg: 0.2926,
+      purchaseUnit: "Kg",
+      purchaseToConsumptionFactor: 1,
+      metadata: "",
+      observation: "",
+    },
+    recipe: [],
+  };
+
+  const bolo: ProductionProduct = {
+    ...baseProduct,
+    recipe: [
+      {
+        id: "recipe-recheio",
+        sourceType: "produto",
+        sourceId: "mpi-recheio-ninho",
+        label: "Recheio de Bolo Ninho",
+        quantity: 1,
+        unit: "Un",
+      },
+    ],
+  };
+
+  const totals = getProductRecipeTotalsFromData(bolo, [], [recheio]);
+  assert.equal(totals.totalIngredientsKg, 0.293);
 });
 
 test("recipe totals include final quantity derived from unit sale weight", () => {

@@ -4,7 +4,7 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { IngredientInput } from "@/lib/supabase-data/master-data-admin";
-import { updateIngredient } from "@/lib/supabase-data/master-data-admin";
+import { MasterDataValidationError, updateIngredient } from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
@@ -45,9 +45,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     invalidateMasterDataCaches(authorization.effectiveTenantId);
     return NextResponse.json({ ok: true, id: ingredientId });
   } catch (error) {
-    return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to update ingredient" },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "Failed to update ingredient";
+    const isValidation =
+      error instanceof MasterDataValidationError ||
+      message.toLowerCase().includes("código erp") ||
+      message.toLowerCase().includes("já está em uso") ||
+      message.toLowerCase().includes("não pode ser alterado");
+    return NextResponse.json({ message }, { status: isValidation ? 400 : 500 });
   }
 }

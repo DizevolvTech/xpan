@@ -4,7 +4,7 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { StoreInput } from "@/lib/supabase-data/master-data-admin";
-import { updateStore } from "@/lib/supabase-data/master-data-admin";
+import { MasterDataValidationError, updateStore } from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 type RouteContext = {
@@ -13,9 +13,16 @@ type RouteContext = {
   }>;
 };
 
-function isClientValidationError(message: string) {
+function isClientValidationError(message: string, error?: unknown) {
+  if (error instanceof MasterDataValidationError) {
+    return true;
+  }
   const normalized = message.toLowerCase();
-  return normalized.includes("selecione") || normalized.includes("tipo loja");
+  return (
+    normalized.includes("selecione") ||
+    normalized.includes("tipo loja") ||
+    normalized.includes("já existe uma loja")
+  );
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -53,7 +60,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const message = error instanceof Error ? error.message : "Failed to update store";
     return NextResponse.json(
       { message },
-      { status: isClientValidationError(message) ? 400 : 500 },
+      { status: isClientValidationError(message, error) ? 400 : 500 },
     );
   }
 }

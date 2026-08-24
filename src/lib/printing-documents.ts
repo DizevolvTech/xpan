@@ -17,6 +17,7 @@ import {
 import type { ProductionOrderRow } from "@/lib/order-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { round3, scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
+import { getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
 import { computePreWeighBatchSplit, type PreWeighBatchSplit } from "@/lib/production-batches";
 
 type PrintIngredientKind = "ingrediente" | "ingrediente_misturado" | "produto_mpi";
@@ -394,24 +395,17 @@ function convertRecipeRowToKg(
   row: Pick<PrintIngredientRow, "estimatedQuantity" | "unit">,
   sourceProduct: ProductionProduct | undefined,
 ) {
-  if (row.unit === "Kg") {
-    return row.estimatedQuantity;
-  }
-
-  if (row.unit === "g") {
-    return row.estimatedQuantity / 1000;
-  }
-
-  if (row.unit === "L") {
-    return row.estimatedQuantity;
-  }
-
-  if (row.unit === "ml") {
-    return row.estimatedQuantity / 1000;
-  }
-
   return round3(
-    row.estimatedQuantity * (sourceProduct?.ingredientProfile?.weightKg ?? sourceProduct?.unitProfiles.sales.weightKg ?? 1),
+    getRecipeReferenceWeightKgFromData(
+      {
+        sourceType: "produto",
+        sourceId: sourceProduct?.id ?? "",
+        quantity: row.estimatedQuantity,
+        unit: row.unit,
+      },
+      new Map(),
+      sourceProduct ? new Map([[sourceProduct.id, sourceProduct]]) : new Map(),
+    ),
   );
 }
 

@@ -49,7 +49,7 @@ type StoreDialogMode = "view" | "edit";
 function buildLojaFormState(store?: Loja | null): LojaFormState {
   return {
     id: store?.id ?? `store-${Date.now()}`,
-    code: store?.code ?? `LJ-${String(Date.now()).slice(-3)}`,
+    code: store?.code ?? "",
     name: store?.name ?? "",
     responsible: store?.responsible ?? "",
     responsibleProfileId: store?.responsibleProfileId ?? null,
@@ -459,8 +459,21 @@ export default function LojasPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Código</Label>
-                  <Input value={formState.code} disabled className="bg-muted" />
+                  <Label htmlFor="store-code">Código</Label>
+                  <Input
+                    id="store-code"
+                    type="text"
+                    autoComplete="off"
+                    value={formState.code}
+                    onChange={(event) =>
+                      setFormState((current) => ({ ...current, code: event.target.value }))
+                    }
+                    placeholder="Ex: 01"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Aceita o número da loja com zero à esquerda (ex.: 01). Se ficar vazio, o
+                    sistema gera um código LJ-xxx.
+                  </p>
                 </div>
                 <div className="grid gap-2">
                   <div className="flex items-center gap-1.5">

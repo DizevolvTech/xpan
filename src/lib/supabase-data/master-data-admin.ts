@@ -377,16 +377,19 @@ export async function updateSubcategory(
 
 export async function createStore(input: StoreInput, options: MutationOptions = {}) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
-  const existingCodesResult = await supabase.from("stores").select("code");
+  const existingCodesResult = await supabase.from("stores").select("id, code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load store codes");
   const responsibleProfileId = input.responsibleProfileId?.trim() || null;
   const responsibleProfile = responsibleProfileId
     ? await resolveStoreResponsibleProfile(responsibleProfileId, supabase)
     : null;
+  const requestedCode = normalizeStoreCode(input.code);
+  const code = requestedCode || buildNextCode(existingCodes.map((row) => row.code), "LJ", 3);
+  await assertStoreCodeAvailable(code, undefined, supabase);
 
   const result = await supabase.from("stores").insert({
     legacy_id: buildGeneratedLegacyId("store"),
-    code: input.code?.trim() || buildNextCode(existingCodes.map((row) => row.code), "LJ", 3),
+    code,
     name: input.name.trim(),
     responsible: responsibleProfile?.name ?? "Não vinculado",
     responsible_profile_id: responsibleProfile?.id ?? null,
@@ -419,10 +422,13 @@ export async function updateStore(
   const responsibleProfile = responsibleProfileId
     ? await resolveStoreResponsibleProfile(responsibleProfileId, supabase)
     : null;
+  const nextCode = normalizeStoreCode(input.code) || String(row.code);
+  await assertStoreCodeAvailable(nextCode, String(row.id), supabase);
 
   const result = await supabase
     .from("stores")
     .update({
+      code: nextCode,
       name: input.name.trim(),
       responsible: responsibleProfile?.name ?? "Não vinculado",
       responsible_profile_id: responsibleProfile?.id ?? null,
@@ -499,6 +505,28 @@ async function resolveSubcategoryId(
 function normalizeOptionalCode(value: string | undefined) {
   const normalized = value?.trim() ?? "";
   return normalized ? normalized : null;
+}
+
+function normalizePositiveKg(value: number | undefined): number | null {
+  return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(Number(value).toFixed(6)) : null;
+}
+
+function normalizeStoreCode(value: string | undefined) {
+  // Preserva zero à esquerda ("01"). Nunca passar por Number()/parseInt.
+  return value?.trim() ?? "";
+}
+
+async function assertStoreCodeAvailable(
+  code: string,
+  currentId: string | undefined,
+  supabase: SupabaseDataClient,
+) {
+  const result = await supabase.from("stores").select("id, code").eq("code", code);
+  const rows = assertSupabaseResult(result, "Failed to validate store code");
+  const duplicated = rows.some((row) => row.id !== currentId);
+  if (duplicated) {
+    throw new MasterDataValidationError(`Já existe uma loja com o código ${code}.`);
+  }
 }
 
 function normalizeOptionalText(value: string | undefined) {
@@ -638,6 +666,15 @@ async function assertIngredientExternalCodeEditable(
     return;
   }
 
+  // Primeiro preenchimento de ERP em cadastro legado (vazio → valor) não é alteração
+  // de um código já operacional. Sem isso, o gestor não consegue salvar ingrediente
+  // que já está em receita depois que o ERP passou a ser obrigatório só no cadastro novo.
+  const currentNormalized =
+    typeof currentExternalCode === "string" ? currentExternalCode.trim() : "";
+  if (!currentNormalized && nextExternalCode) {
+    return;
+  }
+
   const hasUsage =
     assertSupabaseResult(componentUsageResult, "Failed to load ingredient component usage").length > 0 ||
     assertSupabaseResult(recipeUsageResult, "Failed to load ingredient recipe usage").length > 0;
@@ -686,11 +723,14 @@ export async function createIngredient(input: IngredientInput, options: Mutation
   const code = input.code?.trim() || buildNextCode(existingCodes.map((row) => row.code), "IN", 6);
   const legacyId = buildGeneratedLegacyId("ingredient");
   const externalCode = normalizeOptionalCode(input.externalCode);
+  if (!externalCode) {
+    throw new MasterDataValidationError("Informe o código ERP do cliente.");
+  }
   await assertExternalCodeAvailable("ingredients", externalCode, undefined, supabase);
+  const weightKg = normalizePositiveKg(input.weightKg);
+  const recipeYieldKg = normalizePositiveKg(input.recipeYieldKg);
 
-  const insertResult = await supabase
-    .from("ingredients")
-    .insert({
+  const insertPayload = {
       legacy_id: legacyId,
       code,
       external_code: externalCode,
@@ -703,12 +743,20 @@ export async function createIngredient(input: IngredientInput, options: Mutation
         Number.isFinite(input.purchaseToConsumptionFactor) && Number(input.purchaseToConsumptionFactor) > 0
           ? Number(input.purchaseToConsumptionFactor)
           : 1,
+      weight_kg: weightKg,
+      recipe_yield_kg: recipeYieldKg,
       metadata: input.metadata.trim(),
       observation: input.observation.trim(),
       status: input.status ?? "ativo",
-    })
-    .select("id")
-    .single();
+  };
+
+  let insertResult = await supabase.from("ingredients").insert(insertPayload).select("id").single();
+  if (isSupabaseMissingSchemaError(insertResult.error, ["weight_kg", "recipe_yield_kg"])) {
+    const { weight_kg: _w, recipe_yield_kg: _y, ...legacyPayload } = insertPayload;
+    void _w;
+    void _y;
+    insertResult = await supabase.from("ingredients").insert(legacyPayload).select("id").single();
+  }
 
   const ingredient = assertSupabaseResult(insertResult, "Failed to create ingredient");
   await replaceIngredientComponents(
@@ -734,10 +782,10 @@ export async function updateIngredient(
   const externalCode = normalizeOptionalCode(input.externalCode);
   await assertIngredientExternalCodeEditable(ingredientId, externalCode, supabase);
   await assertExternalCodeAvailable("ingredients", externalCode, ingredientId, supabase);
+  const weightKg = normalizePositiveKg(input.weightKg);
+  const recipeYieldKg = normalizePositiveKg(input.recipeYieldKg);
 
-  const result = await supabase
-    .from("ingredients")
-    .update({
+  const updatePayload = {
       external_code: externalCode,
       name: input.name.trim(),
       short_name: normalizeOptionalText(input.shortName),
@@ -748,12 +796,21 @@ export async function updateIngredient(
         Number.isFinite(input.purchaseToConsumptionFactor) && Number(input.purchaseToConsumptionFactor) > 0
           ? Number(input.purchaseToConsumptionFactor)
           : 1,
+      weight_kg: weightKg,
+      recipe_yield_kg: recipeYieldKg,
       metadata: input.metadata.trim(),
       observation: input.observation.trim(),
       status: input.status ?? "ativo",
       updated_at: new Date().toISOString(),
-    })
-    .eq("id", ingredientId);
+  };
+
+  let result = await supabase.from("ingredients").update(updatePayload).eq("id", ingredientId);
+  if (isSupabaseMissingSchemaError(result.error, ["weight_kg", "recipe_yield_kg"])) {
+    const { weight_kg: _w, recipe_yield_kg: _y, ...legacyPayload } = updatePayload;
+    void _w;
+    void _y;
+    result = await supabase.from("ingredients").update(legacyPayload).eq("id", ingredientId);
+  }
 
   if (result.error) {
     throw new Error(`Failed to update ingredient: ${result.error.message}`);
@@ -914,6 +971,7 @@ function normalizeProductPayload(input: ProductInput) {
             Number(input.ingredientProfile?.purchaseToConsumptionFactor) > 0
               ? Number(input.ingredientProfile?.purchaseToConsumptionFactor)
               : 1,
+          recipeYieldKg: normalizePositiveKg(input.ingredientProfile?.recipeYieldKg) ?? undefined,
         }
       : null,
     weight_label: input.weight,

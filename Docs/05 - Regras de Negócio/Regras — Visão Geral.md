@@ -14,6 +14,7 @@
 | Domingo e Feriados | Cronograma | [[Regra — Domingo e Feriados]] |
 | Drop antes/depois do forno | Produção | [[Regra — Drop antes e depois do forno]] |
 | Pedido da Loja (duplicidade, edição, agregação) | Pedido | [[Regra — Pedido da Loja]] |
+| Peso da unidade e rendimento da receita (MPI) | Receita, ficha, custo | [[Regra — Peso e Rendimento da Receita]] |
 
 ## Lugares onde regras se acumulam
 

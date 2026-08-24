@@ -355,6 +355,8 @@ export type Database = {
           unit: string;
           purchase_unit: string | null;
           purchase_to_consumption_factor: number;
+          weight_kg: number | null;
+          recipe_yield_kg: number | null;
           metadata: string;
           observation: string;
           status: "ativo" | "inativo";
@@ -373,6 +375,8 @@ export type Database = {
           unit: string;
           purchase_unit?: string | null;
           purchase_to_consumption_factor?: number;
+          weight_kg?: number | null;
+          recipe_yield_kg?: number | null;
           metadata?: string;
           observation?: string;
           status?: "ativo" | "inativo";

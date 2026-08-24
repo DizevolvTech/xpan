@@ -107,6 +107,10 @@ function coerceIngredientProfile(value: unknown): IngredientProfileMirror | unde
     purchaseToConsumptionFactor: Number(record.purchaseToConsumptionFactor ?? 1),
     metadata: String(record.metadata ?? ""),
     observation: String(record.observation ?? ""),
+    recipeYieldKg:
+      Number.isFinite(Number(record.recipeYieldKg)) && Number(record.recipeYieldKg) > 0
+        ? Number(record.recipeYieldKg)
+        : undefined,
   };
 }
 
@@ -305,6 +309,16 @@ async function loadMasterDataSnapshot(
     unit: row.unit as ProductionIngredient["unit"],
     purchaseUnit: (row.purchase_unit ?? row.unit) as ProductionIngredient["purchaseUnit"],
     purchaseToConsumptionFactor: Number(row.purchase_to_consumption_factor ?? 1),
+    weightKg:
+      Number.isFinite(Number((row as { weight_kg?: number | null }).weight_kg)) &&
+      Number((row as { weight_kg?: number | null }).weight_kg) > 0
+        ? Number((row as { weight_kg?: number | null }).weight_kg)
+        : undefined,
+    recipeYieldKg:
+      Number.isFinite(Number((row as { recipe_yield_kg?: number | null }).recipe_yield_kg)) &&
+      Number((row as { recipe_yield_kg?: number | null }).recipe_yield_kg) > 0
+        ? Number((row as { recipe_yield_kg?: number | null }).recipe_yield_kg)
+        : undefined,
     metadata: row.metadata,
     observation: row.observation,
     composition: compositionByIngredientId.get(row.legacy_id ?? row.id) ?? [],

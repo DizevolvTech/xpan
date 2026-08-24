@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 type IngredientProfileLike = {
   unit: UnitCode;
   weightKg?: number;
+  recipeYieldKg?: number;
   purchaseUnit?: UnitCode;
   purchaseToConsumptionFactor?: number;
   metadata: string;
@@ -36,6 +37,8 @@ interface IngredientProfileFieldsProps {
   purchaseFactorLabel?: string;
   purchaseHelperText?: string;
   showWeightKg?: boolean;
+  showRecipeYieldKg?: boolean;
+  recipeYieldPlaceholderKg?: number;
   disabled?: boolean;
 }
 
@@ -53,6 +56,8 @@ export function IngredientProfileFields({
   purchaseFactorLabel = "Fator de conversão (compra → consumo)",
   purchaseHelperText,
   showWeightKg = true,
+  showRecipeYieldKg = false,
+  recipeYieldPlaceholderKg,
   disabled = false,
 }: IngredientProfileFieldsProps) {
   const weightLocked = profile.unit === "Kg";
@@ -67,7 +72,7 @@ export function IngredientProfileFields({
         </div>
       )}
 
-      <div className={`grid gap-4 ${showWeightKg ? "md:grid-cols-2" : ""}`}>
+      <div className={`grid gap-4 ${showWeightKg || showRecipeYieldKg ? "md:grid-cols-2" : ""}`}>
         {!showPurchaseFields ? (
           <div className="grid gap-2">
             <Label>Unidade</Label>
@@ -92,14 +97,57 @@ export function IngredientProfileFields({
 
         {showWeightKg ? (
           <div className="grid gap-2">
-            <Label>Peso padrão (Kg)</Label>
+            <Label htmlFor="ingredient-profile-weight-kg">Peso padrão da unidade (Kg)</Label>
             <Input
+              id="ingredient-profile-weight-kg"
               type="number"
               step="0.001"
-              value={weightLocked ? 1 : profile.weightKg ?? ""}
+              min="0"
+              value={weightLocked ? 1 : (profile.weightKg ?? "")}
               disabled={disabled || weightLocked}
-              onChange={(event) => onChange({ weightKg: Number(event.target.value) })}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                onChange({
+                  weightKg: Number.isFinite(parsed) && parsed > 0 ? parsed : undefined,
+                });
+              }}
             />
+            <p className="text-xs text-muted-foreground">
+              Usado quando a receita pede este item em Un, Dz ou outra unidade discreta. Ex.: 1 Un
+              de pão de ló = 0,170 kg — nunca assumir 1 kg.
+            </p>
+          </div>
+        ) : null}
+
+        {showRecipeYieldKg ? (
+          <div className="grid gap-2">
+            <Label htmlFor="ingredient-profile-recipe-yield-kg">Rendimento da Receita (Kg)</Label>
+            <Input
+              id="ingredient-profile-recipe-yield-kg"
+              type="number"
+              step="0.001"
+              min="0"
+              value={profile.recipeYieldKg ?? ""}
+              disabled={disabled}
+              placeholder={
+                recipeYieldPlaceholderKg != null && recipeYieldPlaceholderKg > 0
+                  ? recipeYieldPlaceholderKg.toFixed(3)
+                  : "Ex: 0.293"
+              }
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                onChange({
+                  recipeYieldKg: Number.isFinite(parsed) && parsed > 0 ? parsed : undefined,
+                });
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Peso real que esta MPI rende por batelada. Quando ela for usada em outra receita, as
+              quantidades e o custo são proporcionais a este rendimento — não a 1 kg fixo.
+              {recipeYieldPlaceholderKg != null && recipeYieldPlaceholderKg > 0
+                ? ` Deixe em branco para usar o rendimento calculado (${recipeYieldPlaceholderKg.toFixed(3)} kg).`
+                : ""}
+            </p>
           </div>
         ) : null}
 

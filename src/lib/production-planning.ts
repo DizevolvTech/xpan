@@ -51,6 +51,11 @@ export interface IngredientProfileMirror {
   weightKg: number;
   purchaseUnit?: UnitCode;
   purchaseToConsumptionFactor?: number;
+  /**
+   * Rendimento real de uma batelada da MPI (kg). Quando informado, substitui o
+   * padrão de 1 kg ao usar a MPI como insumo e ao escalar a sub-receita.
+   */
+  recipeYieldKg?: number;
   metadata: string;
   observation: string;
 }
@@ -237,6 +242,10 @@ export interface ProductionIngredient {
   unit: UnitCode;
   purchaseUnit?: UnitCode;
   purchaseToConsumptionFactor?: number;
+  /** Peso padrão da unidade de consumo quando ela é discreta (ex.: 1 Un = 0,170 kg). */
+  weightKg?: number;
+  /** Rendimento real da composição quando o ingrediente é misturado (kg por batelada). */
+  recipeYieldKg?: number;
   metadata: string;
   observation: string;
   composition: IngredientCompositionItem[];
