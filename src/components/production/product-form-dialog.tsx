@@ -2499,41 +2499,50 @@ export function ProductFormDialog({
                       purchaseHelperText="1 unidade de compra equivale a este fator multiplicado pela unidade de consumo."
                       metadataPlaceholder="Ex: usar como base de sanduíches, consumir após resfriar"
                       onChange={(patch) =>
-                        setFormState((current) => ({
-                          ...current,
-                          ingredientProfile: {
-                            unit:
-                              (patch.unit as ProductUnitProfile["unit"] | undefined) ??
-                              current.ingredientProfile?.unit ??
-                              "Kg",
-                            weightKg:
-                              "weightKg" in patch
-                                ? patch.weightKg
-                                : patch.unit === "Kg" && current.ingredientProfile?.weightKg == null
-                                  ? 1
-                                  : (current.ingredientProfile?.weightKg ??
-                                    current.unitProfiles.sales.weightKg),
-                            recipeYieldKg:
-                              "recipeYieldKg" in patch
-                                ? patch.recipeYieldKg
-                                : current.ingredientProfile?.recipeYieldKg,
-                            purchaseUnit:
-                              (patch.purchaseUnit as ProductUnitProfile["unit"] | undefined) ??
-                              current.ingredientProfile?.purchaseUnit ??
-                              current.ingredientProfile?.unit ??
-                              "Kg",
-                            purchaseToConsumptionFactor:
-                              patch.purchaseToConsumptionFactor ??
-                              current.ingredientProfile?.purchaseToConsumptionFactor ??
-                              1,
-                            metadata:
-                              patch.metadata ?? current.ingredientProfile?.metadata ?? "",
-                            observation:
-                              patch.observation ??
-                              current.ingredientProfile?.observation ??
-                              "",
-                          },
-                        }))
+                        setFormState((current) => {
+                          const nextUnit =
+                            (patch.unit as ProductUnitProfile["unit"] | undefined) ??
+                            current.ingredientProfile?.unit ??
+                            "Kg";
+                          const fallbackWeightKg =
+                            current.ingredientProfile?.weightKg ??
+                            (nextUnit === "Kg" ? 1 : current.unitProfiles.sales.weightKg);
+                          // P0: Kg não zera um peso de unidade já cadastrado (ex. 0,170).
+                          // O campo do form pode mandar undefined ao apagar; o tipo exige number.
+                          const nextWeightKg =
+                            "weightKg" in patch
+                              ? (patch.weightKg ?? fallbackWeightKg)
+                              : patch.unit === "Kg" && current.ingredientProfile?.weightKg == null
+                                ? 1
+                                : fallbackWeightKg;
+
+                          return {
+                            ...current,
+                            ingredientProfile: {
+                              unit: nextUnit,
+                              weightKg: nextWeightKg,
+                              recipeYieldKg:
+                                "recipeYieldKg" in patch
+                                  ? patch.recipeYieldKg
+                                  : current.ingredientProfile?.recipeYieldKg,
+                              purchaseUnit:
+                                (patch.purchaseUnit as ProductUnitProfile["unit"] | undefined) ??
+                                current.ingredientProfile?.purchaseUnit ??
+                                current.ingredientProfile?.unit ??
+                                "Kg",
+                              purchaseToConsumptionFactor:
+                                patch.purchaseToConsumptionFactor ??
+                                current.ingredientProfile?.purchaseToConsumptionFactor ??
+                                1,
+                              metadata:
+                                patch.metadata ?? current.ingredientProfile?.metadata ?? "",
+                              observation:
+                                patch.observation ??
+                                current.ingredientProfile?.observation ??
+                                "",
+                            },
+                          };
+                        })
                       }
                     />
 
