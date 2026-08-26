@@ -17,7 +17,7 @@ Produto: Bolo Confeitado Chama Bento Cake Ninho CP kg.
 - Peso correto: **0,391 kg**.
 - Peso errado (antes): **1,221 kg** = 0,391 − 0,170 + 1,000.
 
-O perfil MPI default `{ unit: "Kg", weightKg: 1 }` estava sombreando o peso de venda (Un = 0,170 kg).
+O perfil MPI default `{ unit: "Kg", weightKg: 1 }` sombreava o peso real. A 1ª correção só lia venda em Un — se a MPI continua vendida em Kg e o 170 g está no peso da **embalagem/unidade**, 1 Un ainda virava 1 kg. A unidade da linha da receita também estava travada na venda, impedindo selecionar Un.
 
 ## Onde está no código
 
@@ -34,9 +34,12 @@ O perfil MPI default `{ unit: "Kg", weightKg: 1 }` estava sombreando o peso de v
 
 Para uma linha de receita em unidade discreta (Un, Dz, …) cujo `sourceType` é produto:
 
-1. Se a unidade de venda do produto é a mesma da linha e tem `weightKg` > 0, usa esse peso.
-2. Senão, peso do perfil MPI na mesma unidade, unidades de produção/expedição, ou `recipeYieldKg`.
-3. Nunca preferir o default `weightKg: 1` do perfil em Kg quando a receita pediu Un.
+1. Peso de venda/embalagem/perfil/produção/expedição **na mesma unidade discreta**, ignorando o default `1` herdado de Kg.
+2. Peso da unidade preenchido no perfil MPI mesmo quando o consumo da MPI é Kg (campo "Peso padrão da unidade").
+3. `recipeYieldKg` só se nenhum peso de unidade discreta existir.
+4. Nunca usar o `weightKg: 1` travado da venda/perfil em Kg como peso de 1 Un.
+
+A unidade da linha da receita é editável (Kg, L, Un). Ao selecionar Un, o motor busca o peso cadastrado — não copia a venda em Kg.
 
 Para ingrediente em Un: `quantity × weightKg` (ou `recipeYieldKg` se misturado).
 
@@ -56,4 +59,5 @@ Para MPI usada por kg: `scaleRecipeQuantity` divide pelo rendimento declarado (`
 
 ## Histórico
 
+- 2026-08-25 — checklist Chama 2ª rodada (P0 peso MPI por Un). Ver [[10 - Changelog Vivo/2026-08]].
 - 2026-08-24 — checklist Chama 12/08 (itens 4 e 5). Ver [[10 - Changelog Vivo/2026-08]].

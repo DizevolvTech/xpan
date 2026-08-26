@@ -39,6 +39,8 @@ interface IngredientProfileFieldsProps {
   showWeightKg?: boolean;
   showRecipeYieldKg?: boolean;
   recipeYieldPlaceholderKg?: number;
+  /** Quando false, o peso permanece editável mesmo se a unidade de consumo for Kg. */
+  lockWeightWhenKg?: boolean;
   disabled?: boolean;
 }
 
@@ -58,9 +60,10 @@ export function IngredientProfileFields({
   showWeightKg = true,
   showRecipeYieldKg = false,
   recipeYieldPlaceholderKg,
+  lockWeightWhenKg = true,
   disabled = false,
 }: IngredientProfileFieldsProps) {
-  const weightLocked = profile.unit === "Kg";
+  const weightLocked = lockWeightWhenKg && profile.unit === "Kg";
   const normalizedPurchaseUnitOptions = purchaseUnitOptions ?? unitOptions;
 
   return (

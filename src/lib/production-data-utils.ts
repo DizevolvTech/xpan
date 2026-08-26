@@ -236,12 +236,23 @@ export function convertKnownUnitToKg(quantity: number, unit: UnitCode): number {
   }
 }
 
+function matchingDiscreteWeightKg(
+  profileUnit: UnitCode | undefined,
+  profileWeightKg: number | undefined | null,
+  itemUnit: UnitCode,
+): number | null {
+  if (!profileUnit || profileUnit !== itemUnit || isMassOrVolumeUnit(profileUnit)) {
+    return null;
+  }
+  return getPositiveNumber(profileWeightKg);
+}
+
 /**
- * Peso de 1 unidade discreta de um produto (MPI). Nunca assume 1 kg quando existe
- * peso cadastrado na unidade de venda ou no perfil de ingrediente.
+ * Peso de 1 unidade discreta de um produto (MPI). Nunca usa o 1 kg travado da
+ * venda/perfil em Kg quando a receita pediu Un (ou outra unidade discreta).
  *
- * Caso Chama: MPI "Pão de ló" vendida em Un com 0,170 kg — 1 Un na receita tem
- * que virar 0,170 kg, não 1 kg do `ingredientProfile.weightKg` default.
+ * Caso Chama: MPI "Pão de ló" vendida em Kg, com 0,170 kg no peso da embalagem/
+ * unidade — 1 Un na receita tem que virar 0,170 kg, não 1 kg.
  */
 export function resolveProductDiscreteUnitWeightKg(
   product: ProductionProduct,
@@ -251,33 +262,36 @@ export function resolveProductDiscreteUnitWeightKg(
   const sales = product.unitProfiles.sales;
   const production = product.unitProfiles.production;
   const expedition = product.unitProfiles.expedition;
+  const packaging = product.packagingProfile;
+
+  const profileUnitWeightWhenUsedAsDiscrete =
+    !isMassOrVolumeUnit(itemUnit) && getPositiveNumber(profile?.weightKg) != null && profile?.weightKg !== 1
+      ? getPositiveNumber(profile?.weightKg)
+      : null;
+
+  const registeredWeights = [
+    matchingDiscreteWeightKg(sales.unit, sales.weightKg, itemUnit),
+    matchingDiscreteWeightKg(packaging?.unit, packaging?.weightKg, itemUnit),
+    matchingDiscreteWeightKg(profile?.unit, profile?.weightKg, itemUnit),
+    profileUnitWeightWhenUsedAsDiscrete,
+    matchingDiscreteWeightKg(production.unit, production.weightKg, itemUnit),
+    matchingDiscreteWeightKg(expedition.unit, expedition.weightKg, itemUnit),
+  ];
+
+  const nonDefaultWeight = registeredWeights.find((weight) => weight != null && weight !== 1);
+  if (nonDefaultWeight != null) {
+    return nonDefaultWeight;
+  }
+
+  const anyRegisteredWeight = registeredWeights.find((weight) => weight != null);
+  if (anyRegisteredWeight != null) {
+    return anyRegisteredWeight;
+  }
 
   if (sales.unit === itemUnit && !isMassOrVolumeUnit(sales.unit)) {
-    const salesWeight = getPositiveNumber(sales.weightKg);
-    if (salesWeight != null) {
-      return salesWeight;
-    }
-  }
-
-  const matchingProfileWeight =
-    profile && profile.unit === itemUnit && !isMassOrVolumeUnit(profile.unit)
-      ? getPositiveNumber(profile.weightKg)
-      : null;
-  if (matchingProfileWeight != null) {
-    return matchingProfileWeight;
-  }
-
-  if (production.unit === itemUnit && !isMassOrVolumeUnit(production.unit)) {
-    const productionWeight = getPositiveNumber(production.weightKg);
-    if (productionWeight != null) {
-      return productionWeight;
-    }
-  }
-
-  if (expedition.unit === itemUnit && !isMassOrVolumeUnit(expedition.unit)) {
-    const expeditionWeight = getPositiveNumber(expedition.weightKg);
-    if (expeditionWeight != null) {
-      return expeditionWeight;
+    const factor = getPositiveNumber(product.salesToKgFactor);
+    if (factor != null && factor !== 1) {
+      return factor;
     }
   }
 
@@ -288,12 +302,13 @@ export function resolveProductDiscreteUnitWeightKg(
 
   if (!isMassOrVolumeUnit(sales.unit)) {
     const salesWeight = getPositiveNumber(sales.weightKg);
-    if (salesWeight != null) {
+    if (salesWeight != null && salesWeight !== 1) {
       return salesWeight;
     }
   }
 
-  return getPositiveNumber(profile?.weightKg) ?? 1;
+  // Último recurso: sem peso discreto cadastrado. Não herdar o 1 kg do perfil em Kg.
+  return 1;
 }
 
 export function resolveProductRecipeYieldKg(

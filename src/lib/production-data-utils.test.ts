@@ -85,6 +85,124 @@ test("recipe totals convert purchase unit into consumption unit before weight ca
   assert.equal(totals.totalIngredientsKg, 12);
 });
 
+test("1 Un of MPI sold by Kg uses packaging unit weight (Chama / Pão de ló 170g)", () => {
+  const paoDeLo: ProductionProduct = {
+    ...baseProduct,
+    id: "mpi-pao-de-lo-kg",
+    name: "Pão de ló",
+    canBeIngredient: true,
+    isSoldLoose: false,
+    unitProfiles: {
+      sales: { unit: "Kg", description: "Quilo", weightKg: 1 },
+      production: { unit: "Kg", description: "Produção", weightKg: 1 },
+      expedition: { unit: "Kg", description: "Expedição", weightKg: 1 },
+    },
+    packagingProfile: {
+      unit: "Un",
+      description: "Unidade",
+      weightKg: 0.17,
+      quantityPerPackage: 1,
+    },
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 1,
+      purchaseUnit: "Kg",
+      purchaseToConsumptionFactor: 1,
+      metadata: "",
+      observation: "",
+    },
+    salesUnit: "Kg",
+    salesToKgFactor: 1,
+    recipe: [],
+  };
+
+  const bolo: ProductionProduct = {
+    ...baseProduct,
+    id: "bolo-chama",
+    name: "Bolo Confeitado Bento Cake Ninho CP kg",
+    recipe: [
+      {
+        id: "recipe-pao",
+        sourceType: "produto",
+        sourceId: "mpi-pao-de-lo-kg",
+        label: "Pão de ló",
+        quantity: 1,
+        unit: "Un",
+      },
+      {
+        id: "recipe-recheio",
+        sourceType: "ingrediente",
+        sourceId: "missing-recheio",
+        label: "Recheio",
+        quantity: 0.221,
+        unit: "Kg",
+      },
+    ],
+  };
+
+  assert.equal(resolveProductDiscreteUnitWeightKg(paoDeLo, "Un"), 0.17);
+
+  const totals = getProductRecipeTotalsFromData(bolo, [], [paoDeLo]);
+  assert.equal(totals.totalIngredientsKg, 0.391);
+});
+
+test("leftover sales Un weight of 1 kg loses to packaging unit weight of 170g", () => {
+  const paoDeLo: ProductionProduct = {
+    ...baseProduct,
+    id: "mpi-pao-de-lo-leftover",
+    canBeIngredient: true,
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 1 },
+      production: { unit: "Kg", description: "Produção", weightKg: 1 },
+      expedition: { unit: "Un", description: "Unidade", weightKg: 1 },
+    },
+    packagingProfile: {
+      unit: "Un",
+      description: "Unidade",
+      weightKg: 0.17,
+      quantityPerPackage: 1,
+    },
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 1,
+      purchaseUnit: "Kg",
+      purchaseToConsumptionFactor: 1,
+      metadata: "",
+      observation: "",
+    },
+    recipe: [],
+  };
+
+  assert.equal(resolveProductDiscreteUnitWeightKg(paoDeLo, "Un"), 0.17);
+});
+
+test("MPI profile unit weight is used for Un even when consumption unit stays Kg", () => {
+  const paoDeLo: ProductionProduct = {
+    ...baseProduct,
+    id: "mpi-pao-de-lo-profile-weight",
+    canBeIngredient: true,
+    unitProfiles: {
+      sales: { unit: "Kg", description: "Quilo", weightKg: 1 },
+      production: { unit: "Kg", description: "Produção", weightKg: 1 },
+      expedition: { unit: "Kg", description: "Expedição", weightKg: 1 },
+    },
+    packagingProfile: undefined,
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 0.17,
+      purchaseUnit: "Kg",
+      purchaseToConsumptionFactor: 1,
+      metadata: "",
+      observation: "",
+    },
+    salesUnit: "Kg",
+    salesToKgFactor: 1,
+    recipe: [],
+  };
+
+  assert.equal(resolveProductDiscreteUnitWeightKg(paoDeLo, "Un"), 0.17);
+});
+
 test("1 Un of MPI uses cadastrado unit weight instead of default 1 kg (Chama / Pão de ló)", () => {
   const paoDeLo: ProductionProduct = {
     ...baseProduct,

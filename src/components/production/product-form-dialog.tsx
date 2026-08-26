@@ -354,6 +354,7 @@ export function ProductFormDialog({
     () => Math.max(0, Number((100 - formState.breakPercent).toFixed(3))),
     [formState.breakPercent],
   );
+
   // 2.4-F: prévia de como o arredondamento por batida se comporta para a base
   // econômica informada. Reaproveita planBatches() (mesma matemática da OP).
   const salesUnit = formState.unitProfiles.sales.unit;
@@ -539,14 +540,15 @@ export function ProductFormDialog({
     setRecipeDrafts((current) => ({ ...current, [stage]: nextDraft }));
   }
 
-  /** Escolher a referência já traz a unidade do cadastro do insumo (não é digitável aqui). */
+  /** Unidade inicial vem do cadastro; o usuário pode trocar para Un na linha da receita. */
   function selectRecipeDraftSource(stage: RecipeStage, sourceId: string) {
     const source = recipeSourceOptions.find((option) => option.id === sourceId);
     const unit =
       source?.sourceType === "ingrediente"
         ? snapshot.ingredients.find((ingredient) => ingredient.id === sourceId)?.unit
         : source?.sourceType === "produto"
-          ? snapshot.products.find((candidate) => candidate.id === sourceId)?.salesUnit
+          ? snapshot.products.find((candidate) => candidate.id === sourceId)?.unitProfiles.sales.unit ??
+            snapshot.products.find((candidate) => candidate.id === sourceId)?.salesUnit
           : undefined;
 
     updateRecipeDraft(stage, { sourceId, unit: unit ?? getRecipeDraft(stage).unit });
@@ -1788,8 +1790,26 @@ export function ProductFormDialog({
                                         }
                                       />
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
-                                      {getOperationalUnitLabel(item.unit)}
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                      <Select
+                                        value={item.unit}
+                                        onValueChange={(value) =>
+                                          updateRecipeItem(item.id, {
+                                            unit: value as RecipeIngredientReference["unit"],
+                                          })
+                                        }
+                                      >
+                                        <SelectTrigger aria-label={`Unidade de ${item.label}`}>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {getOperationalUnitOptions(item.unit).map((unit) => (
+                                            <SelectItem key={unit} value={unit}>
+                                              {getOperationalUnitLabel(unit)}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
                                     </td>
                                     <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
                                       <Select
@@ -1918,9 +1938,28 @@ export function ProductFormDialog({
                           </div>
                           <div className="grid gap-2">
                             <Label>Unidade</Label>
-                            <div className="flex h-9 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground">
-                              {getOperationalUnitLabel(draft.unit)}
-                            </div>
+                            <Select
+                              value={draft.unit}
+                              onValueChange={(value) =>
+                                updateRecipeDraft(block.stage, {
+                                  unit: value as RecipeIngredientReference["unit"],
+                                })
+                              }
+                            >
+                              <SelectTrigger aria-label={`Unidade para ${recipeStageLabels[block.stage]}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {getOperationalUnitOptions(draft.unit).map((unit) => (
+                                  <SelectItem key={unit} value={unit}>
+                                    {getOperationalUnitLabel(unit)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                              Un usa o peso da embalagem/unidade do cadastro — nunca 1 kg.
+                            </p>
                           </div>
                           <Button
                             type="button"
@@ -2437,10 +2476,10 @@ export function ProductFormDialog({
                       profile={{
                         unit: formState.ingredientProfile?.unit ?? "Kg",
                         weightKg:
-                          formState.ingredientProfile?.unit === "Kg"
+                          formState.ingredientProfile?.weightKg ??
+                          (formState.ingredientProfile?.unit === "Kg"
                             ? 1
-                            : (formState.ingredientProfile?.weightKg ??
-                              formState.unitProfiles.sales.weightKg),
+                            : formState.unitProfiles.sales.weightKg),
                         recipeYieldKg: formState.ingredientProfile?.recipeYieldKg,
                         purchaseUnit:
                           formState.ingredientProfile?.purchaseUnit ??
@@ -2453,7 +2492,8 @@ export function ProductFormDialog({
                       }}
                       unitOptions={productUnitOptions}
                       showPurchaseFields
-                      showWeightKg={(formState.ingredientProfile?.unit ?? "Kg") !== "Kg"}
+                      showWeightKg
+                      lockWeightWhenKg={false}
                       showRecipeYieldKg
                       recipeYieldPlaceholderKg={recipeTotals.outputAfterBreakKg}
                       purchaseHelperText="1 unidade de compra equivale a este fator multiplicado pela unidade de consumo."
@@ -2467,10 +2507,10 @@ export function ProductFormDialog({
                               current.ingredientProfile?.unit ??
                               "Kg",
                             weightKg:
-                              patch.unit === "Kg"
-                                ? 1
-                                : "weightKg" in patch
-                                  ? (patch.weightKg ?? current.unitProfiles.sales.weightKg)
+                              "weightKg" in patch
+                                ? patch.weightKg
+                                : patch.unit === "Kg" && current.ingredientProfile?.weightKg == null
+                                  ? 1
                                   : (current.ingredientProfile?.weightKg ??
                                     current.unitProfiles.sales.weightKg),
                             recipeYieldKg:
