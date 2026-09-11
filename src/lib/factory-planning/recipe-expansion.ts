@@ -3,8 +3,9 @@ import type {
   ProductionLine,
   ProductionProduct,
   ProductionSector,
+  RecipeIngredientReference,
 } from "@/lib/production-planning";
-import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import { getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData, resolveProductRecipeYieldKg } from "@/lib/production-data-utils";
 import { intermediatePreparationStages } from "@/lib/production-workflow";
 
 import type { PlannedOrderItem } from "./types";
@@ -145,7 +146,7 @@ export function expandRecipeIntoItems(
               originItem,
               mixedIngredient,
               parentProduct,
-              recipeQuantity: recipeRef.quantity,
+              recipeItem: recipeRef,
               ingredients,
               products,
               sequence: ++mpiSequence,
@@ -173,7 +174,7 @@ export function expandRecipeIntoItems(
           originItem,
           mpiProduct,
           parentProduct,
-          recipeQuantity: recipeRef.quantity,
+          recipeItem: recipeRef,
           ingredients,
           products,
           sequence: ++mpiSequence,
@@ -198,7 +199,7 @@ function buildMpiPlannedItem(params: {
   originItem: PlannedOrderItem;
   mpiProduct: ProductionProduct;
   parentProduct: ProductionProduct;
-  recipeQuantity: number;
+  recipeItem: RecipeIngredientReference;
   ingredients: ProductionIngredient[];
   products: ProductionProduct[];
   sequence: number;
@@ -210,7 +211,7 @@ function buildMpiPlannedItem(params: {
     originItem,
     mpiProduct,
     parentProduct,
-    recipeQuantity,
+    recipeItem,
     ingredients,
     products,
     sequence,
@@ -218,8 +219,20 @@ function buildMpiPlannedItem(params: {
     sectorsById,
   } = params;
 
+  const ingredientsById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
+  const productsById = new Map(products.map((entry) => [entry.id, entry]));
+  const recipeKg = getRecipeReferenceWeightKgFromData(recipeItem, ingredientsById, productsById);
+
   // Quantidade de MPI necessária para produzir `parent.internalKg` do pai.
-  const requestedQuantity = scaleRecipeQuantity(parent.internalKg, parentProduct, ingredients, products, recipeQuantity);
+  // `recipeKg` já converte Un/g/etc. para kg — passar a quantidade crua (1 Un)
+  // fazia o motor tratar 1 unidade como 1 kg.
+  const requestedQuantity = scaleRecipeQuantity(
+    parent.internalKg,
+    parentProduct,
+    ingredients,
+    products,
+    recipeKg,
+  );
   // MPI é trabalhado em kg internamente. `internalKg` = requestedQuantity (já em kg pela receita).
   const internalKg = requestedQuantity;
 
@@ -314,13 +327,17 @@ function buildMixedIngredientPlannedItem(params: {
   originItem: PlannedOrderItem;
   mixedIngredient: ProductionIngredient;
   parentProduct: ProductionProduct;
-  recipeQuantity: number;
+  recipeItem: RecipeIngredientReference;
   ingredients: ProductionIngredient[];
   products: ProductionProduct[];
   sequence: number;
 }): PlannedOrderItem {
-  const { parent, originItem, mixedIngredient, parentProduct, recipeQuantity, ingredients, products, sequence } =
+  const { parent, originItem, mixedIngredient, parentProduct, recipeItem, ingredients, products, sequence } =
     params;
+
+  const ingredientsById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
+  const productsById = new Map(products.map((entry) => [entry.id, entry]));
+  const recipeKg = getRecipeReferenceWeightKgFromData(recipeItem, ingredientsById, productsById);
 
   // Quantidade do misturado necessária para produzir `parent.internalKg` do pai
   // (mesma escala da receita usada no MPI). Tratado em kg internamente.
@@ -329,7 +346,7 @@ function buildMixedIngredientPlannedItem(params: {
     parentProduct,
     ingredients,
     products,
-    recipeQuantity,
+    recipeKg,
   );
   const internalKg = requestedQuantity;
 
@@ -421,7 +438,8 @@ export function scaleRecipeQuantity(
   }
 
   const totals = getProductRecipeTotalsFromData(product, ingredients, products);
-  const baseOutputKg = totals.outputAfterBreakKg > 0 ? totals.outputAfterBreakKg : totals.totalIngredientsKg;
+  const computedOutputKg = totals.outputAfterBreakKg > 0 ? totals.outputAfterBreakKg : totals.totalIngredientsKg;
+  const baseOutputKg = resolveProductRecipeYieldKg(product, computedOutputKg);
 
   if (baseOutputKg <= 0) {
     return round3(quantity);

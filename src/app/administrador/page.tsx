@@ -17,6 +17,7 @@ import { PaginatedSection } from "@/components/shared/paginated-section";
 import { KPICard, PageLayout } from "@/components/shared/page-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { countOpenOrders, isOpenOrderStatus } from "@/lib/factory-planning/order-status";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
@@ -250,7 +251,7 @@ export default function AdministradorPage() {
     },
   ] as const;
 
-  const totalOrders = planningData.orders.length;
+  const totalOrders = countOpenOrders(planningData.orders);
   const releasedOrders = planningData.orders.filter((order) => order.releasedToProduction).length;
   const opsInProgress = planningData.productionOrders.filter((op) => op.status === "em_producao").length;
   const readyForExpedition = planningData.expedition.filter((order) => order.status === "aguardando_expedicao").length;
@@ -325,6 +326,9 @@ export default function AdministradorPage() {
     });
 
     planningData.orders.forEach((order) => {
+      if (!isOpenOrderStatus(order.status)) {
+        return;
+      }
       const current = pointMap.get(order.deliveryDate) ?? {
         productionKg: 0,
         expeditionKg: 0,
@@ -383,7 +387,9 @@ export default function AdministradorPage() {
     };
 
     planningSnapshot.orders.forEach((order) => {
-      ensure(order.deliveryDate).ordersCount += 1;
+      if (isOpenOrderStatus(order.status)) {
+        ensure(order.deliveryDate).ordersCount += 1;
+      }
     });
     planningSnapshot.productionOrders.forEach((op) => {
       if (op.status === "em_producao") {
@@ -496,7 +502,7 @@ export default function AdministradorPage() {
             delta={kpiDeltas.orders}
             ariaLabel="Tendência de pedidos nos últimos 7 dias"
           >
-            <KPICard title="Pedidos Totais" value={totalOrders} icon={ShoppingCart} tone="info" />
+            <KPICard title="Pedidos em aberto" value={totalOrders} icon={ShoppingCart} tone="info" />
           </KpiWithTrend>
           <KpiWithTrend
             tone="warning"
@@ -619,7 +625,7 @@ export default function AdministradorPage() {
                 <div className="absolute inset-5 flex flex-col items-center justify-center rounded-full border border-border/70 bg-card">
                   <p className="text-xl font-semibold text-foreground">{totalOrders}</p>
                   <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
-                    Pedidos
+                    Em aberto
                   </p>
                 </div>
               </div>

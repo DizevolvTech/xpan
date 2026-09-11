@@ -55,6 +55,18 @@ test("diffProductFields — ignora campos fora da lista auditada", () => {
   assert.deepEqual(diffProductFields(before, after), []);
 });
 
+test("diffProductFields — audita código da loja e GTIN", () => {
+  const changes = diffProductFields(
+    { external_code: "OLD", gtin: null },
+    { external_code: "PDLCH150", gtin: "7891234567890" },
+  );
+
+  assert.deepEqual(changes, [
+    { field: "external_code", label: "Código da loja", from: "OLD", to: "PDLCH150" },
+    { field: "gtin", label: "GTIN", from: "—", to: "7891234567890" },
+  ]);
+});
+
 // XPAN-6.3: auditoria de cronograma só exigida em mudanças cronograma-relevantes.
 
 test("XPAN-6.3: changeAffectsCronograma — TRUE quando muda dias de produção / lead / mínimo / capacity / active / disponível", () => {

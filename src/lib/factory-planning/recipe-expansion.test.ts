@@ -240,6 +240,64 @@ void test("expandRecipeIntoItems gera 1 item extra para pizza com receita de mas
   assert.equal(mpi.productionItemKey, "2026-05-20|line-1|schedule-1|mpi-massa");
 });
 
+void test("1 Un de MPI na receita expande em kg do peso cadastrado, não 1 kg", () => {
+  const paoDeLo = makeMpiProduct({
+    id: "mpi-pao-de-lo",
+    name: "Pão de ló",
+    salesUnit: "Un",
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.17 },
+      production: { unit: "Kg", description: "kg", weightKg: 1 },
+      expedition: { unit: "Un", description: "Unidade", weightKg: 0.17 },
+    },
+    ingredientProfile: {
+      unit: "Kg",
+      weightKg: 1,
+      purchaseUnit: "Kg",
+      purchaseToConsumptionFactor: 1,
+      metadata: "",
+      observation: "",
+    },
+  });
+  const bolo = {
+    ...makePizzaProduct(),
+    id: "bolo-chama",
+    recipe: [
+      {
+        id: "r1",
+        sourceType: "produto",
+        sourceId: "mpi-pao-de-lo",
+        label: "Pão de ló",
+        quantity: 1,
+        unit: "Un",
+      },
+      {
+        id: "r2",
+        sourceType: "ingrediente",
+        sourceId: "farinha",
+        label: "Recheio",
+        quantity: 0.221,
+        unit: "Kg",
+      },
+    ],
+  } as ProductionProduct;
+  const productsById = new Map([
+    [bolo.id, bolo],
+    [paoDeLo.id, paoDeLo],
+  ]);
+
+  const result = expandRecipeIntoItems(
+    [makePlannedItem({ productId: "bolo-chama", internalKg: 0.391 })],
+    productsById,
+    [makeIngredient("farinha", "Farinha")],
+    [bolo, paoDeLo],
+  );
+
+  const mpi = result.find((item) => item.productId === "mpi-pao-de-lo");
+  assert.ok(mpi, "deve expandir a OP do pão de ló");
+  assert.equal(mpi?.internalKg, 0.17);
+});
+
 void test("AJ-0008.1: ingrediente misturado puro vira OP herdando a rota do pai", () => {
   const farinha = makeIngredient("farinha", "Farinha");
   const molho: ProductionIngredient = {

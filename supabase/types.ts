@@ -355,6 +355,8 @@ export type Database = {
           unit: string;
           purchase_unit: string | null;
           purchase_to_consumption_factor: number;
+          weight_kg: number | null;
+          recipe_yield_kg: number | null;
           metadata: string;
           observation: string;
           status: "ativo" | "inativo";
@@ -373,6 +375,8 @@ export type Database = {
           unit: string;
           purchase_unit?: string | null;
           purchase_to_consumption_factor?: number;
+          weight_kg?: number | null;
+          recipe_yield_kg?: number | null;
           metadata?: string;
           observation?: string;
           status?: "ativo" | "inativo";
@@ -449,6 +453,7 @@ export type Database = {
           expedition_unit: string;
           expedition_to_kg_factor: number;
           is_mpi_ingredient: boolean;
+          gtin: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -488,6 +493,7 @@ export type Database = {
           expedition_unit: string;
           expedition_to_kg_factor?: number;
           is_mpi_ingredient?: boolean;
+          gtin?: string | null;
           created_at?: string;
           updated_at?: string;
         };

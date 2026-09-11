@@ -8,7 +8,7 @@ import type {
   WeeklyProductionSchedule,
 } from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
-import { roundQuantityForUnit } from "@/lib/factory-planning/units";
+import { isMassOrVolumeUnit, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { productionWeekDays, sortProductionDays } from "@/lib/production-planning";
 
 export function getLinesBySectorFromData(
@@ -217,7 +217,11 @@ export function buildLineDaySummariesFromData(
   });
 }
 
-function convertKnownUnitToKg(quantity: number, unit: UnitCode): number {
+function getPositiveNumber(value: number | undefined | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export function convertKnownUnitToKg(quantity: number, unit: UnitCode): number {
   switch (unit) {
     case "Kg":
       return quantity;
@@ -232,6 +236,88 @@ function convertKnownUnitToKg(quantity: number, unit: UnitCode): number {
   }
 }
 
+function matchingDiscreteWeightKg(
+  profileUnit: UnitCode | undefined,
+  profileWeightKg: number | undefined | null,
+  itemUnit: UnitCode,
+): number | null {
+  if (!profileUnit || profileUnit !== itemUnit || isMassOrVolumeUnit(profileUnit)) {
+    return null;
+  }
+  return getPositiveNumber(profileWeightKg);
+}
+
+/**
+ * Peso de 1 unidade discreta de um produto (MPI). Nunca usa o 1 kg travado da
+ * venda/perfil em Kg quando a receita pediu Un (ou outra unidade discreta).
+ *
+ * Caso Chama: MPI "Pão de ló" vendida em Kg, com 0,170 kg no peso da embalagem/
+ * unidade — 1 Un na receita tem que virar 0,170 kg, não 1 kg.
+ */
+export function resolveProductDiscreteUnitWeightKg(
+  product: ProductionProduct,
+  itemUnit: UnitCode,
+): number {
+  const profile = product.ingredientProfile;
+  const sales = product.unitProfiles.sales;
+  const production = product.unitProfiles.production;
+  const expedition = product.unitProfiles.expedition;
+  const packaging = product.packagingProfile;
+
+  const profileUnitWeightWhenUsedAsDiscrete =
+    !isMassOrVolumeUnit(itemUnit) && getPositiveNumber(profile?.weightKg) != null && profile?.weightKg !== 1
+      ? getPositiveNumber(profile?.weightKg)
+      : null;
+
+  const registeredWeights = [
+    matchingDiscreteWeightKg(sales.unit, sales.weightKg, itemUnit),
+    matchingDiscreteWeightKg(packaging?.unit, packaging?.weightKg, itemUnit),
+    matchingDiscreteWeightKg(profile?.unit, profile?.weightKg, itemUnit),
+    profileUnitWeightWhenUsedAsDiscrete,
+    matchingDiscreteWeightKg(production.unit, production.weightKg, itemUnit),
+    matchingDiscreteWeightKg(expedition.unit, expedition.weightKg, itemUnit),
+  ];
+
+  const nonDefaultWeight = registeredWeights.find((weight) => weight != null && weight !== 1);
+  if (nonDefaultWeight != null) {
+    return nonDefaultWeight;
+  }
+
+  const anyRegisteredWeight = registeredWeights.find((weight) => weight != null);
+  if (anyRegisteredWeight != null) {
+    return anyRegisteredWeight;
+  }
+
+  if (sales.unit === itemUnit && !isMassOrVolumeUnit(sales.unit)) {
+    const factor = getPositiveNumber(product.salesToKgFactor);
+    if (factor != null && factor !== 1) {
+      return factor;
+    }
+  }
+
+  const declaredYield = getPositiveNumber(profile?.recipeYieldKg);
+  if (declaredYield != null) {
+    return declaredYield;
+  }
+
+  if (!isMassOrVolumeUnit(sales.unit)) {
+    const salesWeight = getPositiveNumber(sales.weightKg);
+    if (salesWeight != null && salesWeight !== 1) {
+      return salesWeight;
+    }
+  }
+
+  // Último recurso: sem peso discreto cadastrado. Não herdar o 1 kg do perfil em Kg.
+  return 1;
+}
+
+export function resolveProductRecipeYieldKg(
+  product: ProductionProduct,
+  computedOutputKg: number,
+): number {
+  return getPositiveNumber(product.ingredientProfile?.recipeYieldKg) ?? computedOutputKg;
+}
+
 function normalizeIngredientPurchaseUnit(ingredient: ProductionIngredient) {
   return ingredient.purchaseUnit ?? ingredient.unit;
 }
@@ -244,7 +330,7 @@ function normalizeIngredientPurchaseFactor(ingredient: ProductionIngredient) {
 }
 
 function convertIngredientQuantityToConsumptionUnit(
-  item: RecipeIngredientReference,
+  item: Pick<RecipeIngredientReference, "quantity" | "unit">,
   ingredient: ProductionIngredient,
 ) {
   const purchaseUnit = normalizeIngredientPurchaseUnit(ingredient);
@@ -269,7 +355,7 @@ function convertIngredientQuantityToConsumptionUnit(
 }
 
 export function getRecipeReferenceWeightKgFromData(
-  item: RecipeIngredientReference,
+  item: Pick<RecipeIngredientReference, "quantity" | "unit" | "sourceType" | "sourceId">,
   ingredientsById: Map<string, ProductionIngredient>,
   productsById: Map<string, ProductionProduct>,
 ) {
@@ -281,11 +367,17 @@ export function getRecipeReferenceWeightKgFromData(
 
     const normalized = convertIngredientQuantityToConsumptionUnit(item, ingredient);
 
-    if (ingredient.unit === "Kg" || ingredient.unit === "L") {
+    if (isMassOrVolumeUnit(normalized.unit)) {
       return convertKnownUnitToKg(normalized.quantity, normalized.unit);
     }
 
-    return convertKnownUnitToKg(normalized.quantity, ingredient.unit);
+    const unitWeightKg =
+      getPositiveNumber(ingredient.weightKg) ?? getPositiveNumber(ingredient.recipeYieldKg);
+    if (unitWeightKg != null) {
+      return normalized.quantity * unitWeightKg;
+    }
+
+    return convertKnownUnitToKg(normalized.quantity, normalized.unit);
   }
 
   const product = productsById.get(item.sourceId);
@@ -293,9 +385,11 @@ export function getRecipeReferenceWeightKgFromData(
     return convertKnownUnitToKg(item.quantity, item.unit);
   }
 
-  return item.unit === "Kg"
-    ? item.quantity
-    : item.quantity * (product.ingredientProfile?.weightKg ?? product.unitProfiles.sales.weightKg);
+  if (isMassOrVolumeUnit(item.unit)) {
+    return convertKnownUnitToKg(item.quantity, item.unit);
+  }
+
+  return item.quantity * resolveProductDiscreteUnitWeightKg(product, item.unit);
 }
 
 export function getProductRecipeTotalsFromData(

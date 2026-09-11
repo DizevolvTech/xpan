@@ -4,12 +4,19 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { StoreInput } from "@/lib/supabase-data/master-data-admin";
-import { createStore } from "@/lib/supabase-data/master-data-admin";
+import { MasterDataValidationError, createStore } from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
-function isClientValidationError(message: string) {
+function isClientValidationError(message: string, error?: unknown) {
+  if (error instanceof MasterDataValidationError) {
+    return true;
+  }
   const normalized = message.toLowerCase();
-  return normalized.includes("selecione") || normalized.includes("tipo loja");
+  return (
+    normalized.includes("selecione") ||
+    normalized.includes("tipo loja") ||
+    normalized.includes("já existe uma loja")
+  );
 }
 
 export async function POST(request: Request) {
@@ -46,7 +53,7 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Failed to create store";
     return NextResponse.json(
       { message },
-      { status: isClientValidationError(message) ? 400 : 500 },
+      { status: isClientValidationError(message, error) ? 400 : 500 },
     );
   }
 }

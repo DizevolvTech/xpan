@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { countOpenOrders } from "@/lib/factory-planning/order-status";
 import type { PlannedOrderRow, ProductionOrderRow } from "@/lib/factory-planning/types";
 import {
   filterFactoryPlanningDataByOperationalScope,
@@ -359,7 +360,7 @@ export default function GestorFabricaPage() {
   });
 
   const metrics = useMemo(() => {
-    const totalOrders = planningData.orders.length;
+    const totalOrders = countOpenOrders(planningData.orders);
     const awaitingRelease = planningData.orders.filter((item) => !item.releasedToProduction).length;
     const inProduction = planningData.orders.filter((item) => item.status === "em_producao").length;
     const checklistPending = planningData.expedition.filter((item) => {
@@ -690,7 +691,7 @@ export default function GestorFabricaPage() {
         href: "/gestor-fabrica/pedidos",
         label: "Pedidos",
         icon: ShoppingCart,
-        meta: `${metrics.totalOrders} no período`,
+        meta: `${metrics.totalOrders} em aberto`,
       },
       {
         href: "/gestor-fabrica/ordens-producao",

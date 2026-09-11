@@ -68,8 +68,6 @@ export function IngredientCompositionEditor({
   onUpdate,
   readOnly = false,
 }: IngredientCompositionEditorProps) {
-  const shouldUseSearchableSelect = options.length >= 8;
-
   return (
     <section className="space-y-4 rounded-xl border border-border/80 bg-panel/20 p-4">
       <div>
@@ -81,39 +79,21 @@ export function IngredientCompositionEditor({
         <div className="grid gap-3 md:grid-cols-[1.4fr_0.7fr_0.7fr_1fr_auto]">
           <div className="grid gap-2">
             <Label>Componente</Label>
-            {shouldUseSearchableSelect ? (
-              <SearchableSelect
-                value={draft.componentId}
-                onValueChange={(value) => onDraftChange({ componentId: value })}
-                options={options.map((option) => ({
-                  value: option.id,
-                  label: option.label,
-                  description: option.description,
-                  keywords: option.keywords,
-                }))}
-                placeholder="Selecione um componente"
-                searchPlaceholder="Buscar ingrediente ou produto..."
-                emptyMessage="Nenhum componente encontrado."
-                title="Selecionar componente"
-                description="Busque pelo nome ou código do ingrediente ou produto MPI."
-              />
-            ) : (
-              <Select
-                value={draft.componentId}
-                onValueChange={(value) => onDraftChange({ componentId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um componente" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <SearchableSelect
+              value={draft.componentId}
+              onValueChange={(value) => onDraftChange({ componentId: value })}
+              options={options.map((option) => ({
+                value: option.id,
+                label: option.label,
+                description: option.description,
+                keywords: option.keywords,
+              }))}
+              placeholder="Selecione um componente"
+              searchPlaceholder="Buscar por nome, código XPAN ou código ERP..."
+              emptyMessage="Nenhum componente encontrado."
+              title="Selecionar componente"
+              description="Busque por nome, código XPAN ou código ERP do ingrediente ou produto MPI."
+            />
           </div>
 
           <div className="grid gap-2">

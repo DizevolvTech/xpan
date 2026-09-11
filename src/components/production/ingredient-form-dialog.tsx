@@ -23,7 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { validateIngredientFormState } from "@/lib/ingredient-form-logic";
+import { validateIngredientFormState, findDuplicateExternalCode, normalizeExternalCode } from "@/lib/ingredient-form-logic";
+import { isMassOrVolumeUnit } from "@/lib/factory-planning/units";
 import { getOperationalUnitLabel, getOperationalUnitOptions } from "@/lib/operational-units";
 import type {
   IngredientCompositionItem,
@@ -44,6 +45,8 @@ type IngredientFormState = {
   unit: ProductionIngredient["unit"];
   purchaseUnit: ProductionIngredient["purchaseUnit"];
   purchaseToConsumptionFactor: number;
+  weightKg?: number;
+  recipeYieldKg?: number;
   metadata: string;
   observation: string;
   composition: IngredientCompositionItem[];
@@ -74,6 +77,8 @@ function buildFormState(ingredient?: ProductionIngredient | null): IngredientFor
       ingredient?.purchaseToConsumptionFactor && ingredient.purchaseToConsumptionFactor > 0
         ? ingredient.purchaseToConsumptionFactor
         : 1,
+    weightKg: ingredient?.weightKg,
+    recipeYieldKg: ingredient?.recipeYieldKg,
     metadata: ingredient?.metadata ?? "",
     observation: ingredient?.observation ?? "",
     composition: ingredient?.composition ?? [],
@@ -136,7 +141,7 @@ export function IngredientFormDialog({
     setFormError(null);
     setInvalidFields([]);
     window.setTimeout(() => {
-      document.getElementById("ingredient-name")?.focus();
+      document.getElementById("ingredient-external-code")?.focus();
     }, 0);
   }
 
@@ -162,6 +167,11 @@ export function IngredientFormDialog({
     );
     setFormError(null);
     setInvalidFields([]);
+    if (!ingredient) {
+      window.setTimeout(() => {
+        document.getElementById("ingredient-external-code")?.focus();
+      }, 0);
+    }
   }, [ingredient, mode, open]);
 
   const mpiProducts = useMemo(
@@ -173,11 +183,14 @@ export function IngredientFormDialog({
       mpiProducts.map((product) => ({
         id: product.id,
         label: `${product.code} · ${product.name}`,
-        description: product.shortName?.trim()
-          ? `Nome reduzido: ${product.shortName}`
-          : undefined,
-        keywords: [product.code, product.shortName].filter((keyword): keyword is string =>
-          Boolean(keyword?.trim()),
+        description: [
+          product.shortName?.trim() ? `Nome reduzido: ${product.shortName}` : null,
+          product.externalCode?.trim() ? `ERP ${product.externalCode}` : null,
+        ]
+          .filter((part): part is string => Boolean(part))
+          .join(" · ") || undefined,
+        keywords: [product.code, product.name, product.shortName, product.externalCode].filter(
+          (keyword): keyword is string => Boolean(keyword?.trim()),
         ),
         type: "produto" as const,
       })),
@@ -190,9 +203,14 @@ export function IngredientFormDialog({
         .map((item) => ({
           id: item.id,
           label: `${item.code} · ${item.name}`,
-          description: item.shortName?.trim() ? `Nome reduzido: ${item.shortName}` : undefined,
-          keywords: [item.code, item.shortName].filter((keyword): keyword is string =>
-            Boolean(keyword?.trim()),
+          description: [
+            item.shortName?.trim() ? `Nome reduzido: ${item.shortName}` : null,
+            item.externalCode?.trim() ? `ERP ${item.externalCode}` : null,
+          ]
+            .filter((part): part is string => Boolean(part))
+            .join(" · ") || undefined,
+          keywords: [item.code, item.name, item.shortName, item.externalCode].filter(
+            (keyword): keyword is string => Boolean(keyword?.trim()),
           ),
           type: "ingrediente" as const,
         })),
@@ -211,6 +229,15 @@ export function IngredientFormDialog({
       ),
     [draftComponentUnit, formState.composition, formState.unit],
   );
+  const duplicateExternalCode = useMemo(
+    () =>
+      findDuplicateExternalCode(formState.externalCode, snapshot.ingredients, ingredient?.id ?? null),
+    [formState.externalCode, ingredient?.id, snapshot.ingredients],
+  );
+  const isNewIngredient = !ingredient;
+  const erpGateBlocked =
+    isNewIngredient &&
+    (!normalizeExternalCode(formState.externalCode) || Boolean(duplicateExternalCode));
 
   function addCompositionItem() {
     if (!draftComponentId || !draftComponentQty) {
@@ -296,12 +323,21 @@ export function IngredientFormDialog({
 
   async function handleSave(options?: { createAnother?: boolean }) {
     const createAnother = options?.createAnother === true;
-    const validation = validateIngredientFormState({ name: formState.name });
+    const validation = validateIngredientFormState(
+      { name: formState.name, externalCode: formState.externalCode },
+      {
+        duplicateExternalCode: Boolean(duplicateExternalCode),
+        requireExternalCode: isNewIngredient,
+      },
+    );
     if (validation.error) {
       setInvalidFields(validation.invalidFields);
       setFormError(validation.error);
       window.setTimeout(() => {
-        document.getElementById("ingredient-name")?.focus();
+        const targetId = validation.invalidFields.includes("externalCode")
+          ? "ingredient-external-code"
+          : "ingredient-name";
+        document.getElementById(targetId)?.focus();
       }, 0);
       return;
     }
@@ -385,7 +421,7 @@ export function IngredientFormDialog({
           <DialogDescription>
             {isReadOnly
               ? "Consulte o cadastro técnico, a composição e o código ERP sem alterar o ingrediente."
-              : "O código XPAN permanece imutável após o cadastro. Use o Código ERP para integrar com sistemas externos e detalhe a composição quando o ingrediente for misturado."}
+              : "Informe o código ERP primeiro. Se o código já existir, o aviso aparece imediatamente — antes de preencher o restante do cadastro."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-5 py-2">
@@ -411,7 +447,55 @@ export function IngredientFormDialog({
             </div>
           ) : null}
 
+          {erpGateBlocked && !isReadOnly ? (
+            <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+              Informe um código ERP disponível para liberar o restante do cadastro.
+            </div>
+          ) : null}
+
           <fieldset disabled={isReadOnly} className="grid gap-5">
+            <div className="grid gap-2">
+              <Label htmlFor="ingredient-external-code">Código ERP do cliente *</Label>
+              <Input
+                id="ingredient-external-code"
+                aria-invalid={invalidFields.includes("externalCode") || Boolean(duplicateExternalCode)}
+                className={cn(
+                  (invalidFields.includes("externalCode") || duplicateExternalCode) &&
+                    "border-danger/60 ring-1 ring-danger/30",
+                )}
+                value={formState.externalCode}
+                onChange={(event) => {
+                  const nextCode = event.target.value;
+                  setFormState((current) => ({
+                    ...current,
+                    externalCode: nextCode,
+                  }));
+                  if (invalidFields.includes("externalCode")) {
+                    setInvalidFields((current) => current.filter((field) => field !== "externalCode"));
+                  }
+                  if (formError) {
+                    setFormError(null);
+                  }
+                }}
+                placeholder="Ex: 100234"
+                autoComplete="off"
+              />
+              {duplicateExternalCode ? (
+                <p className="text-xs text-danger-foreground">
+                  Este código ERP já está cadastrado em{" "}
+                  <strong>{duplicateExternalCode.name ?? duplicateExternalCode.id}</strong>. Informe
+                  outro código para continuar.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Campo obrigatório. A duplicidade é verificada na hora, sem precisar preencher o
+                  restante do formulário.
+                </p>
+              )}
+            </div>
+          </fieldset>
+
+          <fieldset disabled={isReadOnly || erpGateBlocked} className="grid gap-5">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="grid gap-2">
                 <Label htmlFor="ingredient-name">Nome completo do ingrediente *</Label>
@@ -443,20 +527,6 @@ export function IngredientFormDialog({
               <div className="grid gap-2">
                 <Label>Código XPAN</Label>
                 <Input value={formState.code} disabled className="bg-muted" />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="ingredient-external-code">Código ERP</Label>
-                <Input
-                  id="ingredient-external-code"
-                  value={formState.externalCode}
-                  onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      externalCode: event.target.value,
-                    }))
-                  }
-                  placeholder="Código externo do ERP"
-                />
               </div>
               <div className="grid gap-2">
                 <Label>Tipo *</Label>
@@ -515,6 +585,8 @@ export function IngredientFormDialog({
             <IngredientProfileFields
               profile={{
                 unit: formState.unit,
+                weightKg: formState.weightKg,
+                recipeYieldKg: formState.recipeYieldKg,
                 purchaseUnit: formState.purchaseUnit,
                 purchaseToConsumptionFactor: formState.purchaseToConsumptionFactor,
                 metadata: formState.metadata,
@@ -522,7 +594,8 @@ export function IngredientFormDialog({
               }}
               unitOptions={ingredientUnitOptions}
               showPurchaseFields
-              showWeightKg={false}
+              showWeightKg={!isMassOrVolumeUnit(formState.unit)}
+              showRecipeYieldKg={formState.type === "misturado"}
               metadataLabel="Lembretes"
               metadataPlaceholder="Ex: alergênico, armazenar refrigerado, fornecedor preferencial..."
               purchaseHelperText={`1 ${getOperationalUnitLabel(formState.purchaseUnit ?? formState.unit)} = ${formState.purchaseToConsumptionFactor || 1} ${getOperationalUnitLabel(formState.unit)}. Ex: ovos — compra Dz, consumo g, fator 600 (1 Dz = 600g).`}
@@ -538,6 +611,9 @@ export function IngredientFormDialog({
                   purchaseToConsumptionFactor:
                     patch.purchaseToConsumptionFactor ??
                     current.purchaseToConsumptionFactor,
+                  weightKg: "weightKg" in patch ? patch.weightKg : current.weightKg,
+                  recipeYieldKg:
+                    "recipeYieldKg" in patch ? patch.recipeYieldKg : current.recipeYieldKg,
                   metadata: patch.metadata ?? current.metadata,
                   observation: patch.observation ?? current.observation,
                 }))
@@ -610,12 +686,12 @@ export function IngredientFormDialog({
                   type="button"
                   variant="outline"
                   onClick={() => void handleSave({ createAnother: true })}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || erpGateBlocked}
                 >
                   Salvar e novo
                 </Button>
               ) : null}
-              <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting}>
+              <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting || erpGateBlocked}>
                 {ingredient ? "Salvar Alterações" : "Cadastrar Ingrediente"}
               </Button>
             </>

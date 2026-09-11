@@ -17,6 +17,8 @@ export interface ProductFieldChange {
 const AUDITED_FIELDS: Array<{ field: string; label: string }> = [
   { field: "name", label: "Nome" },
   { field: "short_name", label: "Nome curto" },
+  { field: "external_code", label: "Código da loja" },
+  { field: "gtin", label: "GTIN" },
   { field: "description", label: "Descrição" },
   { field: "active", label: "Ativo" },
   { field: "available_for_ordering", label: "Disponível para pedido" },
@@ -51,7 +53,13 @@ function formatValue(value: unknown): string {
     return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(value);
   }
   // Strings numéricas viram número formatado para alinhar com o lado tipado.
+  // Códigos (GTIN, EAN) ficam como dígitos — formatar 7891234567890 como 7.891.234.567.890
+  // quebraria a auditoria do cadastro.
   if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+    const trimmed = value.trim();
+    if (/^\d{8,}$/.test(trimmed)) {
+      return trimmed;
+    }
     return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(Number(value));
   }
   return String(value);
