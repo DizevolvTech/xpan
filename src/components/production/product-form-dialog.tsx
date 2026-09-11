@@ -63,6 +63,8 @@ import {
   getOperationalUnitOptions,
   preferredOperationalUnits,
 } from "@/lib/operational-units";
+import { findDuplicateExternalCode, normalizeExternalCode } from "@/lib/ingredient-form-logic";
+import { getProductDisplayCode, normalizeGtin } from "@/lib/product-identity";
 import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
 import { normalizeSaleLeadDays } from "@/lib/order-planning";
 import { deriveCapacityFromProductRecipe, planBatches } from "@/lib/production-batches";
@@ -257,6 +259,20 @@ export function ProductFormDialog({
       })),
     [sectorNameById, snapshot.lines],
   );
+  const duplicateExternalCode = useMemo(
+    () =>
+      findDuplicateExternalCode(
+        formState.externalCode ?? "",
+        snapshot.products,
+        product?.id ?? null,
+      ),
+    [formState.externalCode, product?.id, snapshot.products],
+  );
+  const isNewProduct = !product;
+  const storeCodeGateBlocked =
+    !isReadOnly &&
+    isNewProduct &&
+    (!normalizeExternalCode(formState.externalCode) || Boolean(duplicateExternalCode));
 
   const recipeSourceOptions = useMemo<RecipeSourceOption[]>(
     () => [
@@ -269,7 +285,7 @@ export function ProductFormDialog({
         .filter((candidate) => candidate.canBeIngredient)
         .map((candidate) => ({
           id: candidate.id,
-          label: `${candidate.code} · ${candidate.name}`,
+          label: `${getProductDisplayCode(candidate)} · ${candidate.name}`,
           sourceType: "produto" as const,
         })),
     ],
@@ -717,6 +733,8 @@ export function ProductFormDialog({
 
     const nextProduct: ProductFormState = {
       ...formState,
+      description: formState.name.trim(),
+      gtin: normalizeGtin(formState.gtin) || undefined,
       preparationStages: normalizeProductPreparationStages(formState.preparationStages),
       salesUnit: formState.unitProfiles.sales.unit,
       productionUnit: formState.unitProfiles.production.unit,
@@ -743,6 +761,8 @@ export function ProductFormDialog({
     const validation = validateProductFormState({
       product: nextProduct,
       availablePackagingUnits,
+      duplicateExternalCode: Boolean(duplicateExternalCode),
+      requireExternalCode: isNewProduct || Boolean(normalizeExternalCode(product?.externalCode)),
     });
     if (validation.error) {
       setInvalidFields(validation.invalidFields);
@@ -947,7 +967,7 @@ export function ProductFormDialog({
           <DialogDescription>
             {isReadOnly
               ? "Consulte dados, engenharia, receita, cronograma e reaproveitamento MPI sem alterar o cadastro."
-              : "Preencha dados, engenharia, receita, cronograma e reaproveitamento MPI no mesmo cadastro."}
+              : "Comece pelo código da loja. O nome completo do produto vira a descrição no ERP; o código da fábrica é gerado automaticamente."}
           </DialogDescription>
         </DialogHeader>
 
@@ -976,9 +996,9 @@ export function ProductFormDialog({
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           <TabsList className="grid w-full grid-cols-4 rounded-xl bg-panel/60 p-1">
             <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
-            <TabsTrigger value="receita">Receita</TabsTrigger>
-            <TabsTrigger value="cronograma">Cronograma</TabsTrigger>
-            <TabsTrigger value="mpi">Produto como MPI</TabsTrigger>
+            <TabsTrigger value="receita" disabled={storeCodeGateBlocked}>Receita</TabsTrigger>
+            <TabsTrigger value="cronograma" disabled={storeCodeGateBlocked}>Cronograma</TabsTrigger>
+            <TabsTrigger value="mpi" disabled={storeCodeGateBlocked}>Produto como MPI</TabsTrigger>
           </TabsList>
 
           <TabsContent value="cadastro">
@@ -987,31 +1007,119 @@ export function ProductFormDialog({
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Dados do Produto</h3>
                   <p className="text-xs text-muted-foreground">
-                    Nome completo, nome reduzido, código da fábrica, código da loja, descrição e vínculo com a linha principal de produção.
+                    Comece pelo código da loja — é o código do ERP do cliente, o que a operação usa.
+                    O código da fábrica é gerado automaticamente.
                   </p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-4">
+                {storeCodeGateBlocked ? (
+                  <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
+                    Informe um código da loja disponível para liberar o restante do cadastro.
+                  </div>
+                ) : null}
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-2 md:col-span-3">
+                    <Label htmlFor="product-external-code">Código da loja *</Label>
+                    <Input
+                      id="product-external-code"
+                      value={formState.externalCode ?? ""}
+                      onChange={(event) => {
+                        const nextCode = event.target.value;
+                        setFormState((current) => ({
+                          ...current,
+                          externalCode: nextCode,
+                        }));
+                        if (invalidFields.includes("externalCode")) {
+                          setInvalidFields((current) =>
+                            current.filter((field) => field !== "externalCode"),
+                          );
+                        }
+                        if (formError) {
+                          setFormError(null);
+                        }
+                      }}
+                      placeholder="Código do ERP / loja"
+                      autoComplete="off"
+                      aria-invalid={
+                        invalidFields.includes("externalCode") || Boolean(duplicateExternalCode)
+                      }
+                      className={cn(
+                        (invalidFields.includes("externalCode") || duplicateExternalCode) &&
+                          "border-danger/60 ring-1 ring-danger/40 focus-visible:ring-danger/50",
+                      )}
+                    />
+                    {duplicateExternalCode ? (
+                      <p className="text-xs text-danger-foreground">
+                        Este código da loja já está cadastrado em{" "}
+                        <strong>{duplicateExternalCode.name}</strong>
+                        {duplicateExternalCode.code ? ` (${duplicateExternalCode.code})` : ""}.
+                        Informe outro código para continuar.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Validado na hora. Se o código já existir, o restante do formulário não
+                        libera.
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="product-gtin">GTIN</Label>
+                    <Input
+                      id="product-gtin"
+                      value={formState.gtin ?? ""}
+                      onChange={(event) =>
+                        setFormState((current) => ({
+                          ...current,
+                          gtin: event.target.value,
+                        }))
+                      }
+                      placeholder="Código de barras"
+                      inputMode="numeric"
+                      disabled={storeCodeGateBlocked}
+                      aria-invalid={invalidFields.includes("gtin")}
+                      className={cn(
+                        invalidFields.includes("gtin") &&
+                          "border-danger/60 ring-1 ring-danger/40 focus-visible:ring-danger/50",
+                      )}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Etiqueta com dígito verificador. 8, 12, 13 ou 14 dígitos.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Código da fábrica</Label>
+                    <Input value={formState.code} disabled className="bg-muted" />
+                  </div>
+                </div>
+                <fieldset disabled={storeCodeGateBlocked} className="grid gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="product-name">Nome completo do produto *</Label>
                     <Input
                       id="product-name"
-                      placeholder="Ex: Pão Francês"
+                      placeholder="Ex: Pão de Fubá 250g"
                       aria-invalid={invalidFields.includes("name")}
                       className={cn(
                         invalidFields.includes("name") &&
                           "border-danger/60 ring-1 ring-danger/40 focus-visible:ring-danger/50",
                       )}
                       value={formState.name}
-                      onChange={(event) =>
-                        setFormState((current) => ({ ...current, name: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        const nextName = event.target.value;
+                        setFormState((current) => ({
+                          ...current,
+                          name: nextName,
+                          description: nextName,
+                        }));
+                      }}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Este nome é a descrição do produto no ERP. Não há campo de descrição separado.
+                    </p>
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="product-short-name">Nome reduzido</Label>
                     <Input
                       id="product-short-name"
-                      placeholder="Ex: Pão Fr."
+                      placeholder="Ex: Pão Fubá 250"
                       value={formState.shortName ?? ""}
                       onChange={(event) =>
                         setFormState((current) => ({
@@ -1021,38 +1129,6 @@ export function ProductFormDialog({
                       }
                     />
                   </div>
-                  <div className="grid gap-2">
-                    <Label>Código da fábrica</Label>
-                    <Input value={formState.code} disabled className="bg-muted" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="product-external-code">Código da loja</Label>
-                    <Input
-                      id="product-external-code"
-                      value={formState.externalCode ?? ""}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          externalCode: event.target.value,
-                        }))
-                      }
-                      placeholder="Código da loja"
-                    />
-                  </div>
-                  <div className="grid gap-2 md:col-span-4">
-                    <Label>Descrição</Label>
-                    <Input
-                      value={formState.description}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          description: event.target.value,
-                        }))
-                      }
-                      placeholder="Descrição do produto"
-                    />
-                  </div>
-                </div>
 
                 <div className="grid gap-4 md:grid-cols-[1fr_auto]">
                   <div className="grid gap-2">
@@ -1319,6 +1395,7 @@ export function ProductFormDialog({
                     </Dialog>
                   </div>
                 </div>
+                </fieldset>
               </section>
 
             </fieldset>
@@ -2592,7 +2669,7 @@ export function ProductFormDialog({
                 {isReadOnly ? "Fechar" : "Cancelar"}
               </Button>
               {!isReadOnly ? (
-                <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting}>
+                <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting || storeCodeGateBlocked}>
                   {product ? "Salvar Alterações" : "Cadastrar Produto"}
                 </Button>
               ) : null}

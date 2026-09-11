@@ -385,6 +385,7 @@ async function loadMasterDataSnapshot(
     id: row.legacy_id ?? row.id,
     code: row.code,
     externalCode: row.external_code ?? undefined,
+    gtin: ((row as { gtin?: string | null }).gtin ?? "").trim() || undefined,
     createdAt: row.created_at ?? undefined,
     updatedAt: row.updated_at ?? undefined,
     name: row.name,

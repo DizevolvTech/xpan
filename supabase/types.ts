@@ -453,6 +453,7 @@ export type Database = {
           expedition_unit: string;
           expedition_to_kg_factor: number;
           is_mpi_ingredient: boolean;
+          gtin: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -492,6 +493,7 @@ export type Database = {
           expedition_unit: string;
           expedition_to_kg_factor?: number;
           is_mpi_ingredient?: boolean;
+          gtin?: string | null;
           created_at?: string;
           updated_at?: string;
         };

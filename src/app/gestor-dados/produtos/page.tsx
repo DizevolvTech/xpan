@@ -17,6 +17,7 @@ import {
   type ProductionProduct,
 } from "@/lib/production-planning";
 import { getProductOperationalStatusLabel } from "@/lib/production-data-utils";
+import { getProductDisplayCode } from "@/lib/product-identity";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
 type ProductRow = ProductionProduct & {
@@ -78,20 +79,27 @@ export default function ProdutosPage() {
     [linesWithActiveSchedule, sectorNameById, snapshot.lines, snapshot.products],
   );
 
-  const filteredProducts = useMemo(
-    () =>
-      productRows.filter(
-        (item) =>
-          item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (item.shortName ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (item.externalCode ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.operationalStatusLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.lineName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.operationalLineName.toLowerCase().includes(searchTerm.toLowerCase()),
-      ),
-    [productRows, searchTerm],
-  );
+  const filteredProducts = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    const gtinDigits = searchTerm.replace(/\D/g, "");
+
+    return productRows.filter((item) => {
+      if (!term) {
+        return true;
+      }
+
+      return (
+        item.name.toLowerCase().includes(term) ||
+        (item.shortName ?? "").toLowerCase().includes(term) ||
+        item.code.toLowerCase().includes(term) ||
+        (item.externalCode ?? "").toLowerCase().includes(term) ||
+        (gtinDigits.length > 0 && (item.gtin ?? "").includes(gtinDigits)) ||
+        item.operationalStatusLabel.toLowerCase().includes(term) ||
+        item.lineName.toLowerCase().includes(term) ||
+        item.operationalLineName.toLowerCase().includes(term)
+      );
+    });
+  }, [productRows, searchTerm]);
 
   const activeProductsCount = productRows.filter((item) => item.active).length;
   const operationalPortfolioCount = productRows.filter(
@@ -108,15 +116,19 @@ export default function ProdutosPage() {
   const columns = [
     {
       key: "code",
-      header: "Códigos",
+      header: "Código",
       render: (item: ProductRow) => (
         <div className="space-y-0.5">
-          <span className="block text-sm font-medium tabular-nums text-foreground">{item.code}</span>
+          <span className="block text-sm font-medium tabular-nums text-foreground">
+            {getProductDisplayCode(item)}
+          </span>
           {item.externalCode ? (
             <span className="block text-[11px] tabular-nums text-muted-foreground/80">
-              loja {item.externalCode}
+              fábrica {item.code}
             </span>
-          ) : null}
+          ) : (
+            <span className="block text-[11px] text-muted-foreground/80">sem código da loja</span>
+          )}
         </div>
       ),
     },

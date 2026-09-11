@@ -1,3 +1,5 @@
+import { normalizeExternalCode } from "@/lib/ingredient-form-logic";
+import { isValidGtin } from "@/lib/product-identity";
 import { formatKgLabel } from "@/lib/utils";
 import {
   defaultProductPreparationStages,
@@ -11,6 +13,8 @@ import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 
 export type ProductValidationField =
   | "name"
+  | "externalCode"
+  | "gtin"
   | "lineId"
   | "preparationStages"
   | "packagingDescription"
@@ -40,6 +44,10 @@ export function getInvalidFieldTarget(field: ProductValidationField): ProductInv
   switch (field) {
     case "name":
       return { tab: "cadastro", id: "product-name" };
+    case "externalCode":
+      return { tab: "cadastro", id: "product-external-code" };
+    case "gtin":
+      return { tab: "cadastro", id: "product-gtin" };
     case "lineId":
       return { tab: "cadastro", id: "product-line" };
     case "packagingDescription":
@@ -122,6 +130,7 @@ export function buildProductFormState(
     id: `product-${Date.now()}`,
     code: `PR-${String(Date.now()).slice(-5)}`,
     externalCode: "",
+    gtin: "",
     name: "",
     shortName: "",
     description: "",
@@ -184,9 +193,29 @@ export function buildProductFormState(
 export function validateProductFormState(options: {
   product: ProductionProduct;
   availablePackagingUnits?: PackagingProfile["unit"][];
+  duplicateExternalCode?: boolean;
+  requireExternalCode?: boolean;
 }) {
   const { product } = options;
   const invalidFields: ProductValidationField[] = [];
+  const requireExternalCode = options.requireExternalCode === true;
+
+  if (requireExternalCode && !normalizeExternalCode(product.externalCode)) {
+    invalidFields.push("externalCode");
+  }
+
+  if (options.duplicateExternalCode) {
+    return {
+      error: "Este código da loja já está cadastrado. Informe outro código para continuar.",
+      invalidFields: invalidFields.includes("externalCode")
+        ? invalidFields
+        : (["externalCode", ...invalidFields] as ProductValidationField[]),
+    } satisfies ProductValidationResult;
+  }
+
+  if (!isValidGtin(product.gtin)) {
+    invalidFields.push("gtin");
+  }
 
   if (!product.name.trim()) {
     invalidFields.push("name");
@@ -201,8 +230,15 @@ export function validateProductFormState(options: {
   }
 
   if (invalidFields.length > 0) {
+    const first = invalidFields[0];
+    const error =
+      first === "externalCode"
+        ? "Informe o código da loja antes de continuar o cadastro."
+        : first === "gtin"
+          ? "Informe um GTIN com 8, 12, 13 ou 14 dígitos, ou deixe o campo vazio."
+          : "Preencha os campos obrigatórios destacados antes de salvar.";
     return {
-      error: "Preencha os campos obrigatórios destacados antes de salvar.",
+      error,
       invalidFields,
     } satisfies ProductValidationResult;
   }

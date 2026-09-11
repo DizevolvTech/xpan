@@ -11,6 +11,7 @@ import type {
   StoreMasterData,
 } from "@/lib/production-planning";
 import { normalizeRecipeStage, normalizeRecipeStageConfig } from "@/lib/production-planning";
+import { normalizeGtin } from "@/lib/product-identity";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   buildDefaultScheduleDayPriorities,
@@ -922,6 +923,7 @@ async function replaceProductPreparationSteps(
 function normalizeProductPayload(input: ProductInput) {
   return {
     external_code: normalizeOptionalCode(input.externalCode),
+    gtin: normalizeOptionalCode(normalizeGtin(input.gtin)),
     name: input.name.trim(),
     short_name: normalizeOptionalText(input.shortName),
     description: input.description.trim(),
@@ -1011,6 +1013,44 @@ function warnMissingRecipeStageConfigColumn() {
   console.warn(
     "[master-data-admin] coluna `recipe_stage_config` ausente em products — produto gravado sem a sequência/modo de preparo por etapa. Aplique a migration 20260725110000_product_recipe_stage_config.",
   );
+}
+
+function isMissingGtinColumn(error: SupabaseError | null | undefined) {
+  return isSupabaseMissingSchemaError(error, ["gtin"]);
+}
+
+function withoutGtin<T extends Record<string, unknown>>(payload: T) {
+  const { gtin: droppedGtin, ...rest } = payload;
+  void droppedGtin;
+  return rest;
+}
+
+function warnMissingGtinColumn() {
+  console.warn(
+    "[master-data-admin] coluna `gtin` ausente em products — produto gravado sem GTIN. Aplique a migration 20260910120000_product_gtin.",
+  );
+}
+
+async function persistProductRow<T extends Record<string, unknown>, R extends { error: SupabaseError | null }>(
+  write: (payload: T) => PromiseLike<R>,
+  payload: T,
+): Promise<R> {
+  let nextPayload = payload;
+  let result = await write(nextPayload);
+
+  if (isMissingRecipeStageConfigColumn(result.error)) {
+    warnMissingRecipeStageConfigColumn();
+    nextPayload = withoutRecipeStageConfig(nextPayload) as T;
+    result = await write(nextPayload);
+  }
+
+  if (isMissingGtinColumn(result.error)) {
+    warnMissingGtinColumn();
+    nextPayload = withoutGtin(nextPayload) as T;
+    result = await write(nextPayload);
+  }
+
+  return result;
 }
 
 function buildScheduleRevisionName(subcategoryName: string, activeScheduleName?: string | null) {
@@ -1449,18 +1489,10 @@ export async function createProduct(input: ProductInput, options: MutationOption
     ...normalizeProductPayload(input),
   };
 
-  let insertResult = await supabase.from("products").insert(insertPayload).select("id").single();
-
-  // O INSERT é atômico: se falhou por falta da coluna `recipe_stage_config`, nenhuma linha
-  // foi criada (o `code` continua livre) e regravar sem a coluna é seguro.
-  if (isMissingRecipeStageConfigColumn(insertResult.error)) {
-    warnMissingRecipeStageConfigColumn();
-    insertResult = await supabase
-      .from("products")
-      .insert(withoutRecipeStageConfig(insertPayload))
-      .select("id")
-      .single();
-  }
+  const insertResult = await persistProductRow(
+    (payload) => supabase.from("products").insert(payload).select("id").single(),
+    insertPayload,
+  );
 
   const product = assertSupabaseResult(insertResult, "Failed to create product");
   await replaceProductRecipeItems(product.id, input.recipe, supabase);
@@ -1500,17 +1532,10 @@ export async function updateProduct(
     updated_at: new Date().toISOString(),
   };
 
-  let result = await supabase.from("products").update(updatePayload).eq("id", productId);
-
-  // UPDATE também é atômico: falhou por falta da coluna ⇒ nada foi alterado. Repete sem ela
-  // para não derrubar o save inteiro do produto num ambiente sem a migration.
-  if (isMissingRecipeStageConfigColumn(result.error)) {
-    warnMissingRecipeStageConfigColumn();
-    result = await supabase
-      .from("products")
-      .update(withoutRecipeStageConfig(updatePayload))
-      .eq("id", productId);
-  }
+  const result = await persistProductRow(
+    (payload) => supabase.from("products").update(payload).eq("id", productId),
+    updatePayload,
+  );
 
   if (result.error) {
     throw new Error(`Failed to update product: ${result.error.message}`);
@@ -1660,18 +1685,10 @@ export async function cloneProduct(
     tenant_id: row.tenant_id,
   };
 
-  let insertResult = await supabase.from("products").insert(clonePayload).select("id").single();
-
-  // Mesma tolerância do create/update: sem a migration, a cópia sai sem a config de etapas
-  // em vez de falhar. O INSERT é atômico, então nada ficou pela metade.
-  if (isMissingRecipeStageConfigColumn(insertResult.error)) {
-    warnMissingRecipeStageConfigColumn();
-    insertResult = await supabase
-      .from("products")
-      .insert(withoutRecipeStageConfig(clonePayload))
-      .select("id")
-      .single();
-  }
+  const insertResult = await persistProductRow(
+    (payload) => supabase.from("products").insert(payload).select("id").single(),
+    clonePayload,
+  );
 
   const cloned = assertSupabaseResult(insertResult, "Failed to clone product");
 

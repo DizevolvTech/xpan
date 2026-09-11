@@ -186,8 +186,65 @@ test("XPAN-11: getInvalidFieldTarget aponta campos de embalagem para a aba Recei
 test("XPAN-11: getInvalidFieldTarget mantém identificação (name/lineId) na aba Cadastro e etapas na Receita", () => {
   assert.deepEqual(getInvalidFieldTarget("name"), { tab: "cadastro", id: "product-name" });
   assert.deepEqual(getInvalidFieldTarget("lineId"), { tab: "cadastro", id: "product-line" });
+  assert.deepEqual(getInvalidFieldTarget("externalCode"), {
+    tab: "cadastro",
+    id: "product-external-code",
+  });
+  assert.deepEqual(getInvalidFieldTarget("gtin"), { tab: "cadastro", id: "product-gtin" });
   assert.deepEqual(getInvalidFieldTarget("preparationStages"), {
     tab: "receita",
     id: "product-preparation-stages",
   });
+});
+
+test("produto novo exige código da loja quando o cadastro pede o código", () => {
+  const validation = validateProductFormState({
+    product: {
+      ...buildBaseProduct(),
+      externalCode: "",
+      name: "Pão de Fubá 250g",
+    },
+    requireExternalCode: true,
+  });
+
+  assert.equal(validation.error, "Informe o código da loja antes de continuar o cadastro.");
+  assert.deepEqual(validation.invalidFields, ["externalCode"]);
+});
+
+test("código da loja duplicado bloqueia o cadastro na hora", () => {
+  const validation = validateProductFormState({
+    product: {
+      ...buildBaseProduct(),
+      externalCode: "PDLCH150",
+    },
+    duplicateExternalCode: true,
+    requireExternalCode: true,
+  });
+
+  assert.equal(
+    validation.error,
+    "Este código da loja já está cadastrado. Informe outro código para continuar.",
+  );
+  assert.deepEqual(validation.invalidFields, ["externalCode"]);
+});
+
+test("GTIN inválido é rejeitado; vazio ou 8/12/13/14 dígitos passam", () => {
+  const invalid = validateProductFormState({
+    product: { ...buildBaseProduct(), gtin: "123" },
+  });
+  assert.equal(
+    invalid.error,
+    "Informe um GTIN com 8, 12, 13 ou 14 dígitos, ou deixe o campo vazio.",
+  );
+  assert.deepEqual(invalid.invalidFields, ["gtin"]);
+
+  const empty = validateProductFormState({
+    product: { ...buildBaseProduct(), gtin: "" },
+  });
+  assert.equal(empty.error, null);
+
+  const ean13 = validateProductFormState({
+    product: { ...buildBaseProduct(), gtin: "7891234567890" },
+  });
+  assert.equal(ean13.error, null);
 });

@@ -306,6 +306,7 @@ export interface ProductionProduct {
   id: string;
   code: string;
   externalCode?: string;
+  gtin?: string;
   createdAt?: string;
   updatedAt?: string;
   name: string;

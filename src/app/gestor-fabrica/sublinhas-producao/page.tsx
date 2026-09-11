@@ -23,6 +23,7 @@ import { PaginatedSection } from "@/components/shared/paginated-section";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
+import { useToast } from "@/components/shared/toast";
 import { ProductFormDialog } from "@/components/production/product-form-dialog";
 import { cn } from "@/lib/utils";
 import {
@@ -391,6 +392,7 @@ function buildDraftDayDiff(
 
 export default function SublinhasProducaoPage() {
   const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
@@ -837,7 +839,9 @@ export default function SublinhasProducaoPage() {
     }
 
     if (nextStatus === "inativo" && !auditNotes.trim()) {
-      setPageError("Descreva o que precisa ser refeito antes de solicitar ajuste desta revisão.");
+      const message = "Descreva o que precisa ser refeito antes de solicitar ajuste desta revisão.";
+      setPageError(message);
+      toast.error(message);
       return;
     }
 
@@ -853,9 +857,9 @@ export default function SublinhasProducaoPage() {
           ),
       );
       if (orphanProduct) {
-        setPageError(
-          `Não é possível aprovar: o produto ${orphanProduct.code} · ${orphanProduct.name} está sem dia de produção na grade. Ajuste o cadastro ou devolva a revisão para ajuste.`,
-        );
+        const message = `Não é possível aprovar: o produto ${orphanProduct.code} · ${orphanProduct.name} está sem dia de produção na grade. Ajuste o cadastro ou devolva a revisão para ajuste.`;
+        setPageError(message);
+        toast.error(message);
         return;
       }
     }
@@ -873,7 +877,9 @@ export default function SublinhasProducaoPage() {
         body: JSON.stringify({
           status: nextStatus,
           auditNotes,
-          dayPrioritiesByItemId: buildDayBoardPriorityPayload(draftDayBoards),
+          ...(nextStatus === "inativo"
+            ? {}
+            : { dayPrioritiesByItemId: buildDayBoardPriorityPayload(draftDayBoards) }),
         }),
       });
 
@@ -903,7 +909,10 @@ export default function SublinhasProducaoPage() {
         setIsDetailsOpen(false);
       }
     } catch (updateError) {
-      setPageError(updateError instanceof Error ? updateError.message : "Falha ao atualizar linha");
+      const message =
+        updateError instanceof Error ? updateError.message : "Falha ao atualizar linha";
+      setPageError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -1161,9 +1170,9 @@ export default function SublinhasProducaoPage() {
             },
           ]}
         />
-        {error || pageError ? (
+        {error ? (
           <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
-            {pageError ?? error}
+            {error}
           </div>
         ) : null}
         <DataTable
@@ -1284,6 +1293,7 @@ export default function SublinhasProducaoPage() {
           if (!open) {
             setSelectedScheduleId(null);
             setAuditNotes("");
+            setPageError(null);
           }
         }}
       >
@@ -1301,6 +1311,12 @@ export default function SublinhasProducaoPage() {
               />
             </DialogTitle>
           </DialogHeader>
+
+          {pageError ? (
+            <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+              {pageError}
+            </div>
+          ) : null}
 
           {selectedSchedule && (
             <div className="space-y-4">
