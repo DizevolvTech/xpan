@@ -1,5 +1,6 @@
 import { normalizeExternalCode } from "@/lib/ingredient-form-logic";
 import { isValidGtin } from "@/lib/product-identity";
+import { emptyLabTest } from "@/lib/lab-test";
 import { formatKgLabel } from "@/lib/utils";
 import {
   defaultProductPreparationStages,
@@ -100,6 +101,7 @@ export function buildProductFormState(
       // aqui também garante que produto legado (sem config) entre no form como array vazio
       // — que é a ordem canônica do enum, o comportamento de hoje.
       recipeStageConfig: normalizeRecipeStageConfig(product.recipeStageConfig),
+      labTest: product.labTest ? { ...product.labTest } : emptyLabTest(),
       preparationStages: normalizeProductPreparationStages(product.preparationStages),
       unitProfiles: {
         sales: { ...product.unitProfiles.sales },
@@ -163,6 +165,7 @@ export function buildProductFormState(
     // Produto novo nasce SEM sequência configurada: as etapas aparecem na ordem canônica do
     // enum e sem modo de preparo por bloco (só `preparationMode`, a instrução geral).
     recipeStageConfig: [],
+    labTest: emptyLabTest(),
     preparationStages: [...defaultProductPreparationStages],
     preparationMode: "",
     breakPercent: 0,

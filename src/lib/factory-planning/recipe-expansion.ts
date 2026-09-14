@@ -6,6 +6,7 @@ import type {
   RecipeIngredientReference,
 } from "@/lib/production-planning";
 import { getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData, resolveProductRecipeYieldKg } from "@/lib/production-data-utils";
+import { computeLabTest, round6 } from "@/lib/lab-test";
 import { intermediatePreparationStages } from "@/lib/production-workflow";
 
 import type { PlannedOrderItem } from "./types";
@@ -445,5 +446,10 @@ export function scaleRecipeQuantity(
     return round3(quantity);
   }
 
-  return round3((outputKg / baseOutputKg) * quantity);
+  const scaled = (outputKg / baseOutputKg) * quantity;
+  const lab = computeLabTest({
+    recipeTotalKg: totals.totalIngredientsKg,
+    labTest: product.labTest,
+  });
+  return lab?.complete ? round6(scaled) : round3(scaled);
 }

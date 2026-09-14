@@ -301,6 +301,45 @@ test("createProduct sobrevive a banco sem a coluna recipe_stage_config", async (
   assert.match(warnings[0], /recipe_stage_config/);
 });
 
+test("createProduct grava lab_test da ficha amarela", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { subcategories: [SUBCATEGORY_ROW], products: [] },
+  });
+  const labTest = {
+    rawUnitWeightKg: null,
+    rawDoughKg: 78.878,
+    bakedKg: 73.525,
+    leftoverBakedKg: 0,
+    unitCount: 173,
+    labelWeightKg: 0.4,
+  };
+
+  await createProduct(buildProductInput({ labTest, breakPercent: 6.79 }), { supabase: client });
+
+  const [insert] = findWrite(writes, "products", "insert");
+  assert.deepEqual(insert.payload?.lab_test, labTest);
+  assert.equal(insert.payload?.break_percent, 6.79);
+});
+
+test("createProduct sobrevive a banco sem a coluna lab_test", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { subcategories: [SUBCATEGORY_ROW], products: [] },
+    missingColumns: ["lab_test"],
+  });
+
+  const { result, warnings } = await withCapturedWarnings(() =>
+    createProduct(buildProductInput({ labTest: { bakedKg: 73.525, unitCount: 173 } as ProductInput["labTest"] }), {
+      supabase: client,
+    }),
+  );
+
+  assert.equal(result.code, "PR-00001");
+  const inserts = findWrite(writes, "products", "insert");
+  assert.equal("lab_test" in (inserts[0].payload ?? {}), false);
+  assert.equal(inserts[0].payload?.name, "Cuca de maçã");
+  assert.match(warnings[0], /lab_test/);
+});
+
 test("updateProduct grava recipe_stage_config", async () => {
   const { client, writes } = createFakeSupabase({
     tables: { subcategories: [SUBCATEGORY_ROW], products: [buildProductRow()] },

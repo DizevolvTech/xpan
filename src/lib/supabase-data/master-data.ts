@@ -24,6 +24,7 @@ import type {
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
 import { normalizeRecipeStage, normalizeRecipeStageConfig } from "@/lib/production-planning";
+import { normalizeLabTest } from "@/lib/lab-test";
 import { normalizeScheduleDayPriorities } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 import {
@@ -367,6 +368,10 @@ async function loadMasterDataSnapshot(
       isMain: Boolean((row as Record<string, unknown>).is_main),
       // Etapa/função da linha; ausente (base sem a migration) = massa.
       stage: normalizeRecipeStage((row as Record<string, unknown>).stage),
+      countsTowardMixer:
+        typeof (row as Record<string, unknown>).counts_toward_mixer === "boolean"
+          ? Boolean((row as Record<string, unknown>).counts_toward_mixer)
+          : undefined,
     });
     acc.set(key, current);
     return acc;
@@ -439,6 +444,7 @@ async function loadMasterDataSnapshot(
     breakPercent: Number(row.break_percent),
     breakStage: row.break_stage,
     breakComment: row.break_comment,
+    labTest: normalizeLabTest((row as Record<string, unknown>).lab_test),
     canBeIngredient: row.can_be_ingredient,
     ingredientProfile: coerceIngredientProfile(row.ingredient_profile),
     weight: row.weight_label,

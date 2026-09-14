@@ -96,6 +96,19 @@ test("produto novo nasce com recipeStageConfig vazio (ordem canônica do enum)",
   assert.equal(formState.preparationMode, "");
 });
 
+test("produto novo nasce com teste de laboratório vazio (quebra não se digita)", () => {
+  const formState = buildProductFormState(baseLines);
+
+  assert.deepEqual(formState.labTest, {
+    rawUnitWeightKg: null,
+    rawDoughKg: null,
+    bakedKg: null,
+    leftoverBakedKg: null,
+    unitCount: null,
+    labelWeightKg: null,
+  });
+});
+
 // Retrocompatibilidade: produto legado (gravado antes da migration, sem a chave) abre
 // exatamente como hoje — nenhuma etapa configurada, nenhuma instrução por bloco.
 test("produto legado sem recipeStageConfig abre no form com config vazia", () => {

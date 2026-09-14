@@ -299,3 +299,23 @@ test("receita legada (tudo em massa) mantém exatamente o resultado de antes", (
   assert.equal(semEtapa, 500);
   assert.equal(comMassaExplicita, 500);
 });
+
+test("S1.5: óleo na mesa / chocolate no fim não entram na carga da masseira", () => {
+  const capacity = deriveCapacityFromProductRecipe({
+    recipe: [
+      { unit: "Kg", quantity: 8, isMain: true, sourceType: "ingrediente", sourceId: "farinha", stage: "massa" },
+      {
+        unit: "Kg",
+        quantity: 40,
+        sourceType: "ingrediente",
+        sourceId: "farinha",
+        stage: "acabamento",
+        countsTowardMixer: false,
+      },
+    ],
+    recipeYieldUnits: 500,
+    mainIngredientLimitKg: 10,
+  });
+
+  assert.equal(capacity, 625);
+});

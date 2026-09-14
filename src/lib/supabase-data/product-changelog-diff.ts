@@ -33,6 +33,7 @@ const AUDITED_FIELDS: Array<{ field: string; label: string }> = [
   { field: "allows_storage", label: "Permite estoque" },
   { field: "preparation_mode", label: "Modo de preparo" },
   { field: "break_percent", label: "Quebra (%)" },
+  { field: "lab_test", label: "Teste de laboratório" },
   { field: "break_stage", label: "Etapa da quebra" },
   { field: "can_be_ingredient", label: "Pode ser ingrediente (MPI)" },
   { field: "is_sold_loose", label: "Vendido a granel" },
@@ -61,6 +62,13 @@ function formatValue(value: unknown): string {
       return trimmed;
     }
     return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(Number(value));
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "—";
+    }
   }
   return String(value);
 }
