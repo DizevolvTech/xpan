@@ -866,11 +866,13 @@ async function replaceProductRecipeItems(
     return;
   }
 
-  let pendingRows = rows;
+  type RecipeItemRow = (typeof rows)[number];
+  let pendingRows: Array<Omit<RecipeItemRow, "counts_toward_mixer"> | Omit<RecipeItemRow, "counts_toward_mixer" | "stage">> =
+    rows;
   let pendingError = insertResult.error;
 
   if (isSupabaseMissingSchemaError(pendingError, ["counts_toward_mixer"])) {
-    pendingRows = pendingRows.map((row) => {
+    pendingRows = rows.map((row) => {
       const { counts_toward_mixer: droppedMixer, ...rest } = row;
       void droppedMixer;
       return rest;
@@ -892,7 +894,7 @@ async function replaceProductRecipeItems(
   // Mesmo critério defensivo de `release-recipe-snapshot.ts`.
   if (isSupabaseMissingSchemaError(pendingError, ["product_recipe_items"])) {
     const rowsWithoutStage = pendingRows.map((row) => {
-      const { stage, counts_toward_mixer: droppedMixer, ...rest } = row as typeof row & {
+      const { stage, counts_toward_mixer: droppedMixer, ...rest } = row as RecipeItemRow & {
         counts_toward_mixer?: boolean;
       };
       void stage;
