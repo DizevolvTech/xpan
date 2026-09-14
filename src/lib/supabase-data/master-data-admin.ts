@@ -10,8 +10,9 @@ import type {
   RecipeIngredientReference,
   StoreMasterData,
 } from "@/lib/production-planning";
-import { normalizeRecipeStage, normalizeRecipeStageConfig } from "@/lib/production-planning";
+import { normalizeRecipeStage, normalizeRecipeStageConfig, defaultCountsTowardMixer } from "@/lib/production-planning";
 import { normalizeGtin } from "@/lib/product-identity";
+import { normalizeLabTest } from "@/lib/lab-test";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   buildDefaultScheduleDayPriorities,
@@ -856,6 +857,7 @@ async function replaceProductRecipeItems(
       is_main: item.isMain ?? false,
       // Etapa/função da linha; `sort_order` ordena DENTRO da etapa.
       stage: normalizeRecipeStage(item.stage),
+      counts_toward_mixer: item.countsTowardMixer ?? defaultCountsTowardMixer(item.stage),
     })),
   );
 
@@ -864,15 +866,37 @@ async function replaceProductRecipeItems(
     return;
   }
 
+  let pendingRows = rows;
+  let pendingError = insertResult.error;
+
+  if (isSupabaseMissingSchemaError(pendingError, ["counts_toward_mixer"])) {
+    pendingRows = pendingRows.map((row) => {
+      const { counts_toward_mixer: droppedMixer, ...rest } = row;
+      void droppedMixer;
+      return rest;
+    });
+    const mixerRetry = await supabase.from("product_recipe_items").insert(pendingRows);
+    if (!mixerRetry.error) {
+      console.warn(
+        "[master-data-admin] coluna `counts_toward_mixer` ausente em product_recipe_items — receita gravada sem a flag da masseira. Aplique a migration 20260914120000_product_lab_test.",
+      );
+      return;
+    }
+    pendingError = mixerRetry.error;
+  }
+
   // A gravação é DELETE + INSERT e o supabase-js não tem transação: se o INSERT falhar
   // porque a coluna `stage` ainda não existe (ambiente sem a migration 20260724191500), a
   // receita já foi APAGADA e seria perdida. Nesse caso específico regravamos sem a coluna
   // nova — a etapa se perde (todo mundo volta ao default `massa`), mas a receita sobrevive.
   // Mesmo critério defensivo de `release-recipe-snapshot.ts`.
-  if (isSupabaseMissingSchemaError(insertResult.error, ["product_recipe_items"])) {
-    const rowsWithoutStage = rows.map((row) => {
-      const { stage, ...rest } = row;
+  if (isSupabaseMissingSchemaError(pendingError, ["product_recipe_items"])) {
+    const rowsWithoutStage = pendingRows.map((row) => {
+      const { stage, counts_toward_mixer: droppedMixer, ...rest } = row as typeof row & {
+        counts_toward_mixer?: boolean;
+      };
       void stage;
+      void droppedMixer;
       return rest;
     });
     const retryResult = await supabase.from("product_recipe_items").insert(rowsWithoutStage);
@@ -885,7 +909,7 @@ async function replaceProductRecipeItems(
     throw new Error(`Failed to save product recipe: ${retryResult.error.message}`);
   }
 
-  throw new Error(`Failed to save product recipe: ${insertResult.error.message}`);
+  throw new Error(`Failed to save product recipe: ${pendingError.message}`);
 }
 
 async function replaceProductPreparationSteps(
@@ -963,6 +987,7 @@ function normalizeProductPayload(input: ProductInput) {
     break_percent: input.breakPercent,
     break_stage: input.breakStage,
     break_comment: input.breakComment.trim(),
+    lab_test: normalizeLabTest(input.labTest) ?? null,
     can_be_ingredient: input.canBeIngredient,
     ingredient_profile: input.canBeIngredient
       ? {
@@ -1031,6 +1056,22 @@ function warnMissingGtinColumn() {
   );
 }
 
+function isMissingLabTestColumn(error: SupabaseError | null | undefined) {
+  return isSupabaseMissingSchemaError(error, ["lab_test"]);
+}
+
+function withoutLabTest<T extends Record<string, unknown>>(payload: T) {
+  const { lab_test: droppedLabTest, ...rest } = payload;
+  void droppedLabTest;
+  return rest;
+}
+
+function warnMissingLabTestColumn() {
+  console.warn(
+    "[master-data-admin] coluna `lab_test` ausente em products — produto gravado sem o teste de laboratório. Aplique a migration 20260914120000_product_lab_test.",
+  );
+}
+
 async function persistProductRow<T extends Record<string, unknown>, R extends { error: SupabaseError | null }>(
   write: (payload: T) => PromiseLike<R>,
   payload: T,
@@ -1047,6 +1088,12 @@ async function persistProductRow<T extends Record<string, unknown>, R extends { 
   if (isMissingGtinColumn(result.error)) {
     warnMissingGtinColumn();
     nextPayload = withoutGtin(nextPayload) as T;
+    result = await write(nextPayload);
+  }
+
+  if (isMissingLabTestColumn(result.error)) {
+    warnMissingLabTestColumn();
+    nextPayload = withoutLabTest(nextPayload) as T;
     result = await write(nextPayload);
   }
 
@@ -1673,6 +1720,7 @@ export async function cloneProduct(
     break_percent: row.break_percent,
     break_stage: row.break_stage,
     break_comment: row.break_comment,
+    lab_test: normalizeLabTest((row as Record<string, unknown>).lab_test),
     can_be_ingredient: row.can_be_ingredient,
     ingredient_profile: row.ingredient_profile,
     is_mpi_ingredient: row.is_mpi_ingredient,
@@ -1714,6 +1762,9 @@ export async function cloneProduct(
       // Etapa da linha + observação (esta última o clone perdia silenciosamente).
       stage: normalizeRecipeStage((item as Record<string, unknown>).stage),
       observation: (item as Record<string, unknown>).observation ?? "",
+      counts_toward_mixer:
+        (item as Record<string, unknown>).counts_toward_mixer ??
+        defaultCountsTowardMixer(normalizeRecipeStage((item as Record<string, unknown>).stage)),
       tenant_id: item.tenant_id,
     }));
     const insertRecipeResult = await supabase.from("product_recipe_items").insert(clonedRecipeItems);

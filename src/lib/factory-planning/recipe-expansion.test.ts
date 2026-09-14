@@ -104,6 +104,35 @@ void test("scaleRecipeQuantity escala linearmente com o output", () => {
   assert.equal(molhoPara2kg, 0.8);
 });
 
+void test("scaleRecipeQuantity com teste de laboratório usa 6 casas (unitário × unidades)", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const pizza = {
+    ...makePizzaProduct(),
+    recipe: [
+      {
+        id: "ri-farinha",
+        sourceType: "ingrediente" as const,
+        sourceId: "farinha",
+        label: "Farinha",
+        quantity: 12.345678,
+        unit: "Kg" as const,
+      },
+    ],
+    labTest: {
+      rawUnitWeightKg: null,
+      rawDoughKg: null,
+      bakedKg: 10,
+      leftoverBakedKg: null,
+      unitCount: 150,
+      labelWeightKg: null,
+    },
+  } as ProductionProduct;
+
+  // 100 unidades / 150 do teste × 12,345678 kg = 8,230452 kg
+  const scaled = scaleRecipeQuantity(100 * (10 / 150), pizza, [farinha], [pizza], 12.345678);
+  assert.equal(scaled, 8.230452);
+});
+
 void test("scaleRecipeQuantity com baseOutputKg=0 retorna a quantidade nominal (não divide por zero)", () => {
   // Produto sem receita → totalIngredientsKg = 0 → outputAfterBreakKg = 0 → fallback.
   const produtoSemReceita = { ...makePizzaProduct(), recipe: [] } as ProductionProduct;

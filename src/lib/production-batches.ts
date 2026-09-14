@@ -1,5 +1,5 @@
 import type { ProductionItemStatus } from "@/lib/factory-planning/types";
-import { getRecipeStageVessel, type RecipeStage } from "@/lib/production-planning";
+import { getRecipeStageVessel, recipeItemCountsTowardMixer, type RecipeStage } from "@/lib/production-planning";
 
 export interface BatchPlan {
   batchCount: number;
@@ -141,6 +141,7 @@ export function deriveCapacityFromProductRecipe(input: {
     sourceType?: string;
     sourceId?: string;
     stage?: RecipeStage;
+    countsTowardMixer?: boolean;
   }>;
   recipeYieldUnits: number;
   mainIngredientLimitKg: number | null | undefined;
@@ -174,6 +175,9 @@ export function deriveCapacityFromProductRecipe(input: {
     // Linhas em outra unidade ficam de fora: sem conversão automática, para não inventar
     // número (mesma regra do principal fora de Kg).
     if (item.unit !== "Kg") {
+      continue;
+    }
+    if (!recipeItemCountsTowardMixer(item)) {
       continue;
     }
     const isSameSource =

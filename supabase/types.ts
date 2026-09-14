@@ -454,6 +454,7 @@ export type Database = {
           expedition_to_kg_factor: number;
           is_mpi_ingredient: boolean;
           gtin: string | null;
+          lab_test: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -494,6 +495,7 @@ export type Database = {
           expedition_to_kg_factor?: number;
           is_mpi_ingredient?: boolean;
           gtin?: string | null;
+          lab_test?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -511,6 +513,7 @@ export type Database = {
           quantity: number;
           unit: string;
           sort_order: number;
+          counts_toward_mixer: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -525,6 +528,7 @@ export type Database = {
           quantity: number;
           unit: string;
           sort_order?: number;
+          counts_toward_mixer?: boolean;
           created_at?: string;
           updated_at?: string;
         };

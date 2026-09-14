@@ -140,6 +140,23 @@ export function getRecipeStageVessel(stage: RecipeStage | undefined): string {
   return recipeStageVessels[normalizeRecipeStage(stage)];
 }
 
+/** Etapas que acontecem fora da masseira (mesa, finalização, montagem). */
+export const nonMixerRecipeStages: RecipeStage[] = ["cobertura", "acabamento", "montagem"];
+
+export function defaultCountsTowardMixer(stage: RecipeStage | undefined): boolean {
+  return !nonMixerRecipeStages.includes(normalizeRecipeStage(stage));
+}
+
+export function recipeItemCountsTowardMixer(item: {
+  stage?: RecipeStage;
+  countsTowardMixer?: boolean;
+}): boolean {
+  if (typeof item.countsTowardMixer === "boolean") {
+    return item.countsTowardMixer;
+  }
+  return defaultCountsTowardMixer(item.stage);
+}
+
 /**
  * Configuração de uma etapa na ficha do produto: a POSIÇÃO dela (índice no array) e o modo de
  * preparo daquele bloco. Ver migration `20260725110000_product_recipe_stage_config`.
@@ -228,6 +245,31 @@ export interface RecipeIngredientReference {
   isMain?: boolean;
   /** Etapa/função desta linha no produto. Ausente = `massa` (receita legada). */
   stage?: RecipeStage;
+  /**
+   * Se a linha entra na carga da masseira. Ausente = default da etapa
+   * (`esponja`/`massa`/`recheio` entram; cobertura/acabamento/montagem não).
+   * Óleo na mesa e chocolate no fim do panetone ficam de fora do limite físico.
+   */
+  countsTowardMixer?: boolean;
+}
+
+/**
+ * Medições do teste de laboratório (ficha amarela). O usuário lança pesos; o sistema
+ * deriva quebra, rendimento e kg da unidade assada. Ver `src/lib/lab-test.ts`.
+ */
+export interface ProductLabTest {
+  /** Peso de um bloco/peça cru, em kg. Opcional. */
+  rawUnitWeightKg: number | null;
+  /** Massa crua medida na balança (kg). Null = usar a soma da receita. */
+  rawDoughKg: number | null;
+  /** Kg assados medidos. */
+  bakedKg: number | null;
+  /** Sobra assada (kg) que não virou unidade. */
+  leftoverBakedKg: number | null;
+  /** Nº de unidades apuradas no teste. Adriano: sempre lançar unidades. */
+  unitCount: number | null;
+  /** Peso da etiqueta / Inmetro (kg). NÃO entra no motor nem na quebra. */
+  labelWeightKg: number | null;
 }
 
 export interface ProductionIngredient {
@@ -342,6 +384,8 @@ export interface ProductionProduct {
   breakPercent: number;
   breakStage: BreakStage;
   breakComment: string;
+  /** Teste de laboratório (ficha amarela). Ausente = produto legado, quebra digitada. */
+  labTest?: ProductLabTest | null;
   canBeIngredient: boolean;
   ingredientProfile?: IngredientProfileMirror;
   weight: string;

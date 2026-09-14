@@ -90,3 +90,13 @@ test("XPAN-6.3: changeAffectsCronograma — FALSE quando muda só receita/dados 
 test("XPAN-6.3: changeAffectsCronograma — lista vazia retorna false", () => {
   assert.equal(changeAffectsCronograma([]), false);
 });
+
+test("diffProductFields — lab_test serializa o JSON do teste", () => {
+  const changes = diffProductFields(
+    { lab_test: { bakedKg: 70, unitCount: 100 } },
+    { lab_test: { bakedKg: 73.525, unitCount: 173 } },
+  );
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0]?.field, "lab_test");
+  assert.match(changes[0]?.to ?? "", /73.525/);
+});

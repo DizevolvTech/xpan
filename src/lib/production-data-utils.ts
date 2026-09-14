@@ -10,6 +10,7 @@ import type {
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { isMassOrVolumeUnit, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { productionWeekDays, sortProductionDays } from "@/lib/production-planning";
+import { computeLabTest } from "@/lib/lab-test";
 
 export function getLinesBySectorFromData(
   sectorId: string,
@@ -407,14 +408,19 @@ export function getProductRecipeTotalsFromData(
       )
       .toFixed(3),
   );
-  const outputAfterBreakKg = Number((totalIngredientsKg * (1 - product.breakPercent / 100)).toFixed(3));
+  const lab = computeLabTest({ recipeTotalKg: totalIngredientsKg, labTest: product.labTest });
+  const outputAfterBreakKg = lab?.complete
+    ? Number(lab.effectiveBakedKg.toFixed(6))
+    : Number((totalIngredientsKg * (1 - product.breakPercent / 100)).toFixed(3));
   const salesUnit = product.unitProfiles.sales.unit;
   const unitWeightKg =
     salesUnit === "Kg" || salesUnit === "L"
       ? 1
-      : product.unitProfiles.sales.weightKg > 0
-        ? product.unitProfiles.sales.weightKg
-        : 1;
+      : lab?.complete && lab.bakedUnitKg > 0
+        ? lab.bakedUnitKg
+        : product.unitProfiles.sales.weightKg > 0
+          ? product.unitProfiles.sales.weightKg
+          : 1;
   const finalOutputQuantity =
     salesUnit === "Kg" || salesUnit === "L"
       ? Number(outputAfterBreakKg.toFixed(3))

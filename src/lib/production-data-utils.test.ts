@@ -546,3 +546,42 @@ test("reports invalid weekday keys without throwing", () => {
   assert.deepEqual(days, ["segunda"]);
   assert.deepEqual(invalidKeys.sort(), ["foo", "sunday"]);
 });
+
+test("S1: totais da receita usam assado efetivo e unidade assada do teste, não a etiqueta", () => {
+  const totals = getProductRecipeTotalsFromData(
+    {
+      ...baseProduct,
+      unitProfiles: {
+        sales: { unit: "Un", description: "Unidade", weightKg: 0.25 },
+        production: { unit: "Un", description: "Produção", weightKg: 0.25 },
+        expedition: { unit: "Caixa", description: "Caixa", weightKg: 1 },
+      },
+      salesToKgFactor: 0.25,
+      recipe: [
+        {
+          id: "recipe-massa",
+          sourceType: "ingrediente",
+          sourceId: "missing",
+          label: "Massa",
+          quantity: 45,
+          unit: "Kg",
+        },
+      ],
+      labTest: {
+        rawUnitWeightKg: null,
+        rawDoughKg: null,
+        bakedKg: 41.611,
+        leftoverBakedKg: null,
+        unitCount: 150,
+        labelWeightKg: 0.25,
+      },
+    },
+    [],
+    [],
+  );
+
+  assert.equal(totals.totalIngredientsKg, 45);
+  assert.equal(totals.outputAfterBreakKg, 41.611);
+  assert.equal(Number(totals.fractionUnitWeightKg.toFixed(6)), 0.277407);
+  assert.equal(Math.round(totals.finalFractionsQuantityPrecise), 150);
+});

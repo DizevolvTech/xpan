@@ -180,6 +180,19 @@ test("recipe_stage_config vira recipeStageConfig preservando a ordem da ficha", 
   assert.equal(product.preparationMode, "Instrução geral do produto.");
 });
 
+test("lab_test vira labTest no snapshot", async () => {
+  const labTest = {
+    rawUnitWeightKg: null,
+    rawDoughKg: 78.878,
+    bakedKg: 73.525,
+    leftoverBakedKg: 0,
+    unitCount: 173,
+    labelWeightKg: 0.4,
+  };
+  const product = await loadProduct(buildTables({ lab_test: labTest }, []));
+  assert.deepEqual(product.labTest, labTest);
+});
+
 // RETROCOMPATIBILIDADE: base sem a migration 20260725110000 (coluna ausente no row) + receita
 // toda em `massa` tem de se comportar EXATAMENTE como hoje.
 test("produto sem a coluna recipe_stage_config se comporta como hoje", async () => {

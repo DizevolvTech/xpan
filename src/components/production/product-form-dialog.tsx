@@ -32,13 +32,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   defaultRecipeStage,
+  defaultCountsTowardMixer,
   hierarchyLabels,
   productionWeekDays,
+  recipeItemCountsTowardMixer,
   recipeStageLabels,
   recipeStages,
   type BreakStage,
   type IngredientCompositionItem,
   type PackagingProfile,
+  type ProductLabTest,
   type ProductUnitProfile,
   type ProductionLine,
   type ProductionProduct,
@@ -65,7 +68,15 @@ import {
 } from "@/lib/operational-units";
 import { findDuplicateExternalCode, normalizeExternalCode } from "@/lib/ingredient-form-logic";
 import { getProductDisplayCode, normalizeGtin } from "@/lib/product-identity";
-import { getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import { getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
+import {
+  applyLabTestToProduct,
+  bakerPercentLegalHint,
+  computeLabTest,
+  computeRecipeBakerPercents,
+  emptyLabTest,
+  ingredientKgPerFinishedUnit,
+} from "@/lib/lab-test";
 import { normalizeSaleLeadDays } from "@/lib/order-planning";
 import { deriveCapacityFromProductRecipe, planBatches } from "@/lib/production-batches";
 import {
@@ -112,6 +123,14 @@ type RecipeDraftState = {
 };
 
 const emptyRecipeDraft: RecipeDraftState = { sourceId: "", quantity: "", unit: "Kg" };
+
+function readOptionalNumber(value: string): number | null {
+  if (value.trim() === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
 
 type ProductFormDialogProps = {
   open: boolean;
@@ -370,6 +389,40 @@ export function ProductFormDialog({
     () => Math.max(0, Number((100 - formState.breakPercent).toFixed(3))),
     [formState.breakPercent],
   );
+  const labComputation = useMemo(
+    () =>
+      computeLabTest({
+        recipeTotalKg: recipeTotals.totalIngredientsKg,
+        labTest: formState.labTest ?? emptyLabTest(),
+      }),
+    [formState.labTest, recipeTotals.totalIngredientsKg],
+  );
+  const recipeLineMetrics = useMemo(() => {
+    const ingredientsById = new Map(snapshot.ingredients.map((ingredient) => [ingredient.id, ingredient]));
+    const productsById = new Map(snapshot.products.map((entry) => [entry.id, entry]));
+    const rows = formState.recipe.map((item) => ({
+      id: item.id,
+      kg: getRecipeReferenceWeightKgFromData(item, ingredientsById, productsById),
+      isMain: item.isMain,
+      sourceType: item.sourceType,
+      sourceId: item.sourceId,
+      label: item.label,
+    }));
+    const percents = computeRecipeBakerPercents(rows);
+    const unitCount = labComputation?.complete ? labComputation.unitCount : 0;
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          kg: row.kg,
+          overMain: percents.get(row.id)?.overMain ?? null,
+          overTotal: percents.get(row.id)?.overTotal ?? null,
+          kgPerUnit: ingredientKgPerFinishedUnit(row.kg, unitCount),
+          legalHint: bakerPercentLegalHint(row.label, percents.get(row.id)?.overMain ?? null),
+        },
+      ]),
+    );
+  }, [formState.recipe, labComputation, snapshot.ingredients, snapshot.products]);
 
   // 2.4-F: prévia de como o arredondamento por batida se comporta para a base
   // econômica informada. Reaproveita planBatches() (mesma matemática da OP).
@@ -605,6 +658,7 @@ export function ProductFormDialog({
         quantity,
         unit: draft.unit,
         stage,
+        countsTowardMixer: defaultCountsTowardMixer(stage),
       }),
     }));
     clearRecipeDraft(stage);
@@ -619,7 +673,7 @@ export function ProductFormDialog({
 
   function updateRecipeItem(
     recipeId: string,
-    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit">>,
+    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit" | "countsTowardMixer">>,
   ) {
     setFormState((current) => ({
       ...current,
@@ -629,6 +683,8 @@ export function ProductFormDialog({
               ...item,
               quantity: patch.quantity ?? item.quantity,
               unit: patch.unit ?? item.unit,
+              countsTowardMixer:
+                patch.countsTowardMixer ?? item.countsTowardMixer ?? defaultCountsTowardMixer(item.stage),
               stage: item.stage ?? defaultRecipeStage,
             }
           : item,
@@ -640,7 +696,21 @@ export function ProductFormDialog({
   function changeRecipeItemStage(recipeId: string, stage: RecipeStage) {
     setFormState((current) => ({
       ...current,
-      recipe: moveRecipeItemToStage(current.recipe, recipeId, stage),
+      recipe: moveRecipeItemToStage(current.recipe, recipeId, stage).map((item) =>
+        item.id === recipeId
+          ? { ...item, countsTowardMixer: defaultCountsTowardMixer(stage) }
+          : item,
+      ),
+    }));
+  }
+
+  function updateLabTest(patch: Partial<ProductLabTest>) {
+    setFormState((current) => ({
+      ...current,
+      labTest: {
+        ...(current.labTest ?? emptyLabTest()),
+        ...patch,
+      },
     }));
   }
 
@@ -716,12 +786,19 @@ export function ProductFormDialog({
             : availablePackagingUnits[0],
         };
 
+    const withLab = applyLabTestToProduct(
+      {
+        ...formState,
+        packagingProfile: normalizedPackagingProfile,
+      },
+      recipeTotals.totalIngredientsKg,
+    );
     const salesWeight =
-      formState.unitProfiles.sales.unit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
+      withLab.unitProfiles.sales.unit === "Kg" ? 1 : withLab.unitProfiles.sales.weightKg;
     const expeditionWeight =
-      formState.unitProfiles.expedition.unit === "Kg"
+      withLab.unitProfiles.expedition.unit === "Kg"
         ? 1
-        : formState.unitProfiles.expedition.weightKg;
+        : withLab.unitProfiles.expedition.weightKg;
     const normalizedQuantityPerPackage = formState.isSoldLoose
       ? 0
       : calculateQuantityPerPackage(
@@ -732,20 +809,20 @@ export function ProductFormDialog({
         );
 
     const nextProduct: ProductFormState = {
-      ...formState,
-      description: formState.name.trim(),
-      gtin: normalizeGtin(formState.gtin) || undefined,
-      preparationStages: normalizeProductPreparationStages(formState.preparationStages),
-      salesUnit: formState.unitProfiles.sales.unit,
-      productionUnit: formState.unitProfiles.production.unit,
-      expeditionUnit: formState.unitProfiles.expedition.unit,
+      ...withLab,
+      description: withLab.name.trim(),
+      gtin: normalizeGtin(withLab.gtin) || undefined,
+      preparationStages: normalizeProductPreparationStages(withLab.preparationStages),
+      salesUnit: withLab.unitProfiles.sales.unit,
+      productionUnit: withLab.unitProfiles.production.unit,
+      expeditionUnit: withLab.unitProfiles.expedition.unit,
       salesToKgFactor: salesWeight,
       expeditionToKgFactor: expeditionWeight,
       weight: formatKgLabel(salesWeight, {
         minimumFractionDigits: 3,
         maximumFractionDigits: 3,
       }),
-      isMpiIngredient: formState.canBeIngredient,
+      isMpiIngredient: withLab.canBeIngredient,
       packagingProfile: normalizedPackagingProfile
         ? {
             ...normalizedPackagingProfile,
@@ -1457,8 +1534,9 @@ export function ProductFormDialog({
                     Unidades de Medida e Conversões
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Kg é a base universal da engenharia. Defina embalagem, venda, produção e
-                    expedição no mesmo quadro, com tipo, descrição e peso padrão próprios.
+                    Produção pensa em unidade, expedição em embalagem, o pedido usa o que a
+                    loja compra. O sistema guarda kg por unidade. O peso da etiqueta (Inmetro)
+                    fica no teste de laboratório — não é o peso de produção.
                   </p>
                 </div>
 
@@ -1562,23 +1640,16 @@ export function ProductFormDialog({
                     </div>
                     {(
                       [
-                        ["sales", "Venda"],
-                        ["production", "Produção"],
-                        ["expedition", "Expedição"],
+                        ["sales", "o que a loja compra"],
+                        ["production", "unidade de produção"],
+                        ["expedition", "embalagem de expedição"],
                       ] as const
-                    ).map(([scope, title]) => (
+                    ).map(([scope, hint]) => (
                       <div
                         key={`${scope}-description`}
-                        className="border-r border-border/70 px-3 py-3 last:border-r-0"
+                        className="border-r border-border/70 px-3 py-3 text-xs text-muted-foreground last:border-r-0"
                       >
-                        <Input
-                          aria-label={`Descrição de ${title}`}
-                          value={formState.unitProfiles[scope].description}
-                          onChange={(event) =>
-                            updateUnitProfile(scope, { description: event.target.value })
-                          }
-                          placeholder={`Descrição de ${title.toLowerCase()}`}
-                        />
+                        {hint}
                       </div>
                     ))}
                   </div>
@@ -1624,6 +1695,10 @@ export function ProductFormDialog({
                     ).map(([scope, title]) => {
                       const profile = formState.unitProfiles[scope];
                       const lockedToKg = profile.unit === "Kg";
+                      const lockedByLab =
+                        Boolean(labComputation?.complete) &&
+                        (scope === "sales" || scope === "production") &&
+                        !lockedToKg;
 
                       return (
                         <div
@@ -1633,13 +1708,22 @@ export function ProductFormDialog({
                           <Input
                             aria-label={`Peso padrão de ${title}`}
                             type="number"
-                            step="0.001"
-                            value={lockedToKg ? 1 : profile.weightKg}
-                            disabled={lockedToKg}
+                            step="0.000001"
+                            value={
+                              lockedByLab
+                                ? labComputation?.bakedUnitKg ?? profile.weightKg
+                                : lockedToKg
+                                  ? 1
+                                  : profile.weightKg
+                            }
+                            disabled={lockedToKg || lockedByLab}
                             onChange={(event) =>
                               updateUnitProfile(scope, { weightKg: Number(event.target.value) })
                             }
                           />
+                          {lockedByLab ? (
+                            <p className="mt-1 text-[11px] text-amber-800">Unidade assada do teste</p>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -1827,7 +1911,7 @@ export function ProductFormDialog({
                           </p>
                         ) : (
                           <div className="overflow-x-auto rounded-xl border border-border/70">
-                            <table className="w-full min-w-[720px] border-collapse">
+                            <table className="w-full min-w-[1180px] border-collapse">
                               <thead className="bg-card">
                                 <tr>
                                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
@@ -1838,6 +1922,18 @@ export function ProductFormDialog({
                                   </th>
                                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                                     Unidade
+                                  </th>
+                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
+                                    % principal
+                                  </th>
+                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
+                                    % total
+                                  </th>
+                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
+                                    kg / 1 un
+                                  </th>
+                                  <th className="px-3 py-2 text-center text-xs font-semibold text-muted-foreground">
+                                    Masseira
                                   </th>
                                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                                     Mover para outra etapa
@@ -1887,6 +1983,47 @@ export function ProductFormDialog({
                                           ))}
                                         </SelectContent>
                                       </Select>
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right text-sm tabular-nums">
+                                      {recipeLineMetrics.get(item.id)?.overMain != null
+                                        ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overMain, {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}%`
+                                        : "—"}
+                                      {recipeLineMetrics.get(item.id)?.legalHint ? (
+                                        <p className="mt-1 text-[11px] font-normal text-amber-800">
+                                          {recipeLineMetrics.get(item.id)?.legalHint}
+                                        </p>
+                                      ) : null}
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right text-sm tabular-nums">
+                                      {recipeLineMetrics.get(item.id)?.overTotal != null
+                                        ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overTotal, {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}%`
+                                        : "—"}
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right text-sm tabular-nums">
+                                      {recipeLineMetrics.get(item.id)?.kgPerUnit != null
+                                        ? formatLocaleNumber(recipeLineMetrics.get(item.id)?.kgPerUnit, {
+                                            minimumFractionDigits: 6,
+                                            maximumFractionDigits: 6,
+                                          })
+                                        : "—"}
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-center">
+                                      <Checkbox
+                                        checked={recipeItemCountsTowardMixer(item)}
+                                        onCheckedChange={(checked) =>
+                                          updateRecipeItem(item.id, {
+                                            countsTowardMixer: checked === true,
+                                          })
+                                        }
+                                        aria-label={`${item.label} entra na masseira`}
+                                        title="Desmarque para incorporação fora do mixer (óleo na mesa, chocolate no fim)"
+                                      />
                                     </td>
                                     <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
                                       <Select
@@ -2083,29 +2220,181 @@ export function ProductFormDialog({
                 ) : null}
               </section>
 
-              <section className="space-y-4 rounded-xl border border-border/80 p-4">
+              <section className="space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">Parâmetros de Produção</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Configure perdas, validade, bases de produção e rendimento líquido esperado.
+                  <h3 className="text-sm font-semibold text-amber-950">Teste de laboratório</h3>
+                  <p className="text-xs text-amber-900/80">
+                    Lance as medições da ficha amarela. Quebra, rendimento e peso da unidade
+                    assada saem sozinhos — não se digitam %. Sempre informe as unidades, mesmo
+                    se o produto for vendido em kg. A etiqueta (Inmetro) não entra na produção.
                   </p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-4">
                   <div className="grid gap-2">
-                    <Label>Perda principal (%)</Label>
+                    <Label>Peso da unidade/bloco cru (kg)</Label>
                     <Input
                       type="number"
-                      step="0.01"
-                      value={formState.breakPercent}
+                      min="0"
+                      step="0.001"
+                      value={formState.labTest?.rawUnitWeightKg ?? ""}
                       onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          breakPercent: Number(event.target.value),
-                        }))
+                        updateLabTest({ rawUnitWeightKg: readOptionalNumber(event.target.value) })
                       }
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label>Massa crua (kg)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      placeholder={
+                        recipeTotals.totalIngredientsKg > 0
+                          ? `Soma da receita: ${formatLocaleNumber(recipeTotals.totalIngredientsKg, {
+                              minimumFractionDigits: 3,
+                              maximumFractionDigits: 3,
+                            })}`
+                          : undefined
+                      }
+                      value={formState.labTest?.rawDoughKg ?? ""}
+                      onChange={(event) =>
+                        updateLabTest({ rawDoughKg: readOptionalNumber(event.target.value) })
+                      }
+                    />
+                    <p className="text-[11px] text-amber-900/70">
+                      Vazio = usa a soma dos ingredientes.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Kg assados</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={formState.labTest?.bakedKg ?? ""}
+                      onChange={(event) =>
+                        updateLabTest({ bakedKg: readOptionalNumber(event.target.value) })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Sobra assada (kg)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={formState.labTest?.leftoverBakedKg ?? ""}
+                      onChange={(event) =>
+                        updateLabTest({ leftoverBakedKg: readOptionalNumber(event.target.value) })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Nº de unidades</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={formState.labTest?.unitCount ?? ""}
+                      onChange={(event) =>
+                        updateLabTest({ unitCount: readOptionalNumber(event.target.value) })
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Peso da etiqueta (kg)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={formState.labTest?.labelWeightKg ?? ""}
+                      onChange={(event) =>
+                        updateLabTest({ labelWeightKg: readOptionalNumber(event.target.value) })
+                      }
+                    />
+                    <p className="text-[11px] text-amber-900/70">Inmetro / rótulo. Não é o peso de produção.</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
+                      Quebra
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-amber-950">
+                      {labComputation?.complete
+                        ? `${formatLocaleNumber(labComputation.breakPercent, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}%`
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-amber-900/70">
+                      1 − (assado efetivo / massa crua)
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
+                      Rendimento
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-amber-950">
+                      {labComputation?.complete
+                        ? `${formatLocaleNumber(labComputation.yieldPercent, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}%`
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-amber-900/70">Assado efetivo / massa crua</p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
+                      Unidade assada
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-amber-950">
+                      {labComputation?.complete
+                        ? `${formatLocaleNumber(labComputation.bakedUnitGrams, {
+                            minimumFractionDigits: 3,
+                            maximumFractionDigits: 3,
+                          })} g`
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-amber-900/70">
+                      {labComputation?.complete
+                        ? `${formatLocaleNumber(labComputation.bakedUnitKg, {
+                            minimumFractionDigits: 6,
+                            maximumFractionDigits: 6,
+                          })} kg / un`
+                        : "kg assados efetivos / unidades"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
+                      Assado efetivo
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-amber-950">
+                      {labComputation && labComputation.effectiveBakedKg > 0
+                        ? formatKgLabel(labComputation.effectiveBakedKg, {
+                            minimumFractionDigits: 3,
+                            maximumFractionDigits: 3,
+                          })
+                        : "—"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-amber-900/70">Kg assados − sobra assada</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-4 rounded-xl border border-border/80 p-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Parâmetros de Produção</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Validade e bases de produção. A quebra sai do teste de laboratório acima.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-4">
                   <div className="grid gap-2">
                     <Label>Validade após produção (dias)</Label>
                     <Input
@@ -2262,17 +2551,23 @@ export function ProductFormDialog({
 
                 <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                    Peso final / rendimento
+                    Rendimento do teste
                   </p>
                   <p className="mt-2 text-3xl font-semibold text-emerald-900">
-                    {formatLocaleNumber(yieldPercent, {
-                      minimumFractionDigits: 3,
-                      maximumFractionDigits: 3,
-                    })}
-                    %
+                    {labComputation?.complete
+                      ? `${formatLocaleNumber(labComputation.yieldPercent, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}%`
+                      : `${formatLocaleNumber(yieldPercent, {
+                          minimumFractionDigits: 3,
+                          maximumFractionDigits: 3,
+                        })}%`}
                   </p>
                   <p className="mt-2 text-xs text-emerald-800">
-                    Percentual líquido estimado depois da perda principal informada.
+                    {labComputation?.complete
+                      ? "Calculado do teste: assado efetivo / massa crua. A quebra não é digitada."
+                      : "Preencha o teste de laboratório para calcular o rendimento. Enquanto isso, vale a quebra já gravada."}
                   </p>
                 </div>
               </section>
@@ -2290,7 +2585,7 @@ export function ProductFormDialog({
                     })}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Peso final após a perda principal:{" "}
+                    Peso final após a quebra do teste:{" "}
                     {formatKgLabel(recipeTotals.outputAfterBreakKg, {
                       minimumFractionDigits: 3,
                       maximumFractionDigits: 3,
