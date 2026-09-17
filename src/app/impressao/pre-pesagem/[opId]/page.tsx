@@ -7,6 +7,7 @@ import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
 import { groupPrintRowsByStage } from "@/lib/printing-documents";
 import type { PreWeighBatchSplit } from "@/lib/production-batches";
+import { formatBatchSplitPhrase } from "@/lib/production-batches";
 import type { RecipeStageConfigEntry } from "@/lib/production-planning";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
@@ -168,19 +169,7 @@ function StagedRecipeTables({
 }
 
 function formatBatchLegend(split: PreWeighBatchSplit) {
-  const fullKg = formatKgValue(split.fullBatchKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  const partialKg = formatKgValue(split.partialKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  const hasPartial = split.partialUnits > 0;
-
-  if (split.fullBatchCount === 0) {
-    return `1 parcial de ${partialKg} kg`;
-  }
-
-  const fullPart = `${split.fullBatchCount} ${split.fullBatchCount === 1 ? "cheia" : "cheias"} de ${fullKg} kg`;
-  if (!hasPartial) {
-    return fullPart;
-  }
-  return `${fullPart} + 1 parcial de ${partialKg} kg`;
+  return `${formatBatchSplitPhrase(split, "units")} · ${formatBatchSplitPhrase(split, "kg")}`;
 }
 
 export default function PrePesagemPrintPage() {
@@ -269,7 +258,11 @@ export default function PrePesagemPrintPage() {
                   Usado por: {section.usedBy.join(", ")}
                 </div>
                 {/* Ficha do próprio MPI: os blocos DELE saem na sequência que ele definiu. */}
-                <StagedRecipeTables rows={section.items} stageConfig={section.recipeStageConfig} />
+                <StagedRecipeTables
+                  rows={section.items}
+                  batchSplit={section.batchSplit}
+                  stageConfig={section.recipeStageConfig}
+                />
               </div>
             </article>
           ))}

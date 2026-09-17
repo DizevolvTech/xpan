@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { planBatches, deriveBatchStatus, computePreWeighBatchSplit, deriveCapacityPerBatchFromMainIngredient, deriveCapacityFromProductRecipe } from "@/lib/production-batches";
+import { planBatches, deriveBatchStatus, computePreWeighBatchSplit, deriveCapacityPerBatchFromMainIngredient, deriveCapacityFromProductRecipe, formatBatchSplitPhrase, formatBatchSizesPhrase, deriveEconomicProductionKg, productSalesToKgFactor } from "@/lib/production-batches";
 
 test("planBatches — enche e sobra na ultima (456 un, cap 100)", () => {
   const plan = planBatches({ totalKg: 50.16, capacityPerBatch: 100, salesToKgFactor: 0.11, salesUnit: "Un" });
@@ -318,4 +318,53 @@ test("S1.5: óleo na mesa / chocolate no fim não entram na carga da masseira", 
   });
 
   assert.equal(capacity, 625);
+});
+
+test("S2.2 planilha Chama: 3600 Un / cap 1200 = 3 cheias, sem parcial", () => {
+  const plan = planBatches({
+    totalKg: 3600 * 0.05,
+    capacityPerBatch: 1200,
+    salesToKgFactor: 0.05,
+    salesUnit: "Un",
+  });
+  assert.deepEqual(plan.batchSizes, [1200, 1200, 1200]);
+  assert.equal(formatBatchSizesPhrase(plan.batchSizes, "Un"), "3 cheias de 1200 Un");
+
+  const split = computePreWeighBatchSplit({
+    totalKg: 3600 * 0.05,
+    capacityPerBatch: 1200,
+    salesToKgFactor: 0.05,
+    salesUnit: "Un",
+  });
+  assert.equal(split.fullBatchCount, 3);
+  assert.equal(split.partialUnits, 0);
+  assert.equal(formatBatchSplitPhrase(split), "3 cheias de 1200 Un");
+  assert.equal(formatBatchSplitPhrase(split, "kg"), "3 cheias de 60 kg");
+});
+
+test("S2.2: 256 Un cap 100 = 2 cheias + 1 parcial de 56", () => {
+  const split = computePreWeighBatchSplit({
+    totalKg: 28.16,
+    capacityPerBatch: 100,
+    salesToKgFactor: 0.11,
+    salesUnit: "Un",
+  });
+  assert.equal(formatBatchSplitPhrase(split), "2 cheias de 100 Un + 1 parcial de 56 Un");
+  assert.equal(formatBatchSizesPhrase([100, 100, 56], "Un"), "2 cheias de 100 Un + 1 parcial de 56 Un");
+});
+
+test("S2.1: base econômica = capacidade × peso da Un", () => {
+  assert.equal(deriveEconomicProductionKg(1200, 0.05), 60);
+  assert.equal(deriveEconomicProductionKg(null, 0.05), 0);
+});
+
+test("S2.3: Un cadastrada 170 g vence salesToKgFactor default 1", () => {
+  assert.equal(
+    productSalesToKgFactor({
+      salesUnit: "Un",
+      salesToKgFactor: 1,
+      unitProfiles: { sales: { unit: "Un", weightKg: 0.17 } },
+    }),
+    0.17,
+  );
 });

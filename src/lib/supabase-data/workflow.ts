@@ -4,7 +4,7 @@ import type { ProductionItemStatus } from "@/lib/order-planning";
 import { buildFactoryPlanningData } from "@/lib/order-planning";
 import { applyFactoryWorkflowState } from "@/lib/factory-workflow-logic";
 import {
-  canTransitionProductionItemStatus,
+  canTransitionProductionItemStatusLenient,
   getProductionStatusProgress,
   normalizeProductPreparationStages,
 } from "@/lib/production-workflow";
@@ -610,7 +610,7 @@ export async function updateProductionItemStatus(
       return STATUS_RANK[rowStatus] > STATUS_RANK[best] ? rowStatus : best;
     }, "nao_iniciado");
 
-  if (!canTransitionProductionItemStatus(currentStatus, status, preparationStages)) {
+  if (!canTransitionProductionItemStatusLenient(currentStatus, status, preparationStages)) {
     throw new Error("Invalid production workflow transition");
   }
 

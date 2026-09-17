@@ -151,6 +151,41 @@ export function canTransitionProductionItemStatus(
   return Math.abs(nextIndex - currentIndex) === 1;
 }
 
+/**
+ * S0.7 — a ficha pode ser editada com a OP já no chão. A UI ainda pede o passo adjacente
+ * do fluxo CONGELADO na liberação; a API lê as etapas AO VIVO. Aceita a transição se ela
+ * for válida em qualquer um dos dois, ou no caminho feliz (não iniciado → produção → concluído).
+ */
+export function canTransitionProductionItemStatusLenient(
+  currentStatus: ProductionItemStatus,
+  nextStatus: ProductionItemStatus,
+  liveStages?: ProductPreparationStageKey[] | null,
+) {
+  if (canTransitionProductionItemStatus(currentStatus, nextStatus, liveStages)) {
+    return true;
+  }
+  if (canTransitionProductionItemStatus(currentStatus, nextStatus, defaultProductPreparationStages)) {
+    return true;
+  }
+
+  const liveNext = getNextProductionItemStatus(currentStatus, liveStages);
+  const livePrev = getPreviousProductionItemStatus(currentStatus, liveStages);
+  if (nextStatus === liveNext || nextStatus === livePrev) {
+    return true;
+  }
+
+  const happyPath: ProductionItemStatus[] = ["nao_iniciado", "em_producao", "concluido"];
+  const happyCurrent = happyPath.indexOf(currentStatus);
+  const happyNext = happyPath.indexOf(nextStatus);
+  if (happyCurrent >= 0 && happyNext >= 0 && Math.abs(happyCurrent - happyNext) === 1) {
+    return true;
+  }
+
+  const globalCurrent = GLOBAL_STATUS_ORDER.indexOf(currentStatus);
+  const globalNext = GLOBAL_STATUS_ORDER.indexOf(nextStatus);
+  return globalCurrent >= 0 && globalNext >= 0 && Math.abs(globalCurrent - globalNext) === 1;
+}
+
 export function getNextProductionItemStatus(
   status: ProductionItemStatus,
   stages?: ProductPreparationStageKey[] | null,

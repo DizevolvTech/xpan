@@ -325,6 +325,10 @@ void test("1 Un de MPI na receita expande em kg do peso cadastrado, não 1 kg", 
   const mpi = result.find((item) => item.productId === "mpi-pao-de-lo");
   assert.ok(mpi, "deve expandir a OP do pão de ló");
   assert.equal(mpi?.internalKg, 0.17);
+  assert.equal(mpi?.requestedUnit, "Un");
+  assert.equal(mpi?.requestedQuantity, 1);
+  assert.equal(mpi?.isIntermediate, true);
+  assert.equal(mpi?.salesToKgFactor, 0.17);
 });
 
 void test("AJ-0008.1: ingrediente misturado puro vira OP herdando a rota do pai", () => {

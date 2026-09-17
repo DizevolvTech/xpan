@@ -1375,7 +1375,9 @@ export default function PedidosLojaPage() {
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-secondary/85">
                           <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Produto</th>
-                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]">Un.</th>
+                          <th className="px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em]" title="Unidade de venda — o que a loja pede">
+                            Un. venda
+                          </th>
                           {dayColumns.map((dayField, index) => (
                             <th
                               key={dayField}

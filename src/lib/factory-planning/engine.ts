@@ -28,7 +28,7 @@ import type {
   StoreProfile,
 } from "@/lib/factory-planning/types";
 import { getScheduleItemDayPriority } from "@/lib/production-data-utils";
-import { planBatches, deriveBatchStatus } from "@/lib/production-batches";
+import { planBatches, deriveBatchStatus, productSalesToKgFactor } from "@/lib/production-batches";
 import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { getProductionStatusProgress, normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { expandRecipeIntoItems } from "@/lib/factory-planning/recipe-expansion";
@@ -714,7 +714,7 @@ function buildPlannedItems(
           releasedToProduction: false,
           productionStarted: false,
           capacityPerBatch: product.capacityPerBatch,
-          salesToKgFactor: product.salesToKgFactor,
+          salesToKgFactor: productSalesToKgFactor(product),
           salesUnit: product.salesUnit,
           batchesDone: 0,
           productionItemKey,
@@ -839,7 +839,7 @@ export function buildScheduleSkeletonItems(
           releasedToProduction: false,
           productionStarted: false,
           capacityPerBatch: product.capacityPerBatch,
-          salesToKgFactor: product.salesToKgFactor,
+          salesToKgFactor: productSalesToKgFactor(product),
           salesUnit: product.salesUnit,
           batchesDone: 0,
           productionItemKey,

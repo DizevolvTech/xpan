@@ -8,6 +8,7 @@ import type {
   ProductionSheetProductSection,
 } from "@/lib/printing-documents";
 import { groupPrintRowsByStage, sumStageQuantityPerUnitKg } from "@/lib/printing-documents";
+import { formatBatchSplitPhrase, type PreWeighBatchSplit } from "@/lib/production-batches";
 import { defaultRecipeStage } from "@/lib/production-planning";
 import { formatKgValue, formatLocaleNumber } from "@/lib/utils";
 
@@ -52,13 +53,20 @@ function formatOrderedQuantity(value: number) {
 function IngredientTable({
   groups,
   unitColumnLabel,
+  batchSplit,
 }: {
   groups: PrintIngredientStageGroup<SheetTableRow>[];
   unitColumnLabel: string;
+  batchSplit?: PreWeighBatchSplit | null;
 }) {
   if (groups.every((group) => group.rows.length === 0)) {
     return null;
   }
+
+  const isBatched = Boolean(batchSplit?.batched);
+  const showBatchColumn = isBatched && (batchSplit?.fullBatchCount ?? 0) > 0;
+  const showPartialColumn = isBatched && (batchSplit?.partialUnits ?? 0) > 0;
+  const colSpan = 4 + (showBatchColumn ? 1 : 0) + (showPartialColumn ? 1 : 0);
 
   return (
     <table className="w-full border-collapse border border-stone-300">
@@ -70,6 +78,16 @@ function IngredientTable({
           <th className="border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
             Ingredientes
           </th>
+          {showBatchColumn ? (
+            <th className="w-28 border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+              Batida ×{batchSplit?.fullBatchCount}
+            </th>
+          ) : null}
+          {showPartialColumn ? (
+            <th className="w-28 border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+              Parcial
+            </th>
+          ) : null}
           <th className="w-28 border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
             {unitColumnLabel}
           </th>
@@ -84,33 +102,24 @@ function IngredientTable({
 
           return (
             <Fragment key={group.stage}>
-              {/* R1: na ficha do cliente o primeiro bloco não tem sub-cabeçalho. O motivo é que
-                  ali ele é a MASSA — a base implícita do produto, que dispensa rótulo. Então a
-                  regra é "é a base?", não "é o primeiro?": um pão que começa pela esponja precisa
-                  ver "Ingredientes esponja / pré-fermento:", senão o padeiro lê as linhas do
-                  pré-fermento achando que são da massa. Receita não migrada volta como um grupo
-                  só (`showStageHeader` falso) e sai idêntica à de hoje. */}
               {group.showStageHeader && !(groupIndex === 0 && group.stage === defaultRecipeStage) ? (
-                // A régua grossa + o negrito é o que separa um bloco do outro: sem cor, o
-                // contraste tem que sair de peso de fonte e traço.
                 <tr className="bg-stone-100">
                   <td className="border-t-2 border-stone-400 px-3 py-1.5" />
                   <td className="border-t-2 border-stone-400 px-3 py-1.5 text-sm font-bold text-stone-900">
                     Ingredientes {group.label.toLocaleLowerCase("pt-BR")}:
                   </td>
-                  {/* Subtotal por unidade do bloco (o "0,165 kg" da ficha). */}
+                  {showBatchColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
+                  {showPartialColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
                   <td className="border-t-2 border-stone-400 px-3 py-1.5 text-sm font-semibold text-stone-900">
                     {unitColumnLabel && subtotalPerUnit != null ? formatKgCell(subtotalPerUnit) : null}
                   </td>
                   <td className="border-t-2 border-stone-400 px-3 py-1.5" />
                 </tr>
               ) : null}
-              {/* Modo de preparo DESTE bloco — o padeiro lê junto dos ingredientes da fase.
-                  Etapa sem instrução não imprime nada (nem rótulo, nem espaço). */}
               {group.instructions ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={colSpan}
                     className="border-t border-stone-200 bg-stone-100 px-3 py-1.5 text-xs leading-snug text-stone-700"
                   >
                     <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-500">
@@ -135,6 +144,16 @@ function IngredientTable({
                       ) : null}
                     </div>
                   </td>
+                  {showBatchColumn ? (
+                    <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
+                      {formatQuantityCell(row.batchQuantity, row.unit)}
+                    </td>
+                  ) : null}
+                  {showPartialColumn ? (
+                    <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
+                      {formatQuantityCell(row.partialQuantity, row.unit)}
+                    </td>
+                  ) : null}
                   <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
                     {formatQuantityCell(row.quantityPerUnit, row.unit)}
                   </td>
@@ -179,6 +198,11 @@ function IngredientProductSection({ section }: { section: ProductIngredientSecti
             ganha uma segunda linha só para ele. Ver a prova de impressão de 25/07. */}
         <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
           <div>Peso finalizado: {formatKgCell(section.requiredKg)}</div>
+          {section.batchSplit?.batched ? (
+            <div className="mt-1 normal-case tracking-normal text-stone-700">
+              {formatBatchSplitPhrase(section.batchSplit, "units")}
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -187,6 +211,7 @@ function IngredientProductSection({ section }: { section: ProductIngredientSecti
         <IngredientTable
           groups={groupPrintRowsByStage<SheetTableRow>(section.items, section.recipeStageConfig)}
           unitColumnLabel=""
+          batchSplit={section.batchSplit}
         />
       </div>
     </article>
@@ -224,6 +249,11 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
         <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
           <div>Peso un.: {formatKgCell(section.unitWeightKg)}</div>
           <div className="mt-1">Carga: {formatKgCell(section.plannedKg)}</div>
+          {section.batchSplit?.batched ? (
+            <div className="mt-1 normal-case tracking-normal text-stone-700">
+              {formatBatchSplitPhrase(section.batchSplit, "units")}
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -235,6 +265,7 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
             section.recipeStageConfig,
           )}
           unitColumnLabel="Unidades"
+          batchSplit={section.batchSplit}
         />
         {section.items.length === 0 ? (
           <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">

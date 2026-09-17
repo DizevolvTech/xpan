@@ -5,8 +5,14 @@ import type {
   ProductionSector,
   RecipeIngredientReference,
 } from "@/lib/production-planning";
-import { getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData, resolveProductRecipeYieldKg } from "@/lib/production-data-utils";
+import {
+  getProductRecipeTotalsFromData,
+  getRecipeReferenceWeightKgFromData,
+  resolveProductDiscreteUnitWeightKg,
+  resolveProductRecipeYieldKg,
+} from "@/lib/production-data-utils";
 import { computeLabTest, round6 } from "@/lib/lab-test";
+import { productSalesToKgFactor } from "@/lib/production-batches";
 import { intermediatePreparationStages } from "@/lib/production-workflow";
 
 import type { PlannedOrderItem } from "./types";
@@ -227,15 +233,25 @@ function buildMpiPlannedItem(params: {
   // Quantidade de MPI necessária para produzir `parent.internalKg` do pai.
   // `recipeKg` já converte Un/g/etc. para kg — passar a quantidade crua (1 Un)
   // fazia o motor tratar 1 unidade como 1 kg.
-  const requestedQuantity = scaleRecipeQuantity(
+  const requestedKg = scaleRecipeQuantity(
     parent.internalKg,
     parentProduct,
     ingredients,
     products,
     recipeKg,
   );
-  // MPI é trabalhado em kg internamente. `internalKg` = requestedQuantity (já em kg pela receita).
-  const internalKg = requestedQuantity;
+  // MPI é trabalhado em kg internamente. A língua da OP (S2.3) é a unidade de venda
+  // cadastrada: 1 Un de pão de ló = peso da ficha (170 g), nunca 1 kg.
+  const internalKg = requestedKg;
+  const salesUnit = mpiProduct.salesUnit;
+  const unitKg =
+    salesUnit === "Kg" || salesUnit === "L"
+      ? 1
+      : resolveProductDiscreteUnitWeightKg(mpiProduct, salesUnit);
+  const requestedQuantity =
+    salesUnit === "Kg" || salesUnit === "L" || !(unitKg > 0)
+      ? requestedKg
+      : Number((requestedKg / unitKg).toFixed(6));
 
   // Fase 2 (AJ-A4): tenta resolver linha/setor nativos do MPI.
   // Fallback para linha/setor do pai se: (a) MPI não tem operationalLineId/lineId,
@@ -290,7 +306,7 @@ function buildMpiPlannedItem(params: {
     scheduleCode: resolvedScheduleCode,
     scheduleName: resolvedScheduleName,
     requestedQuantity,
-    requestedUnit: mpiProduct.productionUnit,
+    requestedUnit: mpiProduct.salesUnit,
     internalKg,
     minimumProductionKg: mpiProduct.minimumProductionKg,
     expeditionUnit: mpiProduct.expeditionUnit,
@@ -304,7 +320,7 @@ function buildMpiPlannedItem(params: {
     capacityPerBatch: mpiProduct.capacityPerBatch,
     // Fator/unidade do PRÓPRIO produto MPI (a capacidade acima é na unidade dele),
     // senão o split usaria a conversão do pai e erraria a contagem de batidas.
-    salesToKgFactor: mpiProduct.salesToKgFactor,
+    salesToKgFactor: productSalesToKgFactor(mpiProduct),
     salesUnit: mpiProduct.salesUnit,
     batchesDone: parent.batchesDone,
     productionItemKey,

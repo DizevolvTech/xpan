@@ -18,7 +18,7 @@ import type { ProductionOrderRow } from "@/lib/order-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { round3, scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
 import { getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
-import { computePreWeighBatchSplit, type PreWeighBatchSplit } from "@/lib/production-batches";
+import { computePreWeighBatchSplit, productSalesToKgFactor, type PreWeighBatchSplit } from "@/lib/production-batches";
 
 type PrintIngredientKind = "ingrediente" | "ingrediente_misturado" | "produto_mpi";
 type PrintIngredientSectionKind = "base" | "additional";
@@ -74,6 +74,8 @@ export type ProductIngredientSection = {
   usedBy: string[];
   /** Ficha do próprio MPI — ordena os blocos da receita DELE. */
   recipeStageConfig?: RecipeStageConfigEntry[];
+  /** Desdobramento de batidas do MPI, quando ele próprio é batido. */
+  batchSplit: PreWeighBatchSplit | null;
   items: PrintIngredientRow[];
 };
 
@@ -104,6 +106,8 @@ export type ProductionSheetProductSection = {
    * cima, o quanto vai em cada unidade continua o mesmo.
    */
   unitsCount: number;
+  /** N cheias + 1 parcial, no formato da planilha Chama. */
+  batchSplit: PreWeighBatchSplit | null;
   /** Ver `PreWeighingProductSection.recipeStageConfig`: ordem dos blocos + modo de preparo por etapa. */
   recipeStageConfig?: RecipeStageConfigEntry[];
   items: ProductionSheetRow[];
@@ -137,6 +141,26 @@ function getOperationalUnitWeight(product: ProductionProduct | undefined) {
   }
 
   return round3(product.unitProfiles.sales.weightKg);
+}
+
+function salesFactorOf(product: ProductionProduct | undefined) {
+  if (!product) {
+    return 1;
+  }
+  return productSalesToKgFactor(product);
+}
+
+function batchSplitForKg(
+  totalKg: number,
+  product: ProductionProduct | undefined,
+  unitLabel: string,
+): PreWeighBatchSplit {
+  return computePreWeighBatchSplit({
+    totalKg,
+    capacityPerBatch: product?.capacityPerBatch ?? null,
+    salesToKgFactor: salesFactorOf(product),
+    salesUnit: unitLabel,
+  });
 }
 
 function buildRequestedSummary(op: ProductionOrderRow, productId: string) {
@@ -488,20 +512,29 @@ function collectIngredientProductSections(
   });
 
   return Array.from(ingredientProductMap.values())
-    .map((entry) => ({
-      productId: entry.product.id,
-      productCode: entry.product.code,
-      productName: entry.product.name,
-      stage: entry.stage,
-      // Receita legada (massa) não ganha rótulo: a impressão segue igual à de hoje.
-      stageLabel: entry.stage === defaultRecipeStage ? null : recipeStageLabels[entry.stage],
-      requiredQuantity: round3(entry.requiredQuantity),
-      requiredUnit: entry.requiredUnit,
-      requiredKg: round3(entry.requiredKg),
-      usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
-      recipeStageConfig: entry.product.recipeStageConfig,
-      items: buildScaledRecipeRowsForProduct(entry.product, entry.requiredKg, source),
-    }))
+    .map((entry) => {
+      const split = batchSplitForKg(entry.requiredKg, entry.product, entry.product.salesUnit);
+      return {
+        productId: entry.product.id,
+        productCode: entry.product.code,
+        productName: entry.product.name,
+        stage: entry.stage,
+        // Receita legada (massa) não ganha rótulo: a impressão segue igual à de hoje.
+        stageLabel: entry.stage === defaultRecipeStage ? null : recipeStageLabels[entry.stage],
+        requiredQuantity: round3(entry.requiredQuantity),
+        requiredUnit: entry.requiredUnit,
+        requiredKg: round3(entry.requiredKg),
+        usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
+        recipeStageConfig: entry.product.recipeStageConfig,
+        batchSplit: split.batched ? split : null,
+        items: buildScaledRecipeRowsForProduct(
+          entry.product,
+          entry.requiredKg,
+          source,
+          split.batched ? { fullBatchKg: split.fullBatchKg, partialKg: split.partialKg } : undefined,
+        ),
+      };
+    })
     .sort(
       (a, b) =>
         opStageOrder.indexOf(a.stage) - opStageOrder.indexOf(b.stage) ||
@@ -526,7 +559,7 @@ export function buildPreWeighingDocument(
     const split = computePreWeighBatchSplit({
       totalKg: item.totalKg,
       capacityPerBatch: product?.capacityPerBatch ?? null,
-      salesToKgFactor: product?.salesToKgFactor ?? 1,
+      salesToKgFactor: salesFactorOf(product),
       salesUnit: item.batchUnitLabel,
     });
     const outputKg = item.totalKg;
@@ -705,6 +738,7 @@ export function buildProductionSheetDocument(
     // Divisor da coluna "Unidades". Produto vendido a granel tem peso unitário 1 kg — a
     // "unidade" dele é o quilo, e a coluna vira o quanto de cada insumo há por quilo.
     const unitsCount = unitWeightKg > 0 ? item.totalKg / unitWeightKg : 0;
+    const split = batchSplitForKg(item.totalKg, product, item.batchUnitLabel);
 
     return {
       productId: item.productId,
@@ -715,15 +749,19 @@ export function buildProductionSheetDocument(
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg,
       unitsCount: round3(unitsCount),
+      batchSplit: split.batched ? split : null,
       // Config vem do produto AO VIVO (`withFrozenRecipe` só troca a receita): a sequência
       // dos blocos é editorial e não faz parte do congelamento de quantidades.
       recipeStageConfig: product?.recipeStageConfig,
-      items: buildScaledRecipeRowsForProduct(product, item.totalKg, source).map<ProductionSheetRow>(
-        (row) => ({
-          ...row,
-          quantityPerUnit: unitsCount > 0 ? round3(row.estimatedQuantity / unitsCount) : null,
-        }),
-      ),
+      items: buildScaledRecipeRowsForProduct(
+        product,
+        item.totalKg,
+        source,
+        split.batched ? { fullBatchKg: split.fullBatchKg, partialKg: split.partialKg } : undefined,
+      ).map<ProductionSheetRow>((row) => ({
+        ...row,
+        quantityPerUnit: unitsCount > 0 ? round3(row.estimatedQuantity / unitsCount) : null,
+      })),
     };
     });
 
