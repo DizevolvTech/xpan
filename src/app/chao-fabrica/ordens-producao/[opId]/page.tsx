@@ -33,6 +33,7 @@ import {
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
+import { formatBatchSizesPhrase } from "@/lib/production-batches";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import {
@@ -546,7 +547,12 @@ export default function OrdemProducaoDetailsPage() {
                       ) : null}
                       {item.batchCount > 1 ? (
                         <p className="text-sm text-muted-foreground tabular-nums">
-                          {item.batchesDone}/{item.batchCount} batidas · {item.batchSizes.join(" + ")} {item.batchUnitLabel}
+                          {item.batchesDone}/{item.batchCount} batidas ·{" "}
+                          {formatBatchSizesPhrase(item.batchSizes, item.batchUnitLabel)}
+                        </p>
+                      ) : item.batchUnitLabel !== "Kg" && item.batchUnitLabel !== "L" ? (
+                        <p className="text-sm text-muted-foreground tabular-nums">
+                          {item.batchSizes.reduce((sum, size) => sum + size, 0)} {item.batchUnitLabel}
                         </p>
                       ) : null}
                     </td>

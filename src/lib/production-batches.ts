@@ -78,6 +78,92 @@ export function computePreWeighBatchSplit(input: PlanBatchesInput): PreWeighBatc
   return { batched: true, fullBatchCount, fullBatchUnits: cap, fullBatchKg: Number((cap * factor).toFixed(3)), partialUnits, partialKg: Number((partialUnits * factor).toFixed(3)), totalUnits, unitLabel: salesUnit };
 }
 
+function formatBatchAmount(value: number) {
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+}
+
+/**
+ * Frase da OP/pré-pesagem no formato da planilha Chama: "3 cheias de 1200 Un + 1 parcial de 519 Un".
+ * `measure: "kg"` é a língua da dosimetria (kg de cada MP / da carga).
+ */
+export function formatBatchSplitPhrase(
+  split: PreWeighBatchSplit,
+  measure: "units" | "kg" = "units",
+): string {
+  const amount = (units: number, kg: number) =>
+    measure === "kg" ? `${formatBatchAmount(kg)} kg` : `${formatBatchAmount(units)} ${split.unitLabel}`;
+
+  if (!split.batched) {
+    return `1 corrida de ${amount(split.totalUnits, split.partialKg || split.totalUnits)}`;
+  }
+
+  const parts: string[] = [];
+  if (split.fullBatchCount > 0) {
+    const word = split.fullBatchCount === 1 ? "cheia" : "cheias";
+    parts.push(`${split.fullBatchCount} ${word} de ${amount(split.fullBatchUnits, split.fullBatchKg)}`);
+  }
+  if (split.partialUnits > 0) {
+    parts.push(`1 parcial de ${amount(split.partialUnits, split.partialKg)}`);
+  }
+  return parts.join(" + ");
+}
+
+/** Mesma frase a partir dos tamanhos já planejados (`planBatches.batchSizes`). */
+export function formatBatchSizesPhrase(batchSizes: number[], unitLabel: string): string {
+  if (batchSizes.length === 0) {
+    return "";
+  }
+  if (batchSizes.length === 1) {
+    return `1 corrida de ${formatBatchAmount(batchSizes[0])} ${unitLabel}`;
+  }
+  const cap = Math.max(...batchSizes);
+  const fullCount = batchSizes.filter((size) => size === cap).length;
+  const partial = batchSizes.find((size) => size < cap) ?? 0;
+  return formatBatchSplitPhrase({
+    batched: true,
+    fullBatchCount: fullCount,
+    fullBatchUnits: cap,
+    fullBatchKg: cap,
+    partialUnits: partial,
+    partialKg: partial,
+    totalUnits: batchSizes.reduce((sum, size) => sum + size, 0),
+    unitLabel,
+  });
+}
+
+/**
+ * Fator kg por unidade de venda. Prefere o peso cadastrado no perfil (Un = 170 g do pão de ló)
+ * quando `salesToKgFactor` ficou no default 1.
+ */
+export function productSalesToKgFactor(product: {
+  salesUnit: string;
+  salesToKgFactor: number;
+  unitProfiles: { sales: { unit: string; weightKg: number } };
+}): number {
+  if (product.salesUnit === "Kg" || product.salesUnit === "L") {
+    return 1;
+  }
+  const profileKg = product.unitProfiles.sales.weightKg;
+  if (Number.isFinite(profileKg) && profileKg > 0 && profileKg !== 1) {
+    return profileKg;
+  }
+  return product.salesToKgFactor > 0 ? product.salesToKgFactor : 1;
+}
+
+/** Kg de uma batida cheia = capacidade × peso da Un. É a base econômica unificada (S2.1). */
+export function deriveEconomicProductionKg(
+  capacityPerBatch: number | null | undefined,
+  salesToKgFactor: number,
+): number {
+  if (capacityPerBatch == null || capacityPerBatch <= 0) {
+    return 0;
+  }
+  const factor = salesToKgFactor > 0 ? salesToKgFactor : 1;
+  return Number((capacityPerBatch * factor).toFixed(3));
+}
+
 /** Status efetivo de um produto batido a partir do nº de batidas concluídas. */
 export function deriveBatchStatus(batchesDone: number, batchCount: number): ProductionItemStatus {
   if (batchesDone <= 0) return "nao_iniciado";

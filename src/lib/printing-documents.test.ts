@@ -460,6 +460,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
         requiredKg: 3,
         usedBy: ["Pão doce"],
         recipeStageConfig: undefined,
+        batchSplit: null,
         items: [
           {
             key: "mpi-chantilly-m1-3",
@@ -487,6 +488,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
         requestedUnit: "Kg",
         unitWeightKg: 1,
         unitsCount: 10,
+        batchSplit: null,
         recipeStageConfig: undefined,
         items: [
           {

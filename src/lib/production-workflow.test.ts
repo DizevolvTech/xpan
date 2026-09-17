@@ -4,6 +4,7 @@ import test from "node:test";
 import type { ProductPreparationStageKey } from "@/lib/production-planning";
 import {
   canTransitionProductionItemStatus,
+  canTransitionProductionItemStatusLenient,
   clampStatusToFlow,
   getNextProductionActionLabel,
   getNextProductionItemStatus,
@@ -78,4 +79,14 @@ test("production workflow respects per-product custom stages", () => {
   assert.equal(canTransitionProductionItemStatus("em_preparacao", "em_forno", customStages), false);
   assert.equal(getNextProductionActionLabel("em_preparacao", customStages), "Iniciar embalagem");
   assert.equal(getProductionStatusProgress("embalando", customStages), 66.7);
+});
+
+test("S0.7: OP continua avançando depois que a ficha perde etapas no meio da operação", () => {
+  const liveStages: ProductPreparationStageKey[] = ["em_producao"];
+
+  assert.equal(canTransitionProductionItemStatus("em_forno", "embalando", liveStages), false);
+  assert.equal(canTransitionProductionItemStatusLenient("em_forno", "embalando", liveStages), true);
+  assert.equal(canTransitionProductionItemStatusLenient("nao_iniciado", "em_producao", liveStages), true);
+  assert.equal(canTransitionProductionItemStatusLenient("em_producao", "concluido", liveStages), true);
+  assert.equal(canTransitionProductionItemStatusLenient("nao_iniciado", "concluido", liveStages), false);
 });

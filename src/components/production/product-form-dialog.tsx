@@ -78,7 +78,7 @@ import {
   ingredientKgPerFinishedUnit,
 } from "@/lib/lab-test";
 import { normalizeSaleLeadDays } from "@/lib/order-planning";
-import { deriveCapacityFromProductRecipe, planBatches } from "@/lib/production-batches";
+import { deriveCapacityFromProductRecipe, deriveEconomicProductionKg, formatBatchSizesPhrase, planBatches } from "@/lib/production-batches";
 import {
   buildProductFormState,
   calculateQuantityPerPackage,
@@ -460,6 +460,28 @@ export function ProductFormDialog({
       }),
     [formState.recipe, recipeFinalQuantityPrecise, formState.mainIngredientLimitKg],
   );
+  useEffect(() => {
+    if (derivedBatchCapacity == null) {
+      return;
+    }
+    const factor =
+      salesUnit === "Kg" || salesUnit === "L"
+        ? 1
+        : formState.unitProfiles.sales.weightKg > 0
+          ? formState.unitProfiles.sales.weightKg
+          : 1;
+    const economic = deriveEconomicProductionKg(derivedBatchCapacity, factor);
+    setFormState((current) => {
+      if (current.capacityPerBatch === derivedBatchCapacity && current.economicProductionKg === economic) {
+        return current;
+      }
+      return {
+        ...current,
+        capacityPerBatch: derivedBatchCapacity,
+        economicProductionKg: economic,
+      };
+    });
+  }, [derivedBatchCapacity, salesUnit, formState.unitProfiles.sales.weightKg]);
   const recipeSourceOptionsForSearch = useMemo(
     () =>
       recipeSourceOptions.map((option) => {
@@ -516,6 +538,14 @@ export function ProductFormDialog({
       const nextUnit = patch.unit ?? current.unitProfiles[scope].unit;
       const nextWeight =
         patch.weightKg ?? (nextUnit === "Kg" ? 1 : current.unitProfiles[scope].weightKg);
+      const syncedProduction =
+        scope === "sales" &&
+        nextUnit !== "Kg" &&
+        nextUnit !== "L" &&
+        current.unitProfiles.production.unit !== "Kg" &&
+        current.unitProfiles.production.unit !== "L"
+          ? { production: { ...current.unitProfiles.production, weightKg: nextWeight } }
+          : {};
       const nextPackagingUnits =
         scope === "sales"
           ? getPackagingUnitsForSalesUnit(nextUnit)
@@ -540,6 +570,7 @@ export function ProductFormDialog({
         ...current,
         unitProfiles: {
           ...current.unitProfiles,
+          ...syncedProduction,
           [scope]: {
             ...current.unitProfiles[scope],
             ...patch,
@@ -795,6 +826,11 @@ export function ProductFormDialog({
     );
     const salesWeight =
       withLab.unitProfiles.sales.unit === "Kg" ? 1 : withLab.unitProfiles.sales.weightKg;
+    const derivedCapacity = deriveCapacityFromProductRecipe({
+      recipe: withLab.recipe,
+      recipeYieldUnits: recipeFinalQuantityPrecise,
+      mainIngredientLimitKg: withLab.mainIngredientLimitKg,
+    });
     const expeditionWeight =
       withLab.unitProfiles.expedition.unit === "Kg"
         ? 1
@@ -823,6 +859,11 @@ export function ProductFormDialog({
         maximumFractionDigits: 3,
       }),
       isMpiIngredient: withLab.canBeIngredient,
+      capacityPerBatch: derivedCapacity ?? withLab.capacityPerBatch,
+      economicProductionKg:
+        derivedCapacity != null
+          ? deriveEconomicProductionKg(derivedCapacity, salesWeight)
+          : withLab.economicProductionKg,
       packagingProfile: normalizedPackagingProfile
         ? {
             ...normalizedPackagingProfile,
@@ -1534,9 +1575,9 @@ export function ProductFormDialog({
                     Unidades de Medida e Conversões
                   </h3>
                   <p className="text-xs text-muted-foreground">
-                    Produção pensa em unidade, expedição em embalagem, o pedido usa o que a
-                    loja compra. O sistema guarda kg por unidade. O peso da etiqueta (Inmetro)
-                    fica no teste de laboratório — não é o peso de produção.
+                    Um peso só: o kg da unidade. Loja, padeiro e expedição só mudam o rótulo
+                    (Un, pacote, caixa). A dosimetria sempre pesa em kg. O peso da etiqueta
+                    (Inmetro) fica no teste de laboratório — não é o peso de produção.
                   </p>
                 </div>
 
@@ -2390,7 +2431,8 @@ export function ProductFormDialog({
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Parâmetros de Produção</h3>
                   <p className="text-xs text-muted-foreground">
-                    Validade e bases de produção. A quebra sai do teste de laboratório acima.
+                    Validade, lote mínimo (aviso) e limite da masseira. A capacidade por batida
+                    sai do ingrediente principal ⭐ — não se digitam três bases diferentes.
                   </p>
                 </div>
 
@@ -2420,91 +2462,64 @@ export function ProductFormDialog({
                         }))
                       }
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Só alerta na OP. Não trava e não define o tamanho da batida.
+                    </p>
                   </div>
                   <div className="grid gap-2">
-                    <Label>Base econômica de produção (Kg)</Label>
-                    <Input
-                      type="number"
-                      value={formState.economicProductionKg}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          economicProductionKg: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Capacidade por batida (em {salesUnitLabel}; vazio = sem batida)</Label>
+                    <Label>Limite do ingrediente principal por batida (Kg)</Label>
                     <Input
                       type="number"
                       min={0}
-                      value={formState.capacityPerBatch ?? ""}
+                      step="0.001"
+                      placeholder="ex.: 50 (kg de trigo que a masseira comporta)"
+                      value={formState.mainIngredientLimitKg ?? ""}
                       onChange={(event) =>
                         setFormState((current) => ({
                           ...current,
-                          capacityPerBatch:
+                          mainIngredientLimitKg:
                             event.target.value === "" ? null : Number(event.target.value),
                         }))
                       }
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {!hasMainIngredient
+                        ? "Marque um ingrediente como principal (⭐) na receita."
+                        : formState.mainIngredientLimitKg == null
+                          ? "Informe quanto do principal cabe na masseira. A capacidade e a base econômica saem daí."
+                          : derivedBatchCapacity === null
+                            ? "Não foi possível derivar: o principal precisa estar em Kg, com rendimento válido."
+                            : `Capacidade ${formatLocaleNumber(derivedBatchCapacity)} ${salesUnitLabel} por batida · base econômica ${formatKgLabel(
+                                formState.economicProductionKg,
+                                { minimumFractionDigits: 3, maximumFractionDigits: 3 },
+                              )}.`}
+                    </p>
                     {batchPreview ? (
                       <p className="text-xs text-muted-foreground">
-                        Base econômica ={" "}
-                        {batchPreview.batchCount === 1
-                          ? `1 batida de ${formatLocaleNumber(batchPreview.batchSizes[0])} ${batchPreview.unitLabel}.`
-                          : `${batchPreview.batchCount} batidas de ${formatLocaleNumber(
-                              batchPreview.batchSizes[0],
-                            )} ${batchPreview.unitLabel}; última com ${formatLocaleNumber(
-                              batchPreview.batchSizes[batchPreview.batchSizes.length - 1],
-                            )} ${batchPreview.unitLabel}.`}
+                        {formatBatchSizesPhrase(batchPreview.batchSizes, batchPreview.unitLabel)}
                       </p>
                     ) : null}
                   </div>
-                  {/* XPAN-8: derivar a capacidade por batida do limite físico do ingrediente principal. */}
-                  <div className="grid gap-2">
-                    <Label>Limite do ingrediente principal por batida (Kg)</Label>
-                    <div className="flex items-center gap-2">
+                  {derivedBatchCapacity == null ? (
+                    <div className="grid gap-2">
+                      <Label>Capacidade por batida (em {salesUnitLabel}; vazio = sem batida)</Label>
                       <Input
                         type="number"
                         min={0}
-                        step="0.001"
-                        placeholder="ex.: 50 (kg de trigo que a masseira comporta)"
-                        value={formState.mainIngredientLimitKg ?? ""}
+                        value={formState.capacityPerBatch ?? ""}
                         onChange={(event) =>
                           setFormState((current) => ({
                             ...current,
-                            mainIngredientLimitKg:
+                            capacityPerBatch:
                               event.target.value === "" ? null : Number(event.target.value),
                           }))
                         }
                       />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        disabled={derivedBatchCapacity === null}
-                        onClick={() =>
-                          setFormState((current) => ({ ...current, capacityPerBatch: derivedBatchCapacity }))
-                        }
-                        title="Calcular a capacidade por batida a partir do limite do ingrediente principal"
-                      >
-                        Derivar capacidade
-                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Sem limite do principal, a capacidade continua manual.
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {!hasMainIngredient
-                        ? "Marque um ingrediente como principal (⭐) na lista de ingredientes da receita e informe o limite físico da masseira para derivar a capacidade por batida automaticamente."
-                        : formState.mainIngredientLimitKg == null
-                          ? "Informe o limite físico (kg) do ingrediente principal que a masseira comporta por batida."
-                          : derivedBatchCapacity === null
-                            ? "Não foi possível derivar: o ingrediente principal precisa estar em Kg e a receita precisa ter rendimento e quantidade válidos."
-                            : `Rende ~${formatLocaleNumber(derivedBatchCapacity)} ${salesUnitLabel} por batida (limite de ${formatLocaleNumber(
-                                formState.mainIngredientLimitKg,
-                              )} kg do ingrediente principal). Clique em “Derivar capacidade” para aplicar acima.`}
-                    </p>
-                  </div>
+                  ) : null}
                   <div className="grid gap-2">
                     <Label>Unidade do lote econômico</Label>
                     <Select
