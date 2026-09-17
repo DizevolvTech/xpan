@@ -2278,6 +2278,7 @@ export function ProductFormDialog({
                       type="number"
                       min="0"
                       step="0.001"
+                      className="border-stone-300 bg-white"
                       value={formState.labTest?.rawUnitWeightKg ?? ""}
                       onChange={(event) =>
                         updateLabTest({ rawUnitWeightKg: readOptionalNumber(event.target.value) })
@@ -2290,6 +2291,7 @@ export function ProductFormDialog({
                       type="number"
                       min="0"
                       step="0.001"
+                      className="border-stone-300 bg-white"
                       placeholder={
                         recipeTotals.totalIngredientsKg > 0
                           ? `Soma da receita: ${formatLocaleNumber(recipeTotals.totalIngredientsKg, {
@@ -2313,6 +2315,7 @@ export function ProductFormDialog({
                       type="number"
                       min="0"
                       step="0.001"
+                      className="border-stone-300 bg-white"
                       value={formState.labTest?.bakedKg ?? ""}
                       onChange={(event) =>
                         updateLabTest({ bakedKg: readOptionalNumber(event.target.value) })
@@ -2325,6 +2328,7 @@ export function ProductFormDialog({
                       type="number"
                       min="0"
                       step="0.001"
+                      className="border-stone-300 bg-white"
                       value={formState.labTest?.leftoverBakedKg ?? ""}
                       onChange={(event) =>
                         updateLabTest({ leftoverBakedKg: readOptionalNumber(event.target.value) })
@@ -2337,6 +2341,7 @@ export function ProductFormDialog({
                       type="number"
                       min="0"
                       step="1"
+                      className="border-stone-300 bg-white"
                       value={formState.labTest?.unitCount ?? ""}
                       onChange={(event) =>
                         updateLabTest({ unitCount: readOptionalNumber(event.target.value) })
@@ -2349,6 +2354,7 @@ export function ProductFormDialog({
                       type="number"
                       min="0"
                       step="0.001"
+                      className="border-stone-300 bg-white"
                       value={formState.labTest?.labelWeightKg ?? ""}
                       onChange={(event) =>
                         updateLabTest({ labelWeightKg: readOptionalNumber(event.target.value) })
@@ -2359,7 +2365,7 @@ export function ProductFormDialog({
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-4">
-                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                  <div className="rounded-xl border border-stone-200 bg-white p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
                       Quebra
                     </p>
@@ -2375,7 +2381,7 @@ export function ProductFormDialog({
                       1 − (assado efetivo / massa crua)
                     </p>
                   </div>
-                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                  <div className="rounded-xl border border-stone-200 bg-white p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
                       Rendimento
                     </p>
@@ -2389,7 +2395,7 @@ export function ProductFormDialog({
                     </p>
                     <p className="mt-1 text-[11px] text-amber-900/70">Assado efetivo / massa crua</p>
                   </div>
-                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                  <div className="rounded-xl border border-stone-200 bg-white p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
                       Unidade assada
                     </p>
@@ -2410,7 +2416,7 @@ export function ProductFormDialog({
                         : "kg assados efetivos / unidades"}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-amber-200 bg-white/70 p-3">
+                  <div className="rounded-xl border border-stone-200 bg-white p-3">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-800">
                       Assado efetivo
                     </p>
