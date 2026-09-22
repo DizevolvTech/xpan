@@ -32,6 +32,8 @@ import {
 } from "@/lib/supabase-data/schedule-revision-plan";
 import { changeAffectsCronograma, diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
+import { calculateMixerCapacity } from "@/lib/production-data-utils";
+import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
 type RecordStatus = "ativo" | "inativo";
 
@@ -83,9 +85,18 @@ export type OperationalSettingsInput = {
 };
 
 type MutationOptions = {
+  tenantId?: string | null;
   supabase?: SupabaseDataClient;
   actingProfileId?: string | null;
 };
+
+async function withCalculatedBatchCapacity(input: ProductInput, supabase: SupabaseDataClient, tenantId?: string | null): Promise<ProductInput> {
+  if (input.maxBatchWeightKg == null) return input;
+  const snapshot = await getMasterDataSnapshot({ supabase, tenantId, includeProfileNames: false, forceRefresh: true });
+  const result = calculateMixerCapacity({ ...input, id: "draft", code: input.code ?? "" }, snapshot.ingredients, snapshot.products);
+  if (result.capacity == null) throw new MasterDataValidationError("Limite máximo da batida inválido: informe a capacidade, ingredientes com peso e rendimento suficientes para pelo menos uma unidade inteira.");
+  return { ...input, capacityPerBatch: result.capacity };
+}
 
 /**
  * Erro de validação semântica de entrada em mutations de master data.
@@ -959,6 +970,7 @@ function normalizeProductPayload(input: ProductInput) {
     minimum_production_kg: input.minimumProductionKg,
     economic_production_kg: input.economicProductionKg,
     capacity_per_batch: input.capacityPerBatch ?? null,
+    max_batch_weight_kg: input.maxBatchWeightKg ?? null,
     economic_batch_unit: input.economicBatchUnit ?? null,
     // XPAN-8: limite físico do ingrediente principal por batida (kg). null = manual.
     // Normaliza 0/negativo/NaN → null (opt-out): a coluna tem CHECK (> 0), então gravar
@@ -1521,6 +1533,7 @@ export async function removeProductFromOperationalSubcategory(
 
 export async function createProduct(input: ProductInput, options: MutationOptions = {}) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  input = await withCalculatedBatchCapacity(input, supabase, options.tenantId);
   const existingCodesResult = await supabase.from("products").select("code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load product codes");
   const subcategoryId = await resolveSubcategoryId(input.lineId, supabase);
@@ -1559,6 +1572,7 @@ export async function updateProduct(
   options: MutationOptions = {},
 ) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
+  input = await withCalculatedBatchCapacity(input, supabase, options.tenantId);
   const row = await resolveRowByIdentifier("products", identifier, supabase);
   const productId = String(row.id);
   const subcategoryId = await resolveSubcategoryId(input.lineId, supabase);
@@ -1705,6 +1719,7 @@ export async function cloneProduct(
     economic_batch_unit: row.economic_batch_unit ?? null,
     // XPAN-8: preserva o limite do ingrediente principal ao copiar o produto.
     main_ingredient_limit_kg: (row as Record<string, unknown>).main_ingredient_limit_kg ?? null,
+    max_batch_weight_kg: (row as Record<string, unknown>).max_batch_weight_kg ?? null,
     allows_storage: row.allows_storage,
     production_days: row.production_days,
     sale_lead_days: row.sale_lead_days,

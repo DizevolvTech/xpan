@@ -4,7 +4,7 @@ import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidateMasterDataCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { ProductInput } from "@/lib/supabase-data/master-data-admin";
-import { createProduct } from "@/lib/supabase-data/master-data-admin";
+import { createProduct, MasterDataValidationError } from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 export async function POST(request: Request) {
@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       createSupabaseAdminClient(),
     );
     const created = await createProduct(payload, {
+      tenantId: authorization.effectiveTenantId,
       supabase,
       actingProfileId: authorization.user.id,
     });
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to create product" },
-      { status: 500 },
+      { status: error instanceof MasterDataValidationError ? 400 : 500 },
     );
   }
 }

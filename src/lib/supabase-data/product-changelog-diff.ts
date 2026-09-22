@@ -25,6 +25,7 @@ const AUDITED_FIELDS: Array<{ field: string; label: string }> = [
   { field: "minimum_production_kg", label: "Produção mínima (Kg)" },
   { field: "economic_production_kg", label: "Produção econômica (Kg)" },
   { field: "capacity_per_batch", label: "Capacidade por batida" },
+  { field: "max_batch_weight_kg", label: "Limite máximo da batida (Kg)" },
   { field: "economic_batch_unit", label: "Unidade do lote econômico" },
   { field: "main_ingredient_limit_kg", label: "Limite do ingrediente principal (Kg)" },
   { field: "validity_days", label: "Validade (dias)" },

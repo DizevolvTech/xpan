@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildDefaultScheduleDayPriorities,
+  calculateMixerCapacity,
   deriveProductionDaysFromDayPriorities,
   getProductOperationalStatusLabel,
   getProductRecipeTotalsFromData,
@@ -11,6 +12,24 @@ import {
   sortScheduleEntriesForDay,
 } from "@/lib/production-data-utils";
 import type { ProductionIngredient, ProductionProduct } from "@/lib/production-planning";
+
+test("XPAN-04 soma ingredientes marcados e arredonda a capacidade para baixo", () => {
+  const product: ProductionProduct = { ...baseProduct, maxBatchWeightKg: 10, breakPercent: 0, labTest: undefined,
+    unitProfiles: { ...baseProduct.unitProfiles, sales: { unit: "Un", description: "", weightKg: 0.5 } },
+    recipe: [
+      { id: "a", sourceType: "ingrediente", sourceId: "a", label: "Farinha", quantity: 10, unit: "Kg", countsTowardMixer: true },
+      { id: "b", sourceType: "ingrediente", sourceId: "b", label: "Água", quantity: 5, unit: "Kg", countsTowardMixer: true },
+      { id: "c", sourceType: "ingrediente", sourceId: "c", label: "Cobertura", quantity: 5, unit: "Kg", countsTowardMixer: false },
+    ],
+  };
+  const result = calculateMixerCapacity(product, [], []);
+  assert.equal(result.kgPerUnit, 15 / 40);
+  assert.equal(result.capacity, 26);
+  assert.ok(result.plannedWeightKg <= 10);
+  assert.deepEqual(calculateMixerCapacity(JSON.parse(JSON.stringify(product)), [], []), result);
+  assert.equal(calculateMixerCapacity({ ...product, maxBatchWeightKg: 0.1 }, [], []).capacity, null);
+  assert.equal(calculateMixerCapacity({ ...product, recipe: [] }, [], []).capacity, null);
+});
 
 const ingredients: ProductionIngredient[] = [
   {

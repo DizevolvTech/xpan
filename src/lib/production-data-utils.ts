@@ -9,7 +9,7 @@ import type {
 } from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { isMassOrVolumeUnit, roundQuantityForUnit } from "@/lib/factory-planning/units";
-import { productionWeekDays, sortProductionDays } from "@/lib/production-planning";
+import { productionWeekDays, sortProductionDays, recipeItemCountsTowardMixer } from "@/lib/production-planning";
 import { computeLabTest } from "@/lib/lab-test";
 
 export function getLinesBySectorFromData(
@@ -441,6 +441,35 @@ export function getProductRecipeTotalsFromData(
     finalOutputQuantity,
     finalOutputUnit: salesUnit,
   };
+}
+
+/** XPAN-04: sum only the ingredients selected for the physical mixer load. */
+export function calculateMixerCapacity(product: ProductionProduct, ingredients: ProductionIngredient[], products: ProductionProduct[]) {
+  const limit = product.maxBatchWeightKg;
+  const ingredientMap = new Map(ingredients.map(item => [item.id, item]));
+  const productMap = new Map(products.map(item => [item.id, item]));
+  const selected = product.recipe.filter(recipeItemCountsTowardMixer);
+  const weights = selected.map(item => {
+    // A count without a registered weight must not silently become 1 kg/unit.
+    if (!isMassOrVolumeUnit(item.unit) && item.sourceType === "ingrediente") {
+      const ingredient = ingredientMap.get(item.sourceId);
+      if (!ingredient) return NaN;
+      const normalized = convertIngredientQuantityToConsumptionUnit(item, ingredient);
+      if (!isMassOrVolumeUnit(normalized.unit) && !(Number(ingredient.weightKg) > 0) && !(Number(ingredient.recipeYieldKg) > 0)) return NaN;
+    }
+    if (!isMassOrVolumeUnit(item.unit) && item.sourceType === "produto" && !productMap.has(item.sourceId)) return NaN;
+    return getRecipeReferenceWeightKgFromData(item, ingredientMap, productMap);
+  });
+  const mixerKg = weights.reduce((sum, kg) => sum + kg, 0);
+  const yieldUnits = getProductRecipeTotalsFromData(product, ingredients, products).finalFractionsQuantityPrecise;
+  const kgPerUnit = mixerKg / yieldUnits;
+  if (!limit || !Number.isFinite(limit) || limit <= 0 || !Number.isFinite(kgPerUnit) || kgPerUnit <= 0 || weights.some(kg => !Number.isFinite(kg) || kg <= 0)) {
+    return { capacity: null, kgPerUnit: 0, plannedWeightKg: 0 };
+  }
+  let capacity = Math.floor(limit / kgPerUnit);
+  // Floating point must never allow a batch above the physical limit.
+  if (capacity * kgPerUnit > limit) capacity -= 1;
+  return { capacity: capacity >= 1 ? capacity : null, kgPerUnit, plannedWeightKg: Math.max(0, capacity) * kgPerUnit };
 }
 
 export function buildSectorNameById(sectors: ProductionSector[]) {

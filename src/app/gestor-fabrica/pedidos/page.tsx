@@ -437,6 +437,10 @@ export default function PedidosFabricaPage() {
       ]}
     >
       {/* Action bar — escopo em pílula popover (alinhado ao dashboard). */}
+      <div className="flex flex-wrap gap-2">
+        <Button asChild><Link href="/gestor-fabrica/pedidos/centralizado">Pedido centralizado</Link></Button>
+        <Button asChild variant="outline"><Link href="/gestor-fabrica/pedidos/centralizado#order-excel">Importar pedidos Excel</Link></Button>
+      </div>
       <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
           <PopoverTrigger asChild>

@@ -403,6 +403,8 @@ export interface ProductionProduct {
    * na masseira). null/undefined = não definido → capacidade por batida segue manual.
    * Opcional para não exigir o campo em todas as fixtures existentes. */
   mainIngredientLimitKg?: number | null;
+  /** Capacidade física total da masseira, considerando todas as linhas Na batida. */
+  maxBatchWeightKg?: number | null;
 }
 
 export type EconomicBatchUnit = "kg" | "forma" | "maceira" | "pacote" | "unidade";

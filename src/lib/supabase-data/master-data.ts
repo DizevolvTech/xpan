@@ -417,6 +417,8 @@ async function loadMasterDataSnapshot(
       (row as Record<string, unknown>).main_ingredient_limit_kg == null
         ? null
         : Number((row as Record<string, unknown>).main_ingredient_limit_kg),
+    maxBatchWeightKg: (row as Record<string, unknown>).max_batch_weight_kg == null
+      ? null : Number((row as Record<string, unknown>).max_batch_weight_kg),
     allowsStorage: row.allows_storage,
     productionDays: (row.production_days ?? []) as ProductionProduct["productionDays"],
     expeditionLeadDays:

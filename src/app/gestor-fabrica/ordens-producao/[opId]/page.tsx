@@ -159,7 +159,10 @@ export default function OrdemProducaoDetailsPage() {
           </Button>
           <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`)}>
             <Printer className="size-4" />
-            Produção
+            Produção A4
+          </Button>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}&format=80mm`)}>
+            <Printer className="size-4" />Produção 80 mm
           </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-fabrica/ordens-producao">

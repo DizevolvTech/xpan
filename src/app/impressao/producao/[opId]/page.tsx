@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
+import { ThermalProductionSheet } from "@/components/printing/thermal-production-sheet";
 import { ProductionSheetSections } from "@/components/printing/production-sheet";
 import { buildProductionSheetDocument } from "@/lib/printing-documents";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
@@ -63,6 +64,11 @@ export default function ProducaoPrintPage() {
 
   if (!op || !document) {
     return <PrintDocument title="Folha de produção não encontrada" subtitle="Nenhuma OP foi localizada." />;
+  }
+
+  if (searchParams.get("format") === "80mm") {
+    return <ThermalProductionSheet document={document} code={op.code} line={op.lineName}
+      productionDate={op.productionDateLabel} deliveryDate={deliveryDateLabel} />;
   }
 
   return (

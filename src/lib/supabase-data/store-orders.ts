@@ -140,7 +140,7 @@ async function resolveStoreDatabaseId(
   legacyStoreId: string,
   supabase: SupabaseDataClient,
 ) {
-  const result = await supabase.from("stores").select("id").eq("legacy_id", legacyStoreId).maybeSingle();
+  const result = await supabase.from("stores").select("id").eq(isUuid(legacyStoreId) ? "id" : "legacy_id", legacyStoreId).maybeSingle();
   const row = assertSupabaseResult(
     { data: result.data, error: result.error },
     "Failed to resolve store id",
@@ -156,7 +156,7 @@ async function loadOrderProductRows(supabase: SupabaseDataClient) {
   return assertSupabaseResult(productsResult, "Failed to resolve product ids") as OrderProductRow[];
 }
 
-async function validateStoreOrderItems(
+export async function validateStoreOrderItems(
   items: CreateStoreOrderInput["items"],
   options: {
     storeId: string;
@@ -254,6 +254,44 @@ async function validateStoreOrderItems(
     orderWindow,
     validatedItems,
   };
+}
+
+/** Factory entry validates every destination first; the RPC commits all orders together. */
+export async function createCentralizedStoreOrders(input: {
+  orders: CreateStoreOrderInput[];
+  tenantId: string;
+  actorId: string;
+  requestId: string;
+  source: "centralizado" | "excel";
+}, supabase: SupabaseDataClient) {
+  const orderedAt = new Date().toISOString();
+  const actor = await resolveProfileDatabaseId(supabase, input.actorId, { tenantId: input.tenantId });
+  const payload = [];
+  for (const order of input.orders) {
+    const { store, orderWindow, snapshot, validatedItems } = await validateStoreOrderItems(order.items, {
+      storeId: order.storeId, orderedAt, tenantId: input.tenantId, supabase, targetDeliveryDate: order.deliveryDate,
+    });
+    const storeId = await resolveStoreDatabaseId(order.storeId, supabase);
+    payload.push({
+      store_id: storeId,
+      code: await allocateBusinessCode("PD", orderedAt, supabase),
+      base_date: orderWindow.baseDate,
+      delivery_date: order.deliveryDate ?? orderWindow.deliveryDate,
+      receive_window: store.receiveWindow,
+      expedition_lead_days: snapshot.operationalSettings.expeditionLeadDays,
+      items: validatedItems.map(({ item, product }) => ({
+        product_id: product.id, quantity: item.quantity, unit: item.unit,
+        code: product.code, name: product.name, sales_factor: product.sales_to_kg_factor,
+        expedition_unit: product.expedition_unit, expedition_factor: product.expedition_to_kg_factor,
+        production_unit: product.production_unit,
+      })),
+    });
+  }
+  const result = await supabase.rpc("create_centralized_orders", {
+    p_tenant_id: input.tenantId, p_actor_id: actor, p_request_id: input.requestId,
+    p_source: input.source, p_orders: payload,
+  });
+  return assertSupabaseResult(result, "Falha ao registrar pedidos centralizados");
 }
 
 async function replaceStoreOrderItems(
