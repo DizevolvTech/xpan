@@ -159,7 +159,10 @@ export default function OrdemProducaoDetailsPage() {
           </Button>
           <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`)}>
             <Printer className="size-4" />
-            Produção
+            Produção A4
+          </Button>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}&format=80mm`)}>
+            <Printer className="size-4" />Produção 80 mm
           </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-fabrica/ordens-producao">
@@ -394,7 +397,16 @@ export default function OrdemProducaoDetailsPage() {
                   <tbody>
                     {paginatedSourceItems.map((item) => (
                       <tr key={item.id}>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.orderCode}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                      {planningData.orders.some((order) => order.id === item.orderId) ? (
+                        <Link
+                          className="text-primary underline underline-offset-4"
+                          href={`/gestor-fabrica/pedidos/${encodeURIComponent(item.orderId)}?ref=${anchorDate}`}
+                        >
+                          {item.orderCode}
+                        </Link>
+                      ) : item.orderCode}
+                    </td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.storeName}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.productCode} · {item.productName}

@@ -226,6 +226,7 @@ export default function OrdensProducaoPage() {
       const matchesSearch =
         term.length === 0 ||
         item.code.toLowerCase().includes(term) ||
+        item.orderCodes.some((code) => code.toLowerCase().includes(term)) ||
         item.sectorName.toLowerCase().includes(term) ||
         item.lineName.toLowerCase().includes(term) ||
         item.scheduleName.toLowerCase().includes(term) ||
@@ -811,7 +812,7 @@ export default function OrdensProducaoPage() {
         title="Filtros da Produção"
         summary={`${filteredOps.length} de ${opRows.length} OPs visíveis`}
         searchLabel="Busca"
-        searchPlaceholder="Buscar por OP, produto, categoria ou linha de produção..."
+        searchPlaceholder="Buscar por OP, pedido, produto, categoria ou linha de produção..."
         searchValue={searchTerm}
         onSearch={(value) => {
           setSearchTerm(value);

@@ -394,6 +394,7 @@ export default function PedidosLojaPage() {
   const { suggestions: weekdaySuggestions } = useStoreOrderSuggestions(selectedStoreId);
   const { occurrences } = useStoreOccurrences(selectedStoreId);
   const { createOrder, isSubmitting: isCreating } = useCreateStoreOrder(() => {
+    toast.success("Pedido salvo. A OP será disponibilizada após a liberação do pedido pela fábrica.");
     void refreshStoreOrders();
     setIsNewOrderOpen(false);
     setEditingOrderId(null);
@@ -1552,6 +1553,10 @@ export default function PedidosLojaPage() {
                 Revisar Pedido
               </Button>
             </DialogFooter>
+            <p className="text-xs text-muted-foreground">
+              Após confirmar, o pedido fica aguardando a liberação da fábrica para produção. A fábrica
+              poderá acessar a OP em Pedidos → detalhe do pedido → OPs Relacionadas.
+            </p>
             </>
             )}
           </DialogContent>

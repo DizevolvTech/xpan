@@ -71,6 +71,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       createSupabaseAdminClient(),
     );
     const { scheduleRevisionImpact } = await updateProduct(productId, payload, {
+      tenantId: authorization.effectiveTenantId,
       supabase,
       actingProfileId: authorization.user.id,
     });

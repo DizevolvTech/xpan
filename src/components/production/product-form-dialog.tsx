@@ -68,7 +68,7 @@ import {
 } from "@/lib/operational-units";
 import { findDuplicateExternalCode, normalizeExternalCode } from "@/lib/ingredient-form-logic";
 import { getProductDisplayCode, normalizeGtin } from "@/lib/product-identity";
-import { getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
+import { calculateMixerCapacity, getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
 import {
   applyLabTestToProduct,
   bakerPercentLegalHint,
@@ -447,18 +447,15 @@ export function ProductFormDialog({
   // (`finalFractionsQuantityPrecise`) — mesmo valor que propaga a jusante.
   const recipeFinalQuantityPrecise = recipeTotals.finalFractionsQuantityPrecise;
   // XPAN-8: capacidade por batida derivada do ingrediente principal (⭐) + limite físico.
-  const hasMainIngredient = useMemo(
-    () => formState.recipe.some((item) => item.isMain),
-    [formState.recipe],
-  );
+  const mixerCapacity = useMemo(() => calculateMixerCapacity(formState, snapshot.ingredients, snapshot.products), [formState, snapshot.ingredients, snapshot.products]);
   const derivedBatchCapacity = useMemo(
     () =>
-      deriveCapacityFromProductRecipe({
+      formState.maxBatchWeightKg != null ? mixerCapacity.capacity : deriveCapacityFromProductRecipe({
         recipe: formState.recipe,
         recipeYieldUnits: recipeFinalQuantityPrecise,
         mainIngredientLimitKg: formState.mainIngredientLimitKg,
       }),
-    [formState.recipe, recipeFinalQuantityPrecise, formState.mainIngredientLimitKg],
+    [formState.recipe, recipeFinalQuantityPrecise, formState.mainIngredientLimitKg, formState.maxBatchWeightKg, mixerCapacity.capacity],
   );
   useEffect(() => {
     if (derivedBatchCapacity == null) {
@@ -801,6 +798,10 @@ export function ProductFormDialog({
   }
 
   async function handleSaveProduct() {
+    if (formState.maxBatchWeightKg != null && mixerCapacity.capacity == null) {
+      setFormError("Revise o limite máximo, os ingredientes marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira.");
+      return;
+    }
     const normalizedPackagingProfile = formState.isSoldLoose
       ? undefined
       : {
@@ -826,7 +827,7 @@ export function ProductFormDialog({
     );
     const salesWeight =
       withLab.unitProfiles.sales.unit === "Kg" ? 1 : withLab.unitProfiles.sales.weightKg;
-    const derivedCapacity = deriveCapacityFromProductRecipe({
+    const derivedCapacity = withLab.maxBatchWeightKg != null ? calculateMixerCapacity(withLab, snapshot.ingredients, snapshot.products).capacity : deriveCapacityFromProductRecipe({
       recipe: withLab.recipe,
       recipeYieldUnits: recipeFinalQuantityPrecise,
       mainIngredientLimitKg: withLab.mainIngredientLimitKg,
@@ -1521,6 +1522,11 @@ export function ProductFormDialog({
 
           <TabsContent value="receita">
             <fieldset disabled={isReadOnly} className="space-y-5">
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
+                <strong>Como preencher a receita</strong>
+                <p>1. Confira unidades e pesos. 2. Informe ingredientes, quantidades e etapas. 3. Preencha o rendimento. 4. Informe o limite máximo da batida.</p>
+                <p>Preenchimento manual: campos editáveis. Calculado pelo XPAN: valores em painéis sombreados. Campos com * são obrigatórios para adicionar um ingrediente.</p>
+              </div>
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Resumo Operacional</h3>
@@ -1572,7 +1578,7 @@ export function ProductFormDialog({
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">
-                    Unidades de Medida e Conversões
+                    1. Unidades e pesos · Preenchimento manual
                   </h3>
                   <p className="text-xs text-muted-foreground">
                     Um peso só: o kg da unidade. Loja, padeiro e expedição só mudam o rótulo
@@ -1843,7 +1849,7 @@ export function ProductFormDialog({
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-foreground">Ingredientes da Receita</h3>
+                    <h3 className="text-sm font-semibold text-foreground">2. Composição da receita · Preenchimento manual</h3>
                     <p className="text-xs text-muted-foreground">
                       A ficha é montada em BLOCOS, na mesma ordem em que a produção executa: cada
                       etapa tem os ingredientes dela e o seu próprio modo de preparo. O mesmo insumo
@@ -1959,7 +1965,7 @@ export function ProductFormDialog({
                                     Referência
                                   </th>
                                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                                    Qtd
+                                    Quantidade * · Manual
                                   </th>
                                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                                     Unidade
@@ -1971,10 +1977,10 @@ export function ProductFormDialog({
                                     % total
                                   </th>
                                   <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
-                                    kg / 1 un
+                                    kg / 1 un · Calculado
                                   </th>
                                   <th className="px-3 py-2 text-center text-xs font-semibold text-muted-foreground">
-                                    Masseira
+                                    Na batida?
                                   </th>
                                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                                     Mover para outra etapa
@@ -2102,7 +2108,7 @@ export function ProductFormDialog({
                                           title={
                                             item.isMain
                                               ? "Ingrediente principal (clique para desmarcar)"
-                                              : "Marcar como ingrediente principal — base da capacidade por batida (XPAN-8)"
+                                              : "Marcar como ingrediente principal — referência dos percentuais da receita"
                                           }
                                         >
                                           <Star
@@ -2153,7 +2159,7 @@ export function ProductFormDialog({
                         <div className="grid gap-3 rounded-lg border border-border/70 bg-card p-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                           <div className="grid gap-2">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Label>Ingrediente / Produto MPI</Label>
+                              <Label>Ingrediente / Produto MPI *</Label>
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2180,7 +2186,7 @@ export function ProductFormDialog({
                               />
                           </div>
                           <div className="grid gap-2">
-                            <Label>Quantidade</Label>
+                            <Label>Quantidade *</Label>
                             <Input
                               type="number"
                               step="0.001"
@@ -2192,7 +2198,7 @@ export function ProductFormDialog({
                             />
                           </div>
                           <div className="grid gap-2">
-                            <Label>Unidade</Label>
+                            <Label>Unidade *</Label>
                             <Select
                               value={draft.unit}
                               onValueChange={(value) =>
@@ -2263,7 +2269,7 @@ export function ProductFormDialog({
 
               <section className="space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-amber-950">Teste de laboratório</h3>
+                  <h3 className="text-sm font-semibold text-amber-950">3. Rendimento · Medições manuais do teste</h3>
                   <p className="text-xs text-amber-900/80">
                     Lance as medições da ficha amarela. Quebra, rendimento e peso da unidade
                     assada saem sozinhos — não se digitam %. Sempre informe as unidades, mesmo
@@ -2435,10 +2441,10 @@ export function ProductFormDialog({
 
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">Parâmetros de Produção</h3>
+                  <h3 className="text-sm font-semibold text-foreground">4. Capacidade e parâmetros de produção</h3>
                   <p className="text-xs text-muted-foreground">
                     Validade, lote mínimo (aviso) e limite da masseira. A capacidade por batida
-                    sai do ingrediente principal ⭐ — não se digitam três bases diferentes.
+                    é calculada pela soma dos ingredientes marcados em “Na batida?”.
                   </p>
                 </div>
 
@@ -2473,28 +2479,27 @@ export function ProductFormDialog({
                     </p>
                   </div>
                   <div className="grid gap-2">
-                    <Label>Limite do ingrediente principal por batida (Kg)</Label>
+                    <Label htmlFor="max-batch-weight">Limite máximo da batida (Kg) · Manual</Label>
                     <Input
+                      id="max-batch-weight"
                       type="number"
                       min={0}
                       step="0.001"
-                      placeholder="ex.: 50 (kg de trigo que a masseira comporta)"
-                      value={formState.mainIngredientLimitKg ?? ""}
+                      placeholder="Capacidade total do equipamento, ex.: 80"
+                      value={formState.maxBatchWeightKg ?? ""}
                       onChange={(event) =>
                         setFormState((current) => ({
                           ...current,
-                          mainIngredientLimitKg:
+                          maxBatchWeightKg:
                             event.target.value === "" ? null : Number(event.target.value),
                         }))
                       }
                     />
                     <p className="text-xs text-muted-foreground">
-                      {!hasMainIngredient
-                        ? "Marque um ingrediente como principal (⭐) na receita."
-                        : formState.mainIngredientLimitKg == null
-                          ? "Informe quanto do principal cabe na masseira. A capacidade e a base econômica saem daí."
+                      {formState.maxBatchWeightKg == null
+                          ? "Informe a capacidade total da masseira para ativar o cálculo automático. Produtos existentes conservam sua configuração até o preenchimento."
                           : derivedBatchCapacity === null
-                            ? "Não foi possível derivar: o principal precisa estar em Kg, com rendimento válido."
+                            ? "Revise os ingredientes marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira."
                             : `Capacidade ${formatLocaleNumber(derivedBatchCapacity)} ${salesUnitLabel} por batida · base econômica ${formatKgLabel(
                                 formState.economicProductionKg,
                                 { minimumFractionDigits: 3, maximumFractionDigits: 3 },
@@ -2506,26 +2511,12 @@ export function ProductFormDialog({
                       </p>
                     ) : null}
                   </div>
-                  {derivedBatchCapacity == null ? (
-                    <div className="grid gap-2">
-                      <Label>Capacidade por batida (em {salesUnitLabel}; vazio = sem batida)</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={formState.capacityPerBatch ?? ""}
-                        onChange={(event) =>
-                          setFormState((current) => ({
-                            ...current,
-                            capacityPerBatch:
-                              event.target.value === "" ? null : Number(event.target.value),
-                          }))
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Sem limite do principal, a capacidade continua manual.
-                      </p>
-                    </div>
-                  ) : null}
+                  <div className="grid gap-2 rounded-lg bg-panel/60 p-3" aria-live="polite">
+                    <Label>Calculado pelo XPAN</Label>
+                    <p>{derivedBatchCapacity ?? "—"} {salesUnitLabel} inteiras por batida</p>
+                    <p>Peso planejado: {formatKgLabel(mixerCapacity.plannedWeightKg)}</p>
+                    <p className="text-xs">Soma os ingredientes marcados em “Na batida?” e arredonda as unidades para baixo. Na OP, o restante gera uma batida complementar com ingredientes proporcionais.</p>
+                  </div>
                   <div className="grid gap-2">
                     <Label>Unidade do lote econômico</Label>
                     <Select

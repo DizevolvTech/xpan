@@ -32,6 +32,7 @@ export function planBatches(input: PlanBatchesInput): BatchPlan {
   }
 
   const cap = Math.floor(capacityPerBatch);
+  if (!Number.isFinite(cap) || cap < 1) throw new Error("Capacidade da batida deve comportar pelo menos uma unidade inteira.");
   const batchCount = Math.max(1, Math.ceil(totalUnits / cap));
   const batchSizes: number[] = [];
   let remaining = totalUnits;
@@ -73,6 +74,7 @@ export function computePreWeighBatchSplit(input: PlanBatchesInput): PreWeighBatc
     return { batched: false, fullBatchCount: 0, fullBatchUnits: 0, fullBatchKg: 0, partialUnits: totalUnits, partialKg: totalKg, totalUnits, unitLabel: salesUnit };
   }
   const cap = Math.floor(capacityPerBatch);
+  if (!Number.isFinite(cap) || cap < 1) throw new Error("Capacidade da batida deve comportar pelo menos uma unidade inteira.");
   const fullBatchCount = Math.floor(totalUnits / cap);
   const partialUnits = totalUnits - fullBatchCount * cap;
   return { batched: true, fullBatchCount, fullBatchUnits: cap, fullBatchKg: Number((cap * factor).toFixed(3)), partialUnits, partialKg: Number((partialUnits * factor).toFixed(3)), totalUnits, unitLabel: salesUnit };

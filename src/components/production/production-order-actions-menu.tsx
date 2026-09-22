@@ -79,7 +79,11 @@ export function ProductionOrderActionsMenu({
           </DropdownMenuItem>
           <DropdownMenuItem className={itemClassName} onSelect={handleAction(() => onOpenPrint(productionPrintHref))}>
             <Factory className="size-4" />
-            Produção
+            Produção A4
+          </DropdownMenuItem>
+          <DropdownMenuItem className={itemClassName} onSelect={handleAction(() => onOpenPrint(`${productionPrintHref}${productionPrintHref.includes("?") ? "&" : "?"}format=80mm`))}>
+            <Factory className="size-4" />
+            Produção 80 mm
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem className={itemClassName} onSelect={handleAction(() => router.push(detailHref))}>
