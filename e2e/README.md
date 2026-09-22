@@ -60,7 +60,36 @@ pela flag). Valida os erros do cliente do checklist XPAN:
 python3 e2e/live_cycle.py    # E2E_STORES/E2E_REF/E2E_BASE p/ override
 ```
 
-## Notas
+## XPAN-02 — pedido até OP e impressão (`xpan02.cjs`)
+
+Teste mutativo pela **interface**: usa um produto existente, cria um pedido em um slot
+livre, recarrega a listagem, libera na fábrica, abre a OP vinculada, confere produto,
+quantidade e entrega, recarrega a OP, testa impressão automática/manual, gera PDF,
+volta ao pedido pelo vínculo e localiza/reabre a OP buscando o código do pedido.
+Não acessa diretamente o banco, não remove pedidos e não força liberações.
+
+Pré-requisitos: servidor local, personas demo, lote já aberto pela fábrica com uma
+data livre e produto elegível, Playwright para Node e Chromium instalados. Uma falha
+ou pré-requisito ausente encerra com código 1, nunca com SKIP aprovado.
+
+PowerShell:
+
+```powershell
+$env:E2E_DELIVERY_DATE = 'AAAA-MM-DD' # data livre mostrada em Meus Pedidos
+node e2e/xpan02.cjs
+```
+
+Se Playwright estiver instalado fora do projeto, configure `PLAYWRIGHT_MODULE` com
+o caminho do pacote `playwright`. Overrides: `E2E_BASE`, `E2E_OUTPUT`,
+`E2E_LOJA_EMAIL`, `E2E_LOJA_PASSWORD`, `E2E_FABRICA_EMAIL`, `E2E_FABRICA_PASSWORD`.
+Por padrão, evidências ficam em `.next/xpan-02-validation`: `result.json`, screenshots
+e `op.pdf`. O JSON registra o pedido logo após criá-lo, inclusive se outra etapa
+falhar. Cada execução exige uma data livre; os pedidos ficam preservados para auditoria.
+
+O teste intercepta `window.print` para contar os acionamentos e usa o motor de impressão
+do Chromium para o PDF. Não valida impressora física nem o diálogo nativo do sistema.
+
+## Notas gerais
 
 - `npm run supabase:auth:bootstrap` é desnecessário (credenciais demo já funcionam) e bloqueado pelo harness.
 - AJ-0011 (produção→expedição) não é cobrível por E2E de UI — validação manual.

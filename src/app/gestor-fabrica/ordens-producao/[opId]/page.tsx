@@ -394,7 +394,16 @@ export default function OrdemProducaoDetailsPage() {
                   <tbody>
                     {paginatedSourceItems.map((item) => (
                       <tr key={item.id}>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.orderCode}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                      {planningData.orders.some((order) => order.id === item.orderId) ? (
+                        <Link
+                          className="text-primary underline underline-offset-4"
+                          href={`/gestor-fabrica/pedidos/${encodeURIComponent(item.orderId)}?ref=${anchorDate}`}
+                        >
+                          {item.orderCode}
+                        </Link>
+                      ) : item.orderCode}
+                    </td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.storeName}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.productCode} · {item.productName}
