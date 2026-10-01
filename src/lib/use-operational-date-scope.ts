@@ -4,6 +4,7 @@ import { useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 import { getTodayDateKey } from "@/lib/order-planning";
+import { safeStorageGet, safeStorageSet } from "@/lib/safe-storage";
 import {
   createDefaultOperationalDateScope,
   formatOperationalDateScopeSummary,
@@ -73,7 +74,7 @@ function readStoredOperationalDateScope(today: string) {
     );
   }
 
-  const storedValue = window.localStorage.getItem(getOperationalScopeStorageKey());
+  const storedValue = safeStorageGet(getOperationalScopeStorageKey());
   if (!storedValue) {
     return createDefaultOperationalDateScope(today);
   }
@@ -113,7 +114,11 @@ function writeOperationalDateScopeToUrl(scope: OperationalDateScope) {
   }
 
   const search = url.searchParams.toString();
-  window.history.replaceState({}, "", `${url.pathname}${search ? `?${search}` : ""}${url.hash}`);
+  try {
+    window.history.replaceState({}, "", `${url.pathname}${search ? `?${search}` : ""}${url.hash}`);
+  } catch {
+    // Sandbox/WebView restrito pode recusar replaceState: o período continua valendo em memória.
+  }
 }
 
 function subscribeOperationalDateScope(callback: () => void) {
@@ -152,7 +157,7 @@ function persistOperationalDateScope(scope: OperationalDateScope) {
     return;
   }
 
-  window.localStorage.setItem(getOperationalScopeStorageKey(), JSON.stringify(scope));
+  safeStorageSet(getOperationalScopeStorageKey(), JSON.stringify(scope));
   writeOperationalDateScopeToUrl(scope);
   window.dispatchEvent(new Event(OPERATIONAL_SCOPE_CHANGE_EVENT));
 }

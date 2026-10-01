@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { readClientAccessContext } from "@/lib/client-access-context";
+import { safeStorageGet, safeStorageSet } from "@/lib/safe-storage";
 import {
   buildStoreScopeStorageKey,
   resolveActiveStoreId,
@@ -28,8 +29,7 @@ export function useStoreScope<TStore extends StoreLike>(
   );
   const [preferredStoreId, setPreferredStoreIdState] = useState("");
   const activeStoreId = useMemo(() => {
-    const persisted =
-      typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+    const persisted = safeStorageGet(storageKey);
     return resolveActiveStoreId(availableStores, preferredStoreId, persisted);
   }, [availableStores, preferredStoreId, storageKey]);
 
@@ -38,7 +38,7 @@ export function useStoreScope<TStore extends StoreLike>(
       return;
     }
 
-    window.localStorage.setItem(storageKey, activeStoreId);
+    safeStorageSet(storageKey, activeStoreId);
   }, [activeStoreId, storageKey]);
 
   const setActiveStoreId = useCallback(
