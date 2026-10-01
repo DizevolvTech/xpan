@@ -34,6 +34,7 @@ import { changeAffectsCronograma, diffProductFields } from "@/lib/supabase-data/
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { calculateMixerCapacity } from "@/lib/production-data-utils";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
+import { isWeightDisplayUnit, type WeightDisplayUnit } from "@/lib/weight-display";
 
 type RecordStatus = "ativo" | "inativo";
 
@@ -82,6 +83,8 @@ export type OperationalSettingsInput = {
   orderCutoffTime: string;
   expeditionLeadDays: number;
   saleLeadDays: number;
+  /** Opcional: quem não manda o campo não altera a unidade atual. */
+  opWeightUnit?: WeightDisplayUnit;
 };
 
 type MutationOptions = {
@@ -581,10 +584,16 @@ function normalizeOperationalSettingsPayload(input: OperationalSettingsInput) {
     throw new Error("Informe um D+X de venda inteiro entre 0 e 30 dias.");
   }
 
+  if (input.opWeightUnit !== undefined && !isWeightDisplayUnit(input.opWeightUnit)) {
+    throw new Error("Informe a unidade da OP como kg ou g.");
+  }
+
   return {
     order_cutoff_time: `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
     expedition_lead_days: expeditionLeadDays,
     sale_lead_days: saleLeadDays,
+    // Só entra no UPDATE/INSERT quando veio: assim um cliente antigo (sem o campo) não zera a escolha.
+    ...(input.opWeightUnit !== undefined ? { op_weight_unit: input.opWeightUnit } : {}),
   };
 }
 
@@ -636,6 +645,7 @@ export async function updateOperationalSettings(
     orderCutoffTime: normalizedInput.order_cutoff_time,
     expeditionLeadDays: normalizedInput.expedition_lead_days,
     saleLeadDays: normalizedInput.sale_lead_days,
+    ...(normalizedInput.op_weight_unit ? { opWeightUnit: normalizedInput.op_weight_unit } : {}),
   };
 }
 

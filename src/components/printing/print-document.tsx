@@ -15,6 +15,8 @@ interface PrintDocumentProps {
   children?: ReactNode;
   variant?: "default" | "industrial";
   autoPrint?: boolean;
+  /** Controles só de tela (somem na impressão), ao lado de Imprimir/Fechar — ex.: unidade de peso. */
+  toolbar?: ReactNode;
 }
 
 async function waitForPrintableDocument(container: HTMLElement | null) {
@@ -65,6 +67,7 @@ export function PrintDocument({
   children,
   variant = "default",
   autoPrint = false,
+  toolbar,
 }: PrintDocumentProps) {
   const rootRef = useRef<HTMLElement | null>(null);
   const hasAutoPrintedRef = useRef(false);
@@ -263,7 +266,8 @@ export function PrintDocument({
                 </div>
               ) : null}
             </div>
-            <div className="flex items-center gap-2 print:hidden">
+            <div className="flex shrink-0 items-center gap-2 print:hidden">
+              {toolbar}
               <Button type="button" variant="outline" onClick={() => window.print()}>
                 <Printer className="size-4" />
                 Imprimir
@@ -296,6 +300,7 @@ export function PrintDocument({
                 </div>
 
                 <div className="flex items-center gap-2 print:hidden">
+                  {toolbar}
                   <Button type="button" variant="outline" onClick={() => window.print()}>
                     <Printer className="size-4" />
                     Imprimir

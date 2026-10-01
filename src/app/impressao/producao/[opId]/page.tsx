@@ -11,6 +11,8 @@ import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { usePrintWeightUnit } from "@/lib/use-weight-display-unit";
+import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 
 function sanitizeDateKey(raw: string | null) {
   if (!raw) {
@@ -26,6 +28,7 @@ export default function ProducaoPrintPage() {
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
   const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
+  const { unit: weightUnit, setUnit: setWeightUnit } = usePrintWeightUnit();
 
   const op = useMemo(() => {
     const decoded = decodeURIComponent(opId);
@@ -68,7 +71,8 @@ export default function ProducaoPrintPage() {
 
   if (searchParams.get("format") === "80mm") {
     return <ThermalProductionSheet document={document} code={op.code} line={op.lineName}
-      productionDate={op.productionDateLabel} deliveryDate={deliveryDateLabel} />;
+      productionDate={op.productionDateLabel} deliveryDate={deliveryDateLabel}
+      weight={weightUnit} onWeightChange={setWeightUnit} />;
   }
 
   return (
@@ -78,9 +82,10 @@ export default function ProducaoPrintPage() {
       title={document.deliveryGap.label ? `${op.lineName} · ${document.deliveryGap.label}` : op.lineName}
       variant="industrial"
       autoPrint
+      toolbar={<WeightUnitToggle value={weightUnit} onChange={setWeightUnit} />}
       meta={`Produção · ${op.code} · Produzir ${op.productionDateLabel} · Entregar ${deliveryDateLabel}`}
     >
-      <ProductionSheetSections document={document} />
+      <ProductionSheetSections document={document} weight={weightUnit} />
     </PrintDocument>
   );
 }

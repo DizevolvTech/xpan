@@ -32,6 +32,7 @@ import {
   type ProductChangelogRow,
   type ProductChangelogSummary,
 } from "@/lib/supabase-data/master-data-changelog";
+import { normalizeWeightDisplayUnit } from "@/lib/weight-display";
 
 export interface MasterDataSnapshot {
   operationalSettings: OperationalSettings;
@@ -511,6 +512,8 @@ async function loadMasterDataSnapshot(
         (settingsRow as { sale_lead_days?: number | null }).sale_lead_days != null
           ? Number((settingsRow as { sale_lead_days?: number | null }).sale_lead_days)
           : 1,
+      // Coluna nova: banco ainda sem a migração (ou valor estranho) cai em kg, nunca quebra.
+      opWeightUnit: normalizeWeightDisplayUnit((settingsRow as { op_weight_unit?: string | null }).op_weight_unit),
     },
     sectors,
     lines,

@@ -10,7 +10,8 @@ import type {
 import { groupPrintRowsByStage, sumStageQuantityPerUnitKg } from "@/lib/printing-documents";
 import { formatBatchSplitPhrase, type PreWeighBatchSplit } from "@/lib/production-batches";
 import { defaultRecipeStage } from "@/lib/production-planning";
-import { formatKgValue, formatLocaleNumber } from "@/lib/utils";
+import { formatLocaleNumber } from "@/lib/utils";
+import { formatDisplayQuantity, type WeightDisplayUnit } from "@/lib/weight-display";
 
 /**
  * Linha da tabela da folha. `quantityPerUnit` é opcional porque a seção do MPI não tem
@@ -21,17 +22,24 @@ type SheetTableRow = PrintIngredientRow & {
   isAdditional?: boolean;
 };
 
-function formatQuantityCell(value: number | null | undefined, unit: string) {
+const SHEET_FRACTION = { minimumFractionDigits: 3, maximumFractionDigits: 3 } as const;
+
+/**
+ * Toda quantidade de peso da folha passa por `formatDisplayQuantity`: em kg sai idêntica a antes
+ * (3 casas, rótulo da linha); em g o Kg vira gramas ("0,234 Kg" → "234 g"). Unidade que não é Kg
+ * (Un, g, L…) nunca é convertida.
+ */
+function formatQuantityCell(value: number | null | undefined, unit: string, weight: WeightDisplayUnit) {
   if (value == null) {
     return null;
   }
-  return `${formatLocaleNumber(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ${unit}`;
+  return formatDisplayQuantity(value, unit, weight, SHEET_FRACTION);
 }
 
-function formatKgCell(value: number) {
+function formatKgCell(value: number, weight: WeightDisplayUnit) {
   // "Kg" com K maiúsculo: é o rótulo de unidade que as linhas da receita usam (`row.unit`), e
   // o subtotal do bloco fica na MESMA coluna — minúsculo destoava na folha.
-  return `${formatKgValue(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} Kg`;
+  return formatDisplayQuantity(value, "Kg", weight, SHEET_FRACTION);
 }
 
 /** Quantidade pedida: inteiro sai inteiro (6), fracionada mostra até 3 casas (12,5). */
@@ -54,10 +62,12 @@ function IngredientTable({
   groups,
   unitColumnLabel,
   batchSplit,
+  weight,
 }: {
   groups: PrintIngredientStageGroup<SheetTableRow>[];
   unitColumnLabel: string;
   batchSplit?: PreWeighBatchSplit | null;
+  weight: WeightDisplayUnit;
 }) {
   if (groups.every((group) => group.rows.length === 0)) {
     return null;
@@ -111,7 +121,7 @@ function IngredientTable({
                   {showBatchColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
                   {showPartialColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
                   <td className="border-t-2 border-stone-400 px-3 py-1.5 text-sm font-semibold text-stone-900">
-                    {unitColumnLabel && subtotalPerUnit != null ? formatKgCell(subtotalPerUnit) : null}
+                    {unitColumnLabel && subtotalPerUnit != null ? formatKgCell(subtotalPerUnit, weight) : null}
                   </td>
                   <td className="border-t-2 border-stone-400 px-3 py-1.5" />
                 </tr>
@@ -132,7 +142,7 @@ function IngredientTable({
               {group.rows.map((row) => (
                 <tr key={row.key}>
                   <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
-                    {formatQuantityCell(row.estimatedQuantity, row.unit)}
+                    {formatQuantityCell(row.estimatedQuantity, row.unit, weight)}
                   </td>
                   <td className="border-t border-stone-200 px-3 py-2 align-top text-sm text-stone-700">
                     <div className="flex items-baseline gap-2">
@@ -146,16 +156,16 @@ function IngredientTable({
                   </td>
                   {showBatchColumn ? (
                     <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
-                      {formatQuantityCell(row.batchQuantity, row.unit)}
+                      {formatQuantityCell(row.batchQuantity, row.unit, weight)}
                     </td>
                   ) : null}
                   {showPartialColumn ? (
                     <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
-                      {formatQuantityCell(row.partialQuantity, row.unit)}
+                      {formatQuantityCell(row.partialQuantity, row.unit, weight)}
                     </td>
                   ) : null}
                   <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
-                    {formatQuantityCell(row.quantityPerUnit, row.unit)}
+                    {formatQuantityCell(row.quantityPerUnit, row.unit, weight)}
                   </td>
                   <td className="border-t border-stone-200 px-3 py-2 align-top text-xs leading-snug text-stone-600">
                     {row.notes}
@@ -175,7 +185,7 @@ function IngredientTable({
  * todos os produtos da folha. A coluna "Unidades" fica sem título (e sem valor) — o MPI não
  * tem "por unidade", ele tem peso finalizado.
  */
-function IngredientProductSection({ section }: { section: ProductIngredientSection }) {
+function IngredientProductSection({ section, weight }: { section: ProductIngredientSection; weight: WeightDisplayUnit }) {
   return (
     <article className="overflow-hidden border border-stone-400">
       <header className="grid grid-cols-[132px_84px_1fr_180px] border-b border-stone-400 bg-stone-300 text-stone-900 print:break-inside-avoid">
@@ -197,10 +207,10 @@ function IngredientProductSection({ section }: { section: ProductIngredientSecti
         {/* Mesma razão da faixa do produto: sem `nowrap` o "Kg" desgruda do número e a faixa
             ganha uma segunda linha só para ele. Ver a prova de impressão de 25/07. */}
         <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-          <div>Peso finalizado: {formatKgCell(section.requiredKg)}</div>
+          <div>Peso finalizado: {formatKgCell(section.requiredKg, weight)}</div>
           {section.batchSplit?.batched ? (
             <div className="mt-1 normal-case tracking-normal text-stone-700">
-              {formatBatchSplitPhrase(section.batchSplit, "units")}
+              {formatBatchSplitPhrase(section.batchSplit, "units", weight)}
             </div>
           ) : null}
         </div>
@@ -212,6 +222,7 @@ function IngredientProductSection({ section }: { section: ProductIngredientSecti
           groups={groupPrintRowsByStage<SheetTableRow>(section.items, section.recipeStageConfig)}
           unitColumnLabel=""
           batchSplit={section.batchSplit}
+          weight={weight}
         />
       </div>
     </article>
@@ -219,7 +230,7 @@ function IngredientProductSection({ section }: { section: ProductIngredientSecti
 }
 
 /** Bloco de um produto final: faixa com código/nome/pedido/pesos + a tabela de ingredientes. */
-function ProductSection({ section }: { section: ProductionSheetProductSection }) {
+function ProductSection({ section, weight }: { section: ProductionSheetProductSection; weight: WeightDisplayUnit }) {
   const rows: SheetTableRow[] = [
     ...section.items.filter((item) => item.sectionKind !== "additional"),
     ...section.items
@@ -247,11 +258,11 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
             ("150,8"), que é pior — perde o número. Encurtar o rótulo é o que faz caber de fato
             na largura da coluna; o nowrap só garante que o "Kg" não desgruda do valor. */}
         <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-          <div>Peso un.: {formatKgCell(section.unitWeightKg)}</div>
-          <div className="mt-1">Carga: {formatKgCell(section.plannedKg)}</div>
+          <div>Peso un.: {formatKgCell(section.unitWeightKg, weight)}</div>
+          <div className="mt-1">Carga: {formatKgCell(section.plannedKg, weight)}</div>
           {section.batchSplit?.batched ? (
             <div className="mt-1 normal-case tracking-normal text-stone-700">
-              {formatBatchSplitPhrase(section.batchSplit, "units")}
+              {formatBatchSplitPhrase(section.batchSplit, "units", weight)}
             </div>
           ) : null}
         </div>
@@ -266,6 +277,7 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
           )}
           unitColumnLabel="Unidades"
           batchSplit={section.batchSplit}
+          weight={weight}
         />
         {section.items.length === 0 ? (
           <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
@@ -283,15 +295,22 @@ function ProductSection({ section }: { section: ProductionSheetProductSection })
  * para ser reutilizada tanto na impressão individual (`/impressao/producao/[opId]`) quanto na
  * impressão em lote do dia (`/impressao/producao-dia/[date]` — XPAN-5).
  */
-export function ProductionSheetSections({ document }: { document: ProductionSheetDocument }) {
+export function ProductionSheetSections({
+  document,
+  weight = "kg",
+}: {
+  document: ProductionSheetDocument;
+  /** Unidade de exibição do peso (kg ou g). Só apresentação; padrão kg = folha idêntica à de sempre. */
+  weight?: WeightDisplayUnit;
+}) {
   return (
     <section className="space-y-4 print:space-y-1.5">
       {document.ingredientSections.map((section) => (
         // Chave inclui a etapa: o mesmo MPI pode render duas seções (ex.: recheio e cobertura).
-        <IngredientProductSection key={`${section.productId}-${section.stage}`} section={section} />
+        <IngredientProductSection key={`${section.productId}-${section.stage}`} section={section} weight={weight} />
       ))}
       {document.productSections.map((section) => (
-        <ProductSection key={section.productId} section={section} />
+        <ProductSection key={section.productId} section={section} weight={weight} />
       ))}
     </section>
   );

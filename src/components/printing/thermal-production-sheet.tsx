@@ -1,12 +1,25 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 import { groupPrintRowsByStage, type ProductionSheetDocument } from "@/lib/printing-documents";
 import { buildThermalTickets } from "@/lib/thermal-production";
 import { formatLocaleNumber } from "@/lib/utils";
+import { formatDisplayQuantity, type WeightDisplayUnit } from "@/lib/weight-display";
 
-export function ThermalProductionSheet({ document, code, line, productionDate, deliveryDate }: {
+/** Ficha de MPI mostra peso de insumo (converte); ficha de produto mostra o pedido (não converte). */
+function formatTicketQuantity(value: number, unit: string, kind: "ingredient" | "product", weight: WeightDisplayUnit) {
+  return kind === "ingredient"
+    ? formatDisplayQuantity(value, unit, weight, { maximumFractionDigits: 3 })
+    : `${formatLocaleNumber(value)} ${unit}`;
+}
+
+export function ThermalProductionSheet({ document, code, line, productionDate, deliveryDate, weight = "kg", onWeightChange }: {
   document: ProductionSheetDocument; code: string; line: string; productionDate: string; deliveryDate: string;
+  /** Unidade de exibição do peso (kg/g). Padrão kg = ficha idêntica à de sempre. */
+  weight?: WeightDisplayUnit;
+  /** Quando informado, mostra o seletor de unidade na barra (que não sai na impressão). */
+  onWeightChange?: (next: WeightDisplayUnit) => void;
 }) {
   const tickets = buildThermalTickets(document);
   return <main className="thermal-preview">
@@ -33,6 +46,7 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
     `}</style>
     <div className="thermal-toolbar">
       <p>Prévia 80 mm · {tickets.length} fichas. Selecione papel de 80 mm, escala 100% e desative cabeçalhos e rodapés na impressão.</p>
+      {onWeightChange ? <WeightUnitToggle value={weight} onChange={onWeightChange} /> : null}
       <Button onClick={() => window.print()}>Imprimir 80 mm</Button>
       <Button variant="outline" onClick={() => { const url = new URL(window.location.href); url.searchParams.delete("format"); window.location.assign(url); }}>Abrir A4</Button>
     </div>
@@ -41,12 +55,12 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       <p><strong>OP: {code}</strong></p><p>Linha: {line}</p>
       <p>Produção: {productionDate}</p><p>Entrega: {deliveryDate}</p>
       <h2>Batida {ticket.number} de {ticket.count}{ticket.complementary ? " — Complementar" : ""}</h2>
-      <p><strong>Quantidade: {formatLocaleNumber(ticket.quantity)} {ticket.unit}</strong></p>
-      <p>Total do produto na OP: {formatLocaleNumber(ticket.totalQuantity)} {ticket.unit}</p>
+      <p><strong>Quantidade: {formatTicketQuantity(ticket.quantity, ticket.unit, ticket.kind, weight)}</strong></p>
+      <p>Total do produto na OP: {formatTicketQuantity(ticket.totalQuantity, ticket.unit, ticket.kind, weight)}</p>
       {groupPrintRowsByStage(ticket.items, ticket.recipeStageConfig).map(group => <section key={group.stage}>
         <h2>{group.label}</h2>
         <table><thead><tr><th>Insumo / massa</th><th>Quantidade</th></tr></thead><tbody>
-          {group.rows.map(row => <tr key={row.key}><td>□ {row.label}{row.notes && <div>{row.notes}</div>}</td><td>{formatLocaleNumber(row.estimatedQuantity, { maximumFractionDigits: 3 })} {row.unit}</td></tr>)}
+          {group.rows.map(row => <tr key={row.key}><td>□ {row.label}{row.notes && <div>{row.notes}</div>}</td><td>{formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, { maximumFractionDigits: 3 })}</td></tr>)}
         </tbody></table>
         {group.instructions && <p style={{ whiteSpace: "pre-line" }}>{group.instructions}</p>}
       </section>)}

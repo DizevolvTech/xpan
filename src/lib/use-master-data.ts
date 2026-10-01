@@ -10,6 +10,7 @@ const emptySnapshot: MasterDataSnapshot = {
     orderCutoffTime: "18:00",
     expeditionLeadDays: 0,
     saleLeadDays: 1,
+    opWeightUnit: "kg",
   },
   sectors: [],
   lines: [],

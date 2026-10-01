@@ -70,7 +70,8 @@ Convenções:
 ### `operational_settings`
 - **Propósito**: 1 linha por tenant — horário de corte de pedidos, lead day padrão de expedição, lead day padrão de venda.
 - **Colunas**: `tenant_id` (unique), `order_cutoff_time time`, `expedition_lead_days int >=0`, `sale_lead_days int >=0` (default 1).
-- **Constraint**: `operational_settings_sale_lead_days_check`.
+- **Constraint**: `operational_settings_sale_lead_days_check`, `operational_settings_op_weight_unit_check`.
+- **`op_weight_unit`** (`kg` | `g`, default `kg`): unidade de exibição/impressão da OP. Não altera o cadastro, que segue em Kg.
 - **Triggers**: `set_operational_settings_updated_at`.
 - **RLS**: SELECT para qualquer authenticated com mesmo tenant; INSERT/UPDATE/DELETE apenas `administrador` e `gestor-dados`.
 - **Tenant-scoped?** Sim (unique no tenant).

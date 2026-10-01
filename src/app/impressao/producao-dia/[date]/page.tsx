@@ -9,6 +9,8 @@ import { buildProductionSheetDocument } from "@/lib/printing-documents";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { usePrintWeightUnit } from "@/lib/use-weight-display-unit";
+import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 
 function sanitizeDateKey(raw: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
@@ -25,6 +27,7 @@ export default function ProducaoDiaPrintPage() {
   const date = sanitizeDateKey(typeof params.date === "string" ? params.date : "");
   const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(date);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
+  const { unit: weightUnit, setUnit: setWeightUnit } = usePrintWeightUnit();
 
   const dayOps = useMemo(
     () =>
@@ -74,6 +77,7 @@ export default function ProducaoDiaPrintPage() {
       title={`Folhas de produção · ${dayLabel}`}
       variant="industrial"
       autoPrint
+      toolbar={<WeightUnitToggle value={weightUnit} onChange={setWeightUnit} />}
       meta={`${sheets.length} folha(s) de produção · Produzir ${dayLabel}`}
     >
       <div className="space-y-4">
@@ -91,7 +95,7 @@ export default function ProducaoDiaPrintPage() {
                 {op.code} · Produzir {op.productionDateLabel} · Entregar {deliveryDateLabel}
               </p>
             </header>
-            <ProductionSheetSections document={document} />
+            <ProductionSheetSections document={document} weight={weightUnit} />
           </section>
         ))}
       </div>

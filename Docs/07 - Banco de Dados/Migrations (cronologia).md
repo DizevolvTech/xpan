@@ -63,6 +63,12 @@ Tabela compacta: timestamp → arquivo → propósito (1 linha) → tipo de impa
 - Adiciona índices nas FKs (`subcategories_line_type_id`, `product_changelog_product/tenant/changed_by`).
 - Idempotente.
 
+## 20261001220000 — `op_weight_display_unit`
+
+- Adiciona `operational_settings.op_weight_unit` (`text not null default 'kg'`, check `in ('kg','g')`).
+- **Só apresentação**: define em que unidade a OP é vista/impressa. Ingredientes, receitas e produtos continuam em Kg; a conversão kg → g acontece na tela/folha (`src/lib/weight-display.ts`).
+- Aditiva e idempotente; clientes existentes ficam em `kg`. Aplicada em produção em 01/10/2026 (7 clientes, dados anteriores intactos).
+
 ## Notas sobre numeração
 
 - Quase todas as migrations seguem o formato `YYYYMMDDHHMMSS_descricao.sql` — convencional Supabase. O timestamp **não** corresponde ao mtime do arquivo (vide `ls -la` mostra dates como Mar 9, Mar 17 etc), porque é o nome lógico.

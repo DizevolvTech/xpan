@@ -23,7 +23,10 @@ import {
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
 import { formatBatchSizesPhrase } from "@/lib/production-batches";
-import { formatKgLabel, formatKgValue } from "@/lib/utils";
+import { formatKgValue } from "@/lib/utils";
+import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
+import { appendWeightUnitParam, useWeightDisplayUnit } from "@/lib/use-weight-display-unit";
+import { formatDisplayNumber, formatDisplayQuantity, weightDisplayUnitShortLabels } from "@/lib/weight-display";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useFutureDateOverride } from "@/lib/use-future-date-override";
@@ -42,6 +45,8 @@ export default function OrdemProducaoDetailsPage() {
   const { planningData, isLoading, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
   const tryFutureDateOverride = useFutureDateOverride();
   const { snapshot } = useMasterDataSnapshot();
+  // Só apresentação: o cadastro segue em Kg; a escolha da tela vai junto para a impressão (?unit=).
+  const { unit: weightUnit, setUnit: setWeightUnit } = useWeightDisplayUnit();
 
   const op = useMemo(
     () =>
@@ -153,15 +158,16 @@ export default function OrdemProducaoDetailsPage() {
       ]}
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`)}>
+          <WeightUnitToggle value={weightUnit} onChange={setWeightUnit} />
+          <Button type="button" variant="outline" onClick={() => openPrintPage(appendWeightUnitParam(`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`, weightUnit))}>
             <Printer className="size-4" />
             Pré-pesagem
           </Button>
-          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`)}>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(appendWeightUnitParam(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`, weightUnit))}>
             <Printer className="size-4" />
             Produção A4
           </Button>
-          <Button type="button" variant="outline" onClick={() => openPrintPage(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}&format=80mm`)}>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(appendWeightUnitParam(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}&format=80mm`, weightUnit))}>
             <Printer className="size-4" />Produção 80 mm
           </Button>
           <Button asChild type="button" variant="outline">
@@ -237,7 +243,7 @@ export default function OrdemProducaoDetailsPage() {
         <CardContent className="grid gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-border/80 bg-panel p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Carga da OP</p>
-            <p className="mt-1 text-lg font-semibold">{formatKgLabel(op.totalKg)}</p>
+            <p className="mt-1 text-lg font-semibold">{formatDisplayQuantity(op.totalKg, "Kg", weightUnit, { maximumFractionDigits: 3 })}</p>
           </div>
           <div className="rounded-lg border border-border/80 bg-panel p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">% conclusão</p>
@@ -271,7 +277,7 @@ export default function OrdemProducaoDetailsPage() {
                   <thead className="bg-panel">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Carga (Kg)</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">{`Carga (${weightDisplayUnitShortLabels[weightUnit]})`}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status operacional</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Itens origem</th>
@@ -301,7 +307,7 @@ export default function OrdemProducaoDetailsPage() {
                       {item.batchCount > 1 ? (
                         <p className="text-sm text-muted-foreground tabular-nums">
                           {item.batchesDone}/{item.batchCount} batidas ·{" "}
-                          {formatBatchSizesPhrase(item.batchSizes, item.batchUnitLabel)}
+                          {formatBatchSizesPhrase(item.batchSizes, item.batchUnitLabel, weightUnit)}
                         </p>
                       ) : item.batchUnitLabel !== "Kg" && item.batchUnitLabel !== "L" ? (
                         <p className="text-sm text-muted-foreground tabular-nums">
@@ -309,7 +315,7 @@ export default function OrdemProducaoDetailsPage() {
                         </p>
                       ) : null}
                     </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.totalKg)}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDisplayNumber(item.totalKg, "Kg", weightUnit, { maximumFractionDigits: 3 })}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.progress.toFixed(1)}%</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       <div className="space-y-2">
@@ -389,7 +395,7 @@ export default function OrdemProducaoDetailsPage() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd loja</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">{weightDisplayUnitShortLabels[weightUnit]}</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Entrega</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Venda</th>
                     </tr>
@@ -414,7 +420,7 @@ export default function OrdemProducaoDetailsPage() {
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       {item.requestedQuantity} {item.requestedUnit}
                     </td>
-                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
+                    <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDisplayNumber(item.internalKg, "Kg", weightUnit, { maximumFractionDigits: 3 })}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.deliveryDateLabel}</td>
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.saleDateLabel}</td>
                       </tr>

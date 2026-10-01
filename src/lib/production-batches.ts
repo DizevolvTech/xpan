@@ -1,5 +1,6 @@
 import type { ProductionItemStatus } from "@/lib/factory-planning/types";
 import { getRecipeStageVessel, recipeItemCountsTowardMixer, type RecipeStage } from "@/lib/production-planning";
+import { formatDisplayNumber, type WeightDisplayUnit } from "@/lib/weight-display";
 
 export interface BatchPlan {
   batchCount: number;
@@ -93,9 +94,19 @@ function formatBatchAmount(value: number) {
 export function formatBatchSplitPhrase(
   split: PreWeighBatchSplit,
   measure: "units" | "kg" = "units",
+  weight: WeightDisplayUnit = "kg",
 ): string {
+  // `weight` = "g" converte SÓ o que é peso em Kg: a medida "kg" (carga) e a medida "units" quando a
+  // unidade de venda do produto é o próprio Kg ("6 Kg" → "6.000 g"). Unidade contada ("1200 Un")
+  // não é peso e nunca é convertida.
   const amount = (units: number, kg: number) =>
-    measure === "kg" ? `${formatBatchAmount(kg)} kg` : `${formatBatchAmount(units)} ${split.unitLabel}`;
+    measure === "kg"
+      ? weight === "g"
+        ? `${formatDisplayNumber(kg, "kg", "g")} g`
+        : `${formatBatchAmount(kg)} kg`
+      : weight === "g" && split.unitLabel.trim().toLowerCase() === "kg"
+        ? `${formatDisplayNumber(units, "kg", "g")} g`
+        : `${formatBatchAmount(units)} ${split.unitLabel}`;
 
   if (!split.batched) {
     return `1 corrida de ${amount(split.totalUnits, split.partialKg || split.totalUnits)}`;
@@ -113,12 +124,18 @@ export function formatBatchSplitPhrase(
 }
 
 /** Mesma frase a partir dos tamanhos já planejados (`planBatches.batchSizes`). */
-export function formatBatchSizesPhrase(batchSizes: number[], unitLabel: string): string {
+export function formatBatchSizesPhrase(
+  batchSizes: number[],
+  unitLabel: string,
+  weight: WeightDisplayUnit = "kg",
+): string {
   if (batchSizes.length === 0) {
     return "";
   }
   if (batchSizes.length === 1) {
-    return `1 corrida de ${formatBatchAmount(batchSizes[0])} ${unitLabel}`;
+    return weight === "g" && unitLabel.trim().toLowerCase() === "kg"
+      ? `1 corrida de ${formatDisplayNumber(batchSizes[0], "kg", "g")} g`
+      : `1 corrida de ${formatBatchAmount(batchSizes[0])} ${unitLabel}`;
   }
   const cap = Math.max(...batchSizes);
   const fullCount = batchSizes.filter((size) => size === cap).length;
@@ -132,7 +149,7 @@ export function formatBatchSizesPhrase(batchSizes: number[], unitLabel: string):
     partialKg: partial,
     totalUnits: batchSizes.reduce((sum, size) => sum + size, 0),
     unitLabel,
-  });
+  }, "units", weight);
 }
 
 /**

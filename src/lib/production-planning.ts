@@ -1,5 +1,6 @@
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { formatKgLabel } from "@/lib/utils";
+import type { WeightDisplayUnit } from "@/lib/weight-display";
 
 export type RecordStatus = "ativo" | "inativo";
 export type LineType = "Seco" | "Úmido";
@@ -298,6 +299,12 @@ export interface OperationalSettings {
   orderCutoffTime: string;
   expeditionLeadDays: number;
   saleLeadDays: number;
+  /**
+   * Unidade com que a OP é vista/impressa (kg ou g). Só apresentação: o cadastro segue em Kg.
+   * Opcional para que quem monta `OperationalSettings` só para o motor de planejamento (e os
+   * testes dele) continue valendo; ausente = kg.
+   */
+  opWeightUnit?: WeightDisplayUnit;
 }
 
 export interface StoreMasterData {

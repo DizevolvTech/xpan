@@ -3,8 +3,8 @@ import type { PreWeighBatchSplit } from "@/lib/production-batches";
 
 export function buildThermalTickets(document: ProductionSheetDocument) {
   const sections = [
-    ...document.ingredientSections.map((s) => ({ ...s, quantity: s.requiredQuantity, unit: s.requiredUnit })),
-    ...document.productSections.map((s) => ({ ...s, quantity: s.requestedQuantity, unit: s.requestedUnit })),
+    ...document.ingredientSections.map((s) => ({ ...s, kind: "ingredient" as const, quantity: s.requiredQuantity, unit: s.requiredUnit })),
+    ...document.productSections.map((s) => ({ ...s, kind: "product" as const, quantity: s.requestedQuantity, unit: s.requestedUnit })),
   ];
   return sections.flatMap((section, sectionIndex) => {
     const split: PreWeighBatchSplit | null = section.batchSplit;
@@ -14,6 +14,8 @@ export function buildThermalTickets(document: ProductionSheetDocument) {
       : [{ quantity: section.quantity, complementary: false }];
     return batches.map((batch, index) => ({
       key: `${sectionIndex + 1}-B${String(index + 1).padStart(2, "0")}`,
+      /** `ingredient` = MPI (peso de insumo, converte p/ g); `product` = quantidade pedida (não converte). */
+      kind: section.kind,
       productCode: section.productCode,
       productName: section.productName,
       number: index + 1,

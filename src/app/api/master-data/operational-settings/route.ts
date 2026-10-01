@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { OperationalSettingsInput } from "@/lib/supabase-data/master-data-admin";
 import { updateOperationalSettings } from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { isWeightDisplayUnit } from "@/lib/weight-display";
 
 export async function PATCH(request: Request) {
   const authorization = await authorizeApiRequest({
@@ -32,6 +33,10 @@ export async function PATCH(request: Request) {
       { message: "Informe o horário limite, o D+X de expedição e o D+X de venda." },
       { status: 400 },
     );
+  }
+
+  if (payload.opWeightUnit !== undefined && !isWeightDisplayUnit(payload.opWeightUnit)) {
+    return NextResponse.json({ message: "Informe a unidade da OP como kg ou g." }, { status: 400 });
   }
 
   try {

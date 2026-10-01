@@ -12,7 +12,9 @@ import type { RecipeStageConfigEntry } from "@/lib/production-planning";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPreWeighingDocument } from "@/lib/printing-documents";
-import { formatKgValue, formatLocaleNumber } from "@/lib/utils";
+import { formatDisplayNumber, formatDisplayQuantity, type WeightDisplayUnit } from "@/lib/weight-display";
+import { usePrintWeightUnit } from "@/lib/use-weight-display-unit";
+import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 
@@ -24,6 +26,8 @@ function sanitizeDateKey(raw: string | null) {
 }
 
 type RecipeTableRow = PrintIngredientRow & { isAdditional?: boolean };
+
+const PREWEIGH_FRACTION = { minimumFractionDigits: 3, maximumFractionDigits: 3 } as const;
 
 function IngredientCell({ row }: { row: RecipeTableRow }) {
   return (
@@ -41,19 +45,27 @@ function IngredientCell({ row }: { row: RecipeTableRow }) {
   );
 }
 
-function formatWeightCell(value: number | undefined, unit: string) {
+function formatWeightCell(value: number | undefined, unit: string, weight: WeightDisplayUnit) {
   if (value == null) {
     return "—";
   }
-  return `${formatLocaleNumber(value, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ${unit}`;
+  return formatDisplayQuantity(value, unit, weight, PREWEIGH_FRACTION);
+}
+
+/** Cargas da folha (peso finalizado / carga planejada / peso unitário): sempre kg no cadastro, g na tela se escolhido. */
+function formatSheetWeight(value: number, weight: WeightDisplayUnit) {
+  const unitText = weight === "g" ? "g" : "kg";
+  return `${formatDisplayNumber(value, "kg", weight, PREWEIGH_FRACTION)} ${unitText}`;
 }
 
 function RecipeTable({
   rows,
   batchSplit,
+  weight,
 }: {
   rows: RecipeTableRow[];
   batchSplit?: PreWeighBatchSplit | null;
+  weight: WeightDisplayUnit;
 }) {
   if (rows.length === 0) {
     return null;
@@ -81,7 +93,7 @@ function RecipeTable({
             {rows.map((row) => (
               <tr key={row.key}>
                 <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                  {formatLocaleNumber(row.estimatedQuantity, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} {row.unit}
+                  {formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, PREWEIGH_FRACTION)}
                 </td>
                 <IngredientCell row={row} />
               </tr>
@@ -118,12 +130,12 @@ function RecipeTable({
               <IngredientCell row={row} />
               {showBatchColumn ? (
                 <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                  {formatWeightCell(row.batchQuantity, row.unit)}
+                  {formatWeightCell(row.batchQuantity, row.unit, weight)}
                 </td>
               ) : null}
               {showPartialColumn ? (
                 <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                  {formatWeightCell(row.partialQuantity, row.unit)}
+                  {formatWeightCell(row.partialQuantity, row.unit, weight)}
                 </td>
               ) : null}
             </tr>
@@ -147,10 +159,12 @@ function StagedRecipeTables({
   rows,
   batchSplit,
   stageConfig,
+  weight,
 }: {
   rows: RecipeTableRow[];
   batchSplit?: PreWeighBatchSplit | null;
   stageConfig?: RecipeStageConfigEntry[];
+  weight: WeightDisplayUnit;
 }) {
   return (
     <>
@@ -161,15 +175,15 @@ function StagedRecipeTables({
               {group.label}
             </div>
           ) : null}
-          <RecipeTable rows={group.rows} batchSplit={batchSplit} />
+          <RecipeTable rows={group.rows} batchSplit={batchSplit} weight={weight} />
         </Fragment>
       ))}
     </>
   );
 }
 
-function formatBatchLegend(split: PreWeighBatchSplit) {
-  return `${formatBatchSplitPhrase(split, "units")} · ${formatBatchSplitPhrase(split, "kg")}`;
+function formatBatchLegend(split: PreWeighBatchSplit, weight: WeightDisplayUnit) {
+  return `${formatBatchSplitPhrase(split, "units", weight)} · ${formatBatchSplitPhrase(split, "kg", weight)}`;
 }
 
 export default function PrePesagemPrintPage() {
@@ -179,6 +193,7 @@ export default function PrePesagemPrintPage() {
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
   const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
+  const { unit: weightUnit, setUnit: setWeightUnit } = usePrintWeightUnit();
 
   const op = useMemo(() => {
     const decoded = decodeURIComponent(opId);
@@ -225,6 +240,7 @@ export default function PrePesagemPrintPage() {
       title={op.lineName}
       variant="industrial"
       autoPrint
+      toolbar={<WeightUnitToggle value={weightUnit} onChange={setWeightUnit} />}
       meta={`Pré-pesagem · ${op.code} · Produzir ${op.productionDateLabel} · Entregar ${deliveryDateLabel}`}
     >
       {document.ingredientProducts.length > 0 ? (
@@ -249,7 +265,7 @@ export default function PrePesagemPrintPage() {
                   ) : null}
                 </div>
                 <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-                  <div>Peso finalizado: {formatKgValue(section.requiredKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</div>
+                  <div>Peso finalizado: {formatSheetWeight(section.requiredKg, weightUnit)}</div>
                 </div>
               </header>
 
@@ -262,6 +278,7 @@ export default function PrePesagemPrintPage() {
                   rows={section.items}
                   batchSplit={section.batchSplit}
                   stageConfig={section.recipeStageConfig}
+                  weight={weightUnit}
                 />
               </div>
             </article>
@@ -285,15 +302,15 @@ export default function PrePesagemPrintPage() {
                 </div>
               </div>
               <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-                <div>Carga planejada: {formatKgValue(section.plannedKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</div>
-                <div className="mt-1">Peso unitário: {formatKgValue(section.unitWeightKg, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg</div>
+                <div>Carga planejada: {formatSheetWeight(section.plannedKg, weightUnit)}</div>
+                <div className="mt-1">Peso unitário: {formatSheetWeight(section.unitWeightKg, weightUnit)}</div>
               </div>
             </header>
 
             <div className="space-y-2 px-3 py-3">
               {section.batchSplit?.batched ? (
                 <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
-                  {formatBatchLegend(section.batchSplit)}
+                  {formatBatchLegend(section.batchSplit, weightUnit)}
                 </div>
               ) : null}
               <StagedRecipeTables
@@ -303,6 +320,7 @@ export default function PrePesagemPrintPage() {
                 ]}
                 batchSplit={section.batchSplit}
                 stageConfig={section.recipeStageConfig}
+                weight={weightUnit}
               />
               {section.baseIngredients.length === 0 && section.additionalIngredients.length === 0 ? (
                 <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">

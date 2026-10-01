@@ -63,6 +63,7 @@ import {
   isOrderAwaitingAcceptance,
 } from "@/lib/factory-kanban";
 import { formatKgLabel } from "@/lib/utils";
+import { normalizeWeightDisplayUnit, weightDisplayUnitLabels } from "@/lib/weight-display";
 
 // Erro de liberação que o servidor marcou como overridable (400 + forceable=true).
 // Permite ao caller oferecer "liberar mesmo assim" (refetch com force: true).
@@ -136,6 +137,7 @@ export default function GestorFabricaPage() {
     orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
     expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
     saleLeadDays: String(masterDataSnapshot.operationalSettings.saleLeadDays),
+    opWeightUnit: normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit),
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsFeedback, setSettingsFeedback] = useState<{
@@ -331,18 +333,21 @@ export default function GestorFabricaPage() {
       orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
       expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
       saleLeadDays: String(masterDataSnapshot.operationalSettings.saleLeadDays),
+      opWeightUnit: normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit),
     });
   }, [
     masterDataSnapshot.operationalSettings.expeditionLeadDays,
     masterDataSnapshot.operationalSettings.orderCutoffTime,
     masterDataSnapshot.operationalSettings.saleLeadDays,
+    masterDataSnapshot.operationalSettings.opWeightUnit,
   ]);
 
   const isSettingsDirty =
     settingsDraft.orderCutoffTime !== masterDataSnapshot.operationalSettings.orderCutoffTime ||
     settingsDraft.expeditionLeadDays !==
       String(masterDataSnapshot.operationalSettings.expeditionLeadDays) ||
-    settingsDraft.saleLeadDays !== String(masterDataSnapshot.operationalSettings.saleLeadDays);
+    settingsDraft.saleLeadDays !== String(masterDataSnapshot.operationalSettings.saleLeadDays) ||
+    settingsDraft.opWeightUnit !== normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit);
   const expeditionLeadDaysValue = Number(settingsDraft.expeditionLeadDays);
   const saleLeadDaysValue = Number(settingsDraft.saleLeadDays);
   const settingsFormIsValid =
@@ -648,6 +653,7 @@ export default function GestorFabricaPage() {
           orderCutoffTime: settingsDraft.orderCutoffTime,
           expeditionLeadDays: expeditionLeadDaysValue,
           saleLeadDays: saleLeadDaysValue,
+          opWeightUnit: settingsDraft.opWeightUnit,
         }),
       });
 
@@ -894,6 +900,30 @@ export default function GestorFabricaPage() {
                   disabled={isSavingSettings}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="factory-op-weight-unit">Unidade de peso da OP (tela e impressão)</Label>
+              <select
+                id="factory-op-weight-unit"
+                className="h-10 w-full rounded-lg border border-input bg-surface px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:max-w-xs"
+                value={settingsDraft.opWeightUnit}
+                onChange={(event) => {
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    opWeightUnit: normalizeWeightDisplayUnit(event.target.value),
+                  }));
+                  setSettingsFeedback(null);
+                }}
+                disabled={isSavingSettings}
+              >
+                <option value="kg">{weightDisplayUnitLabels.kg}</option>
+                <option value="g">{weightDisplayUnitLabels.g}</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Só muda como a Ordem de Produção é exibida e impressa. O cadastro de ingredientes continua em Kg e nada
+                é alterado nos dados. Quem emite a OP ainda pode trocar a unidade na hora.
+              </p>
             </div>
 
             <details className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
