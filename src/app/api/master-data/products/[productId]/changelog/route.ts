@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { isProductVersionSnapshot } from "@/lib/product-version-snapshot";
+import { isUuid } from "@/lib/supabase-data/common";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 // A6: este endpoint permanece restrito a gestor-dados.produtos (histórico completo
@@ -32,12 +33,13 @@ export async function GET(
     createSupabaseAdminClient(),
   );
 
-  // Resolve product DB id from legacy_id or id
-  const productResult = await supabase
-    .from("products")
-    .select("id")
-    .or(`id.eq.${productId},legacy_id.eq.${productId}`)
-    .maybeSingle();
+  // Resolve o id do produto: a tela envia o id de texto (legacy_id) e o banco só aceita uuid em
+  // `id`. Um `.or("id.eq.<texto>,...")` falha no parse do uuid e a rota respondia "não encontrado".
+  const byLegacy = await supabase.from("products").select("id").eq("legacy_id", productId).maybeSingle();
+  const productResult =
+    byLegacy.data || !isUuid(productId)
+      ? byLegacy
+      : await supabase.from("products").select("id").eq("id", productId).maybeSingle();
 
   if (!productResult.data) {
     return NextResponse.json({ message: "Produto não encontrado." }, { status: 404 });
