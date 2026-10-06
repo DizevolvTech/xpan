@@ -1183,7 +1183,7 @@ export function ProductFormDialog({
           </TabsList>
 
           <TabsContent value="cadastro">
-            <fieldset disabled={isReadOnly} className="space-y-5">
+            <fieldset disabled={isReadOnly} className="min-w-0 space-y-5">
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Dados do Produto</h3>
@@ -1271,7 +1271,7 @@ export function ProductFormDialog({
                     <Input value={formState.code} disabled className="bg-muted" />
                   </div>
                 </div>
-                <fieldset disabled={storeCodeGateBlocked} className="grid gap-4">
+                <fieldset disabled={storeCodeGateBlocked} className="grid min-w-0 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="product-name">Nome completo do produto *</Label>
                     <Input
@@ -1583,7 +1583,7 @@ export function ProductFormDialog({
           </TabsContent>
 
           <TabsContent value="receita">
-            <fieldset disabled={isReadOnly} className="space-y-5">
+            <fieldset disabled={isReadOnly} className="min-w-0 space-y-5">
               <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
                 <strong>Como preencher a receita</strong>
                 <p>1. Confira unidades e pesos. 2. Informe ingredientes, quantidades e etapas. 3. Preencha o rendimento. 4. Informe o limite máximo da batida.</p>
@@ -2780,7 +2780,7 @@ export function ProductFormDialog({
           </TabsContent>
 
           <TabsContent value="cronograma">
-            <fieldset disabled={isReadOnly} className="space-y-5">
+            <fieldset disabled={isReadOnly} className="min-w-0 space-y-5">
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">
@@ -2886,7 +2886,7 @@ export function ProductFormDialog({
           </TabsContent>
 
           <TabsContent value="mpi">
-            <fieldset disabled={isReadOnly} className="space-y-5">
+            <fieldset disabled={isReadOnly} className="min-w-0 space-y-5">
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div className="flex items-start gap-3">
                   <Checkbox
