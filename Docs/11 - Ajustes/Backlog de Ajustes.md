@@ -6,6 +6,12 @@
 
 ---
 
+## ⏳ Vídeo de ajustes 28/09 — pendências aguardando resposta do cliente (2026-10-06)
+
+Parte do vídeo já foi entregue (código do cliente ERP/GTIN em telas e impressões; versões do produto com restauração — ver changelog de 06/10). O restante **não foi feito de propósito** e depende de resposta do cliente/Daniel: sobra assada (soma × subtrai), mix de produtos por loja, peso equivalente em kg para o ERP, importação adaptável à planilha de cada cliente e a tela de unidades do produto. Detalhes, trechos do vídeo e perguntas em [[Pendências do vídeo 28set26 — aguardando cliente]].
+
+---
+
 ## ✅ Iniciativa A1-A8 — automação do fluxo pedido → entrega (2026-05-21)
 
 Frente coordenada após auditoria interna do fluxo. **8 frentes entregues +
