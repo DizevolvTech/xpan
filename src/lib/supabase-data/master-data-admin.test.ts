@@ -440,3 +440,129 @@ test("cloneProduct sobrevive a banco sem a coluna recipe_stage_config", async ()
   assert.equal(inserts[0].payload?.name, "[Cópia] Cuca de maçã");
   assert.equal(warnings.length, 1);
 });
+
+/* -------------------------------------------------------------------------------------------------
+ * Versões do produto: o registro tinha um defeito silencioso — o autor chega como id de texto
+ * ("user-...") e a coluna é uuid, então o insert falhava e a versão sumia sem erro nenhum.
+ * -----------------------------------------------------------------------------------------------*/
+const PROFILE_ROW: FakeRow = { id: "11111111-1111-4111-8111-111111111111", legacy_id: "user-ana", name: "Ana" };
+
+test("updateProduct registra a versão com o autor resolvido (id de texto → uuid do perfil)", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { subcategories: [SUBCATEGORY_ROW], products: [buildProductRow()], profiles: [PROFILE_ROW] },
+  });
+
+  const result = await updateProduct(
+    "product-1",
+    buildProductInput({ changeDescription: "Ajustou o peso da receita" }),
+    { supabase: client, actingProfileId: "user-ana" },
+  );
+
+  const inserts = findWrite(writes, "product_changelog", "insert");
+  assert.equal(inserts.length, 1);
+  assert.equal(inserts[0].payload?.version_number, 1);
+  assert.equal(inserts[0].payload?.change_description, "Ajustou o peso da receita");
+  assert.equal(inserts[0].payload?.changed_by_profile_id, PROFILE_ROW.id, "uuid do perfil, não o id de texto");
+  assert.equal(inserts[0].payload?.changed_by_name, "Ana");
+  assert.equal((result as { versionRecorded?: boolean }).versionRecorded, true);
+});
+
+test("a foto da versão leva o cadastro de processo e NÃO leva código, GTIN, ativo nem o motivo", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { subcategories: [SUBCATEGORY_ROW], products: [buildProductRow()], profiles: [PROFILE_ROW] },
+  });
+
+  await updateProduct(
+    "product-1",
+    buildProductInput({ changeDescription: "x", externalCode: "703936", gtin: "7891234567895", recipeStageConfig: CUCA_STAGE_CONFIG }),
+    { supabase: client, actingProfileId: "user-ana" },
+  );
+
+  const snapshot = findWrite(writes, "product_changelog", "insert")[0].payload?.product_snapshot as Record<string, unknown>;
+  assert.equal(snapshot.name, "Cuca de maçã");
+  assert.deepEqual(snapshot.recipeStageConfig, CUCA_STAGE_CONFIG);
+  assert.deepEqual(snapshot.productionDays, ["segunda"]);
+  for (const key of ["id", "code", "externalCode", "gtin", "active", "availableForOrdering", "changeDescription", "versionBaseline"]) {
+    assert.equal(key in snapshot, false, `${key} não pode ir na foto`);
+  }
+});
+
+test("primeira edição de produto sem versões grava antes a versão base (estado anterior) e depois a nova", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { subcategories: [SUBCATEGORY_ROW], products: [buildProductRow()], profiles: [PROFILE_ROW] },
+  });
+
+  await updateProduct(
+    "product-1",
+    buildProductInput({
+      name: "Cuca de maçã V2",
+      changeDescription: "Mudou o nome",
+      versionBaseline: { name: "Cuca de maçã", validityDays: 5, recipe: [] },
+    }),
+    { supabase: client, actingProfileId: "user-ana" },
+  );
+
+  const inserts = findWrite(writes, "product_changelog", "insert");
+  assert.equal(inserts.length, 2);
+  assert.equal(inserts[0].payload?.version_number, 1);
+  assert.equal(inserts[0].payload?.change_description, "Estado anterior ao primeiro registro de versões");
+  assert.equal((inserts[0].payload?.product_snapshot as Record<string, unknown>).name, "Cuca de maçã");
+  assert.equal(inserts[1].payload?.version_number, 2);
+  assert.equal((inserts[1].payload?.product_snapshot as Record<string, unknown>).name, "Cuca de maçã V2");
+});
+
+test("produto que já tem versão com foto não ganha outra versão base", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: {
+      subcategories: [SUBCATEGORY_ROW],
+      products: [buildProductRow()],
+      profiles: [PROFILE_ROW],
+      product_changelog: [{ product_id: "db-product-1", version_number: 4, product_snapshot: { name: "antiga" } }],
+    },
+  });
+
+  await updateProduct(
+    "product-1",
+    buildProductInput({ changeDescription: "Nova", versionBaseline: { name: "Cuca de maçã" } }),
+    { supabase: client, actingProfileId: "user-ana" },
+  );
+
+  const inserts = findWrite(writes, "product_changelog", "insert");
+  assert.equal(inserts.length, 1);
+  assert.equal(inserts[0].payload?.version_number, 5);
+});
+
+test("falha ao registrar a versão NÃO desfaz o produto salvo e é sinalizada (versionRecorded=false)", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { subcategories: [SUBCATEGORY_ROW], products: [buildProductRow()], profiles: [PROFILE_ROW] },
+    missingColumns: ["product_snapshot"],
+  });
+
+  const originalError = console.error;
+  const errors: string[] = [];
+  console.error = (...args: unknown[]) => errors.push(args.map(String).join(" "));
+  let result: Awaited<ReturnType<typeof updateProduct>>;
+  try {
+    result = await updateProduct("product-1", buildProductInput({ changeDescription: "x" }), {
+      supabase: client,
+      actingProfileId: "user-ana",
+    });
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(findWrite(writes, "products", "update").length, 1, "o produto foi salvo");
+  assert.equal((result as { versionRecorded?: boolean }).versionRecorded, false);
+  assert.equal(errors.length, 1, "a falha é registrada no log, não engolida");
+});
+
+test("sem motivo da alteração não grava versão e não devolve versionRecorded", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { subcategories: [SUBCATEGORY_ROW], products: [buildProductRow()], profiles: [PROFILE_ROW] },
+  });
+
+  const result = await updateProduct("product-1", buildProductInput(), { supabase: client, actingProfileId: "user-ana" });
+
+  assert.equal(findWrite(writes, "product_changelog", "insert").length, 0);
+  assert.equal("versionRecorded" in result, false);
+});

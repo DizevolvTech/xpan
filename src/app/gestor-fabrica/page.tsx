@@ -63,6 +63,7 @@ import {
   isOrderAwaitingAcceptance,
 } from "@/lib/factory-kanban";
 import { formatKgLabel } from "@/lib/utils";
+import { normalizeProductCodeSource, productCodeSourceLabels } from "@/lib/product-identity";
 import { normalizeWeightDisplayUnit, weightDisplayUnitLabels } from "@/lib/weight-display";
 
 // Erro de liberação que o servidor marcou como overridable (400 + forceable=true).
@@ -138,6 +139,7 @@ export default function GestorFabricaPage() {
     expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
     saleLeadDays: String(masterDataSnapshot.operationalSettings.saleLeadDays),
     opWeightUnit: normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit),
+    productCodeSource: normalizeProductCodeSource(masterDataSnapshot.operationalSettings.productCodeSource),
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsFeedback, setSettingsFeedback] = useState<{
@@ -334,12 +336,14 @@ export default function GestorFabricaPage() {
       expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
       saleLeadDays: String(masterDataSnapshot.operationalSettings.saleLeadDays),
       opWeightUnit: normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit),
+      productCodeSource: normalizeProductCodeSource(masterDataSnapshot.operationalSettings.productCodeSource),
     });
   }, [
     masterDataSnapshot.operationalSettings.expeditionLeadDays,
     masterDataSnapshot.operationalSettings.orderCutoffTime,
     masterDataSnapshot.operationalSettings.saleLeadDays,
     masterDataSnapshot.operationalSettings.opWeightUnit,
+    masterDataSnapshot.operationalSettings.productCodeSource,
   ]);
 
   const isSettingsDirty =
@@ -347,7 +351,8 @@ export default function GestorFabricaPage() {
     settingsDraft.expeditionLeadDays !==
       String(masterDataSnapshot.operationalSettings.expeditionLeadDays) ||
     settingsDraft.saleLeadDays !== String(masterDataSnapshot.operationalSettings.saleLeadDays) ||
-    settingsDraft.opWeightUnit !== normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit);
+    settingsDraft.opWeightUnit !== normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit) ||
+    settingsDraft.productCodeSource !== normalizeProductCodeSource(masterDataSnapshot.operationalSettings.productCodeSource);
   const expeditionLeadDaysValue = Number(settingsDraft.expeditionLeadDays);
   const saleLeadDaysValue = Number(settingsDraft.saleLeadDays);
   const settingsFormIsValid =
@@ -654,6 +659,7 @@ export default function GestorFabricaPage() {
           expeditionLeadDays: expeditionLeadDaysValue,
           saleLeadDays: saleLeadDaysValue,
           opWeightUnit: settingsDraft.opWeightUnit,
+          productCodeSource: settingsDraft.productCodeSource,
         }),
       });
 
@@ -923,6 +929,30 @@ export default function GestorFabricaPage() {
               <p className="text-xs text-muted-foreground">
                 Só muda como a Ordem de Produção é exibida e impressa. O cadastro de ingredientes continua em Kg e nada
                 é alterado nos dados. Quem emite a OP ainda pode trocar a unidade na hora.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="factory-product-code-source">Código do cliente nas telas e impressões</Label>
+              <select
+                id="factory-product-code-source"
+                className="h-10 w-full rounded-lg border border-input bg-surface px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:max-w-xs"
+                value={settingsDraft.productCodeSource}
+                onChange={(event) => {
+                  setSettingsDraft((current) => ({
+                    ...current,
+                    productCodeSource: normalizeProductCodeSource(event.target.value),
+                  }));
+                  setSettingsFeedback(null);
+                }}
+                disabled={isSavingSettings}
+              >
+                <option value="erp">{productCodeSourceLabels.erp}</option>
+                <option value="gtin">{productCodeSourceLabels.gtin}</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Define qual código do cliente aparece em pedidos, OPs e impressões. Produto sem o código escolhido usa o
+                do ERP e, se também não tiver, o da fábrica. Nada é alterado no cadastro.
               </p>
             </div>
 

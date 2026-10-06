@@ -1,6 +1,7 @@
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { formatKgLabel } from "@/lib/utils";
 import type { WeightDisplayUnit } from "@/lib/weight-display";
+import type { ProductCodeSource } from "@/lib/product-identity";
 
 export type RecordStatus = "ativo" | "inativo";
 export type LineType = "Seco" | "Úmido";
@@ -277,6 +278,8 @@ export interface ProductionIngredient {
   id: string;
   code: string;
   externalCode?: string;
+  /** Código do cliente já resolvido (ERP ou GTIN, conforme a configuração). Só leitura/exibição. */
+  displayCode?: string;
   createdAt?: string;
   updatedAt?: string;
   name: string;
@@ -305,6 +308,11 @@ export interface OperationalSettings {
    * testes dele) continue valendo; ausente = kg.
    */
   opWeightUnit?: WeightDisplayUnit;
+  /**
+   * Código do cliente mostrado em telas e impressões: ERP (padrão) ou GTIN. Só apresentação.
+   * Opcional pelo mesmo motivo de `opWeightUnit`; ausente = erp.
+   */
+  productCodeSource?: ProductCodeSource;
 }
 
 export interface StoreMasterData {
@@ -356,6 +364,8 @@ export interface ProductionProduct {
   code: string;
   externalCode?: string;
   gtin?: string;
+  /** Código do cliente já resolvido (ERP ou GTIN, conforme a configuração). Só leitura/exibição. */
+  displayCode?: string;
   createdAt?: string;
   updatedAt?: string;
   name: string;

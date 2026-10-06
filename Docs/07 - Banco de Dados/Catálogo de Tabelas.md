@@ -72,6 +72,7 @@ Convenções:
 - **Colunas**: `tenant_id` (unique), `order_cutoff_time time`, `expedition_lead_days int >=0`, `sale_lead_days int >=0` (default 1).
 - **Constraint**: `operational_settings_sale_lead_days_check`, `operational_settings_op_weight_unit_check`.
 - **`op_weight_unit`** (`kg` | `g`, default `kg`): unidade de exibição/impressão da OP. Não altera o cadastro, que segue em Kg.
+- **`product_code_source`** (`erp` | `gtin`, default `erp`; constraint `operational_settings_product_code_source_check`): qual código do cliente aparece em telas e impressões. Sem o escolhido cai no ERP e depois no código da fábrica. Não altera nenhum cadastro.
 - **Triggers**: `set_operational_settings_updated_at`.
 - **RLS**: SELECT para qualquer authenticated com mesmo tenant; INSERT/UPDATE/DELETE apenas `administrador` e `gestor-dados`.
 - **Tenant-scoped?** Sim (unique no tenant).
@@ -178,7 +179,7 @@ Convenções:
 
 ### `product_changelog`
 - **Propósito**: versionamento textual + snapshot JSONB das alterações em produtos.
-- **Colunas**: `tenant_id`, `product_id` (cascade), `version_number` (unique com `product_id`), `change_description`, `changed_by_profile_id`, `changed_by_name`, `snapshot_data jsonb`.
+- **Colunas**: `tenant_id`, `product_id` (cascade), `version_number` (unique com `product_id`), `change_description`, `changed_by_profile_id`, `changed_by_name`, `snapshot_data jsonb` (o que mudou: de/para), `product_snapshot jsonb` (cópia do cadastro de processo naquela versão, usada para restaurar; nulo = não restaurável).
 - **RLS**: `product_changelog_tenant_scope` — qualquer authenticated do tenant lê e escreve (sem filtro de role). Achado.
 - **Tenant-scoped?** Sim.
 - `20260505210000_xpan_register_drift_tables.sql:61-91`.

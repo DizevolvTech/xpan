@@ -32,6 +32,7 @@ import {
   type ProductChangelogRow,
   type ProductChangelogSummary,
 } from "@/lib/supabase-data/master-data-changelog";
+import { normalizeProductCodeSource, resolveClientCode } from "@/lib/product-identity";
 import { normalizeWeightDisplayUnit } from "@/lib/weight-display";
 
 export interface MasterDataSnapshot {
@@ -299,10 +300,17 @@ async function loadMasterDataSnapshot(
   );
   const profileById = new Map(profileRows.map((row) => [row.id, row]));
 
+  // Código que o cliente reconhece (ERP ou GTIN, conforme a configuração dele): calculado uma vez
+  // aqui e levado em `displayCode`, para tela e impressão nunca divergirem.
+  const productCodeSource = normalizeProductCodeSource(
+    (settingsRow as { product_code_source?: string | null }).product_code_source,
+  );
+
   const ingredients: ProductionIngredient[] = ingredientRows.map((row) => ({
     id: row.legacy_id ?? row.id,
     code: row.code,
     externalCode: row.external_code ?? undefined,
+    displayCode: resolveClientCode({ code: row.code, externalCode: row.external_code }, productCodeSource),
     createdAt: row.created_at ?? undefined,
     updatedAt: row.updated_at ?? undefined,
     name: row.name,
@@ -392,6 +400,10 @@ async function loadMasterDataSnapshot(
     code: row.code,
     externalCode: row.external_code ?? undefined,
     gtin: ((row as { gtin?: string | null }).gtin ?? "").trim() || undefined,
+    displayCode: resolveClientCode(
+      { code: row.code, externalCode: row.external_code, gtin: (row as { gtin?: string | null }).gtin },
+      productCodeSource,
+    ),
     createdAt: row.created_at ?? undefined,
     updatedAt: row.updated_at ?? undefined,
     name: row.name,
@@ -514,6 +526,7 @@ async function loadMasterDataSnapshot(
           : 1,
       // Coluna nova: banco ainda sem a migração (ou valor estranho) cai em kg, nunca quebra.
       opWeightUnit: normalizeWeightDisplayUnit((settingsRow as { op_weight_unit?: string | null }).op_weight_unit),
+      productCodeSource,
     },
     sectors,
     lines,

@@ -1,5 +1,6 @@
 "use client";
 
+import { getProductDisplayCode } from "@/lib/product-identity";
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import {
   CheckCircle,
@@ -51,6 +52,7 @@ import {
 type AuditableScheduleProduct = {
   snapshotId: string;
   productId: string;
+  /** Código do cliente (ERP/GTIN, conforme a configuração); o da fábrica só se ele não tiver. */
   code: string;
   name: string;
   minimumProduction: number;
@@ -119,7 +121,7 @@ function buildScheduleSnapshotProducts(
       return {
         snapshotId: item.id,
         productId: item.productId,
-        code: product?.code ?? item.productId,
+        code: product ? getProductDisplayCode(product) : item.productId,
         name: product?.name ?? "Produto não encontrado",
         minimumProduction: item.minimumProduction,
         expeditionLeadDays: product?.expeditionLeadDays ?? 0,

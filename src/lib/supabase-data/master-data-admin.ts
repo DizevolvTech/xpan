@@ -11,7 +11,7 @@ import type {
   StoreMasterData,
 } from "@/lib/production-planning";
 import { normalizeRecipeStage, normalizeRecipeStageConfig, defaultCountsTowardMixer } from "@/lib/production-planning";
-import { normalizeGtin } from "@/lib/product-identity";
+import { isProductCodeSource, normalizeGtin, type ProductCodeSource } from "@/lib/product-identity";
 import { normalizeLabTest } from "@/lib/lab-test";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
@@ -32,6 +32,11 @@ import {
 } from "@/lib/supabase-data/schedule-revision-plan";
 import { changeAffectsCronograma, diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
+import {
+  BASELINE_VERSION_DESCRIPTION,
+  buildProductVersionSnapshot,
+  isProductVersionSnapshot,
+} from "@/lib/product-version-snapshot";
 import { calculateMixerCapacity } from "@/lib/production-data-utils";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { isWeightDisplayUnit, type WeightDisplayUnit } from "@/lib/weight-display";
@@ -77,6 +82,12 @@ export type ProductInput = Omit<ProductionProduct, "id" | "code" | "createdAt" |
   code?: string;
   externalCode?: string;
   changeDescription?: string;
+  /**
+   * Foto do cadastro como a tela o carregou, ANTES desta edição. Só é usada quando o produto
+   * ainda não tem nenhuma versão com foto: vira a "versão base", para a primeira edição também
+   * poder ser desfeita. Nunca altera o produto.
+   */
+  versionBaseline?: Record<string, unknown>;
 };
 
 export type OperationalSettingsInput = {
@@ -85,6 +96,8 @@ export type OperationalSettingsInput = {
   saleLeadDays: number;
   /** Opcional: quem não manda o campo não altera a unidade atual. */
   opWeightUnit?: WeightDisplayUnit;
+  /** Opcional: quem não manda o campo não altera a escolha atual. */
+  productCodeSource?: ProductCodeSource;
 };
 
 type MutationOptions = {
@@ -588,12 +601,17 @@ function normalizeOperationalSettingsPayload(input: OperationalSettingsInput) {
     throw new Error("Informe a unidade da OP como kg ou g.");
   }
 
+  if (input.productCodeSource !== undefined && !isProductCodeSource(input.productCodeSource)) {
+    throw new Error("Informe o código do cliente como erp ou gtin.");
+  }
+
   return {
     order_cutoff_time: `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
     expedition_lead_days: expeditionLeadDays,
     sale_lead_days: saleLeadDays,
     // Só entra no UPDATE/INSERT quando veio: assim um cliente antigo (sem o campo) não zera a escolha.
     ...(input.opWeightUnit !== undefined ? { op_weight_unit: input.opWeightUnit } : {}),
+    ...(input.productCodeSource !== undefined ? { product_code_source: input.productCodeSource } : {}),
   };
 }
 
@@ -646,6 +664,7 @@ export async function updateOperationalSettings(
     expeditionLeadDays: normalizedInput.expedition_lead_days,
     saleLeadDays: normalizedInput.sale_lead_days,
     ...(normalizedInput.op_weight_unit ? { opWeightUnit: normalizedInput.op_weight_unit } : {}),
+    ...(normalizedInput.product_code_source ? { productCodeSource: normalizedInput.product_code_source } : {}),
   };
 }
 
@@ -1576,6 +1595,94 @@ export async function createProduct(input: ProductInput, options: MutationOption
   };
 }
 
+/**
+ * Grava uma versão do produto (motivo + o que mudou + foto do cadastro para restaurar).
+ *
+ * - O autor chega como id de texto ("user-...") enquanto a coluna é uuid; sem resolver antes, o
+ *   insert falhava e a versão sumia sem erro. Aqui o perfil é achado por legacy_id ou id.
+ * - Produto sem nenhuma versão com foto ganha antes uma "versão base" (o estado anterior à edição
+ *   que a tela mandou), para a primeira alteração também poder ser desfeita.
+ * - Devolve false (e loga) se não conseguiu gravar; nunca lança, para não desfazer o produto salvo.
+ */
+async function recordProductVersion(args: {
+  supabase: SupabaseDataClient;
+  tenantId: unknown;
+  productId: string;
+  input: ProductInput;
+  changedFields: ReturnType<typeof diffProductFields>;
+  actingProfileId: string | null;
+}): Promise<boolean> {
+  const { supabase, tenantId, productId, input, changedFields, actingProfileId } = args;
+
+  try {
+    const existingResult = await supabase
+      .from("product_changelog")
+      .select("version_number, product_snapshot")
+      .eq("product_id", productId)
+      .order("version_number", { ascending: false });
+    if (existingResult.error) {
+      throw new Error(existingResult.error.message);
+    }
+    const existing = (existingResult.data ?? []) as Array<{ version_number: number; product_snapshot: unknown }>;
+    let nextVersion = (existing[0]?.version_number ?? 0) + 1;
+
+    let authorId: string | null = null;
+    let authorName = "";
+    if (actingProfileId) {
+      const profileResult = await (isUuid(actingProfileId)
+        ? supabase.from("profiles").select("id, name").eq("id", actingProfileId)
+        : supabase.from("profiles").select("id, name").eq("legacy_id", actingProfileId)
+      ).maybeSingle();
+      const profile = profileResult.data as { id: string; name: string } | null;
+      authorId = profile?.id ?? null;
+      authorName = profile?.name ?? "";
+    }
+
+    const hasSnapshotVersion = existing.some((entry) => isProductVersionSnapshot(entry.product_snapshot));
+    if (!hasSnapshotVersion && isProductVersionSnapshot(input.versionBaseline)) {
+      const baselineResult = await supabase.from("product_changelog").insert({
+        tenant_id: tenantId,
+        product_id: productId,
+        version_number: nextVersion,
+        change_description: BASELINE_VERSION_DESCRIPTION,
+        changed_by_profile_id: authorId,
+        changed_by_name: authorName,
+        snapshot_data: { name: input.name, description: input.description, changedFields: [] },
+        product_snapshot: buildProductVersionSnapshot(input.versionBaseline),
+      });
+      if (baselineResult.error) {
+        throw new Error(baselineResult.error.message);
+      }
+      nextVersion += 1;
+    }
+
+    const { versionBaseline: _baseline, changeDescription: _description, ...productFields } = input;
+    void _baseline;
+    void _description;
+    const insertResult = await supabase.from("product_changelog").insert({
+      tenant_id: tenantId,
+      product_id: productId,
+      version_number: nextVersion,
+      change_description: (input.changeDescription ?? "").trim(),
+      changed_by_profile_id: authorId,
+      changed_by_name: authorName,
+      snapshot_data: { name: input.name, description: input.description, changedFields },
+      product_snapshot: buildProductVersionSnapshot(productFields as unknown as Record<string, unknown>),
+    });
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
+    }
+    return true;
+  } catch (error) {
+    console.error(
+      `[product-version] não foi possível registrar a versão do produto ${productId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return false;
+  }
+}
+
 export async function updateProduct(
   identifier: string,
   input: ProductInput,
@@ -1621,29 +1728,17 @@ export async function updateProduct(
   // se a edição exige reauditoria do cronograma. Reutilizado no changelog abaixo.
   const changedFields = diffProductFields(row, normalizeProductPayload(input));
 
-  // Record changelog entry if a change description was provided
+  // Registra a versão quando há motivo. Falha ao registrar NÃO desfaz o produto já salvo, mas
+  // também não passa em silêncio: devolvemos `versionRecorded: false` para a tela avisar.
+  let versionRecorded: boolean | null = null;
   if (input.changeDescription?.trim()) {
-    const versionResult = await supabase
-      .from("product_changelog")
-      .select("version_number")
-      .eq("product_id", productId)
-      .order("version_number", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const nextVersion = ((versionResult.data as { version_number: number } | null)?.version_number ?? 0) + 1;
-    const actingProfileName = options.actingProfileId
-      ? ((await supabase.from("profiles").select("name").eq("id", options.actingProfileId).maybeSingle()).data as { name: string } | null)?.name ?? ""
-      : "";
-
-    await supabase.from("product_changelog").insert({
-      tenant_id: row.tenant_id,
-      product_id: productId,
-      version_number: nextVersion,
-      change_description: input.changeDescription.trim(),
-      changed_by_profile_id: options.actingProfileId ?? null,
-      changed_by_name: actingProfileName,
-      snapshot_data: { name: input.name, description: input.description, changedFields },
+    versionRecorded = await recordProductVersion({
+      supabase,
+      tenantId: row.tenant_id,
+      productId,
+      input,
+      changedFields,
+      actingProfileId: options.actingProfileId ?? null,
     });
   }
 
@@ -1665,7 +1760,7 @@ export async function updateProduct(
   const cronogramaAffected = lineChanged || changeAffectsCronograma(changedFields);
 
   if (!cronogramaAffected) {
-    return { scheduleRevisionImpact: null };
+    return { scheduleRevisionImpact: null, ...(versionRecorded === null ? {} : { versionRecorded }) };
   }
 
   const affectedOperationalSubcategoryIds = [
@@ -1695,7 +1790,7 @@ export async function updateProduct(
     }
   }
 
-  return { scheduleRevisionImpact };
+  return { scheduleRevisionImpact, ...(versionRecorded === null ? {} : { versionRecorded }) };
 }
 
 export async function cloneProduct(

@@ -1,5 +1,6 @@
 "use client";
 
+import { getProductDisplayCode } from "@/lib/product-identity";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -133,6 +134,7 @@ export default function LinhaProducaoDetailsPage() {
           const matchesSearch =
             normalizedSearch.length === 0 ||
             product.code.toLowerCase().includes(normalizedSearch) ||
+            (product.externalCode ?? "").toLowerCase().includes(normalizedSearch) ||
             product.name.toLowerCase().includes(normalizedSearch) ||
             product.masterLineName.toLowerCase().includes(normalizedSearch) ||
             product.operationalLineName.toLowerCase().includes(normalizedSearch);
@@ -624,7 +626,7 @@ export default function LinhaProducaoDetailsPage() {
                             <tr key={product.id} className="transition-colors duration-200 hover:bg-panel/35">
                               <td className="border-t border-border/70 bg-card px-4 py-3 align-top">
                                 <div className="font-medium text-foreground">{product.name}</div>
-                                <div className="text-xs text-muted-foreground">{product.code}</div>
+                                <div className="text-xs text-muted-foreground">{getProductDisplayCode(product)}</div>
                               </td>
                               <td className="border-t border-border/70 bg-card px-4 py-3 align-top text-sm text-muted-foreground">
                                 {product.masterLineName}

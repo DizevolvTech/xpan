@@ -755,3 +755,33 @@ void test("expandRecipeIntoItems — produto SEM linha num pedido congelado não
     "pedido congelado sem linha do produto não expande MPI adicionado depois",
   );
 });
+
+void test("MPI e ingrediente misturado entram na OP com o código do cliente (ERP) e caem no da fábrica sem ele", () => {
+  const farinha = makeIngredient("farinha", "Farinha");
+  const molhoComErp: ProductionIngredient = { ...makeIngredient("molho", "Molho Especial"), type: "misturado", externalCode: "MOL-77" };
+  const massaMpi = makeMpiProduct({ id: "mpi-massa", code: "PR-00500", externalCode: "MAS-10" });
+  const pizza = {
+    ...makePizzaProduct(),
+    recipe: [
+      { id: "r1", sourceType: "ingrediente", sourceId: "farinha", label: "Farinha", quantity: 0.3, unit: "Kg" },
+      { id: "r2", sourceType: "produto", sourceId: "mpi-massa", label: "Massa", quantity: 0.4, unit: "Kg" },
+      { id: "r3", sourceType: "ingrediente", sourceId: "molho", label: "Molho", quantity: 0.3, unit: "Kg" },
+    ],
+  } as ProductionProduct;
+  const productsById = new Map([[pizza.id, pizza], [massaMpi.id, massaMpi]]);
+
+  const result = expandRecipeIntoItems([makePlannedItem()], productsById, [farinha, molhoComErp], [pizza, massaMpi], {
+    expandMixedIngredients: true,
+  });
+  assert.equal(result.find((item) => item.productId === "mpi-massa")?.productCode, "MAS-10");
+  assert.equal(result.find((item) => item.productId === "molho")?.productCode, "MOL-77");
+
+  const molhoSemErp: ProductionIngredient = { ...molhoComErp, externalCode: undefined };
+  const massaSemErp = { ...massaMpi, externalCode: "" };
+  const productsByIdSemErp = new Map([[pizza.id, pizza], [massaSemErp.id, massaSemErp]]);
+  const semErp = expandRecipeIntoItems([makePlannedItem()], productsByIdSemErp, [farinha, molhoSemErp], [pizza, massaSemErp], {
+    expandMixedIngredients: true,
+  });
+  assert.equal(semErp.find((item) => item.productId === "mpi-massa")?.productCode, "PR-00500");
+  assert.equal(semErp.find((item) => item.productId === "molho")?.productCode, "MOLHO");
+});

@@ -907,3 +907,27 @@ test("folha de produção: MPI que também é item da OP NÃO sai duas vezes", (
     [stagedProduct.id],
   );
 });
+
+test("impressão: MPI e linhas da receita saem com o código do cliente; sem ele, com o da fábrica", () => {
+  const farinhaComErp: ProductionIngredient = { ...ingredients[0], externalCode: "FAR-01" };
+  const chantillyComErp = { ...mpiChantilly, externalCode: "CHA-90" };
+  const produto = buildProduct("product-erp", "PR-00003", "Bolo", [
+    { id: "e1", sourceType: "ingrediente", sourceId: "ing-farinha", label: "IN-000001 · Farinha de trigo", quantity: 5, unit: "Kg" },
+    { id: "e2", sourceType: "ingrediente", sourceId: "ing-creme", label: "IN-000003 · Creme de leite", quantity: 1, unit: "Kg" },
+    { id: "e3", sourceType: "produto", sourceId: "mpi-chantilly", label: "PR-00090 · Chantilly", quantity: 2, unit: "Kg" },
+  ]);
+  const comErp = { products: [produto, chantillyComErp], ingredients: [farinhaComErp, ingredients[1], ingredients[2]] };
+
+  const pre = buildPreWeighingDocument(buildOp(produto, 10), comErp);
+  assert.equal(pre.ingredientProducts[0].productCode, "CHA-90");
+  const labels = pre.productSections[0].baseIngredients.map((row) => row.label);
+  assert.ok(labels.includes("FAR-01 · Farinha de trigo"), "ingrediente com código do cliente");
+  assert.ok(labels.includes("IN-000003 · Creme de leite"), "ingrediente sem código do cliente mantém o da fábrica");
+
+  const folha = buildProductionSheetDocument(buildOp(produto, 10), comErp);
+  const folhaLabels = folha.productSections[0].items.map((row) => row.label);
+  assert.ok(folhaLabels.includes("FAR-01 · Farinha de trigo"));
+
+  const semErp = buildPreWeighingDocument(buildOp(produto, 10), { products: [produto, mpiChantilly], ingredients });
+  assert.equal(semErp.ingredientProducts[0].productCode, "PR-00090");
+});

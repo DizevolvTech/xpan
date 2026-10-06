@@ -70,13 +70,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       authorization.effectiveTenantId,
       createSupabaseAdminClient(),
     );
-    const { scheduleRevisionImpact } = await updateProduct(productId, payload, {
+    const { scheduleRevisionImpact, versionRecorded } = await updateProduct(productId, payload, {
       tenantId: authorization.effectiveTenantId,
       supabase,
       actingProfileId: authorization.user.id,
     });
     invalidateMasterDataCaches(authorization.effectiveTenantId);
-    return NextResponse.json({ ok: true, scheduleRevisionImpact });
+    return NextResponse.json({ ok: true, scheduleRevisionImpact, versionRecorded });
   } catch (error) {
     if (isClientValidationError(error)) {
       return NextResponse.json(

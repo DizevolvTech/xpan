@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authorizeApiRequest, canAccessStore } from "@/lib/api-auth";
 import { formatDateBr } from "@/lib/production-planning";
+import { normalizeProductCodeSource, resolveClientCode } from "@/lib/product-identity";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { buildStoreOrderCapabilities, resolveStoreVisibleOrderStatus } from "@/lib/store-order-workflow";
 import { cancelOrder } from "@/lib/supabase-data/workflow";
@@ -138,7 +139,7 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
         .from("store_order_items")
         .select("id, legacy_id, order_id, product_id, product_code_snapshot, product_name_snapshot, requested_quantity, requested_unit, operational_unit_snapshot")
         .order("created_at", { ascending: true }),
-      supabase.from("products").select("id, legacy_id, subcategory_id, operational_subcategory_id"),
+      supabase.from("products").select("id, legacy_id, code, external_code, gtin, subcategory_id, operational_subcategory_id"),
       supabase.from("subcategories").select("id, category_id"),
       supabase.from("categories").select("id, name"),
       getPersistedDeliveryExecutions({
@@ -148,6 +149,9 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       listStoreOrderEvents(orderRow.legacy_id ?? orderRow.id, supabase),
     ]);
 
+    const productCodeSource = normalizeProductCodeSource(
+      (settingsRow as { product_code_source?: string | null } | null)?.product_code_source,
+    );
     const itemRows = assertSupabaseResult(itemRowsResult, "Failed to load store order items for detail");
     const productRows = assertSupabaseResult(productRowsResult, "Failed to load products for order detail");
     const lineRows = assertSupabaseResult(lineRowsResult, "Failed to load subcategories for order detail");
@@ -183,7 +187,14 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
         return {
           id: row.legacy_id ?? row.id,
           productId: product?.legacy_id ?? product?.id ?? row.product_id,
-          code: row.product_code_snapshot,
+          // Código que o cliente conhece (ERP ou GTIN, conforme a configuração dele); o snapshot
+          // gravado no pedido (código da fábrica) só como reserva.
+          code: product
+            ? resolveClientCode(
+                { code: row.product_code_snapshot, externalCode: product.external_code, gtin: product.gtin },
+                productCodeSource,
+              )
+            : row.product_code_snapshot,
           name: row.product_name_snapshot,
           category,
           unit: row.requested_unit,

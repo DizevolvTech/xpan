@@ -73,3 +73,15 @@ Tabela compacta: timestamp → arquivo → propósito (1 linha) → tipo de impa
 
 - Quase todas as migrations seguem o formato `YYYYMMDDHHMMSS_descricao.sql` — convencional Supabase. O timestamp **não** corresponde ao mtime do arquivo (vide `ls -la` mostra dates como Mar 9, Mar 17 etc), porque é o nome lógico.
 - Há um gap grande entre 27/03 e 05/05 (~5 semanas sem migration) — provavelmente período de iteração apenas no front (commits recentes citam "ajustes ux maio 2026").
+
+## 20261006120000 — `product_code_source`
+
+- Adiciona `operational_settings.product_code_source` (`text not null default 'erp'`, check `in ('erp','gtin')`).
+- **Só apresentação**: escolhe qual código do cliente aparece em telas e impressões (ERP ou GTIN). Sem o escolhido cai no ERP e por fim no código da fábrica. Nenhum cadastro é alterado.
+- Aditiva e idempotente; clientes existentes ficam em `erp`. Aplicada em produção em 06/10/2026 (7 clientes, configurações anteriores idênticas).
+
+## 20261006130000 — `product_changelog_snapshot`
+
+- Adiciona `product_changelog.product_snapshot jsonb` (nulo por padrão): cópia do cadastro de processo do produto naquela versão (sem id, código, GTIN nem ativo), usada para **restaurar** uma versão.
+- Linhas antigas ficam nulas (não restauráveis). Restaurar nunca reescreve o histórico: a versão antiga vira uma nova versão ao salvar.
+- Aditiva e idempotente. Aplicada em produção em 06/10/2026 (tabela estava vazia; 85 produtos intactos).

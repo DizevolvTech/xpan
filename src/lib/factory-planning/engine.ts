@@ -32,6 +32,7 @@ import { planBatches, deriveBatchStatus, productSalesToKgFactor } from "@/lib/pr
 import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { getProductionStatusProgress, normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { expandRecipeIntoItems } from "@/lib/factory-planning/recipe-expansion";
+import { getProductDisplayCode } from "@/lib/product-identity";
 
 export interface FactoryPlanningInput {
   stores: StoreProfile[];
@@ -692,7 +693,7 @@ function buildPlannedItems(
           delayed: availability.delayed,
           demandSource: "pedido",
           productId: product.id,
-          productCode: product.code,
+          productCode: getProductDisplayCode(product),
           productName: product.name,
           lineId: line.id,
           lineName: line.name,
@@ -815,7 +816,7 @@ export function buildScheduleSkeletonItems(
           delayed: false,
           demandSource: "cronograma",
           productId: product.id,
-          productCode: product.code,
+          productCode: getProductDisplayCode(product),
           productName: product.name,
           lineId: line.id,
           lineName: line.name,

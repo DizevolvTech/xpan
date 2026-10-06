@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Pencil, Plus, Star, Trash2 } from "lucide-react
 
 import { IngredientCompositionEditor } from "@/components/production/ingredient-composition-editor";
 import { IngredientFormDialog } from "@/components/production/ingredient-form-dialog";
+import { ProductVersionsDialog } from "@/components/production/product-versions-dialog";
 import { IngredientProfileFields } from "@/components/production/ingredient-profile-fields";
 import { ProductPreparationStagesEditor } from "@/components/production/product-preparation-stages-editor";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
@@ -67,7 +68,13 @@ import {
   preferredOperationalUnits,
 } from "@/lib/operational-units";
 import { findDuplicateExternalCode, normalizeExternalCode } from "@/lib/ingredient-form-logic";
-import { getProductDisplayCode, normalizeGtin } from "@/lib/product-identity";
+import { getProductDisplayCode, normalizeGtin, relabelRecipeLineWithClientCode } from "@/lib/product-identity";
+import {
+  applyProductVersionSnapshot,
+  buildProductVersionSnapshot,
+  buildRestoreChangeDescription,
+  findMissingRecipeSources,
+} from "@/lib/product-version-snapshot";
 import { calculateMixerCapacity, getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
 import {
   applyLabTestToProduct,
@@ -205,6 +212,9 @@ export function ProductFormDialog({
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [commitDescription, setCommitDescription] = useState("");
   const [pendingProductPayload, setPendingProductPayload] = useState<ProductFormState | null>(null);
+  const [isVersionsOpen, setIsVersionsOpen] = useState(false);
+  // Versão restaurada para dentro do formulário (ainda não salva): pré-preenche o motivo ao salvar.
+  const [restoredFromVersion, setRestoredFromVersion] = useState<number | null>(null);
   const toast = useToast();
   // AJ-0025: produto em carteira operacional → editar reconstrói a revisão pendente
   // do cronograma; avisamos antes de salvar e orientamos a reauditoria depois.
@@ -250,6 +260,8 @@ export function ProductFormDialog({
     );
     setFormError(null);
     setInvalidFields([]);
+    setRestoredFromVersion(null);
+    setIsVersionsOpen(false);
     setActiveTab("cadastro");
     // Reset apenas quando o dialog abre, o modo muda, ou outro produto é selecionado.
     // Usamos `product?.id` (não o objeto `product`) de propósito: o pai reconstrói a
@@ -797,6 +809,47 @@ export function ProductFormDialog({
     );
   }
 
+  async function handleRestoreVersion(versionNumber: number) {
+    if (!product) {
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/master-data/products/${encodeURIComponent(product.id)}/changelog?version=${versionNumber}`,
+      );
+      const body = (await response.json().catch(() => null)) as
+        | { productSnapshot?: Record<string, unknown>; message?: string }
+        | null;
+      if (!response.ok || !body?.productSnapshot) {
+        throw new Error(body?.message ?? "Não foi possível carregar essa versão.");
+      }
+
+      const restoredSnapshot = { ...body.productSnapshot };
+      const missing = findMissingRecipeSources(restoredSnapshot, {
+        ingredientIds: new Set(snapshot.ingredients.map((ingredient) => ingredient.id)),
+        productIds: new Set(snapshot.products.map((entry) => entry.id)),
+      });
+      if (missing.length > 0) {
+        toast.error(
+          `Não dá para restaurar a versão ${versionNumber}: ${missing.length} item(ns) da receita não existe(m) mais no cadastro (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""}).`,
+        );
+        return;
+      }
+      // Linha de produção apagada desde então: mantém a atual em vez de salvar uma referência quebrada.
+      if (typeof restoredSnapshot.lineId === "string" && !snapshot.lines.some((line) => line.id === restoredSnapshot.lineId)) {
+        delete restoredSnapshot.lineId;
+      }
+
+      setFormState((current) => applyProductVersionSnapshot(current, restoredSnapshot));
+      setRestoredFromVersion(versionNumber);
+      setIsVersionsOpen(false);
+      setActiveTab("cadastro");
+      toast.info(`Versão ${versionNumber} carregada no formulário. Revise e salve para valer.`);
+    } catch (restoreError) {
+      toast.error(restoreError instanceof Error ? restoreError.message : "Não foi possível carregar essa versão.");
+    }
+  }
+
   async function handleSaveProduct() {
     if (formState.maxBatchWeightKg != null && mixerCapacity.capacity == null) {
       setFormError("Revise o limite máximo, os ingredientes marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira.");
@@ -893,7 +946,7 @@ export function ProductFormDialog({
     // For existing products, require a commit description before saving
     if (product) {
       setPendingProductPayload(nextProduct);
-      setCommitDescription("");
+      setCommitDescription(restoredFromVersion ? buildRestoreChangeDescription(restoredFromVersion) : "");
       setIsCommitDialogOpen(true);
       return;
     }
@@ -907,8 +960,13 @@ export function ProductFormDialog({
     setInvalidFields([]);
 
     try {
+      // Para produto existente, manda também o cadastro como estava ao abrir: se ele ainda não
+      // tem versões com cópia, vira a "versão base" e a primeira alteração também pode ser desfeita.
+      const baseline = productRef.current
+        ? buildProductVersionSnapshot(productRef.current as unknown as Record<string, unknown>)
+        : undefined;
       const body = changeDescription
-        ? { ...payload, changeDescription }
+        ? { ...payload, changeDescription, ...(baseline ? { versionBaseline: baseline } : {}) }
         : payload;
 
       const response = await fetch(
@@ -923,7 +981,7 @@ export function ProductFormDialog({
       );
 
       const respBody = (await response.json().catch(() => null)) as
-        | { message?: string; scheduleRevisionImpact?: ScheduleRevisionRebuildImpact | null }
+        | { message?: string; scheduleRevisionImpact?: ScheduleRevisionRebuildImpact | null; versionRecorded?: boolean }
         | null;
 
       if (!response.ok) {
@@ -933,6 +991,10 @@ export function ProductFormDialog({
       await refresh();
       setIsCommitDialogOpen(false);
       onOpenChange(false);
+
+      if (changeDescription && respBody?.versionRecorded === false) {
+        toast.warning("O produto foi salvo, mas a versão não pôde ser registrada no histórico. Avise a equipe técnica.");
+      }
 
       // AJ-0025: orienta a reauditoria quando o cronograma foi reconstruído pela edição.
       const impact = respBody?.scheduleRevisionImpact ?? null;
@@ -1994,7 +2056,12 @@ export function ProductFormDialog({
                                 {block.items.map((item, itemIndex) => (
                                   <tr key={item.id}>
                                     <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
-                                      {item.label}
+                                      {relabelRecipeLineWithClientCode(
+                                        item.label,
+                                        item.sourceType === "ingrediente"
+                                          ? snapshot.ingredients.find((ingredient) => ingredient.id === item.sourceId)
+                                          : snapshot.products.find((entry) => entry.id === item.sourceId),
+                                      )}
                                     </td>
                                     <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
                                       <Input
@@ -2975,6 +3042,11 @@ export function ProductFormDialog({
               >
                 {isReadOnly ? "Fechar" : "Cancelar"}
               </Button>
+              {product ? (
+                <Button type="button" variant="outline" onClick={() => setIsVersionsOpen(true)}>
+                  Versões
+                </Button>
+              ) : null}
               {!isReadOnly ? (
                 <Button type="button" onClick={() => void handleSaveProduct()} disabled={isSubmitting || storeCodeGateBlocked}>
                   {product ? "Salvar Alterações" : "Cadastrar Produto"}
@@ -2985,6 +3057,17 @@ export function ProductFormDialog({
         </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {product ? (
+        <ProductVersionsDialog
+          open={isVersionsOpen}
+          onOpenChange={setIsVersionsOpen}
+          productId={product.id}
+          productName={product.name}
+          canRestore={!isReadOnly}
+          onRestore={handleRestoreVersion}
+        />
+      ) : null}
 
       <Dialog open={isCommitDialogOpen} onOpenChange={setIsCommitDialogOpen}>
         <DialogContent className="sm:max-w-lg">

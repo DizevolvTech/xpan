@@ -2441,3 +2441,34 @@ test("Fase 2 (entrega): esqueleto não entra em expedition/expeditionItems de ne
     false,
   );
 });
+
+test("OP e itens do planejamento mostram o código do cliente (ERP) — pedido e esqueleto do cronograma", () => {
+  const comErp = [buildSkeletonProduct({ id: "product-1", code: "PR-58451", name: "Pao Quarta" })].map((p) => ({ ...p, externalCode: "703936" }));
+  const semErp = [buildSkeletonProduct({ id: "product-1", code: "PR-58451", name: "Pao Quarta" })].map((p) => ({ ...p, externalCode: "" }));
+  const run = (products: ProductionProduct[]) =>
+    buildFactoryPlanningData(SKELETON_REFERENCE_WEDNESDAY, {
+      stores: [baseStore],
+      storeOrders: [
+        {
+          id: "order-1",
+          code: "PD-0001",
+          storeId: "store-1",
+          orderedAt: "2026-03-16T09:00:00.000Z",
+          items: [{ id: "item-1", productId: "product-1", quantity: 50, unit: "Un" }],
+        },
+      ],
+      settings,
+      sectors: skeletonSectors,
+      lines: skeletonLines,
+      products,
+      schedules: [phase2Schedule],
+    });
+
+  const plannedComErp = run(comErp);
+  assert.ok(plannedComErp.orderItems.length > 0);
+  assert.ok(plannedComErp.orderItems.every((item) => item.productCode === "703936"), "itens de pedido/esqueleto com ERP");
+  assert.ok(plannedComErp.productionOrders.flatMap((op) => op.items).every((item) => item.productCode === "703936"), "itens da OP com ERP");
+
+  const plannedSemErp = run(semErp);
+  assert.ok(plannedSemErp.orderItems.every((item) => item.productCode === "PR-58451"), "sem ERP cai no código da fábrica");
+});

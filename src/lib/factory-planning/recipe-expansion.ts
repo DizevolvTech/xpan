@@ -1,3 +1,4 @@
+import { getIngredientDisplayCode, getProductDisplayCode } from "@/lib/product-identity";
 import type {
   ProductionIngredient,
   ProductionLine,
@@ -296,7 +297,7 @@ function buildMpiPlannedItem(params: {
     // MPI = etapa intermediária (base), não o produto final → a UI sinaliza.
     isIntermediate: true,
     productId: mpiProduct.id,
-    productCode: mpiProduct.code,
+    productCode: getProductDisplayCode(mpiProduct),
     productName: mpiProduct.name,
     lineId: resolvedLineId,
     lineName: resolvedLineName,
@@ -387,7 +388,7 @@ function buildMixedIngredientPlannedItem(params: {
     // Ingrediente misturado = etapa intermediária (base) → a UI sinaliza.
     isIntermediate: true,
     productId: mixedIngredient.id,
-    productCode: mixedIngredient.code,
+    productCode: getIngredientDisplayCode(mixedIngredient),
     productName: mixedIngredient.name,
     lineId: parent.lineId,
     lineName: parent.lineName,

@@ -17,6 +17,7 @@ import {
 import type { ProductionOrderRow } from "@/lib/order-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { round3, scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
+import { getProductDisplayCode, relabelRecipeLineWithClientCode } from "@/lib/product-identity";
 import { getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
 import { computePreWeighBatchSplit, productSalesToKgFactor, type PreWeighBatchSplit } from "@/lib/production-batches";
 
@@ -405,7 +406,7 @@ function buildScaledRecipeRowsForProduct(
       sectionKind:
         !staged && isAdditionalIngredient(recipeItem, ingredient, sourceProduct) ? "additional" : "base",
       stage: normalizeRecipeStage(recipeItem.stage),
-      label: recipeItem.label,
+      label: relabelRecipeLineWithClientCode(recipeItem.label, ingredient ?? sourceProduct),
       unit: recipeItem.unit,
       estimatedQuantity,
       batchQuantity,
@@ -516,7 +517,7 @@ function collectIngredientProductSections(
       const split = batchSplitForKg(entry.requiredKg, entry.product, entry.product.salesUnit);
       return {
         productId: entry.product.id,
-        productCode: entry.product.code,
+        productCode: getProductDisplayCode(entry.product),
         productName: entry.product.name,
         stage: entry.stage,
         // Receita legada (massa) não ganha rótulo: a impressão segue igual à de hoje.

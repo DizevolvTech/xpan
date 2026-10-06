@@ -284,3 +284,16 @@ test("XPAN-9: store catalog excludes MPI products (canBeIngredient) from the ord
     "nenhum item do catálogo aponta para o MPI",
   );
 });
+
+test("store catalog mostra o código do ERP do cliente quando existe e o da fábrica quando não existe", () => {
+  const withErp = buildSnapshot(["quinta"]);
+  withErp.products[0] = { ...withErp.products[0], code: "PR-58451", externalCode: "703936" };
+  const catalogWithErp = buildStoreOrderCatalog(withErp, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+  assert.equal(catalogWithErp[0]?.code, "703936");
+  assert.equal(catalogWithErp[0]?.productId, "product-1", "o produto continua identificado pelo id, não pelo código");
+
+  const withoutErp = buildSnapshot(["quinta"]);
+  withoutErp.products[0] = { ...withoutErp.products[0], code: "PR-58451", externalCode: "" };
+  const catalogWithoutErp = buildStoreOrderCatalog(withoutErp, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+  assert.equal(catalogWithoutErp[0]?.code, "PR-58451");
+});

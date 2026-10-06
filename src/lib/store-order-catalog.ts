@@ -1,4 +1,5 @@
 import type { LineType } from "@/lib/production-planning";
+import { getProductDisplayCode } from "@/lib/product-identity";
 import { getUnitDefinition } from "@/lib/factory-planning/units";
 import {
   getOperationalOrderWindow,
@@ -138,7 +139,7 @@ export function buildStoreOrderCatalog(
     entries.set(key, {
       scheduleId: schedule?.id ?? null,
       productId: product.id,
-      code: product.code,
+      code: getProductDisplayCode(product),
       name: product.name,
       unit: product.salesUnit,
       unitKind: getUnitDefinition(product.salesUnit).kind,

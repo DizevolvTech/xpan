@@ -7,6 +7,7 @@ import type { OperationalSettingsInput } from "@/lib/supabase-data/master-data-a
 import { updateOperationalSettings } from "@/lib/supabase-data/master-data-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 import { isWeightDisplayUnit } from "@/lib/weight-display";
+import { isProductCodeSource } from "@/lib/product-identity";
 
 export async function PATCH(request: Request) {
   const authorization = await authorizeApiRequest({
@@ -37,6 +38,10 @@ export async function PATCH(request: Request) {
 
   if (payload.opWeightUnit !== undefined && !isWeightDisplayUnit(payload.opWeightUnit)) {
     return NextResponse.json({ message: "Informe a unidade da OP como kg ou g." }, { status: 400 });
+  }
+
+  if (payload.productCodeSource !== undefined && !isProductCodeSource(payload.productCodeSource)) {
+    return NextResponse.json({ message: "Informe o código do cliente como erp ou gtin." }, { status: 400 });
   }
 
   try {
