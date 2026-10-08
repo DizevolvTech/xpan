@@ -8,7 +8,7 @@
 
 ## ⏳ Vídeo de ajustes 28/09 — pendências aguardando resposta do cliente (2026-10-06)
 
-Parte do vídeo já foi entregue (código do cliente ERP/GTIN em telas e impressões; versões do produto com restauração — ver changelog de 06/10). O restante **não foi feito de propósito** e depende de resposta do cliente/Daniel: sobra assada (soma × subtrai), mix de produtos por loja, peso equivalente em kg para o ERP, importação adaptável à planilha de cada cliente e a tela de unidades do produto. Detalhes, trechos do vídeo e perguntas em [[Pendências do vídeo 28set26 — aguardando cliente]].
+Parte do vídeo já foi entregue (código do cliente ERP/GTIN em telas e impressões; versões do produto com restauração — ver changelog de 06/10). Em 08/10, com as respostas do cliente, entraram a **sobra assada somando** e o **mix de produtos por loja** (código no ar; falta o cliente passar a grade de produtos por loja para cadastrar). O restante segue **sem fazer de propósito** e depende de resposta do cliente/Daniel: peso equivalente em kg para o ERP, importação adaptável à planilha de cada cliente e a tela de unidades do produto. Detalhes, trechos do vídeo e perguntas em [[Pendências do vídeo 28set26 — aguardando cliente]].
 
 ---
 

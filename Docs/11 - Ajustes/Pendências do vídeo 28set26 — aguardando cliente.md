@@ -19,14 +19,22 @@
 - **Risco de mexer:** altera o rendimento de produtos já calibrados no jeito atual. Se confirmado "soma", decidir também o que acontece com os produtos existentes.
 - **Também relacionado:** o cliente vê peso da unidade crua 143 × 142,8 e quebra 434 × 417 (14:09–14:34). Parte pode vir deste item; o resto precisa da planilha dele ao lado da tela (pergunta 2). O valor 141,771 veio da transcrição automática e deve ser confirmado.
 
-## 2. ✅ FEITO 08/10 — Mix de produtos por loja (cliente respondeu 07/10)
+## 2. Mix de produtos por loja — código FEITO 08/10 · cadastro dos dados PENDENTE (aguarda o cliente)
 
-> Resposta: o mix é **por loja** e funciona como **filtro padrão dos lotes abertos** (qual loja vê qual produto por padrão). Pedido manual e encomenda fora do padrão **não são bloqueados**. Decisão (Lucas 08/10): marcar na loja, padrão todos os produtos. Entregue: ver `Docs/10 - Changelog Vivo/2026-10.md` (entrada de 08/10). Falta o cliente informar quais produtos cada loja vende.
+> **Resposta do cliente (07/10):** o mix é **por loja** e funciona como **filtro padrão dos lotes abertos** (qual loja vê qual produto por padrão). Pedido manual e encomenda fora do padrão **não são bloqueados**. Decisão (Lucas 08/10): marcar na loja, padrão todos os produtos.
 
-- **Vídeo (16:21–17:25):** nem todo produto existe em todas as lojas (ex.: submercado × atacado; no Chama, a loja A1 tem 30–40% do mix). No **pedido manual** o produto fora do mix não pode aparecer para o analista. Em pedido automático, "ok".
-- **Sistema hoje:** não existe mix por loja. Só há "disponível para pedido" (vale para todas as lojas). `buildStoreOrderCatalog` não filtra por loja.
-- **Recomendação registrada:** marcar o mix **na loja** (escolhe os produtos que ela recebe), com padrão "todos os produtos" — loja nova e cliente sem mix continuam como hoje. Marcar no produto exigiria listar as 16 lojas em cada item.
-- **Depende de:** perguntas 3 e 4 (vale também para importação por planilha? quais produtos ficam fora de cada loja?).
+**Entregue (no ar, `5dfdd6c`):** coluna `stores.product_mix`, bloco "Mix de produtos da loja" no cadastro da loja (Gestor de Dados > Lojas), filtro no pedido da loja (caixa "Só o mix desta loja") e no pedido centralizado (caixa "Mostrar todas as lojas"). O mix **nunca** entra em `available` nem na validação de pedido; planilha importada não é filtrada. Ver `Docs/10 - Changelog Vivo/2026-10.md` (entrada de 08/10).
+
+**Pendente — só dado, nada de código:**
+- **Estado hoje (08/10):** `stores.product_mix` é nulo nas 29 lojas, então toda loja vê todos os produtos, exatamente como antes. Nada trava.
+- **Quem decide:** o cliente. A loja não adiciona produto ao próprio catálogo (ela só escolhe quantidades); o mix é cadastrado pelo gestor de dados na tela da loja (permissão `gestor-dados.lojas`) ou por script a partir da lista do cliente.
+- **O que pedir ao cliente:** uma grade com as lojas nas linhas e os produtos nas colunas, marcando X onde a loja vende. Grupo Chama: 16 lojas × 13 produtos pedíveis. Texto pronto para enviar já foi redigido em 08/10 (mensagem de retorno ao cliente, junto do relato da sobra assada).
+- **Não gravar por palpite.** O histórico de pedidos não separa lojas "gourmet" e "básicas": só São Miguel Paulista (10 produtos), Cidade A. E. Carvalho (9) e Vila Matilde (9) pediram algo, quase todo o catálogo. Um mix chutado esconderia produto da loja por padrão.
+- **Quando a grade chegar:** (1) conferir cada produto da grade contra o cadastro; (2) guardar o `product_mix` antes (foto das lojas, como na entrega de 08/10); (3) gravar por loja com os ids de produto do snapshot; (4) comparar antes/depois e confirmar o catálogo de uma loja com e sem mix.
+- **Atenção:** mix com lista fixa **não inclui produto criado depois**. Quem criar produto novo precisa marcá-lo nas lojas que o vendem. Marcar todos os produtos grava "sem restrição", e aí o produto novo aparece sozinho.
+- **Em aberto, sem pedido:** importar o mix por planilha (não existe) e mostrar o mix na lista de lojas.
+
+---
 
 ## 3. Produto vendido em kg e produzido em unidade (peso equivalente para o ERP)
 
@@ -56,7 +64,7 @@
 
 ## Perguntas pendentes (resumo)
 
-**Cliente:** 1 sobra incluída em "Kg assados"? · 2 planilha × tela do mesmo produto · 3 mix vale para importação? · 4 produtos fora do mix de cada loja · 5 peso equivalente em kg para o ERP · 6 planilhas de pedido de cada cliente · 7 tela que ainda mostrava código da fábrica.
+**Cliente (respondidas 07/10: sobra, mix vale só para organizar, mínima produção, embalagem=venda):** 2 planilha × tela do mesmo produto (Adriano) · 4 **grade de produtos por loja (mix) — pendente** · 5 peso equivalente em kg para o ERP · 6 planilhas de pedido de cada cliente · 7 tela que ainda mostrava código da fábrica.
 **Daniel:** 8 função da "mínima produção" · 9 a subtração da sobra foi intencional?
 
 > Limites da análise: a transcrição do vídeo é automática (errou termos como "GTIN" → "JETIN"); só 68 quadros e 7 em alta resolução foram vistos.
