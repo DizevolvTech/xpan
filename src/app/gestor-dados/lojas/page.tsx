@@ -30,6 +30,8 @@ import {
   type StoreMasterData,
 } from "@/lib/production-planning";
 import { formatBrazilPhone } from "@/lib/phone-mask";
+import { getProductDisplayCode } from "@/lib/product-identity";
+import { StoreProductMixField } from "@/components/shared/store-product-mix-field";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useStoreUserCandidates } from "@/lib/use-store-user-candidates";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -62,6 +64,7 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
     orderingBlockedDays: store?.orderingBlockedDays ?? [],
     receivingBlockedDays: store?.receivingBlockedDays ?? [],
     deliveryZone: store?.deliveryZone ?? null,
+    productMix: store?.productMix ?? null,
   };
 }
 
@@ -86,6 +89,15 @@ export default function LojasPage() {
     enabled: isDialogOpen && !isReadOnly,
     isDirty: formDirty,
   });
+
+  const mixOptions = useMemo(
+    () =>
+      snapshot.products
+        .filter((product) => product.active && product.availableForOrdering && !product.canBeIngredient)
+        .map((product) => ({ id: product.id, code: getProductDisplayCode(product), name: product.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [snapshot.products],
+  );
 
   const lojas = useMemo(
     () =>
@@ -283,6 +295,11 @@ export default function LojasPage() {
   async function handleSave() {
     if (!formState.name.trim()) {
       setFormError("Informe o nome da loja antes de salvar.");
+      return;
+    }
+
+    if (Array.isArray(formState.productMix) && formState.productMix.length === 0) {
+      setFormError("Marque ao menos um produto no mix da loja, ou volte para \"Todos os produtos\".");
       return;
     }
 
@@ -721,6 +738,14 @@ export default function LojasPage() {
                 </div>
               </section>
             </div>
+
+            <StoreProductMixField
+              key={editingStore?.id ?? "new-store"}
+              options={mixOptions}
+              value={formState.productMix}
+              readOnly={isReadOnly}
+              onChange={(next) => setFormState((current) => ({ ...current, productMix: next }))}
+            />
             </fieldset>
           </div>
           <DialogFooter>

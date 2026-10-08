@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { OrderEntryCatalog, OrderEntryError, OrderEntryRow, ReviewedOrderRow } from "@/lib/centralized-orders";
 import { downloadOrderTemplate, readOrderExcel } from "@/lib/order-excel";
+import { selectStoresForProduct } from "@/lib/store-product-mix";
 
 export default function CentralizedOrdersPage() {
   const [catalog, setCatalog] = useState<OrderEntryCatalog>({ stores: [], products: [] });
@@ -18,9 +19,17 @@ export default function CentralizedOrdersPage() {
   const [review, setReview] = useState<{ rows: ReviewedOrderRow[]; errors: OrderEntryError[] } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Mix da loja (cliente, 07/10): por padrão só as lojas que têm o produto no mix; marcar mostra todas.
+  const [showAllStores, setShowAllStores] = useState(false);
   const [created, setCreated] = useState<Array<{ orderId: string; code: string }>>([]);
   const requestId = useRef("");
   const product = catalog.products.find(p => p.id === productId);
+  const visibleStores = selectStoresForProduct(catalog.stores, productId, {
+    showAll: showAllStores,
+    hasQuantity: storeId => (quantities[productId]?.[storeId] ?? "").trim() !== "",
+  });
+  const hiddenStoreCount = catalog.stores.length - visibleStores.length;
+  const storesHaveMix = catalog.stores.some(store => store.productMix);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/store-orders/centralized").then(async response => {
@@ -80,7 +89,8 @@ export default function CentralizedOrdersPage() {
             {catalog.products.map(p => <option key={p.id} value={p.id}>{p.externalCode || p.code} · {p.name} ({p.unit})</option>)}
           </select>
           <p className="text-sm text-muted-foreground">Preencha as lojas que receberão este produto. Zero ou vazio não gera pedido. Você pode trocar de produto sem perder as quantidades.</p>
-          <div className="grid gap-3 sm:grid-cols-2">{catalog.stores.map(store => <div key={store.id} className="flex items-center justify-between gap-3 rounded border p-3">
+          {storesHaveMix && <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={showAllStores} onChange={e => setShowAllStores(e.target.checked)} />Mostrar todas as lojas{!showAllStores && hiddenStoreCount > 0 ? ` (${hiddenStoreCount} sem este produto no mix estão escondidas)` : ""}</label>}
+          <div className="grid gap-3 sm:grid-cols-2">{visibleStores.map(store => <div key={store.id} className="flex items-center justify-between gap-3 rounded border p-3">
             <Label htmlFor={`quantity-${store.id}`}>{store.code} · {store.name}</Label>
             <Input id={`quantity-${store.id}`} aria-label={`${store.name}, quantidade em ${product?.unit ?? "unidades"}`} type="number" min="0" step="any" className="w-28" value={quantities[productId]?.[store.id] ?? ""} onChange={e => { const value = e.target.value; setQuantities(current => ({ ...current, [productId]: { ...current[productId], [store.id]: value } })); invalidateReview(); }} />
           </div>)}</div>

@@ -339,6 +339,9 @@ export default function PedidosLojaPage() {
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   // Indisponíveis ocultos por padrão; usuário pode desmarcar para ver tudo.
   const [hideUnavailable, setHideUnavailable] = useState(true);
+  // Mix da loja (cliente, 07/10): filtro de APRESENTAÇÃO ligado por padrão. Desligar mostra o
+  // catálogo inteiro (pedido fora do padrão). Nunca bloqueia nem entra na validação do pedido.
+  const [onlyStoreMix, setOnlyStoreMix] = useState(true);
   // XPAN-Lote: com a flag ligada, a FÁBRICA abre um LOTE (janela) e a loja CRIA seus
   // pedidos nos slots (loja × data) do lote. `openBatches` = lotes abertos; a loja escolhe
   // uma data ainda sem pedido e cria. `creatingForSlotDate` = a data do slot escolhido
@@ -642,6 +645,15 @@ export default function PedidosLojaPage() {
   );
   const shouldUseSearchableStoreSelect = availableStores.length >= 8;
 
+  const storeHasMix = useMemo(() => orderProducts.some((item) => !item.inStoreMix), [orderProducts]);
+  const hiddenByMixCount = useMemo(
+    () =>
+      storeHasMix && onlyStoreMix
+        ? orderProducts.filter((item) => !item.inStoreMix && sumOrderDayQuantities(item) === 0).length
+        : 0,
+    [onlyStoreMix, orderProducts, storeHasMix],
+  );
+
   const filteredOrderProducts = useMemo(() => {
     const term = catalogSearchTerm.trim().toLowerCase();
 
@@ -652,8 +664,10 @@ export default function PedidosLojaPage() {
         item.name.toLowerCase().includes(term) ||
         item.category.toLowerCase().includes(term);
       const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
+      // Item fora do mix some da lista, MAS nunca se já tem quantidade digitada.
+      const matchesMix = !onlyStoreMix || item.inStoreMix || sumOrderDayQuantities(item) > 0;
 
-      return matchesSearch && matchesCategory;
+      return matchesSearch && matchesCategory && matchesMix;
     });
 
     const scoped = hideUnavailable ? matched.filter((item) => item.available) : matched;
@@ -669,7 +683,7 @@ export default function PedidosLojaPage() {
         return a.index - b.index;
       })
       .map((entry) => entry.item);
-  }, [catalogSearchTerm, categoryFilter, hideUnavailable, orderProducts]);
+  }, [catalogSearchTerm, categoryFilter, hideUnavailable, onlyStoreMix, orderProducts]);
   const selectedOrderItems = useMemo<SelectedOrderItemSummary[]>(
     () =>
       orderProducts
@@ -1366,6 +1380,22 @@ export default function PedidosLojaPage() {
                     Ocultar indisponíveis
                   </label>
                 </div>
+                {storeHasMix ? (
+                  <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={onlyStoreMix}
+                      onCheckedChange={(checked) => setOnlyStoreMix(checked === true)}
+                    />
+                    Só o mix desta loja
+                    <span>
+                      {onlyStoreMix
+                        ? hiddenByMixCount > 0
+                          ? `(${hiddenByMixCount} fora do mix escondidos — desmarque para pedir qualquer produto)`
+                          : ""
+                        : "(mostrando todos os produtos)"}
+                    </span>
+                  </label>
+                ) : null}
               </div>
 
               {/* Sem paginação: todos os itens do catálogo numa tabela com scroll vertical

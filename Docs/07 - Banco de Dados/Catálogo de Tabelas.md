@@ -92,6 +92,7 @@ Convenções:
 ### `stores`
 - **Propósito**: ponto-de-venda físico do tenant; consome a produção.
 - **Colunas**: `tenant_id`, `code`, `name`, `responsible` (nome), `responsible_profile_id` (FK em profiles), `email`, `phone`, `status`, `receive_window` (text livre, ex.: "06:00-09:00"), `ordering_days weekday_code[]`, `receiving_days weekday_code[]`, `ordering_blocked_days weekday_code[]`, `receiving_blocked_days weekday_code[]`.
+- **Mix de produtos** (`product_mix jsonb`, 08/10/2026): `NULL` = todos os produtos; lista de ids de produto = mix padrão da loja. Filtro de apresentação, nunca bloqueia pedido. Lista vazia é proibida pelo check `stores_product_mix_check`.
 - **Unique**: `(tenant_id, code)`.
 - **Triggers**: `set_stores_updated_at`.
 - **RLS**: SELECT via `can_access_store()` (loja só vê as suas; admin/gestor/chão veem todas do tenant). INSERT/UPDATE/DELETE: `administrador`, `gestor-dados`.

@@ -1,5 +1,6 @@
 import type { LineType } from "@/lib/production-planning";
 import { getProductDisplayCode } from "@/lib/product-identity";
+import { isProductInStoreMix } from "@/lib/store-product-mix";
 import { getUnitDefinition } from "@/lib/factory-planning/units";
 import {
   getOperationalOrderWindow,
@@ -30,6 +31,7 @@ type ApprovedCatalogEntry = {
   saleDate: string;
   available: boolean;
   blockedReason: string | null;
+  inStoreMix: boolean;
 };
 
 function buildLatestScheduleByLineId(
@@ -161,6 +163,7 @@ export function buildStoreOrderCatalog(
       blockedReason: availability
         ? availability.blockedReason
         : "Linha de produção sem cronograma ativo.",
+      inStoreMix: isProductInStoreMix(store.productMix, product.id),
     });
   });
 
@@ -184,6 +187,7 @@ export function buildStoreOrderCatalog(
         minimumProductionKg: entry.minimumProductionKg,
         available: entry.available,
         blockedReason: entry.blockedReason,
+        inStoreMix: entry.inStoreMix,
         baseDate: entry.baseDate,
         deliveryDate: entry.deliveryDate,
         productionDate: entry.productionDate,

@@ -80,6 +80,9 @@ export type StoreOrderCatalogProduct = {
   minimumProductionKg: number;
   available: boolean;
   blockedReason: string | null;
+  /** Mix padrão da loja (cliente, 07/10): o produto está no mix desta loja? Só organiza a
+   * lista — NUNCA entra em `available` nem em validação de pedido. Sem mix = sempre `true`. */
+  inStoreMix: boolean;
   baseDate: string;
   deliveryDate: string;
   productionDate: string | null;

@@ -3,7 +3,7 @@ import { isDiscreteUnit } from "@/lib/factory-planning/units";
 
 export type OrderEntryRow = { row: number; store: string; product: string; quantity: number | string };
 export type OrderEntryCatalog = {
-  stores: Array<{ id: string; code: string; name: string }>;
+  stores: Array<{ id: string; code: string; name: string; productMix?: string[] | null }>;
   products: Array<{ id: string; code: string; externalCode?: string; name: string; unit: UnitCode }>;
 };
 export type ReviewedOrderRow = { row: number; storeId: string; storeName: string; productId: string; productName: string; quantity: number; unit: UnitCode };

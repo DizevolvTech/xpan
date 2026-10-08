@@ -334,6 +334,9 @@ export interface StoreMasterData {
   /** AJ-A8: zona de entrega manual (texto livre). Quando vazia, a roteirização
    * agrupa pela janela horária (`receiveWindow`). */
   deliveryZone?: string | null;
+  /** Mix padrão da loja (cliente, 07/10): `null`/ausente = todos os produtos; lista = só esses
+   * por padrão. Filtro de apresentação — nunca bloqueia pedido. Ver `store-product-mix.ts`. */
+  productMix?: string[] | null;
 }
 
 export interface ProductionSector {

@@ -19,9 +19,9 @@
 - **Risco de mexer:** altera o rendimento de produtos já calibrados no jeito atual. Se confirmado "soma", decidir também o que acontece com os produtos existentes.
 - **Também relacionado:** o cliente vê peso da unidade crua 143 × 142,8 e quebra 434 × 417 (14:09–14:34). Parte pode vir deste item; o resto precisa da planilha dele ao lado da tela (pergunta 2). O valor 141,771 veio da transcrição automática e deve ser confirmado.
 
-## 2. Mix de produtos por loja — EM ANDAMENTO 08/10 (cliente respondeu 07/10)
+## 2. ✅ FEITO 08/10 — Mix de produtos por loja (cliente respondeu 07/10)
 
-> Resposta: o mix é **por loja** e funciona como **filtro padrão dos lotes abertos** (qual loja vê qual produto por padrão). Pedido manual e encomenda fora do padrão **não são bloqueados**. Decisão (Lucas 08/10): marcar na loja, padrão todos os produtos.
+> Resposta: o mix é **por loja** e funciona como **filtro padrão dos lotes abertos** (qual loja vê qual produto por padrão). Pedido manual e encomenda fora do padrão **não são bloqueados**. Decisão (Lucas 08/10): marcar na loja, padrão todos os produtos. Entregue: ver `Docs/10 - Changelog Vivo/2026-10.md` (entrada de 08/10). Falta o cliente informar quais produtos cada loja vende.
 
 - **Vídeo (16:21–17:25):** nem todo produto existe em todas as lojas (ex.: submercado × atacado; no Chama, a loja A1 tem 30–40% do mix). No **pedido manual** o produto fora do mix não pode aparecer para o analista. Em pedido automático, "ok".
 - **Sistema hoje:** não existe mix por loja. Só há "disponível para pedido" (vale para todas as lojas). `buildStoreOrderCatalog` não filtra por loja.

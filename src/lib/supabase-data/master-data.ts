@@ -1,5 +1,6 @@
 import "server-only";
 
+import { normalizeStoreProductMix } from "@/lib/store-product-mix";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getCachedServerData } from "@/lib/server-data-cache";
 import {
@@ -357,6 +358,7 @@ async function loadMasterDataSnapshot(
     orderingBlockedDays: (row.ordering_blocked_days ?? []) as StoreMasterData["orderingBlockedDays"],
     receivingBlockedDays: (row.receiving_blocked_days ?? []) as StoreMasterData["receivingBlockedDays"],
     deliveryZone: (row as { delivery_zone?: string | null }).delivery_zone ?? null,
+    productMix: normalizeStoreProductMix((row as { product_mix?: unknown }).product_mix),
   }));
 
   const recipeByProductId = recipeRows.reduce<Map<string, ProductionProduct["recipe"]>>((acc, row) => {

@@ -23,7 +23,7 @@ import test from "node:test";
 import type { SupabaseDataClient } from "@/lib/supabase-data/common";
 import type * as MasterDataAdminModule from "@/lib/supabase-data/master-data-admin";
 
-const { cloneProduct, createProduct, updateProduct } = require(
+const { MasterDataValidationError, cloneProduct, createProduct, createStore, updateProduct, updateStore } = require(
   "@/lib/supabase-data/master-data-admin",
 ) as typeof MasterDataAdminModule;
 
@@ -565,4 +565,93 @@ test("sem motivo da alteração não grava versão e não devolve versionRecorde
 
   assert.equal(findWrite(writes, "product_changelog", "insert").length, 0);
   assert.equal("versionRecorded" in result, false);
+});
+
+/* -------------------------------------------------------------------------------------------------
+ * Mix de produtos por loja (cliente, 07/10): filtro de apresentação guardado em stores.product_mix.
+ * null = todos os produtos. Quem salva a loja sem enviar o campo nunca apaga o mix existente.
+ * -----------------------------------------------------------------------------------------------*/
+type StoreInputType = MasterDataAdminModule.StoreInput;
+
+function buildStoreRow(overrides: FakeRow = {}): FakeRow {
+  return {
+    id: "db-store-1",
+    legacy_id: "store-1",
+    code: "LJ-001",
+    name: "Loja Centro",
+    responsible_profile_id: null,
+    product_mix: null,
+    ...overrides,
+  };
+}
+
+function buildStoreInput(overrides: Partial<StoreInputType> = {}): StoreInputType {
+  return {
+    name: "Loja Centro",
+    responsible: "",
+    responsibleProfileId: null,
+    email: "loja@teste.com",
+    phone: "85999999999",
+    status: "ativo",
+    receiveWindow: "07:00 - 10:00",
+    orderingDays: ["segunda"],
+    receivingDays: ["segunda"],
+    orderingBlockedDays: [],
+    receivingBlockedDays: [],
+    deliveryZone: null,
+    ...overrides,
+  };
+}
+
+test("updateStore grava o mix escolhido (lista de produtos, sem repetidos)", async () => {
+  const { client, writes } = createFakeSupabase({ tables: { stores: [buildStoreRow()] } });
+
+  await updateStore("store-1", buildStoreInput({ productMix: ["p-1", "p-2", "p-1"] }), { supabase: client });
+
+  const updates = findWrite(writes, "stores", "update");
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].payload?.product_mix, ["p-1", "p-2"]);
+});
+
+test("updateStore com productMix null volta a loja para 'todos os produtos'", async () => {
+  const { client, writes } = createFakeSupabase({ tables: { stores: [buildStoreRow({ product_mix: ["p-1"] })] } });
+
+  await updateStore("store-1", buildStoreInput({ productMix: null }), { supabase: client });
+
+  const updates = findWrite(writes, "stores", "update");
+  assert.ok("product_mix" in (updates[0].payload ?? {}), "o campo é enviado para limpar o mix");
+  assert.equal(updates[0].payload?.product_mix, null);
+});
+
+test("updateStore SEM o campo productMix não mexe no mix existente", async () => {
+  const { client, writes } = createFakeSupabase({ tables: { stores: [buildStoreRow({ product_mix: ["p-1"] })] } });
+
+  await updateStore("store-1", buildStoreInput(), { supabase: client });
+
+  const updates = findWrite(writes, "stores", "update");
+  assert.equal(updates.length, 1);
+  assert.equal("product_mix" in (updates[0].payload ?? {}), false, "payload não pode carregar product_mix");
+});
+
+test("updateStore recusa mix vazio ou inválido e não grava nada", async () => {
+  for (const invalid of [[], [""], "p-1", 3] as unknown[]) {
+    const { client, writes } = createFakeSupabase({ tables: { stores: [buildStoreRow()] } });
+
+    await assert.rejects(
+      () => updateStore("store-1", buildStoreInput({ productMix: invalid as string[] }), { supabase: client }),
+      (error: unknown) => error instanceof MasterDataValidationError,
+      JSON.stringify(invalid),
+    );
+    assert.equal(findWrite(writes, "stores", "update").length, 0, JSON.stringify(invalid));
+  }
+});
+
+test("createStore grava o mix na criação e, sem o campo, não envia product_mix", async () => {
+  const withMix = createFakeSupabase({ tables: { stores: [] } });
+  await createStore(buildStoreInput({ productMix: ["p-9"] }), { supabase: withMix.client });
+  assert.deepEqual(findWrite(withMix.writes, "stores", "insert")[0].payload?.product_mix, ["p-9"]);
+
+  const withoutMix = createFakeSupabase({ tables: { stores: [] } });
+  await createStore(buildStoreInput(), { supabase: withoutMix.client });
+  assert.equal("product_mix" in (findWrite(withoutMix.writes, "stores", "insert")[0].payload ?? {}), false);
 });

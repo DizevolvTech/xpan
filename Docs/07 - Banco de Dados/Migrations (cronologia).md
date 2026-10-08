@@ -85,3 +85,9 @@ Tabela compacta: timestamp → arquivo → propósito (1 linha) → tipo de impa
 - Adiciona `product_changelog.product_snapshot jsonb` (nulo por padrão): cópia do cadastro de processo do produto naquela versão (sem id, código, GTIN nem ativo), usada para **restaurar** uma versão.
 - Linhas antigas ficam nulas (não restauráveis). Restaurar nunca reescreve o histórico: a versão antiga vira uma nova versão ao salvar.
 - Aditiva e idempotente. Aplicada em produção em 06/10/2026 (tabela estava vazia; 85 produtos intactos).
+
+## 20261008200000 — `store_product_mix`
+
+- Adiciona `stores.product_mix jsonb` (nulo por padrão) e o check `stores_product_mix_check` (nulo, ou lista JSON com pelo menos um item).
+- **Mix de produtos por loja** (cliente, 07/10): `NULL` = a loja recebe todos os produtos; lista de ids de produto = só esses por padrão. **Filtro de apresentação**: organiza os pedidos abertos do dia e não bloqueia pedido manual, encomenda fora do padrão nem importação por planilha. Nenhum cálculo, cronograma ou produção lê esta coluna.
+- Aditiva e idempotente; as 29 lojas existentes ficam sem mix (veem tudo). Aplicada em produção em 08/10/2026 (lojas antes/depois idênticas; trava recusa lista vazia, provado em transação desfeita).

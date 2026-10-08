@@ -297,3 +297,44 @@ test("store catalog mostra o código do ERP do cliente quando existe e o da fáb
   const catalogWithoutErp = buildStoreOrderCatalog(withoutErp, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
   assert.equal(catalogWithoutErp[0]?.code, "PR-58451");
 });
+
+/* -------------------------------------------------------------------------------------------------
+ * Mix da loja (cliente, 07/10): é só organização da lista. Produto fora do mix continua no catálogo,
+ * continua disponível e continua pedível — o mix NUNCA entra em `available`.
+ * -----------------------------------------------------------------------------------------------*/
+test("mix da loja: sem mix definido todo produto está no mix (comportamento de hoje)", () => {
+  const snapshot = buildSnapshot(["quinta"]);
+  const [entry] = buildStoreOrderCatalog(snapshot, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+  assert.equal(entry.inStoreMix, true);
+
+  snapshot.stores[0] = { ...snapshot.stores[0], productMix: null };
+  const [withNull] = buildStoreOrderCatalog(snapshot, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+  assert.equal(withNull.inStoreMix, true);
+});
+
+test("mix da loja: produto marcado no mix fica inStoreMix=true; fora do mix, false", () => {
+  const snapshot = buildSnapshot(["quinta"]);
+  snapshot.stores[0] = { ...snapshot.stores[0], productMix: ["product-1"] };
+  const [inMix] = buildStoreOrderCatalog(snapshot, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+  assert.equal(inMix.inStoreMix, true);
+
+  snapshot.stores[0] = { ...snapshot.stores[0], productMix: ["outro-produto"] };
+  const [outOfMix] = buildStoreOrderCatalog(snapshot, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+  assert.equal(outOfMix.inStoreMix, false);
+});
+
+test("mix da loja NÃO bloqueia: produto fora do mix segue no catálogo, disponível e com os mesmos dados", () => {
+  const base = buildSnapshot(["quinta"]);
+  const [baseline] = buildStoreOrderCatalog(base, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+
+  const restricted = buildSnapshot(["quinta"]);
+  restricted.stores[0] = { ...restricted.stores[0], productMix: ["outro-produto"] };
+  const catalog = buildStoreOrderCatalog(restricted, { storeId: "store-1", orderedAt: "2026-03-17T09:00:00Z" });
+
+  assert.equal(catalog.length, 1, "o produto fora do mix NÃO sai do catálogo");
+  assert.equal(catalog[0].available, baseline.available, "disponibilidade idêntica à de uma loja sem mix");
+  assert.equal(catalog[0].blockedReason, baseline.blockedReason);
+  assert.equal(catalog[0].deliveryDate, baseline.deliveryDate);
+  assert.equal(catalog[0].productionDate, baseline.productionDate);
+  assert.deepEqual({ ...catalog[0], inStoreMix: true }, baseline, "só inStoreMix difere");
+});

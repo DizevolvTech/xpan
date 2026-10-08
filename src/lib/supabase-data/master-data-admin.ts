@@ -1,5 +1,6 @@
 import "server-only";
 
+import { resolveStoreProductMixForSave } from "@/lib/store-product-mix";
 import type {
   IngredientCompositionItem,
   ProductPreparationStageKey,
@@ -404,6 +405,23 @@ export async function updateSubcategory(
   }
 }
 
+/**
+ * Mix da loja: só entra no payload quando a tela enviou o campo. Quem salva a loja por outro
+ * caminho (sem `productMix`) nunca apaga o mix existente. `null` volta a "todos os produtos".
+ */
+function buildStoreProductMixPatch(input: StoreInput): { product_mix?: string[] | null } {
+  if (input.productMix === undefined) {
+    return {};
+  }
+
+  const result = resolveStoreProductMixForSave(input.productMix);
+  if (!result.ok) {
+    throw new MasterDataValidationError(result.message);
+  }
+
+  return { product_mix: result.mix };
+}
+
 export async function createStore(input: StoreInput, options: MutationOptions = {}) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
   const existingCodesResult = await supabase.from("stores").select("id, code");
@@ -433,6 +451,7 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
     // AJ-A8: zona de entrega manual (livre). Quando vazia, a roteirização
     // cai no fallback por janela horária.
     delivery_zone: input.deliveryZone?.trim() || null,
+    ...buildStoreProductMixPatch(input),
   }).select("id").single();
 
   const createdStore = assertSupabaseResult(result, "Failed to create store");
@@ -471,6 +490,7 @@ export async function updateStore(
       receiving_blocked_days: input.receivingBlockedDays,
       // AJ-A8: zona de entrega manual (livre). Vazia = fallback por janela.
       delivery_zone: input.deliveryZone?.trim() || null,
+      ...buildStoreProductMixPatch(input),
       updated_at: new Date().toISOString(),
     })
     .eq("id", String(row.id));

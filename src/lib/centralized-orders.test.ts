@@ -25,3 +25,20 @@ test("nomes ambíguos não selecionam arbitrariamente uma loja", () => {
   const result = reviewOrderEntries([{ row: 2, store: "Loja Centro", product: "0009", quantity: 1 }], { ...catalog, stores: [...catalog.stores, { id: "s3", code: "003", name: "Loja Centro" }] });
   assert.match(result.errors[0].message, /ambígua/);
 });
+
+test("mix da loja não bloqueia o centralizado nem a planilha: produto fora do mix é aceito", () => {
+  const withMix: OrderEntryCatalog = {
+    ...catalog,
+    stores: [
+      { id: "s1", code: "001", name: "Loja Centro", productMix: ["outro-produto"] },
+      { id: "s2", code: "002", name: "Loja Praia", productMix: null },
+    ],
+  };
+  const result = reviewOrderEntries(
+    [{ row: 2, store: "001", product: "0009", quantity: 10 }, { row: 3, store: "002", product: "0009", quantity: 5 }],
+    withMix,
+  );
+
+  assert.deepEqual(result.errors, [], "p1 está fora do mix de s1 e mesmo assim a linha vale");
+  assert.deepEqual(result.rows.map(r => [r.storeId, r.productId, r.quantity]), [["s1", "p1", 10], ["s2", "p1", 5]]);
+});

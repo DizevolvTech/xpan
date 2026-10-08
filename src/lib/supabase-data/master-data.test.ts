@@ -243,3 +243,55 @@ test("recipe_stage_config = null (coluna existe, valor nulo) vira array vazio", 
 
   assert.deepEqual(product.recipeStageConfig, []);
 });
+
+/* -------------------------------------------------------------------------------------------------
+ * Mix de produtos por loja (cliente, 07/10): stores.product_mix vira store.productMix no snapshot.
+ * Qualquer valor estranho cai em "todos os produtos" (null) — nunca esconde catálogo por engano.
+ * -----------------------------------------------------------------------------------------------*/
+async function loadStore(storeOverrides: FakeRow) {
+  const tables = {
+    ...buildTables({}, []),
+    stores: [
+      {
+        tenant_id: TENANT,
+        id: "db-store-1",
+        legacy_id: "store-1",
+        code: "LJ-001",
+        name: "Loja Centro",
+        responsible: "Ana",
+        responsible_profile_id: null,
+        email: "loja@teste.com",
+        phone: "85999999999",
+        status: "ativo",
+        receive_window: "07:00 - 10:00",
+        ordering_days: ["segunda"],
+        receiving_days: ["segunda"],
+        ordering_blocked_days: [],
+        receiving_blocked_days: [],
+        ...storeOverrides,
+      },
+    ],
+  } satisfies Record<string, FakeRow[]>;
+  const snapshot = await getMasterDataSnapshot({
+    supabase: createFakeSupabase(tables),
+    tenantId: TENANT,
+    forceRefresh: true,
+  });
+  return snapshot.stores[0];
+}
+
+test("product_mix da loja vira productMix no snapshot", async () => {
+  const store = await loadStore({ product_mix: ["product-1", "product-2"] });
+  assert.deepEqual(store.productMix, ["product-1", "product-2"]);
+});
+
+test("loja sem product_mix (coluna ausente ou nula) recebe todos os produtos", async () => {
+  assert.equal((await loadStore({})).productMix, null, "coluna ausente = base sem a migration");
+  assert.equal((await loadStore({ product_mix: null })).productMix, null);
+});
+
+test("product_mix vazio ou com lixo vira 'todos os produtos', não catálogo escondido", async () => {
+  assert.equal((await loadStore({ product_mix: [] })).productMix, null);
+  assert.equal((await loadStore({ product_mix: "product-1" })).productMix, null);
+  assert.equal((await loadStore({ product_mix: [1, null] })).productMix, null);
+});
