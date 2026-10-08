@@ -11,9 +11,14 @@ import type {
  * o sistema deriva os parâmetros — iguais às planilhas (Pão de Fubá / OP Pães Chama / panetone)
  * e à notação de padaria:
  *
+ *   kg_assados_efetivos = kg_assados (unidades padrão) + sobra_assada
  *   quebra     = 1 − (kg_assados_efetivos / massa_crua)
  *   rendimento = kg_assados_efetivos / massa_crua
  *   unidade_assada = kg_assados_efetivos / unidades
+ *
+ * A sobra assada SOMA: tudo o que a receita gerou cru precisa ser contado assado,
+ * senão a quebra sai inflada (cliente, 07/10/2026: "tudo que a receita gerou crua
+ * deve ser contabilizada assada para calcular o rendimento e quebra").
  *
  * Baker's % = 100 × (ingrediente / principal `isMain`). True % = 100 × (ingrediente / total).
  * O motor de OP usa kg unitário, nunca as porcentagens.
@@ -103,8 +108,10 @@ export function computeLabTest(input: {
   const leftoverBakedKg = lab.leftoverBakedKg != null && lab.leftoverBakedKg > 0 ? lab.leftoverBakedKg : 0;
   const bakedKg = lab.bakedKg != null && lab.bakedKg > 0 ? lab.bakedKg : 0;
   const unitCount = lab.unitCount != null && lab.unitCount > 0 ? lab.unitCount : 0;
-  const effectiveBakedKg = bakedKg - leftoverBakedKg;
-  const complete = rawDoughKg > 0 && effectiveBakedKg > 0 && unitCount > 0 && effectiveBakedKg <= rawDoughKg;
+  // Sobra assada soma ao assado padrão. Sobra sozinha não é medição: exige kg assados > 0.
+  const effectiveBakedKg = bakedKg + leftoverBakedKg;
+  const complete =
+    rawDoughKg > 0 && bakedKg > 0 && unitCount > 0 && effectiveBakedKg <= rawDoughKg;
 
   if (!complete) {
     return {

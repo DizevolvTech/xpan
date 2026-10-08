@@ -2383,7 +2383,7 @@ export function ProductFormDialog({
                     </p>
                   </div>
                   <div className="grid gap-2">
-                    <Label>Kg assados</Label>
+                    <Label>Kg assados (unidades padrão)</Label>
                     <Input
                       type="number"
                       min="0"
@@ -2396,7 +2396,7 @@ export function ProductFormDialog({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Sobra assada (kg)</Label>
+                    <Label>Sobra assada (kg) — soma ao total</Label>
                     <Input
                       type="number"
                       min="0"
@@ -2501,7 +2501,7 @@ export function ProductFormDialog({
                           })
                         : "—"}
                     </p>
-                    <p className="mt-1 text-[11px] text-amber-900/70">Kg assados − sobra assada</p>
+                    <p className="mt-1 text-[11px] text-amber-900/70">Kg assados + sobra assada</p>
                   </div>
                 </div>
               </section>

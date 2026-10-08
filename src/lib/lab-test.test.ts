@@ -91,20 +91,52 @@ test("pão de fubá 250g: unidade média ~277g; etiqueta 250g não é peso de pr
   assert.notEqual(round6(result.bakedUnitKg), 0.25);
 });
 
-test("sobra assada entra no assado efetivo (kg_assados − sobra)", () => {
+test("sobra assada SOMA ao assado efetivo (números da planilha do cliente, vídeo 28/09)", () => {
   const result = computeLabTest({
-    recipeTotalKg: 45,
+    recipeTotalKg: 77.61,
     labTest: {
       ...emptyLabTest(),
-      bakedKg: 42,
-      leftoverBakedKg: 0.389,
-      unitCount: 150,
+      rawDoughKg: 77.61,
+      bakedKg: 74.375,
+      leftoverBakedKg: 0.136,
+      unitCount: 175.32,
     },
   });
 
   assert.ok(result?.complete);
-  assert.equal(result.effectiveBakedKg, 41.611);
-  assert.equal(round6(result.bakedUnitKg), 0.277407);
+  assert.equal(round6(result.effectiveBakedKg), 74.511);
+  assert.equal(Number(result.yieldPercent.toFixed(2)), 96.01);
+  assert.equal(Number(result.breakKg.toFixed(3)), 3.099);
+  assert.equal(Number(result.bakedUnitGrams.toFixed(3)), 425);
+});
+
+test("sem sobra o resultado é o mesmo de antes (produtos já calibrados não mudam)", () => {
+  const base = { ...emptyLabTest(), bakedKg: 41.611, unitCount: 150 };
+  const semSobra = computeLabTest({ recipeTotalKg: 45, labTest: base });
+  const sobraZero = computeLabTest({ recipeTotalKg: 45, labTest: { ...base, leftoverBakedKg: 0 } });
+
+  assert.ok(semSobra?.complete);
+  assert.equal(semSobra.effectiveBakedKg, 41.611);
+  assert.equal(round6(semSobra.bakedUnitKg), 0.277407);
+  assert.deepEqual(sobraZero, semSobra);
+});
+
+test("sobra sozinha não é medição: sem kg assados o teste fica incompleto", () => {
+  const result = computeLabTest({
+    recipeTotalKg: 45,
+    labTest: { ...emptyLabTest(), leftoverBakedKg: 0.5, unitCount: 150 },
+  });
+
+  assert.equal(result?.complete, false);
+});
+
+test("assado + sobra acima da massa crua deixa o teste incompleto", () => {
+  const result = computeLabTest({
+    recipeTotalKg: 45,
+    labTest: { ...emptyLabTest(), bakedKg: 44.9, leftoverBakedKg: 0.2, unitCount: 150 },
+  });
+
+  assert.equal(result?.complete, false);
 });
 
 test("massa crua medida na balança prevalece sobre a soma da receita", () => {
