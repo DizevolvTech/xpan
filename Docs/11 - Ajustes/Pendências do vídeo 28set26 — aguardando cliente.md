@@ -8,7 +8,9 @@
 
 ---
 
-## 1. Sobra assada: soma ou subtrai? (cálculo do rendimento)
+## 1. ✅ FEITO 08/10 — Sobra assada soma (cliente respondeu 07/10)
+
+> Assado efetivo = Kg assados + sobra. Ver `Docs/10 - Changelog Vivo/2026-10.md` (entrada de 08/10). O texto abaixo é o histórico da dúvida.
 
 - **Vídeo (13:10–13:45):** o cliente quer *Assado efetivo = assados padrão + sobra* (74,375 + 0,136 = 74,511) e diz "não diminui, tem que somar". Na planilha dele "Kg assados" são só as unidades padrão e a sobra vem à parte.
 - **Sistema hoje:** `effectiveBakedKg = bakedKg − leftoverBakedKg` (`src/lib/lab-test.ts`), com teste "sobra assada entra no assado efetivo (kg_assados − sobra)" e a legenda "Kg assados − sobra assada" na tela. Feito de propósito (commit `fa646d8`).
@@ -17,7 +19,9 @@
 - **Risco de mexer:** altera o rendimento de produtos já calibrados no jeito atual. Se confirmado "soma", decidir também o que acontece com os produtos existentes.
 - **Também relacionado:** o cliente vê peso da unidade crua 143 × 142,8 e quebra 434 × 417 (14:09–14:34). Parte pode vir deste item; o resto precisa da planilha dele ao lado da tela (pergunta 2). O valor 141,771 veio da transcrição automática e deve ser confirmado.
 
-## 2. Mix de produtos por loja
+## 2. Mix de produtos por loja — EM ANDAMENTO 08/10 (cliente respondeu 07/10)
+
+> Resposta: o mix é **por loja** e funciona como **filtro padrão dos lotes abertos** (qual loja vê qual produto por padrão). Pedido manual e encomenda fora do padrão **não são bloqueados**. Decisão (Lucas 08/10): marcar na loja, padrão todos os produtos.
 
 - **Vídeo (16:21–17:25):** nem todo produto existe em todas as lojas (ex.: submercado × atacado; no Chama, a loja A1 tem 30–40% do mix). No **pedido manual** o produto fora do mix não pode aparecer para o analista. Em pedido automático, "ok".
 - **Sistema hoje:** não existe mix por loja. Só há "disponível para pedido" (vale para todas as lojas). `buildStoreOrderCatalog` não filtra por loja.
