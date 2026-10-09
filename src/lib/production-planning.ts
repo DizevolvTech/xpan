@@ -75,6 +75,7 @@ export type RecipeStage =
   | "massa"
   | "recheio"
   | "cobertura"
+  | "operacional"
   | "acabamento"
   | "montagem";
 
@@ -83,6 +84,7 @@ export const recipeStages: RecipeStage[] = [
   "massa",
   "recheio",
   "cobertura",
+  "operacional",
   "acabamento",
   "montagem",
 ];
@@ -92,6 +94,7 @@ export const recipeStageLabels: Record<RecipeStage, string> = {
   massa: "Massa",
   recheio: "Recheio",
   cobertura: "Cobertura",
+  operacional: "Insumos operacionais",
   acabamento: "Decoração / Acabamento",
   montagem: "Montagem",
 };
@@ -134,6 +137,7 @@ const recipeStageVessels: Record<RecipeStage, string> = {
   massa: "massa",
   recheio: "recheio",
   cobertura: "cobertura",
+  operacional: "operacional",
   acabamento: "acabamento",
   montagem: "montagem",
 };
@@ -142,8 +146,32 @@ export function getRecipeStageVessel(stage: RecipeStage | undefined): string {
   return recipeStageVessels[normalizeRecipeStage(stage)];
 }
 
-/** Etapas que acontecem fora da masseira (mesa, finalização, montagem). */
-export const nonMixerRecipeStages: RecipeStage[] = ["cobertura", "acabamento", "montagem"];
+/** Etapas que acontecem fora da masseira (mesa, finalização, montagem, insumos operacionais). */
+export const nonMixerRecipeStages: RecipeStage[] = ["cobertura", "operacional", "acabamento", "montagem"];
+
+/**
+ * Etapas que NÃO são massa (planilha do cliente, 09/10/2026): não entram na massa crua nem
+ * na quebra ao assar.
+ *
+ * - `operacional` ("Insumos de Processo - Operacionais"): contam no custo e no peso por
+ *   unidade da ficha técnica, mas não na massa, no limite da masseira nem na quebra.
+ * - `acabamento` ("Insumos de Processo - Acabamento"): entra DEPOIS do forno, somado ao
+ *   assado ("Peso das unidades padrão finalizadas" = assado + acabamento), sem quebra.
+ *
+ * Os dois continuam sendo pesados e proporcionados na OP como qualquer ingrediente.
+ */
+export const nonDoughRecipeStages: RecipeStage[] = ["operacional", "acabamento"];
+
+/** Etapas que somam ao peso final DEPOIS do forno, sem sofrer quebra. */
+export const postBakeRecipeStages: RecipeStage[] = ["acabamento"];
+
+export function recipeStageCountsTowardDough(stage: RecipeStage | undefined): boolean {
+  return !nonDoughRecipeStages.includes(normalizeRecipeStage(stage));
+}
+
+export function recipeStageAddsAfterBake(stage: RecipeStage | undefined): boolean {
+  return postBakeRecipeStages.includes(normalizeRecipeStage(stage));
+}
 
 export function defaultCountsTowardMixer(stage: RecipeStage | undefined): boolean {
   return !nonMixerRecipeStages.includes(normalizeRecipeStage(stage));

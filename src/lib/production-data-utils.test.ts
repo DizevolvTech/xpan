@@ -12,6 +12,8 @@ import {
   sortScheduleEntriesForDay,
 } from "@/lib/production-data-utils";
 import type { ProductionIngredient, ProductionProduct } from "@/lib/production-planning";
+import { computeLabTest } from "@/lib/lab-test";
+import { scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
 
 test("XPAN-04 soma ingredientes marcados e arredonda a capacidade para baixo", () => {
   const product: ProductionProduct = { ...baseProduct, maxBatchWeightKg: 10, breakPercent: 0, labTest: undefined,
@@ -603,4 +605,82 @@ test("S1: totais da receita usam assado efetivo e unidade assada do teste, não 
   assert.equal(totals.outputAfterBreakKg, 41.611);
   assert.equal(Number(totals.fractionUnitWeightKg.toFixed(6)), 0.277407);
   assert.equal(Math.round(totals.finalFractionsQuantityPrecise), 150);
+});
+
+/* -------------------------------------------------------------------------------------------------
+ * Operacionais e acabamento fora da massa e da quebra (planilha do cliente "Panetone Chama Gotas",
+ * aba Teste e Validação: massa F39 = 62,533 kg; operacionais 0,544; assado 57,8 + sobra 0,315).
+ * -----------------------------------------------------------------------------------------------*/
+const sheetRecipe = (extra: ProductionProduct["recipe"]): ProductionProduct["recipe"] => [
+  { id: "m", sourceType: "ingrediente", sourceId: "missing", label: "Massa", quantity: 62.533, unit: "Kg", stage: "massa" },
+  ...extra,
+];
+const operacional = { id: "o", sourceType: "ingrediente" as const, sourceId: "missing", label: "Conservante", quantity: 0.544, unit: "Kg" as const, stage: "operacional" as const };
+
+test("planilha: quebra ao assar usa só a massa — 7,07% (com operacional dentro seria 7,87%)", () => {
+  const product: ProductionProduct = { ...baseProduct, recipe: sheetRecipe([operacional]),
+    labTest: { rawUnitWeightKg: null, rawDoughKg: null, bakedKg: 57.8, leftoverBakedKg: 0.315, unitCount: 136, labelWeightKg: null } };
+  const totals = getProductRecipeTotalsFromData(product, [], []);
+  assert.equal(totals.totalIngredientsKg, 63.077);
+  assert.equal(totals.doughKg, 62.533);
+  const lab = computeLabTest({ recipeTotalKg: totals.doughKg, labTest: product.labTest })!;
+  assert.equal(lab.complete, true);
+  assert.equal(Number(lab.breakPercent.toFixed(2)), 7.07);
+  // Saída medida do teste não muda com a etapa.
+  assert.equal(totals.outputAfterBreakKg, 58.115);
+});
+
+test("sem teste: quebra digitada incide só na massa; acabamento soma depois; operacional não vira produto", () => {
+  const acabamento = { id: "a", sourceType: "ingrediente" as const, sourceId: "missing", label: "Glacê", quantity: 2, unit: "Kg" as const, stage: "acabamento" as const };
+  const product: ProductionProduct = { ...baseProduct, breakPercent: 10, labTest: undefined,
+    recipe: [
+      { id: "m", sourceType: "ingrediente", sourceId: "missing", label: "Massa", quantity: 10, unit: "Kg", stage: "massa" },
+      { ...operacional, quantity: 1 },
+      acabamento,
+    ] };
+  const totals = getProductRecipeTotalsFromData(product, [], []);
+  assert.equal(totals.totalIngredientsKg, 13);
+  assert.equal(totals.doughKg, 10);
+  assert.equal(totals.postBakeKg, 2);
+  assert.equal(totals.outputAfterBreakKg, 11); // 10 × 0,9 + 2
+});
+
+test("receita só com etapas de massa/recheio/cobertura/montagem: cálculo idêntico ao anterior", () => {
+  const recipe: ProductionProduct["recipe"] = [
+    { id: "m", sourceType: "ingrediente", sourceId: "missing", label: "Massa", quantity: 10, unit: "Kg", stage: "massa" },
+    { id: "r", sourceType: "ingrediente", sourceId: "missing", label: "Recheio", quantity: 3, unit: "Kg", stage: "recheio" },
+    { id: "c", sourceType: "ingrediente", sourceId: "missing", label: "Farofa", quantity: 1, unit: "Kg", stage: "cobertura" },
+    { id: "t", sourceType: "ingrediente", sourceId: "missing", label: "Montagem", quantity: 0.5, unit: "Kg", stage: "montagem" },
+  ];
+  const totals = getProductRecipeTotalsFromData({ ...baseProduct, breakPercent: 10, labTest: undefined, recipe }, [], []);
+  assert.equal(totals.doughKg, totals.totalIngredientsKg);
+  assert.equal(totals.outputAfterBreakKg, Number((14.5 * 0.9).toFixed(3)));
+});
+
+test("masseira: operacional não entra no limite (padrão da etapa)", () => {
+  const product: ProductionProduct = { ...baseProduct, maxBatchWeightKg: 10, breakPercent: 0, labTest: undefined,
+    unitProfiles: { ...baseProduct.unitProfiles, sales: { unit: "Un", description: "", weightKg: 0.5 } },
+    recipe: [
+      { id: "a", sourceType: "ingrediente", sourceId: "a", label: "Farinha", quantity: 10, unit: "Kg", stage: "massa" },
+      { id: "o", sourceType: "ingrediente", sourceId: "o", label: "Óleo de forma", quantity: 5, unit: "Kg", stage: "operacional" },
+    ] };
+  const result = calculateMixerCapacity(product, [], []);
+  // Massa 10 kg rende 20 un (0,5 kg); operacional não vira produto nem pesa na masseira.
+  assert.equal(result.kgPerUnit, 10 / 20);
+  assert.equal(result.capacity, 20);
+});
+
+test("teste de laboratório compara o assado com a MASSA (sem operacional): assado acima da massa = incompleto", () => {
+  // Massa 10 kg + operacional 1 kg; assado 10,5 kg só caberia se o operacional contasse como massa.
+  const product: ProductionProduct = { ...baseProduct, breakPercent: 0,
+    unitProfiles: { ...baseProduct.unitProfiles, sales: { unit: "Kg", description: "", weightKg: 1 } },
+    recipe: [
+      { id: "m", sourceType: "ingrediente", sourceId: "missing", label: "Massa", quantity: 10, unit: "Kg", stage: "massa" },
+      { ...operacional, quantity: 1 },
+    ],
+    labTest: { rawUnitWeightKg: null, rawDoughKg: null, bakedKg: 10.5, leftoverBakedKg: null, unitCount: 10, labelWeightKg: null } };
+  const totals = getProductRecipeTotalsFromData(product, [], []);
+  assert.equal(totals.outputAfterBreakKg, 10); // teste rejeitado → massa × (1 − 0%)
+  // OP: teste incompleto escala com 3 casas (completo usaria 6).
+  assert.equal(scaleRecipeQuantity(1, product, [], [], 0.123456), 0.012);
 });

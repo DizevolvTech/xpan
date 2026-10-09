@@ -81,7 +81,7 @@ test("bloco configurado sem ingrediente continua na tela; etapa fora da config e
 
   // montagem/cobertura porque a config manda (cobertura ainda vazia), massa depois (enum).
   assert.deepEqual(getRecipeStageBlockOrder(config, recipe), ["montagem", "cobertura", "massa"]);
-  assert.deepEqual(getAddableRecipeStages(config, recipe), ["esponja", "recheio", "acabamento"]);
+  assert.deepEqual(getAddableRecipeStages(config, recipe), ["esponja", "recheio", "operacional", "acabamento"]);
 });
 
 /* -------------------------------------------------------------------------------------------------

@@ -8,6 +8,10 @@ import {
   hasStagedRecipe,
   normalizeRecipeStage,
   normalizeRecipeStageConfig,
+  nonMixerRecipeStages,
+  recipeItemCountsTowardMixer,
+  recipeStageAddsAfterBake,
+  recipeStageCountsTowardDough,
   recipeStageLabels,
   recipeStages,
   resolveRecipeStageOrder,
@@ -19,6 +23,7 @@ test("etapa da receita: ordem canônica é a do próprio enum (sem coluna de ord
     "massa",
     "recheio",
     "cobertura",
+    "operacional",
     "acabamento",
     "montagem",
   ]);
@@ -124,4 +129,21 @@ test("instruções são resolvidas por etapa e vazias quando não configuradas",
   assert.equal(getRecipeStageInstructions(config, "esponja"), "Fermentar 12h.");
   assert.equal(getRecipeStageInstructions(config, "massa"), "");
   assert.equal(getRecipeStageInstructions(undefined, "massa"), "");
+});
+
+test("etapa operacional: fora da massa, da quebra e da masseira; acabamento soma depois do forno", () => {
+  assert.equal(normalizeRecipeStage("operacional"), "operacional");
+  assert.equal(recipeStageLabels.operacional, "Insumos operacionais");
+  assert.equal(nonMixerRecipeStages.includes("operacional"), true);
+  assert.equal(recipeItemCountsTowardMixer({ stage: "operacional" }), false);
+  // Massa: só operacional e acabamento saem; cobertura/montagem/recheio continuam (não mudam).
+  for (const stage of ["esponja", "massa", "recheio", "cobertura", "montagem"] as const) {
+    assert.equal(recipeStageCountsTowardDough(stage), true, stage);
+  }
+  assert.equal(recipeStageCountsTowardDough("operacional"), false);
+  assert.equal(recipeStageCountsTowardDough("acabamento"), false);
+  assert.equal(recipeStageCountsTowardDough(undefined), true);
+  assert.equal(recipeStageAddsAfterBake("acabamento"), true);
+  assert.equal(recipeStageAddsAfterBake("operacional"), false);
+  assert.equal(recipeStageAddsAfterBake("cobertura"), false);
 });

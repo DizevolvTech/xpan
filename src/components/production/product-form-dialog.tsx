@@ -404,10 +404,10 @@ export function ProductFormDialog({
   const labComputation = useMemo(
     () =>
       computeLabTest({
-        recipeTotalKg: recipeTotals.totalIngredientsKg,
+        recipeTotalKg: recipeTotals.doughKg,
         labTest: formState.labTest ?? emptyLabTest(),
       }),
-    [formState.labTest, recipeTotals.totalIngredientsKg],
+    [formState.labTest, recipeTotals.doughKg],
   );
   const recipeLineMetrics = useMemo(() => {
     const ingredientsById = new Map(snapshot.ingredients.map((ingredient) => [ingredient.id, ingredient]));
@@ -876,7 +876,7 @@ export function ProductFormDialog({
         ...formState,
         packagingProfile: normalizedPackagingProfile,
       },
-      recipeTotals.totalIngredientsKg,
+      recipeTotals.doughKg,
     );
     const salesWeight =
       withLab.unitProfiles.sales.unit === "Kg" ? 1 : withLab.unitProfiles.sales.weightKg;
@@ -2366,8 +2366,8 @@ export function ProductFormDialog({
                       step="0.001"
                       className="border-stone-300 bg-white"
                       placeholder={
-                        recipeTotals.totalIngredientsKg > 0
-                          ? `Soma da receita: ${formatLocaleNumber(recipeTotals.totalIngredientsKg, {
+                        recipeTotals.doughKg > 0
+                          ? `Massa da receita: ${formatLocaleNumber(recipeTotals.doughKg, {
                               minimumFractionDigits: 3,
                               maximumFractionDigits: 3,
                             })}`
@@ -2663,6 +2663,16 @@ export function ProductFormDialog({
                       maximumFractionDigits: 3,
                     })}
                   </p>
+                  {recipeTotals.doughKg !== recipeTotals.totalIngredientsKg ? (
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Massa (base da quebra):{" "}
+                      {formatKgLabel(recipeTotals.doughKg, {
+                        minimumFractionDigits: 3,
+                        maximumFractionDigits: 3,
+                      })}{" "}
+                      — operacionais e acabamento não entram na massa nem na quebra.
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-sm text-muted-foreground">
                     Peso final após a quebra do teste:{" "}
                     {formatKgLabel(recipeTotals.outputAfterBreakKg, {

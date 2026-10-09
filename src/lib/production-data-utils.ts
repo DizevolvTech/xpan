@@ -9,7 +9,13 @@ import type {
 } from "@/lib/production-planning";
 import type { UnitCode } from "@/lib/factory-planning/units";
 import { isMassOrVolumeUnit, roundQuantityForUnit } from "@/lib/factory-planning/units";
-import { productionWeekDays, sortProductionDays, recipeItemCountsTowardMixer } from "@/lib/production-planning";
+import {
+  productionWeekDays,
+  sortProductionDays,
+  recipeItemCountsTowardMixer,
+  recipeStageAddsAfterBake,
+  recipeStageCountsTowardDough,
+} from "@/lib/production-planning";
 import { computeLabTest } from "@/lib/lab-test";
 
 export function getLinesBySectorFromData(
@@ -400,18 +406,31 @@ export function getProductRecipeTotalsFromData(
 ) {
   const ingredientsById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
   const productsById = new Map(products.map((entry) => [entry.id, entry]));
-  const totalIngredientsKg = Number(
-    product.recipe
-      .reduce(
-        (sum, item) => sum + getRecipeReferenceWeightKgFromData(item, ingredientsById, productsById),
-        0,
-      )
-      .toFixed(3),
-  );
-  const lab = computeLabTest({ recipeTotalKg: totalIngredientsKg, labTest: product.labTest });
+  let allKg = 0;
+  let doughSumKg = 0;
+  let postBakeSumKg = 0;
+  for (const item of product.recipe) {
+    const kg = getRecipeReferenceWeightKgFromData(item, ingredientsById, productsById);
+    allKg += kg;
+    if (recipeStageCountsTowardDough(item.stage)) doughSumKg += kg;
+    else if (recipeStageAddsAfterBake(item.stage)) postBakeSumKg += kg;
+  }
+  /** Todos os ingredientes (inclui operacionais e acabamento) — o que a OP pesa. */
+  const totalIngredientsKg = Number(allKg.toFixed(3));
+  /**
+   * Massa crua: só as etapas de massa (planilha do cliente: "Peso total dos Ingredientes
+   * Massa"). Operacionais e acabamento ficam fora — é a base da quebra ao assar.
+   */
+  const doughKg = Number(doughSumKg.toFixed(3));
+  /** Acabamento: entra depois do forno, sem quebra. */
+  const postBakeKg = Number(postBakeSumKg.toFixed(3));
+  const lab = computeLabTest({ recipeTotalKg: doughKg, labTest: product.labTest });
+  // Com teste completo a saída é a MEDIDA do teste (inalterado). Sem teste, a quebra
+  // digitada incide só sobre a massa; o acabamento soma depois do forno e os
+  // operacionais não viram produto.
   const outputAfterBreakKg = lab?.complete
     ? Number(lab.effectiveBakedKg.toFixed(6))
-    : Number((totalIngredientsKg * (1 - product.breakPercent / 100)).toFixed(3));
+    : Number((doughKg * (1 - product.breakPercent / 100) + postBakeKg).toFixed(3));
   const salesUnit = product.unitProfiles.sales.unit;
   const unitWeightKg =
     salesUnit === "Kg" || salesUnit === "L"
@@ -434,6 +453,8 @@ export function getProductRecipeTotalsFromData(
 
   return {
     totalIngredientsKg,
+    doughKg,
+    postBakeKg,
     outputAfterBreakKg,
     fractionUnitWeightKg: unitWeightKg,
     finalFractionsQuantity,

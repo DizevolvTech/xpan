@@ -465,7 +465,7 @@ export function scaleRecipeQuantity(
 
   const scaled = (outputKg / baseOutputKg) * quantity;
   const lab = computeLabTest({
-    recipeTotalKg: totals.totalIngredientsKg,
+    recipeTotalKg: totals.doughKg,
     labTest: product.labTest,
   });
   return lab?.complete ? round6(scaled) : round3(scaled);
