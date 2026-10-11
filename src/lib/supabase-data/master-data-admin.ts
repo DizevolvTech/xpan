@@ -28,7 +28,10 @@ import {
   type SupabaseError,
 } from "@/lib/supabase-data/common";
 import {
+  decideScheduleActivation,
   planScheduleRevisionRebuild,
+  scheduleEventForStatusChange,
+  type ScheduleEventType,
   type ScheduleRevisionRebuildImpact,
 } from "@/lib/supabase-data/schedule-revision-plan";
 import { changeAffectsCronograma, diffProductFields } from "@/lib/supabase-data/product-changelog-diff";
@@ -1265,6 +1268,98 @@ async function hasCommittedWorkOnScheduleLine(
   return (releasesResult.data ?? []).length > 0;
 }
 
+/**
+ * Histórico do cronograma: grava um evento imutável (quem, quando, de/para). Nunca lança — falhar
+ * em registrar o histórico não pode desfazer a mudança já feita (mesmo contrato das versões do
+ * produto); o erro vai para o log e `false` volta ao chamador.
+ */
+async function recordScheduleEvent(args: {
+  supabase: SupabaseDataClient;
+  tenantId?: unknown;
+  scheduleLineId: string;
+  type: ScheduleEventType;
+  fromStatus: string | null;
+  toStatus: string | null;
+  actingProfileDbId: string | null;
+  note?: string | null;
+  details?: Record<string, unknown> | null;
+}): Promise<boolean> {
+  try {
+    let actorName: string | null = null;
+    if (args.actingProfileDbId) {
+      const profileResult = await args.supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", args.actingProfileDbId)
+        .maybeSingle();
+      actorName = (profileResult.data as { name?: string } | null)?.name ?? null;
+    }
+    const insertResult = await args.supabase.from("schedule_line_events").insert({
+      ...(args.tenantId ? { tenant_id: args.tenantId } : {}),
+      schedule_line_id: args.scheduleLineId,
+      event_type: args.type,
+      from_status: args.fromStatus,
+      to_status: args.toStatus,
+      actor_profile_id: args.actingProfileDbId,
+      actor_name: actorName,
+      note: args.note?.trim() || null,
+      details: args.details ?? null,
+    });
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
+    }
+    return true;
+  } catch (error) {
+    console.error(
+      `[schedule-history] não foi possível registrar o evento ${args.type} do cronograma ${args.scheduleLineId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return false;
+  }
+}
+
+/** Ativa uma revisão: desativa as outras ativas da linha e marca quem/quando aprovou. */
+async function activateScheduleRevision(args: {
+  supabase: SupabaseDataClient;
+  scheduleLineId: string;
+  subcategoryId: string;
+  timestamp: string;
+  actingProfileDbId: string | null;
+  auditNotes?: string | null;
+}) {
+  const deactivateOthersResult = await args.supabase
+    .from("schedule_lines")
+    .update({
+      status: "inativo",
+      deactivated_at: args.timestamp,
+      deactivated_by_profile_id: args.actingProfileDbId,
+    })
+    .eq("subcategory_id", args.subcategoryId)
+    .eq("status", "ativo")
+    .neq("id", args.scheduleLineId);
+
+  if (deactivateOthersResult.error) {
+    throw new Error(`Failed to deactivate previous schedule revisions: ${deactivateOthersResult.error.message}`);
+  }
+
+  const activateResult = await args.supabase
+    .from("schedule_lines")
+    .update({
+      status: "ativo",
+      audited_at: args.timestamp,
+      audited_by_profile_id: args.actingProfileDbId,
+      deactivated_at: null,
+      deactivated_by_profile_id: null,
+      ...(args.auditNotes === undefined ? {} : { audit_notes: args.auditNotes?.trim() || null }),
+    })
+    .eq("id", args.scheduleLineId);
+
+  if (activateResult.error) {
+    throw new Error(`Failed to activate schedule revision: ${activateResult.error.message}`);
+  }
+}
+
 async function rebuildPendingScheduleRevisionForSubcategoryDbId(
   subcategoryId: string,
   options: MutationOptions = {},
@@ -1283,7 +1378,7 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
   ] = await Promise.all([
     supabase
       .from("subcategories")
-      .select("id, legacy_id, name")
+      .select("id, legacy_id, name, tenant_id")
       .eq("id", subcategoryId)
       .maybeSingle(),
     supabase.from("schedule_lines").select("code"),
@@ -1358,10 +1453,18 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
   // o ativo (a revisão pendente ainda é aberta) até a auditoria aprovar. A linha
   // do cronograma = legacy_id (ou id) da subcategoria operacional (engine lineId).
   const lineKey = subcategory.legacy_id ?? subcategory.id;
-  const preserveActiveSchedule =
-    activeSchedule?.id != null && pendingSchedules.length === 0
+  const hasCommittedWork =
+    activeSchedule?.id != null
       ? await hasCommittedWorkOnScheduleLine(subcategoryId, lineKey, supabase)
       : false;
+  const preserveActiveSchedule = pendingSchedules.length === 0 ? hasCommittedWork : false;
+
+  // Simplificação do cronograma: sem ordens em andamento a revisão entra em vigor sozinha;
+  // com ordens, o ativo fica vivo e falta UMA confirmação; grade incompleta fica pendente.
+  const activation = decideScheduleActivation({
+    hasCommittedWork,
+    itemProductionDays: products.map((product) => (product.production_days ?? []) as string[]),
+  });
 
   // AJ-0025: reaproveitar a revisão pendente existente (id estável) em vez de
   // deletar e recriar com legacy_id novo. O id da revisão entra no planning_key
@@ -1467,7 +1570,41 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
     }
   }
 
-  if (plan.deactivateActiveScheduleId) {
+  const scheduleTenantId = (subcategory as { tenant_id?: unknown }).tenant_id;
+
+  if (plan.recreated) {
+    await recordScheduleEvent({
+      supabase,
+      tenantId: scheduleTenantId,
+      scheduleLineId: targetScheduleLineId,
+      type: "revisao_aberta",
+      fromStatus: null,
+      toStatus: "pendente",
+      actingProfileDbId,
+      details: { productCount: products.length, revisionOfId: activeSchedule?.id ?? null },
+    });
+  }
+
+  if (activation.action === "activate") {
+    // Ativa já: o ativo anterior só é desativado dentro da ativação (sem janela com a linha parada).
+    await activateScheduleRevision({
+      supabase,
+      scheduleLineId: targetScheduleLineId,
+      subcategoryId,
+      timestamp,
+      actingProfileDbId,
+    });
+    await recordScheduleEvent({
+      supabase,
+      tenantId: scheduleTenantId,
+      scheduleLineId: targetScheduleLineId,
+      type: "ativado_automatico",
+      fromStatus: "pendente",
+      toStatus: "ativo",
+      actingProfileDbId,
+      details: { productCount: products.length, replacedScheduleId: activeSchedule?.id ?? null },
+    });
+  } else if (plan.deactivateActiveScheduleId) {
     const deactivateActiveResult = await supabase
       .from("schedule_lines")
       .update({
@@ -1485,7 +1622,17 @@ async function rebuildPendingScheduleRevisionForSubcategoryDbId(
     }
   }
 
-  return plan.impact;
+  return {
+    ...plan.impact,
+    outcome:
+      activation.action === "activate"
+        ? ("activated" as const)
+        : activation.action === "await_confirmation"
+          ? ("awaiting_confirmation" as const)
+          : ("pending" as const),
+    outcomeReason: activation.reason,
+    scheduleLineId: targetScheduleLineId,
+  };
 }
 
 export async function assignProductToOperationalSubcategory(
@@ -1794,6 +1941,8 @@ export async function updateProduct(
   // AJ-0025: agrega o impacto da reconstrução para a UI avisar o usuário
   // (quantos produtos foram afetados e se uma nova revisão precisou ser aberta).
   let scheduleRevisionImpact: ScheduleRevisionRebuildImpact | null = null;
+  const awaitingConfirmationIds: string[] = [];
+  const outcomes: Array<ScheduleRevisionRebuildImpact["outcome"]> = [];
 
   for (const affectedOperationalSubcategoryId of affectedOperationalSubcategoryIds) {
     const impact = await rebuildPendingScheduleRevisionForSubcategoryDbId(
@@ -1808,6 +1957,24 @@ export async function updateProduct(
     if (!scheduleRevisionImpact || (impact.recreated && !scheduleRevisionImpact.recreated)) {
       scheduleRevisionImpact = impact;
     }
+    if (impact.outcome === "awaiting_confirmation" && impact.scheduleLineId) {
+      awaitingConfirmationIds.push(impact.scheduleLineId);
+    }
+    outcomes.push(impact.outcome);
+  }
+
+  // Resultado agregado para a tela: qualquer linha esperando confirmação manda no aviso;
+  // depois, qualquer revisão que ficou pendente; só então "ativado sozinho".
+  if (scheduleRevisionImpact) {
+    scheduleRevisionImpact = {
+      ...scheduleRevisionImpact,
+      outcome: awaitingConfirmationIds.length > 0
+        ? "awaiting_confirmation"
+        : outcomes.includes("pending")
+          ? "pending"
+          : "activated",
+      scheduleIdsAwaitingConfirmation: awaitingConfirmationIds,
+    };
   }
 
   return { scheduleRevisionImpact, ...(versionRecorded === null ? {} : { versionRecorded }) };
@@ -1941,6 +2108,8 @@ export async function updateScheduleLineStatus(
     status: "pendente" | "ativo" | "inativo";
     auditNotes?: string;
     dayPrioritiesByItemId?: Record<string, Partial<Record<ProductionWeekDay, number>>>;
+    /** O gestor confirmou aplicar a revisão mesmo com ordens em andamento na linha. */
+    confirmedWithCommittedWork?: boolean;
   },
   options: MutationOptions = {},
 ) {
@@ -1952,6 +2121,8 @@ export async function updateScheduleLineStatus(
   const scheduleId = String(row.id);
   const subcategoryId = String(row.subcategory_id);
   const timestamp = new Date().toISOString();
+  const previousStatus = String(row.status) as "pendente" | "ativo" | "inativo";
+  const prioritiesProvided = Object.keys(input.dayPrioritiesByItemId ?? {}).length > 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Atualização de dias/prioridades de produção dos itens do cronograma.
@@ -2018,6 +2189,21 @@ export async function updateScheduleLineStatus(
           );
         }
 
+        // Cronograma ATIVO: só dá para reordenar a prioridade dentro do mesmo dia. Mudar o dia de
+        // produção altera datas de OPs e pedidos já planejados — isso continua passando pela
+        // edição do produto (que abre/aplica a revisão com a checagem de ordens em andamento).
+        if (previousStatus === "ativo" && input.status === "ativo") {
+          const currentDays = new Set(((item.production_days ?? []) as string[]).map(String));
+          const sameDays =
+            currentDays.size === newProductionDays.length &&
+            newProductionDays.every((day) => currentDays.has(day));
+          if (!sameDays) {
+            throw new MasterDataValidationError(
+              "Em um cronograma ativo só é possível reordenar a prioridade dentro do mesmo dia. Para mudar o dia de produção, edite o produto.",
+            );
+          }
+        }
+
         return {
           id: itemId,
           productionDays: newProductionDays,
@@ -2043,6 +2229,33 @@ export async function updateScheduleLineStatus(
         throw new Error(`Failed to update schedule priorities: ${priorityError.message}`);
       }
     }
+  }
+
+  // Cronograma já ativo + "ativo" = só ajuste de prioridade (sem nova aprovação nem mexer em quem aprovou).
+  if (previousStatus === "ativo" && input.status === "ativo") {
+    const noteChanged = (input.auditNotes ?? "").trim() !== String(row.audit_notes ?? "").trim();
+    if (noteChanged) {
+      const noteResult = await supabase
+        .from("schedule_lines")
+        .update({ audit_notes: input.auditNotes?.trim() || null })
+        .eq("id", scheduleId);
+      if (noteResult.error) {
+        throw new Error(`Failed to update schedule line: ${noteResult.error.message}`);
+      }
+    }
+    if (prioritiesProvided || noteChanged) {
+      await recordScheduleEvent({
+        supabase,
+        tenantId: row.tenant_id,
+        scheduleLineId: scheduleId,
+        type: "prioridades_atualizadas",
+        fromStatus: "ativo",
+        toStatus: "ativo",
+        actingProfileDbId,
+        note: input.auditNotes,
+      });
+    }
+    return;
   }
 
   if (input.status === "ativo") {
@@ -2084,4 +2297,100 @@ export async function updateScheduleLineStatus(
   if (result.error) {
     throw new Error(`Failed to update schedule line: ${result.error.message}`);
   }
+
+  const eventType: ScheduleEventType | null =
+    input.status === "ativo" && input.confirmedWithCommittedWork
+      ? "confirmado_com_ordens_em_andamento"
+      : scheduleEventForStatusChange(previousStatus, input.status, prioritiesProvided);
+  if (eventType) {
+    await recordScheduleEvent({
+      supabase,
+      tenantId: row.tenant_id,
+      scheduleLineId: scheduleId,
+      type: eventType,
+      fromStatus: previousStatus,
+      toStatus: input.status,
+      actingProfileDbId,
+      note: input.auditNotes,
+    });
+  }
+}
+
+
+export type ScheduleHistoryEntry = {
+  id: string;
+  type: ScheduleEventType;
+  fromStatus: string | null;
+  toStatus: string | null;
+  actorName: string | null;
+  note: string | null;
+  createdAt: string;
+};
+
+/** Histórico do cronograma (mais recente primeiro). Lê só o que o próprio tenant gravou. */
+export async function listScheduleHistory(
+  identifier: string,
+  options: MutationOptions = {},
+): Promise<ScheduleHistoryEntry[]> {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const row = await resolveRowByIdentifier("schedule_lines", identifier, supabase);
+  const result = await supabase
+    .from("schedule_line_events")
+    .select("id, event_type, from_status, to_status, actor_name, note, created_at")
+    .eq("schedule_line_id", String(row.id))
+    .order("created_at", { ascending: false });
+  if (result.error) {
+    throw new Error(`Failed to load schedule history: ${result.error.message}`);
+  }
+  return ((result.data ?? []) as Array<Record<string, unknown>>).map((entry) => ({
+    id: String(entry.id),
+    type: entry.event_type as ScheduleEventType,
+    fromStatus: (entry.from_status as string | null) ?? null,
+    toStatus: (entry.to_status as string | null) ?? null,
+    actorName: (entry.actor_name as string | null) ?? null,
+    note: (entry.note as string | null) ?? null,
+    createdAt: String(entry.created_at),
+  }));
+}
+
+
+/**
+ * Confirma a aplicação da revisão que a EDIÇÃO DO PRODUTO acabou de abrir, quando a linha tem
+ * ordens em andamento (`awaiting_confirmation`). Fica separada de `updateScheduleLineStatus`
+ * de propósito: quem confirma é quem editou o produto (permissão de produtos), sem exigir a
+ * permissão da tela de auditoria. Por isso é estreita — só ativa uma revisão PENDENTE; não
+ * desativa, não devolve para ajuste e não mexe em prioridades.
+ */
+export async function confirmPendingScheduleRevision(
+  identifier: string,
+  options: MutationOptions = {},
+) {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const actingProfileDbId = options.actingProfileId
+    ? await resolveProfileDbId(options.actingProfileId, supabase)
+    : null;
+  const row = await resolveRowByIdentifier("schedule_lines", identifier, supabase);
+  if (String(row.status) !== "pendente") {
+    throw new MasterDataValidationError(
+      "Esta revisão não está mais pendente — talvez já tenha sido aplicada. Atualize a tela.",
+    );
+  }
+
+  const scheduleId = String(row.id);
+  await activateScheduleRevision({
+    supabase,
+    scheduleLineId: scheduleId,
+    subcategoryId: String(row.subcategory_id),
+    timestamp: new Date().toISOString(),
+    actingProfileDbId,
+  });
+  await recordScheduleEvent({
+    supabase,
+    tenantId: row.tenant_id,
+    scheduleLineId: scheduleId,
+    type: "confirmado_com_ordens_em_andamento",
+    fromStatus: "pendente",
+    toStatus: "ativo",
+    actingProfileDbId,
+  });
 }

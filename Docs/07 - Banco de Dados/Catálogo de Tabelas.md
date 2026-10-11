@@ -178,6 +178,11 @@ Convenções:
 - **Tenant-scoped?** Sim.
 - `20260324143000_product_preparation_steps.sql` — popula automaticamente as 4 etapas para todo produto existente no `INSERT…SELECT cross join`.
 
+### `schedule_line_events`
+
+- **O que guarda:** histórico do cronograma de cada linha, um evento por mudança: `revisao_aberta`, `ativado_automatico`, `aprovado`, `confirmado_com_ordens_em_andamento`, `devolvido_ajuste`, `desativado`, `reativado`, `prioridades_atualizadas`. Colunas: `schedule_line_id`, `event_type`, `from_status`, `to_status`, `actor_profile_id`, `actor_name`, `note`, `details`, `created_at`.
+- **RLS**: `schedule_line_events_tenant_scope`. Sem `anon`; `authenticated` só lê e insere (sem update/delete). Registros antigos ao dia 11/10/2026 não existem.
+
 ### `product_changelog`
 - **Propósito**: versionamento textual + snapshot JSONB das alterações em produtos.
 - **Colunas**: `tenant_id`, `product_id` (cascade), `version_number` (unique com `product_id`), `change_description`, `changed_by_profile_id`, `changed_by_name`, `snapshot_data jsonb` (o que mudou: de/para), `product_snapshot jsonb` (cópia do cadastro de processo naquela versão, usada para restaurar; nulo = não restaurável).

@@ -13,6 +13,7 @@ const tenantOwnedTables = new Set([
   "subcategories",
   "schedule_lines",
   "schedule_line_item_snapshots",
+  "schedule_line_events",
   "ingredients",
   "ingredient_components",
   "products",

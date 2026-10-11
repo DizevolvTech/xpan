@@ -91,3 +91,13 @@ Tabela compacta: timestamp → arquivo → propósito (1 linha) → tipo de impa
 - Adiciona `stores.product_mix jsonb` (nulo por padrão) e o check `stores_product_mix_check` (nulo, ou lista JSON com pelo menos um item).
 - **Mix de produtos por loja** (cliente, 07/10): `NULL` = a loja recebe todos os produtos; lista de ids de produto = só esses por padrão. **Filtro de apresentação**: organiza os pedidos abertos do dia e não bloqueia pedido manual, encomenda fora do padrão nem importação por planilha. Nenhum cálculo, cronograma ou produção lê esta coluna.
 - Aditiva e idempotente; as 29 lojas existentes ficam sem mix (veem tudo). Aplicada em produção em 08/10/2026 (lojas antes/depois idênticas; trava recusa lista vazia, provado em transação desfeita).
+
+## 20261009120000 — `recipe_stage_operacional`
+
+- `product_recipe_items_stage_check` passa a aceitar `operacional` (insumos de processo que contam no custo e no peso por unidade, mas não na massa, na masseira nem na quebra). Aditiva; nenhum item existente usa. Aplicada em produção em 11/10/2026.
+
+## 20261011120000 — `schedule_line_events`
+
+- Cria `schedule_line_events`: histórico imutável do cronograma da linha (abertura da revisão, ativação automática, aprovação, confirmação com ordens em andamento, devolução, desativação e ajuste de prioridade), com quem, quando, de/para e motivo.
+- RLS por tenant (`schedule_line_events_tenant_scope`); sem `anon`; sem `update`/`delete`/`truncate` para `authenticated` (só acréscimo; o app grava via service role).
+- Aditiva e idempotente. Nenhum cronograma existente muda; revisões anteriores a 11/10/2026 não têm eventos. Aplicada em produção em 11/10/2026.

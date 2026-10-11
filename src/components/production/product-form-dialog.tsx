@@ -210,6 +210,12 @@ export function ProductFormDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("cadastro");
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
+  // Cronograma com ordens em andamento: a revisão espera UMA confirmação, aqui mesmo.
+  const [scheduleConfirmation, setScheduleConfirmation] = useState<{
+    scheduleIds: string[];
+    products: number;
+  } | null>(null);
+  const [isConfirmingSchedule, setIsConfirmingSchedule] = useState(false);
   const [commitDescription, setCommitDescription] = useState("");
   const [pendingProductPayload, setPendingProductPayload] = useState<ProductFormState | null>(null);
   const [isVersionsOpen, setIsVersionsOpen] = useState(false);
@@ -996,21 +1002,49 @@ export function ProductFormDialog({
         toast.warning("O produto foi salvo, mas a versão não pôde ser registrada no histórico. Avise a equipe técnica.");
       }
 
-      // AJ-0025: orienta a reauditoria quando o cronograma foi reconstruído pela edição.
+      // Cronograma: a revisão entra em vigor sozinha, salvo ordens em andamento (uma confirmação aqui).
       const impact = respBody?.scheduleRevisionImpact ?? null;
       if (impact) {
-        toast.warning(
-          impact.activeScheduleKept
-            ? `Revisão pendente aberta (${impact.affectedProducts} produto(s)). O cronograma ativo foi MANTIDO porque há OPs liberadas/lançadas — reaudite a revisão para aplicar as mudanças.`
-            : impact.recreated
-              ? `Cronograma reconstruído (${impact.affectedProducts} produto(s) afetado(s)). Reaudite o cronograma antes de liberar os pedidos.`
-              : `Revisão pendente do cronograma atualizada (${impact.affectedProducts} produto(s)). Reaudite antes de liberar.`,
-        );
+        if (impact.outcome === "awaiting_confirmation" && (impact.scheduleIdsAwaitingConfirmation?.length ?? 0) > 0) {
+          setScheduleConfirmation({
+            scheduleIds: impact.scheduleIdsAwaitingConfirmation ?? [],
+            products: impact.affectedProducts,
+          });
+        } else if (impact.outcome === "pending") {
+          toast.warning(
+            "Produto salvo. O cronograma da linha ficou pendente: há produto sem dia de produção na grade. Defina os dias e salve de novo.",
+          );
+        } else {
+          toast.success("Produto salvo e cronograma da linha atualizado.");
+        }
       }
     } catch (saveError) {
       setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar produto");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function confirmScheduleApplication() {
+    if (!scheduleConfirmation) return;
+    setIsConfirmingSchedule(true);
+    try {
+      for (const scheduleId of scheduleConfirmation.scheduleIds) {
+        const response = await fetch(`/api/master-data/schedules/${scheduleId}/confirm`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as { message?: string } | null;
+          throw new Error(body?.message ?? "Falha ao aplicar o cronograma");
+        }
+      }
+      await refresh();
+      setScheduleConfirmation(null);
+      toast.success("Cronograma aplicado. As ordens em andamento foram mantidas.");
+    } catch (confirmError) {
+      toast.error(confirmError instanceof Error ? confirmError.message : "Falha ao aplicar o cronograma");
+    } finally {
+      setIsConfirmingSchedule(false);
     }
   }
 
@@ -3099,11 +3133,11 @@ export function ProductFormDialog({
               />
             </div>
             {isOperationalProduct ? (
-              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
+              <div className="rounded-lg border border-border/70 bg-panel/40 px-3 py-2">
                 <p className="text-xs text-foreground">
-                  Este produto está no cronograma operacional. Salvar vai{" "}
-                  <strong>reconstruir a revisão pendente</strong> do cronograma e os pedidos afetados
-                  precisarão ser <strong>reauditados/reliberados</strong> antes de liberar para produção.
+                  Este produto está no cronograma operacional. Se a alteração mudar dias, linha ou produção
+                  mínima, o cronograma da linha é atualizado ao salvar e o histórico guarda quem alterou e quando.
+                  Se a linha tiver ordens em andamento, pediremos uma confirmação antes de aplicar.
                 </p>
               </div>
             ) : null}
@@ -3132,6 +3166,40 @@ export function ProductFormDialog({
               }}
             >
               {isSubmitting ? "Salvando..." : "Confirmar e salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={scheduleConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open && !isConfirmingSchedule) setScheduleConfirmation(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Aplicar ao cronograma da linha?</DialogTitle>
+            <DialogDescription>
+              O produto foi salvo. Esta linha tem ordens de produção em andamento ou pedidos já liberados, então o
+              cronograma atual foi mantido até você confirmar.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Ao confirmar, a nova grade passa a valer. As ordens já lançadas e os pedidos liberados continuam como
+            estão; só mudam os próximos planejamentos. Ficam registrados quem confirmou e quando.
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isConfirmingSchedule}
+              onClick={() => setScheduleConfirmation(null)}
+            >
+              Deixar para depois
+            </Button>
+            <Button type="button" disabled={isConfirmingSchedule} onClick={() => void confirmScheduleApplication()}>
+              {isConfirmingSchedule ? "Aplicando..." : "Aplicar ao cronograma"}
             </Button>
           </DialogFooter>
         </DialogContent>

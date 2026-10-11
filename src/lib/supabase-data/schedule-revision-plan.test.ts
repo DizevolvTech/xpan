@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { planScheduleRevisionRebuild } from "@/lib/supabase-data/schedule-revision-plan";
+import {
+  decideScheduleActivation,
+  planScheduleRevisionRebuild,
+  scheduleEventForStatusChange,
+  scheduleEventLabels,
+  scheduleEventTypes,
+} from "@/lib/supabase-data/schedule-revision-plan";
 
 test("planScheduleRevisionRebuild — reaproveita a revisão pendente existente (não destrói)", () => {
   // AJ-0025: editar receita NÃO pode recriar a revisão com id novo, pois o
@@ -107,4 +113,46 @@ test("planScheduleRevisionRebuild — múltiplas pendentes: reusa a mais recente
   assert.equal(plan.recreated, false);
   assert.deepEqual(plan.staleScheduleLineIds.sort(), ["sched-mid", "sched-old"]);
   assert.equal(plan.impact.affectedPendingRevisions, 3);
+});
+
+/* -------------------------------------------------------------------------------------------------
+ * Simplificação do cronograma — decisão de ativação
+ * -----------------------------------------------------------------------------------------------*/
+test("decideScheduleActivation: linha sem ordens em andamento ativa direto", () => {
+  assert.deepEqual(
+    decideScheduleActivation({ hasCommittedWork: false, itemProductionDays: [["segunda"], ["terca", "quarta"]] }),
+    { action: "activate", reason: "no_committed_work" },
+  );
+});
+
+test("decideScheduleActivation: com ordens em andamento pede confirmação (não ativa sozinho)", () => {
+  assert.deepEqual(
+    decideScheduleActivation({ hasCommittedWork: true, itemProductionDays: [["segunda"]] }),
+    { action: "await_confirmation", reason: "committed_work" },
+  );
+});
+
+test("decideScheduleActivation: grade incompleta fica pendente, com ou sem ordens", () => {
+  assert.deepEqual(
+    decideScheduleActivation({ hasCommittedWork: false, itemProductionDays: [["segunda"], []] }),
+    { action: "keep_pending", reason: "product_without_day" },
+  );
+  assert.deepEqual(
+    decideScheduleActivation({ hasCommittedWork: true, itemProductionDays: [[]] }),
+    { action: "keep_pending", reason: "product_without_day" },
+  );
+  assert.deepEqual(
+    decideScheduleActivation({ hasCommittedWork: false, itemProductionDays: [] }),
+    { action: "keep_pending", reason: "no_products" },
+  );
+});
+
+test("eventos do histórico: todo tipo tem rótulo e o status gera o evento certo", () => {
+  assert.deepEqual(Object.keys(scheduleEventLabels).sort(), [...scheduleEventTypes].sort());
+  assert.equal(scheduleEventForStatusChange("pendente", "ativo", false), "aprovado");
+  assert.equal(scheduleEventForStatusChange("inativo", "ativo", false), "reativado");
+  assert.equal(scheduleEventForStatusChange("pendente", "inativo", false), "devolvido_ajuste");
+  assert.equal(scheduleEventForStatusChange("ativo", "inativo", false), "desativado");
+  assert.equal(scheduleEventForStatusChange("pendente", "pendente", true), "prioridades_atualizadas");
+  assert.equal(scheduleEventForStatusChange("pendente", "pendente", false), null);
 });

@@ -20,6 +20,7 @@ type UpdateScheduleBody = {
   status: "pendente" | "ativo" | "inativo";
   auditNotes?: string;
   dayPrioritiesByItemId?: Record<string, Partial<Record<ProductionWeekDay, number>>>;
+  confirmedWithCommittedWork?: boolean;
 };
 
 export async function PATCH(request: Request, context: RouteContext) {

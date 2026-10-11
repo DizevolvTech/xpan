@@ -25,6 +25,7 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { PageLayout } from "@/components/shared/page-layout";
 import { useToast } from "@/components/shared/toast";
+import { scheduleEventLabels, type ScheduleEventType } from "@/lib/supabase-data/schedule-revision-plan";
 import { ProductFormDialog } from "@/components/production/product-form-dialog";
 import { cn } from "@/lib/utils";
 import {
@@ -549,7 +550,40 @@ export default function SublinhasProducaoPage() {
     },
     [selectedLineProducts],
   );
-  const canEditDailyPriority = selectedSchedule?.status === "pendente";
+  // Histórico de alterações da revisão selecionada (quem, quando, de/para).
+  const [scheduleHistory, setScheduleHistory] = useState<
+    Array<{ id: string; type: ScheduleEventType; actorName: string | null; note: string | null; createdAt: string }>
+  >([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const historyScheduleId = selectedSchedule?.id ?? null;
+  const historyReloadKey = `${selectedSchedule?.status ?? ""}|${isDetailsOpen}`;
+  useEffect(() => {
+    if (!isDetailsOpen || !historyScheduleId) {
+      setScheduleHistory([]);
+      return;
+    }
+    let cancelled = false;
+    setIsHistoryLoading(true);
+    fetch(`/api/master-data/schedules/${historyScheduleId}/history`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { history?: typeof scheduleHistory } | null) => {
+        if (!cancelled) setScheduleHistory(body?.history ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setScheduleHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isDetailsOpen, historyScheduleId, historyReloadKey]);
+
+  // Pendente: edição completa. Ativo: só reordenar dentro do mesmo dia, sem nova aprovação.
+  const isActiveSchedule = selectedSchedule?.status === "ativo";
+  const canEditDailyPriority =
+    selectedSchedule?.status === "pendente" || selectedSchedule?.status === "ativo";
   const persistedDayBoardSignature = useMemo(
     () => buildDayBoardSignature(selectedDayBoards),
     [selectedDayBoards],
@@ -614,7 +648,7 @@ export default function SublinhasProducaoPage() {
       key: "lineName",
       header: "Linha",
       render: (item: LinhaAuditRow) => (
-        <div className="min-w-[220px] space-y-1">
+        <div className="min-w-0 space-y-1 sm:min-w-[220px]">
           <p className="font-semibold text-foreground">{item.lineName}</p>
           <p className="text-xs text-muted-foreground">
             {item.displaySchedule.code} · {item.displaySchedule.name}
@@ -651,7 +685,7 @@ export default function SublinhasProducaoPage() {
         const isExpanded = expandedLineId === item.lineId;
 
         return (
-          <div className="min-w-[220px] space-y-2">
+          <div className="min-w-0 space-y-2 sm:min-w-[220px]">
             <div className="flex flex-wrap gap-1.5">
               <span className="rounded-full border border-border/80 bg-panel px-2 py-1 text-[11px] font-medium text-foreground">
                 Ativos · {item.activeProductsCount}
@@ -697,7 +731,7 @@ export default function SublinhasProducaoPage() {
       key: "versions",
       header: "Versões",
       render: (item: LinhaAuditRow) => (
-        <div className="min-w-[170px] space-y-2">
+        <div className="min-w-0 space-y-2 sm:min-w-[170px]">
           <Button
             type="button"
             variant="outline"
@@ -891,7 +925,12 @@ export default function SublinhasProducaoPage() {
       }
 
       await refresh();
-      if (nextStatus === "ativo") {
+      if (nextStatus === "ativo" && selectedSchedule.status === "ativo") {
+        setPageNotice({
+          tone: "success",
+          message: `Prioridades do cronograma ${selectedSchedule.code} salvas. O histórico registra quem alterou e quando.`,
+        });
+      } else if (nextStatus === "ativo") {
         setPageNotice({
           tone: "success",
           message: `Cronograma ${selectedSchedule.code} aprovado e ativado com sucesso. Esta versão agora é a vigente da linha ${selectedSchedule.lineName}.`,
@@ -977,6 +1016,13 @@ export default function SublinhasProducaoPage() {
     }
 
     const isSameDay = dragState.dayKey === dayKey;
+
+    if (isActiveSchedule && !isSameDay) {
+      toast.warning("Em um cronograma ativo só dá para reordenar dentro do mesmo dia. Para mudar o dia, edite o produto.");
+      setDragState(null);
+      setDropTarget(null);
+      return;
+    }
 
     setDraftDayBoards((current) =>
       isSameDay
@@ -1299,7 +1345,7 @@ export default function SublinhasProducaoPage() {
           }
         }}
       >
-        <DialogContent size="full" className="space-y-4">
+        <DialogContent size="full" className="min-w-0 space-y-4 [&>*]:min-w-0">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-1.5">
               <span>
@@ -1531,8 +1577,10 @@ export default function SublinhasProducaoPage() {
                   size="sm"
                   content={
                     canEditDailyPriority
-                      ? "Arraste os produtos dentro de cada dia para definir a prioridade da produção. Essa sequência será usada na leitura operacional da revisão."
-                      : "A prioridade diária só pode ser ajustada em revisões pendentes, antes da aprovação do cronograma."
+                      ? isActiveSchedule
+                      ? "Arraste os produtos dentro do mesmo dia para mudar a prioridade. Vale na hora e fica registrado no histórico; para mudar o dia, edite o produto."
+                      : "Arraste os produtos dentro de cada dia para definir a prioridade da produção. Essa sequência será usada na leitura operacional da revisão."
+                      : "A prioridade diária só pode ser ajustada em cronogramas pendentes ou ativos."
                   }
                 />
                 {selectedSchedule.status === "pendente" ? (
@@ -1696,6 +1744,39 @@ export default function SublinhasProducaoPage() {
               </div>
 
               <div className="grid gap-2">
+                <section aria-labelledby="schedule-history-title" className="space-y-2">
+                  <h4 id="schedule-history-title" className="text-sm font-medium text-foreground">
+                    Histórico de alterações
+                  </h4>
+                  {isHistoryLoading ? (
+                    <p className="text-xs text-muted-foreground">Carregando histórico...</p>
+                  ) : scheduleHistory.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Sem eventos registrados para esta revisão (alterações anteriores a 11/10/2026 não têm histórico detalhado).
+                    </p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {scheduleHistory.map((entry) => (
+                        <li
+                          key={entry.id}
+                          className="rounded-lg border border-border/70 bg-panel/40 px-3 py-2 text-xs"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
+                            <span className="font-semibold text-foreground">
+                              {scheduleEventLabels[entry.type] ?? entry.type}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {new Date(entry.createdAt).toLocaleString("pt-BR")}
+                              {entry.actorName ? ` · ${entry.actorName}` : " · sistema"}
+                            </span>
+                          </div>
+                          {entry.note ? <p className="mt-1 text-muted-foreground">{entry.note}</p> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+
                 <div className="flex items-center gap-1.5">
                   <label className="text-sm font-medium text-foreground">
                     {selectedSchedule.status === "pendente"
@@ -1723,12 +1804,12 @@ export default function SublinhasProducaoPage() {
             </div>
           )}
 
-          <DialogFooter className="justify-between sm:justify-between">
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-between">
             <Button type="button" variant="outline" onClick={() => setIsDetailsOpen(false)}>
               Fechar
             </Button>
             {selectedSchedule?.status === "pendente" ? (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <Button
                   type="button"
                   variant="outline"
@@ -1753,16 +1834,26 @@ export default function SublinhasProducaoPage() {
                 </Button>
               </div>
             ) : selectedSchedule?.status === "ativo" ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="border-danger-foreground/35 text-danger-foreground hover:bg-danger/35"
-                onClick={() => void updateScheduleStatus("inativo")}
-                disabled={isSubmitting}
-              >
-                <PauseCircle className="size-4" />
-                Desativar Linha
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <Button
+                  type="button"
+                  onClick={() => void updateScheduleStatus("ativo", false)}
+                  disabled={isSubmitting || (!hasPriorityChanges && !hasAuditNotesChanges)}
+                >
+                  <CheckCircle className="size-4" />
+                  Salvar prioridades
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-danger-foreground/35 text-danger-foreground hover:bg-danger/35"
+                  onClick={() => void updateScheduleStatus("inativo")}
+                  disabled={isSubmitting}
+                >
+                  <PauseCircle className="size-4" />
+                  Desativar Linha
+                </Button>
+              </div>
             ) : (
               <Button type="button" onClick={() => void updateScheduleStatus("ativo")} disabled={isSubmitting}>
                 <PlayCircle className="size-4" />

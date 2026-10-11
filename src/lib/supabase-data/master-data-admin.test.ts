@@ -23,7 +23,7 @@ import test from "node:test";
 import type { SupabaseDataClient } from "@/lib/supabase-data/common";
 import type * as MasterDataAdminModule from "@/lib/supabase-data/master-data-admin";
 
-const { MasterDataValidationError, cloneProduct, createProduct, createStore, updateProduct, updateStore } = require(
+const { MasterDataValidationError, cloneProduct, confirmPendingScheduleRevision, createProduct, createStore, updateProduct, updateScheduleLineStatus, updateStore } = require(
   "@/lib/supabase-data/master-data-admin",
 ) as typeof MasterDataAdminModule;
 
@@ -61,7 +61,17 @@ function createFakeSupabase(
     let rows = [...(tables[table] ?? [])];
     let error: ReturnType<typeof missingColumnError> = null;
     const filters: Array<[string, unknown]> = [];
-    const applyFilters = () => rows.filter((row) => filters.every(([column, value]) => row[column] === value));
+    const notEqual: Array<[string, unknown]> = [];
+    const inFilters: Array<[string, unknown[]]> = [];
+    const likeFilters: Array<[string, RegExp]> = [];
+    const applyFilters = () =>
+      rows.filter(
+        (row) =>
+          filters.every(([column, value]) => row[column] === value) &&
+          notEqual.every(([column, value]) => row[column] !== value) &&
+          inFilters.every(([column, values]) => values.includes(row[column])) &&
+          likeFilters.every(([column, regex]) => regex.test(String(row[column] ?? ""))),
+      );
 
     const query: Record<string, unknown> = {
       select: () => query,
@@ -69,6 +79,19 @@ function createFakeSupabase(
       limit: () => query,
       eq: (column: string, value: unknown) => {
         filters.push([column, value]);
+        return query;
+      },
+      neq: (column: string, value: unknown) => {
+        notEqual.push([column, value]);
+        return query;
+      },
+      in: (column: string, values: unknown[]) => {
+        inFilters.push([column, values]);
+        return query;
+      },
+      like: (column: string, pattern: string) => {
+        const regex = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*")}$`);
+        likeFilters.push([column, regex]);
         return query;
       },
       insert: (payload: FakeRow | FakeRow[]) => {
@@ -654,4 +677,214 @@ test("createStore grava o mix na criação e, sem o campo, não envia product_mi
   const withoutMix = createFakeSupabase({ tables: { stores: [] } });
   await createStore(buildStoreInput(), { supabase: withoutMix.client });
   assert.equal("product_mix" in (findWrite(withoutMix.writes, "stores", "insert")[0].payload ?? {}), false);
+});
+
+
+/* -------------------------------------------------------------------------------------------------
+ * Simplificação do cronograma — updateScheduleLineStatus
+ * -----------------------------------------------------------------------------------------------*/
+const SCHEDULE_UUID = "11111111-1111-4111-8111-111111111111";
+const SCHEDULE_TABLES = (status: string, itemDays: string[] = ["segunda", "quarta"]) => ({
+  schedule_lines: [
+    { id: SCHEDULE_UUID, legacy_id: "sl-1", tenant_id: "tenant-1", subcategory_id: "sub-1", status, audit_notes: null },
+  ],
+  schedule_line_item_snapshots: [{ id: "item-1", schedule_line_id: SCHEDULE_UUID, production_days: itemDays }],
+  profiles: [{ id: "profile-1", legacy_id: "user-1", name: "Gestora Ana" }],
+});
+
+test("cronograma ATIVO: reordenar dentro do mesmo dia salva, não reaprova e grava o histórico", async () => {
+  const { client, writes } = createFakeSupabase({ tables: SCHEDULE_TABLES("ativo") });
+  await updateScheduleLineStatus(
+    "sl-1",
+    { status: "ativo", dayPrioritiesByItemId: { "item-1": { segunda: 2, quarta: 1 } } },
+    { supabase: client, actingProfileId: "user-1" },
+  );
+  const lineUpdates = findWrite(writes, "schedule_lines", "update");
+  assert.equal(lineUpdates.length, 0, "não mexe em status, aprovador nem data de aprovação");
+  assert.equal(findWrite(writes, "schedule_line_item_snapshots", "update").length, 1);
+  const events = findWrite(writes, "schedule_line_events", "insert");
+  assert.equal(events.length, 1);
+  assert.equal(events[0].payload?.event_type, "prioridades_atualizadas");
+  assert.equal(events[0].payload?.actor_name, "Gestora Ana");
+  assert.equal(events[0].payload?.tenant_id, "tenant-1");
+});
+
+test("cronograma ATIVO: mudar o DIA de produção é recusado (continua pela edição do produto)", async () => {
+  const { client, writes } = createFakeSupabase({ tables: SCHEDULE_TABLES("ativo") });
+  await assert.rejects(
+    updateScheduleLineStatus(
+      "sl-1",
+      { status: "ativo", dayPrioritiesByItemId: { "item-1": { terca: 1 } } },
+      { supabase: client, actingProfileId: "user-1" },
+    ),
+    /mesmo dia/,
+  );
+  assert.equal(findWrite(writes, "schedule_line_item_snapshots", "update").length, 0);
+  assert.equal(findWrite(writes, "schedule_line_events", "insert").length, 0);
+});
+
+test("aprovar revisão PENDENTE grava o aprovador e o evento 'aprovado'", async () => {
+  const { client, writes } = createFakeSupabase({ tables: SCHEDULE_TABLES("pendente") });
+  await updateScheduleLineStatus("sl-1", { status: "ativo", auditNotes: "ok" }, { supabase: client, actingProfileId: "user-1" });
+  const updates = findWrite(writes, "schedule_lines", "update");
+  assert.equal(updates.at(-1)?.payload?.status, "ativo");
+  assert.equal(updates.at(-1)?.payload?.audited_by_profile_id, "profile-1");
+  assert.equal(findWrite(writes, "schedule_line_events", "insert")[0].payload?.event_type, "aprovado");
+});
+
+test("confirmar com ordens em andamento grava o evento próprio", async () => {
+  const { client, writes } = createFakeSupabase({ tables: SCHEDULE_TABLES("pendente") });
+  await updateScheduleLineStatus(
+    "sl-1",
+    { status: "ativo", confirmedWithCommittedWork: true },
+    { supabase: client, actingProfileId: "user-1" },
+  );
+  assert.equal(
+    findWrite(writes, "schedule_line_events", "insert")[0].payload?.event_type,
+    "confirmado_com_ordens_em_andamento",
+  );
+});
+
+test("devolver para ajuste e desativar gravam eventos distintos", async () => {
+  const pending = createFakeSupabase({ tables: SCHEDULE_TABLES("pendente") });
+  await updateScheduleLineStatus("sl-1", { status: "inativo", auditNotes: "refazer terça" }, { supabase: pending.client, actingProfileId: "user-1" });
+  const returned = findWrite(pending.writes, "schedule_line_events", "insert")[0].payload;
+  assert.equal(returned?.event_type, "devolvido_ajuste");
+  assert.equal(returned?.note, "refazer terça");
+
+  const active = createFakeSupabase({ tables: SCHEDULE_TABLES("ativo") });
+  await updateScheduleLineStatus("sl-1", { status: "inativo" }, { supabase: active.client, actingProfileId: "user-1" });
+  assert.equal(findWrite(active.writes, "schedule_line_events", "insert")[0].payload?.event_type, "desativado");
+});
+
+test("falha ao gravar o histórico NÃO desfaz a mudança do cronograma", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: SCHEDULE_TABLES("pendente"),
+    missingColumns: ["event_type"],
+  });
+  const original = console.error;
+  console.error = () => {};
+  try {
+    await updateScheduleLineStatus("sl-1", { status: "ativo" }, { supabase: client, actingProfileId: "user-1" });
+  } finally {
+    console.error = original;
+  }
+  assert.equal(findWrite(writes, "schedule_lines", "update").at(-1)?.payload?.status, "ativo");
+});
+
+
+/* -------------------------------------------------------------------------------------------------
+ * Simplificação do cronograma — edição do produto que muda os dias de produção
+ * -----------------------------------------------------------------------------------------------*/
+const LINE_SUB: FakeRow = { id: "db-line-1", legacy_id: "line-1", name: "Linha Pães", tenant_id: "tenant-1" };
+const ACTIVE_SCHEDULE: FakeRow = {
+  id: "sched-active",
+  name: "Cronograma Pães",
+  code: "SL-0001",
+  subcategory_id: "db-line-1",
+  status: "ativo",
+  created_at: "2026-09-01T10:00:00Z",
+  audited_at: "2026-09-01T11:00:00Z",
+};
+
+function scheduleEditTables(extra: Record<string, FakeRow[]> = {}) {
+  return {
+    subcategories: [LINE_SUB],
+    products: [
+      buildProductRow({ operational_subcategory_id: "db-line-1" }),
+    ],
+    schedule_lines: [ACTIVE_SCHEDULE],
+    schedule_line_item_snapshots: [],
+    profiles: [{ id: "profile-1", legacy_id: "user-1", name: "Gestora Ana" }],
+    workflow_production_items: [],
+    workflow_production_starts: [],
+    store_order_items: [],
+    workflow_order_releases: [],
+    ...extra,
+  };
+}
+
+test("editar os dias do produto numa linha SEM ordens em andamento ativa o cronograma sozinho", async () => {
+  const { client, writes } = createFakeSupabase({ tables: scheduleEditTables() });
+  const result = await updateProduct(
+    "product-1",
+    buildProductInput({ productionDays: ["terca"] }),
+    { supabase: client, actingProfileId: "user-1" },
+  );
+  assert.equal(result.scheduleRevisionImpact?.outcome, "activated");
+  assert.deepEqual(result.scheduleRevisionImpact?.scheduleIdsAwaitingConfirmation, []);
+  const scheduleUpdates = findWrite(writes, "schedule_lines", "update");
+  assert.ok(scheduleUpdates.some((w) => w.payload?.status === "ativo" && w.payload?.audited_by_profile_id === "profile-1"));
+  const events = findWrite(writes, "schedule_line_events", "insert").map((w) => w.payload?.event_type);
+  assert.deepEqual(events, ["revisao_aberta", "ativado_automatico"]);
+});
+
+test("editar os dias do produto com ORDEM EM ANDAMENTO mantém o ativo e pede uma confirmação", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: scheduleEditTables({
+      workflow_production_items: [{ production_item_key: "2026-10-12|line-1|product-1", status: "em_producao" }],
+    }),
+  });
+  const result = await updateProduct(
+    "product-1",
+    buildProductInput({ productionDays: ["terca"] }),
+    { supabase: client, actingProfileId: "user-1" },
+  );
+  assert.equal(result.scheduleRevisionImpact?.outcome, "awaiting_confirmation");
+  assert.equal(result.scheduleRevisionImpact?.activeScheduleKept, true);
+  assert.equal(result.scheduleRevisionImpact?.scheduleIdsAwaitingConfirmation?.length, 1);
+  const scheduleUpdates = findWrite(writes, "schedule_lines", "update");
+  assert.equal(scheduleUpdates.some((w) => w.payload?.status === "ativo"), false, "não ativa sem confirmar");
+  assert.equal(scheduleUpdates.some((w) => w.payload?.status === "inativo"), false, "não derruba o ativo");
+  const events = findWrite(writes, "schedule_line_events", "insert").map((w) => w.payload?.event_type);
+  assert.deepEqual(events, ["revisao_aberta"]);
+});
+
+test("pedido liberado na linha também conta como trabalho comprometido", async () => {
+  const { client } = createFakeSupabase({
+    tables: scheduleEditTables({
+      store_order_items: [{ product_id: "db-product-1", order_id: "order-1" }],
+      workflow_order_releases: [{ order_id: "order-1" }],
+    }),
+  });
+  const result = await updateProduct(
+    "product-1",
+    buildProductInput({ productionDays: ["terca"] }),
+    { supabase: client, actingProfileId: "user-1" },
+  );
+  assert.equal(result.scheduleRevisionImpact?.outcome, "awaiting_confirmation");
+});
+
+test("edição que não toca o cronograma (só nome) não abre nem ativa revisão", async () => {
+  const { client, writes } = createFakeSupabase({ tables: scheduleEditTables() });
+  const result = await updateProduct(
+    "product-1",
+    buildProductInput({ name: "Cuca de maçã e canela" }),
+    { supabase: client, actingProfileId: "user-1" },
+  );
+  assert.equal(result.scheduleRevisionImpact, null);
+  assert.equal(findWrite(writes, "schedule_line_events", "insert").length, 0);
+});
+
+
+test("confirmar a revisão da edição do produto ativa só a PENDENTE e grava o evento próprio", async () => {
+  const { client, writes } = createFakeSupabase({ tables: SCHEDULE_TABLES("pendente") });
+  await confirmPendingScheduleRevision("sl-1", { supabase: client, actingProfileId: "user-1" });
+  const updates = findWrite(writes, "schedule_lines", "update");
+  assert.ok(updates.some((w) => w.payload?.status === "ativo" && w.payload?.audited_by_profile_id === "profile-1"));
+  const events = findWrite(writes, "schedule_line_events", "insert");
+  assert.equal(events.length, 1);
+  assert.equal(events[0].payload?.event_type, "confirmado_com_ordens_em_andamento");
+  assert.equal(events[0].payload?.actor_name, "Gestora Ana");
+});
+
+test("confirmar revisão que já não está pendente é recusado e não grava nada", async () => {
+  for (const status of ["ativo", "inativo"]) {
+    const { client, writes } = createFakeSupabase({ tables: SCHEDULE_TABLES(status) });
+    await assert.rejects(
+      confirmPendingScheduleRevision("sl-1", { supabase: client, actingProfileId: "user-1" }),
+      /não está mais pendente/,
+    );
+    assert.equal(writes.length, 0, status);
+  }
 });
