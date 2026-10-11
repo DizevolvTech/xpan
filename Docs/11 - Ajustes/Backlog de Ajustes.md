@@ -733,3 +733,6 @@ Lote entregue por Giuseppe na data-alvo da Onda 1. Sem mudança de regra de neg�
 2. Se virou Concluído, adicionar `**Concluído em:** YYYY-MM-DD (commit XXXXXX)` no topo do bloco.
 3. Mover bloco concluído para "Histórico de resoluções".
 4. Adicionar entrada em [[10 - Changelog Vivo/2026-05|Changelog do mês]].
+
+- [x] 2026-10-11 — Insumos operacionais e acabamento fora da massa e da quebra (etapa "operacional"): no ar em `7fdd29d`. Ver Changelog Vivo 2026-10.
+- [ ] Revisar com o cliente o teste de laboratório do Bento Cake Chocolate (Grupo Chama): registra quebra 0% e agora é tratado como incompleto.
