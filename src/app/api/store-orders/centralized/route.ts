@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { authorizeApiRequest, canAccessStore } from "@/lib/api-auth";
-import { reviewOrderEntries, type OrderEntryCatalog, type OrderEntryRow } from "@/lib/centralized-orders";
+import { findOrderConflicts, reviewOrderEntries, type OrderEntryCatalog, type OrderEntryRow } from "@/lib/centralized-orders";
 import { buildStoreOrderCatalog } from "@/lib/store-order-catalog";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { createCentralizedStoreOrders, type CreateStoreOrderInput } from "@/lib/supabase-data/store-orders";
@@ -50,7 +50,22 @@ export async function POST(request: Request) {
       const product = storeCatalogs.get(row.storeId)!.find(p => p.productId === row.productId);
       if (!product?.available) review.errors.push({ row: row.row, message: product?.blockedReason ?? "Produto indisponível para esta loja/data no cronograma." });
     }
-    if (body.confirm !== true || review.errors.length) return NextResponse.json(review, { status: body.confirm === true && review.errors.length ? 400 : 200 });
+    // Pedido ativo já existente para a loja nesta data: dizer qual, antes de confirmar.
+    const storeIds = [...new Set(review.rows.map(r => r.storeId))];
+    let conflicts: ReturnType<typeof findOrderConflicts>["conflicts"] = [];
+    if (storeIds.length) {
+      const dbStores = await ctx.supabase.from("stores").select("id, legacy_id").in("legacy_id", storeIds);
+      const idByLegacy = new Map((dbStores.data ?? []).map(row => [String(row.legacy_id), String(row.id)]));
+      const dbIds = storeIds.map(id => idByLegacy.get(id) ?? id);
+      const active = await ctx.supabase.from("store_orders").select("code, store_id").in("store_id", dbIds).eq("delivery_date", date).eq("management_status", "ativo");
+      const legacyByDb = new Map([...idByLegacy.entries()].map(([legacy, id]) => [id, legacy]));
+      const existing = (active.data ?? []).map(row => ({ storeId: legacyByDb.get(String(row.store_id)) ?? String(row.store_id), code: String(row.code) }));
+      const found = findOrderConflicts(review.rows, existing);
+      review.errors.push(...found.errors);
+      conflicts = found.conflicts;
+    }
+    const payload = { ...review, conflicts };
+    if (body.confirm !== true || review.errors.length) return NextResponse.json(payload, { status: body.confirm === true && review.errors.length ? 400 : 200 });
     if (typeof body.requestId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.requestId)) {
       return NextResponse.json({ message: "Identificador de confirmação inválido." }, { status: 400 });
     }

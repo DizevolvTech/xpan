@@ -46,6 +46,7 @@
 
 - **Vídeo (19:14–19:45):** cada ERP gera um Excel diferente; o sistema deveria se adaptar à planilha do cliente, não exigir o nosso modelo.
 - **Sistema hoje:** `order-excel.ts` exige as colunas `loja`, `produto`, `quantidade` (modelo XPAN). A coluna do produto já aceita o código do ERP do cliente.
+- **Atualização 12/10:** o leitor passou a reconhecer cabeçalhos comuns de ERP (loja/filial, produto/código/descrição, quantidade/qtd), em qualquer ordem e com título acima da tabela, e a ler quantidade no padrão brasileiro (`1.000` = mil). Falta o **exemplo real** de planilha de cada cliente (Chama, Mistoquentaria) para confirmar os nomes de coluna; sem ele o mapeamento manual na tela não foi feito.
 - **Depende de:** pergunta 6 (exemplo real de planilha de pedido de cada cliente: Chama, Mistoquentaria etc.).
 
 ## 5. Tela de unidades do produto (conversa de escopo, adiada pelo próprio cliente)
