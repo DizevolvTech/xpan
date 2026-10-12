@@ -92,7 +92,7 @@ export function IngredientCompositionEditor({
               searchPlaceholder="Buscar por nome, código XPAN ou código ERP..."
               emptyMessage="Nenhum componente encontrado."
               title="Selecionar componente"
-              description="Busque por nome, código XPAN ou código ERP do ingrediente ou produto MPI."
+              description="Busque por nome, código XPAN ou código ERP do insumo ou produto MPI."
             />
           </div>
 

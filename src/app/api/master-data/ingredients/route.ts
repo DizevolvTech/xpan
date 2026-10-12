@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
   if (!payload?.name?.trim()) {
     return NextResponse.json(
-      { message: "Informe o nome do ingrediente." },
+      { message: "Informe o nome do insumo." },
       { status: 400 },
     );
   }

@@ -14,8 +14,10 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { SearchFilter } from "@/components/shared/search-filter";
 import { Button } from "@/components/ui/button";
 import {
+  supplyClassLabels,
   type ProductionIngredient,
   type ProductionProduct,
+  type SupplyClassLabelKey,
 } from "@/lib/production-planning";
 import { getOperationalUnitLabel } from "@/lib/operational-units";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
@@ -30,6 +32,8 @@ type IngredientListRow = {
   name: string;
   shortName: string;
   typeLabel: string;
+  /** Classe do insumo. Produto MPI aparece como "MPI" (é produto, não registro de insumo). */
+  supplyClass: SupplyClassLabelKey;
   unitLabel: string;
   compositionLabel: string;
   ingredient?: ProductionIngredient;
@@ -78,7 +82,8 @@ export default function IngredientesPage() {
         externalCode: ingredient.externalCode ?? "",
         name: ingredient.name,
         shortName: ingredient.shortName ?? "",
-        typeLabel: ingredient.type === "misturado" ? "Ingrediente misturado" : "Ingrediente puro",
+        typeLabel: ingredient.type === "misturado" ? "Insumo misturado" : "Insumo puro",
+        supplyClass: ingredient.supplyClass ?? "MP",
         unitLabel: getOperationalUnitLabel(ingredient.unit),
         compositionLabel:
           ingredient.type === "misturado"
@@ -99,6 +104,7 @@ export default function IngredientesPage() {
         name: product.name,
         shortName: product.shortName ?? "",
         typeLabel: "Produto MPI",
+        supplyClass: "MPI",
         unitLabel: getOperationalUnitLabel(
           product.ingredientProfile?.unit ?? product.unitProfiles.sales.unit,
         ),
@@ -116,7 +122,9 @@ export default function IngredientesPage() {
           item.shortName.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
           item.externalCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.typeLabel.toLowerCase().includes(searchTerm.toLowerCase()),
+          item.typeLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.supplyClass.toLowerCase() === searchTerm.trim().toLowerCase() ||
+          supplyClassLabels[item.supplyClass].toLowerCase().includes(searchTerm.toLowerCase()),
       ),
     [ingredientRows, mpiRows, searchTerm],
   );
@@ -138,7 +146,7 @@ export default function IngredientesPage() {
     },
     {
       key: "name",
-      header: "Ingrediente",
+      header: "Insumo",
       render: (item: IngredientListRow) => (
         <div className="space-y-0.5">
           <span className="block text-sm font-semibold text-foreground">{item.name}</span>
@@ -146,6 +154,18 @@ export default function IngredientesPage() {
             <span className="block text-[11px] text-muted-foreground/80">{item.shortName}</span>
           ) : null}
         </div>
+      ),
+    },
+    {
+      key: "supplyClass",
+      header: "Classe",
+      render: (item: IngredientListRow) => (
+        <span
+          className="inline-flex rounded-md border border-border/70 bg-panel/40 px-2 py-1 text-xs font-semibold tabular-nums text-foreground"
+          title={supplyClassLabels[item.supplyClass]}
+        >
+          {item.supplyClass}
+        </span>
       ),
     },
     {
@@ -214,24 +234,24 @@ export default function IngredientesPage() {
 
   return (
     <PageLayout
-      title="Gestão de Ingredientes"
-      description="Ingredientes puros, misturados e produtos MPI reutilizáveis na mesma listagem."
+      title="Gestão de Insumos"
+      description="Insumos classificados em MP, ME e MC, mais os produtos MPI reutilizáveis, na mesma listagem."
       badge="Dados Mestres"
       breadcrumbs={[
         { label: "Gestor de Dados", href: "/gestor-dados" },
-        { label: "Ingredientes" },
+        { label: "Insumos" },
       ]}
       actions={
         <Button type="button" onClick={() => openIngredientDialog(null, "edit")}>
           <Plus className="size-4" />
-          Novo Ingrediente
+          Novo Insumo
         </Button>
       }
     >
       <div className="grid gap-3 md:grid-cols-2">
         <KPICard
-          title="Ingredientes Cadastrados"
-          value={`${ingredients.length} ingredientes`}
+          title="Insumos Cadastrados"
+          value={`${ingredients.length} insumos`}
           icon={Package}
           tone="success"
         />
@@ -246,7 +266,7 @@ export default function IngredientesPage() {
 
       <section className="space-y-3">
         <SearchFilter
-          searchPlaceholder="Buscar por código, nome ou tipo..."
+          searchPlaceholder="Buscar por código, nome, classe (MP, MPI, ME, MC) ou tipo..."
           onSearch={setSearchTerm}
           searchValue={searchTerm}
           showFilters={false}
@@ -271,7 +291,7 @@ export default function IngredientesPage() {
               openIngredientDialog(item.ingredient, "view");
             }
           }}
-          emptyMessage={isLoading ? "Carregando ingredientes..." : "Nenhuma referência encontrada"}
+          emptyMessage={isLoading ? "Carregando insumos..." : "Nenhuma referência encontrada"}
           stickyHeader
         />
       </section>

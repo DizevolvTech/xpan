@@ -85,7 +85,7 @@ function RecipeTable({
                 Pré pesagem
               </th>
               <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-                Ingredientes
+                Insumos
               </th>
             </tr>
           </thead>
@@ -110,7 +110,7 @@ function RecipeTable({
         <thead className="bg-stone-300">
           <tr>
             <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-              Ingredientes
+              Insumos
             </th>
             {showBatchColumn ? (
               <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
@@ -253,7 +253,7 @@ export default function PrePesagemPrintPage() {
             >
               <header className="grid grid-cols-[132px_84px_1fr_180px] border-b border-stone-400 bg-stone-300 text-stone-900">
                 <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
-                  Produto Ingrediente
+                  Produto MPI
                 </div>
                 <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
                 <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">
@@ -324,7 +324,7 @@ export default function PrePesagemPrintPage() {
               />
               {section.baseIngredients.length === 0 && section.additionalIngredients.length === 0 ? (
                 <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
-                  Este produto consome somente produto ingrediente destacado abaixo.
+                  Este produto consome somente produto MPI destacado abaixo.
                 </div>
               ) : null}
             </div>

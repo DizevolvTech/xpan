@@ -51,7 +51,7 @@ export function IngredientProfileFields({
   title,
   description,
   metadataLabel = "Lembretes",
-  metadataPlaceholder = "Notas rápidas sobre este ingrediente",
+  metadataPlaceholder = "Notas rápidas sobre este insumo",
   showPurchaseFields = false,
   purchaseUnitOptions,
   purchaseUnitLabel = "Unidade de compra",
@@ -203,7 +203,7 @@ export function IngredientProfileFields({
             placeholder={metadataPlaceholder}
           />
           <p className="text-xs text-muted-foreground">
-            Use este campo para lembretes gerais sobre o ingrediente. Instruções de uso na receita devem ser registradas no campo de observação de cada item da receita.
+            Use este campo para lembretes gerais sobre o insumo. Instruções de uso na receita devem ser registradas no campo de observação de cada item da receita.
           </p>
         </div>
       </div>

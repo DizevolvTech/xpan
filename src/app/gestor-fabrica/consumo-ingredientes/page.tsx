@@ -70,12 +70,12 @@ export default function ConsumoIngredientesPage() {
       );
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message ?? "Não foi possível carregar o consumo de ingredientes.");
+        throw new Error(payload?.message ?? "Não foi possível carregar o consumo de insumos.");
       }
       const payload = (await response.json()) as IngredientConsumptionResponse;
       setData(payload);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Erro ao carregar consumo de ingredientes.");
+      setError(caught instanceof Error ? caught.message : "Erro ao carregar consumo de insumos.");
       setData(null);
     } finally {
       setIsLoading(false);
@@ -92,7 +92,7 @@ export default function ConsumoIngredientesPage() {
     () => [
       {
         key: "ingredientName",
-        header: "Ingrediente",
+        header: "Insumo",
         sortable: true,
         sortValue: (item: IngredientConsumptionRow) => item.ingredientName,
         render: (item: IngredientConsumptionRow) => (
@@ -127,13 +127,13 @@ export default function ConsumoIngredientesPage() {
 
   return (
     <PageLayout
-      title="Consumo de Ingredientes"
-      description="Consumo acumulado de ingredientes derivado da produção planejada no período selecionado."
+      title="Consumo de Insumos"
+      description="Consumo acumulado de insumos derivado da produção planejada no período selecionado."
       badge="Operacional"
       breadcrumbs={[
         { label: "Início", href: "/" },
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
-        { label: "Consumo de Ingredientes" },
+        { label: "Consumo de Insumos" },
       ]}
     >
       <div className="flex flex-col gap-4">
@@ -172,7 +172,7 @@ export default function ConsumoIngredientesPage() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <KPICard
-            title="Ingredientes consumidos"
+            title="Insumos consumidos"
             value={String(rows.length)}
             icon={Package}
             isLoading={isLoading}
@@ -196,9 +196,9 @@ export default function ConsumoIngredientesPage() {
           columns={columns}
           keyField="ingredientId"
           isLoading={isLoading}
-          emptyMessage="Nenhum consumo de ingrediente para o período selecionado."
+          emptyMessage="Nenhum consumo de insumo para o período selecionado."
           pagination
-          paginationLabel="ingredientes"
+          paginationLabel="insumos"
           stickyHeader
         />
       </div>

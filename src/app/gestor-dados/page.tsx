@@ -257,7 +257,7 @@ export default function GestorDadosPage() {
     },
     {
       href: "/gestor-dados/ingredientes",
-      label: "Cadastrar ingrediente",
+      label: "Cadastrar insumo",
       icon: Package,
     },
     {
@@ -321,7 +321,7 @@ export default function GestorDadosPage() {
         <p className="px-1 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Produtos:</span> {dashboard.activeProducts} ativos
           <span className="mx-2 opacity-50">·</span>
-          <span className="font-medium text-foreground">Ingredientes:</span> {dashboard.activeIngredients} ativos
+          <span className="font-medium text-foreground">Insumos:</span> {dashboard.activeIngredients} ativos
           <span className="mx-2 opacity-50">·</span>
           <span className="font-medium text-foreground">Lojas:</span> {dashboard.activeStores} ativas
         </p>

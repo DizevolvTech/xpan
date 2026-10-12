@@ -26,9 +26,13 @@ import {
 import { validateIngredientFormState, findDuplicateExternalCode, normalizeExternalCode } from "@/lib/ingredient-form-logic";
 import { isMassOrVolumeUnit } from "@/lib/factory-planning/units";
 import { getOperationalUnitLabel, getOperationalUnitOptions } from "@/lib/operational-units";
-import type {
-  IngredientCompositionItem,
-  ProductionIngredient,
+import {
+  normalizeSupplyClass,
+  supplyClassLabels,
+  supplyClasses,
+  type IngredientCompositionItem,
+  type ProductionIngredient,
+  type SupplyClass,
 } from "@/lib/production-planning";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -42,6 +46,7 @@ type IngredientFormState = {
   name: string;
   shortName: string;
   type: ProductionIngredient["type"];
+  supplyClass: SupplyClass;
   unit: ProductionIngredient["unit"];
   purchaseUnit: ProductionIngredient["purchaseUnit"];
   purchaseToConsumptionFactor: number;
@@ -71,6 +76,7 @@ function buildFormState(ingredient?: ProductionIngredient | null): IngredientFor
     name: ingredient?.name ?? "",
     shortName: ingredient?.shortName ?? "",
     type: ingredient?.type ?? "puro",
+    supplyClass: normalizeSupplyClass(ingredient?.supplyClass),
     unit: ingredient?.unit ?? "Kg",
     purchaseUnit: ingredient?.purchaseUnit ?? ingredient?.unit ?? "Kg",
     purchaseToConsumptionFactor:
@@ -368,7 +374,7 @@ export function IngredientFormDialog({
         | null;
 
       if (!response.ok) {
-        throw new Error(body?.message ?? "Falha ao salvar ingrediente");
+        throw new Error(body?.message ?? "Falha ao salvar insumo");
       }
 
       const nextSnapshot = await refresh();
@@ -388,7 +394,7 @@ export function IngredientFormDialog({
 
       onOpenChange(false);
     } catch (saveError) {
-      setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar ingrediente");
+      setFormError(saveError instanceof Error ? saveError.message : "Falha ao salvar insumo");
     } finally {
       setIsSubmitting(false);
     }
@@ -413,14 +419,14 @@ export function IngredientFormDialog({
         <DialogHeader>
           <DialogTitle>
             {!ingredient
-              ? "Cadastrar Novo Ingrediente"
+              ? "Cadastrar Novo Insumo"
               : isReadOnly
-                ? "Visualizar Ingrediente"
-                : "Editar Ingrediente"}
+                ? "Visualizar Insumo"
+                : "Editar Insumo"}
           </DialogTitle>
           <DialogDescription>
             {isReadOnly
-              ? "Consulte o cadastro técnico, a composição e o código ERP sem alterar o ingrediente."
+              ? "Consulte o cadastro técnico, a composição e o código ERP sem alterar o insumo."
               : "Informe o código ERP primeiro. Se o código já existir, o aviso aparece imediatamente — antes de preencher o restante do cadastro."}
           </DialogDescription>
         </DialogHeader>
@@ -432,7 +438,7 @@ export function IngredientFormDialog({
           ) : null}
           {isReadOnly ? (
             <div className="flex flex-col gap-3 rounded-lg border border-info/40 bg-info/10 px-3 py-2 text-sm text-info-foreground sm:flex-row sm:items-center sm:justify-between">
-              <span>Modo visualização: revise os dados do ingrediente sem alterar o cadastro.</span>
+              <span>Modo visualização: revise os dados do insumo sem alterar o cadastro.</span>
               {ingredient && onRequestEdit ? (
                 <Button type="button" variant="outline" size="sm" onClick={onRequestEdit}>
                   <Pencil className="size-4" />
@@ -443,7 +449,7 @@ export function IngredientFormDialog({
           ) : null}
           {formDirty ? (
             <div className="rounded-lg border border-warning/40 bg-warning/20 px-3 py-2 text-sm text-warning-foreground">
-              Existem alterações pendentes neste ingrediente.
+              Existem alterações pendentes neste insumo.
             </div>
           ) : null}
 
@@ -498,7 +504,7 @@ export function IngredientFormDialog({
           <fieldset disabled={isReadOnly || erpGateBlocked} className="grid gap-5">
             <div className="grid gap-4 md:grid-cols-3">
               <div className="grid gap-2">
-                <Label htmlFor="ingredient-name">Nome completo do ingrediente *</Label>
+                <Label htmlFor="ingredient-name">Nome completo do insumo *</Label>
                 <Input
                   id="ingredient-name"
                   aria-invalid={invalidFields.includes("name")}
@@ -527,6 +533,35 @@ export function IngredientFormDialog({
               <div className="grid gap-2">
                 <Label>Código XPAN</Label>
                 <Input value={formState.code} disabled className="bg-muted" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Classe do insumo *</Label>
+                <Select
+                  value={formState.supplyClass}
+                  disabled={isReadOnly}
+                  onValueChange={(value) =>
+                    setFormState((current) => ({ ...current, supplyClass: normalizeSupplyClass(value) }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {supplyClasses.map((supplyClass) => (
+                      <SelectItem key={supplyClass} value={supplyClass}>
+                        {supplyClass} · {supplyClassLabels[supplyClass]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  <strong className="text-foreground">MP</strong> matéria-prima;{" "}
+                  <strong className="text-foreground">ME</strong> material de embalagem;{" "}
+                  <strong className="text-foreground">MC</strong> material de consumo.{" "}
+                  <strong className="text-foreground">MPI</strong> (matéria-prima intermediária) é um
+                  produto marcado como insumo e fica em Produtos. A classe só organiza o cadastro: ME e
+                  MC entram sugeridos em &ldquo;Insumos operacionais&rdquo; na ficha técnica.
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label>Tipo *</Label>
@@ -692,7 +727,7 @@ export function IngredientFormDialog({
                 </Button>
               ) : null}
               <Button type="button" onClick={() => void handleSave()} disabled={isSubmitting || erpGateBlocked}>
-                {ingredient ? "Salvar Alterações" : "Cadastrar Ingrediente"}
+                {ingredient ? "Salvar Alterações" : "Cadastrar Insumo"}
               </Button>
             </>
           ) : null}

@@ -147,3 +147,55 @@ test("etapa operacional: fora da massa, da quebra e da masseira; acabamento soma
   assert.equal(recipeStageAddsAfterBake("operacional"), false);
   assert.equal(recipeStageAddsAfterBake("cobertura"), false);
 });
+
+// ── Classe do insumo (MP / ME / MC; MPI é produto) ──────────────────────────────────────────────
+import {
+  defaultSupplyClass,
+  normalizeSupplyClass,
+  supplyClassLabels,
+  supplyClassStageWarning,
+  supplyClasses,
+  suggestedRecipeStageForSupplyClass,
+} from "./production-planning";
+
+test("classe do insumo: só MP, ME e MC são gravadas; MPI é rótulo de produto", () => {
+  assert.deepEqual(supplyClasses, ["MP", "ME", "MC"]);
+  assert.equal(supplyClassLabels.MPI, "Matéria-prima intermediária");
+  assert.equal(supplyClassLabels.ME, "Material de embalagem");
+  assert.equal(supplyClassLabels.MC, "Material de consumo");
+  assert.equal(supplyClassLabels.MP, "Matéria-prima");
+});
+
+test("classe do insumo: valor desconhecido, vazio ou MPI cai em MP (nunca quebra o cadastro antigo)", () => {
+  // Valor literal "MP": o insumo que já existe é matéria-prima. Comparar só com a constante
+  // não pegaria a troca do padrão.
+  assert.equal(defaultSupplyClass, "MP");
+  for (const value of [undefined, null, "", "mp", "MPI", "XX", 3, {}]) {
+    assert.equal(normalizeSupplyClass(value), "MP", String(value));
+  }
+  assert.equal(normalizeSupplyClass("ME"), "ME");
+  assert.equal(normalizeSupplyClass("MC"), "MC");
+  assert.equal(normalizeSupplyClass("MP"), "MP");
+});
+
+test("classe do insumo: ME e MC sugerem a etapa operacional; MP não sugere nada", () => {
+  assert.equal(suggestedRecipeStageForSupplyClass("ME"), "operacional");
+  assert.equal(suggestedRecipeStageForSupplyClass("MC"), "operacional");
+  assert.equal(suggestedRecipeStageForSupplyClass("MP"), null);
+  assert.equal(suggestedRecipeStageForSupplyClass(undefined), null);
+});
+
+test("aviso de etapa: ME/MC em etapa de massa avisa; fora da massa ou MP não avisa", () => {
+  // Toda etapa que conta como massa na quebra (inclui recheio, cobertura e montagem) avisa.
+  for (const stage of ["esponja", "massa", "recheio", "cobertura", "montagem"] as const) {
+    assert.match(supplyClassStageWarning("ME", stage) ?? "", /Material de embalagem.*massa.*quebra.*batida/, stage);
+    assert.match(supplyClassStageWarning("MC", stage) ?? "", /Material de consumo/, stage);
+  }
+  assert.match(supplyClassStageWarning("ME", "massa") ?? "", /Insumos operacionais/);
+  // Só as etapas que já ficam fora da massa não avisam.
+  for (const stage of ["operacional", "acabamento"] as const) {
+    assert.equal(supplyClassStageWarning("ME", stage), null, `ME em ${stage}`);
+  }
+  assert.equal(supplyClassStageWarning("MP", "massa"), null);
+  assert.equal(supplyClassStageWarning(undefined, "massa"), null);
+});

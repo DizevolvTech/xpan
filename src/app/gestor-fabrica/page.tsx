@@ -927,7 +927,7 @@ export default function GestorFabricaPage() {
                 <option value="g">{weightDisplayUnitLabels.g}</option>
               </select>
               <p className="text-xs text-muted-foreground">
-                Só muda como a Ordem de Produção é exibida e impressa. O cadastro de ingredientes continua em Kg e nada
+                Só muda como a Ordem de Produção é exibida e impressa. O cadastro de insumos continua em Kg e nada
                 é alterado nos dados. Quem emite a OP ainda pode trocar a unidade na hora.
               </p>
             </div>

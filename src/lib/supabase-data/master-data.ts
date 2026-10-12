@@ -24,7 +24,7 @@ import type {
   WeeklyProductionSchedule,
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
-import { normalizeRecipeStage, normalizeRecipeStageConfig } from "@/lib/production-planning";
+import { normalizeRecipeStage, normalizeRecipeStageConfig, normalizeSupplyClass } from "@/lib/production-planning";
 import { normalizeLabTest } from "@/lib/lab-test";
 import { normalizeScheduleDayPriorities } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
@@ -317,6 +317,7 @@ async function loadMasterDataSnapshot(
     name: row.name,
     shortName: row.short_name ?? undefined,
     type: row.type,
+    supplyClass: normalizeSupplyClass((row as { supply_class?: string | null }).supply_class),
     unit: row.unit as ProductionIngredient["unit"],
     purchaseUnit: (row.purchase_unit ?? row.unit) as ProductionIngredient["purchaseUnit"],
     purchaseToConsumptionFactor: Number(row.purchase_to_consumption_factor ?? 1),

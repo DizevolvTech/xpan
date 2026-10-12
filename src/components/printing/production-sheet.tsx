@@ -86,7 +86,7 @@ function IngredientTable({
             Pré pesagem
           </th>
           <th className="border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-            Ingredientes
+            Insumos
           </th>
           {showBatchColumn ? (
             <th className="w-28 border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
@@ -116,7 +116,7 @@ function IngredientTable({
                 <tr className="bg-stone-100">
                   <td className="border-t-2 border-stone-400 px-3 py-1.5" />
                   <td className="border-t-2 border-stone-400 px-3 py-1.5 text-sm font-bold text-stone-900">
-                    Ingredientes {group.label.toLocaleLowerCase("pt-BR")}:
+                    Insumos {group.label.toLocaleLowerCase("pt-BR")}:
                   </td>
                   {showBatchColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
                   {showPartialColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
@@ -190,7 +190,7 @@ function IngredientProductSection({ section, weight }: { section: ProductIngredi
     <article className="overflow-hidden border border-stone-400">
       <header className="grid grid-cols-[132px_84px_1fr_180px] border-b border-stone-400 bg-stone-300 text-stone-900 print:break-inside-avoid">
         <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
-          Produto Ingrediente
+          Produto MPI
         </div>
         <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
         <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">

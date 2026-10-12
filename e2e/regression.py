@@ -226,8 +226,8 @@ def run():
             try:
                 goto(page, "/gestor-dados/ingredientes")
                 ing = body(page)
-                if re.search(r"Ingrediente puro|Produto MPI|Misturado", ing, re.I):
-                    rec("AJ-0020-list", "PASS", "listagem de ingredientes diferencia tipos")
+                if re.search(r"Insumo puro|Produto MPI|Misturado", ing, re.I):
+                    rec("AJ-0020-list", "PASS", "listagem de insumos diferencia tipos")
                 else:
                     rec("AJ-0020-list", "SKIP", "rótulos de tipo não visíveis na lista")
                 screen_ok(page, "/gestor-dados/produtos", "gestor-dados-produtos")

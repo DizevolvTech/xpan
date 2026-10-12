@@ -7,6 +7,55 @@ export type RecordStatus = "ativo" | "inativo";
 export type LineType = "Seco" | "Úmido";
 export type ScheduleStatus = "pendente" | "ativo" | "inativo";
 export type IngredientType = "puro" | "misturado";
+
+/**
+ * Classe do insumo (Gestão de Insumos). Só classifica: nenhum cálculo lê a classe.
+ * - MP  Matéria-prima (farinha, açúcar, ovos…).
+ * - MPI Matéria-prima intermediária: é um PRODUTO marcado "pode ser insumo", não um registro de
+ *       insumo — por isso não existe como valor gravado aqui, só como rótulo de listagem.
+ * - ME  Material de embalagem.
+ * - MC  Material de consumo.
+ */
+export type SupplyClass = "MP" | "ME" | "MC";
+export type SupplyClassLabelKey = SupplyClass | "MPI";
+
+export const supplyClasses: SupplyClass[] = ["MP", "ME", "MC"];
+export const defaultSupplyClass: SupplyClass = "MP";
+
+export const supplyClassLabels: Record<SupplyClassLabelKey, string> = {
+  MP: "Matéria-prima",
+  MPI: "Matéria-prima intermediária",
+  ME: "Material de embalagem",
+  MC: "Material de consumo",
+};
+
+export function normalizeSupplyClass(value: unknown): SupplyClass {
+  return value === "ME" || value === "MC" || value === "MP" ? value : defaultSupplyClass;
+}
+
+/**
+ * Etapa SUGERIDA ao incluir o insumo na ficha técnica. Embalagem e consumo não são massa:
+ * sugerir "Insumos operacionais" os mantém fora da massa crua, da quebra e da batida, mas
+ * dentro do peso final e da OP. É só sugestão — o usuário pode trocar a etapa.
+ */
+export function suggestedRecipeStageForSupplyClass(supplyClass: SupplyClass | undefined): RecipeStage | null {
+  return supplyClass === "ME" || supplyClass === "MC" ? "operacional" : null;
+}
+
+/**
+ * Aviso mostrado ao incluir ME/MC numa etapa que conta como massa. Embalagem e material de consumo
+ * não são massa: nessa etapa entrariam no peso da massa crua, na quebra e no limite da batida.
+ * Devolve null quando não há nada a avisar (MP, MPI ou etapa que já é fora da massa).
+ */
+export function supplyClassStageWarning(
+  supplyClass: SupplyClass | undefined,
+  stage: RecipeStage,
+): string | null {
+  if (suggestedRecipeStageForSupplyClass(supplyClass) == null) return null;
+  if (!recipeStageCountsTowardDough(stage)) return null;
+  const label = supplyClass === "ME" ? "Material de embalagem" : "Material de consumo";
+  return `${label} nesta etapa entra no peso da massa, na quebra e no limite da batida. Para manter fora desses cálculos, use a etapa "${recipeStageLabels.operacional}".`;
+}
 export type RecipeSourceType = "ingrediente" | "produto";
 export type ProductPreparationStageKey =
   | "em_preparacao"
@@ -313,6 +362,8 @@ export interface ProductionIngredient {
   name: string;
   shortName?: string;
   type: IngredientType;
+  /** Classe do insumo (MP/ME/MC). Ausente = MP. Só classifica; não entra em nenhum cálculo. */
+  supplyClass?: SupplyClass;
   unit: UnitCode;
   purchaseUnit?: UnitCode;
   purchaseToConsumptionFactor?: number;

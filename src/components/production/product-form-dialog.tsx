@@ -39,11 +39,14 @@ import {
   recipeItemCountsTowardMixer,
   recipeStageLabels,
   recipeStages,
+  supplyClassLabels,
+  supplyClassStageWarning,
   type BreakStage,
   type IngredientCompositionItem,
   type PackagingProfile,
   type ProductLabTest,
   type ProductUnitProfile,
+  type ProductionIngredient,
   type ProductionLine,
   type ProductionProduct,
   type RecipeIngredientReference,
@@ -509,7 +512,11 @@ export function ProductFormDialog({
           value: option.id,
           label: option.label,
           description: [
-            option.sourceType === "ingrediente" ? "Ingrediente cadastrado" : "Produto MPI",
+            option.sourceType === "ingrediente"
+              ? `Insumo ${(source as ProductionIngredient | undefined)?.supplyClass ?? "MP"} · ${
+                  supplyClassLabels[(source as ProductionIngredient | undefined)?.supplyClass ?? "MP"]
+                }`
+              : `Insumo MPI · ${supplyClassLabels.MPI}`,
             externalCode ? `ERP ${externalCode}` : null,
           ]
             .filter((part): part is string => Boolean(part))
@@ -858,7 +865,7 @@ export function ProductFormDialog({
 
   async function handleSaveProduct() {
     if (formState.maxBatchWeightKg != null && mixerCapacity.capacity == null) {
-      setFormError("Revise o limite máximo, os ingredientes marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira.");
+      setFormError("Revise o limite máximo, os insumos marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira.");
       return;
     }
     const normalizedPackagingProfile = formState.isSoldLoose
@@ -1620,8 +1627,8 @@ export function ProductFormDialog({
             <fieldset disabled={isReadOnly} className="min-w-0 space-y-5">
               <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
                 <strong>Como preencher a receita</strong>
-                <p>1. Confira unidades e pesos. 2. Informe ingredientes, quantidades e etapas. 3. Preencha o rendimento. 4. Informe o limite máximo da batida.</p>
-                <p>Preenchimento manual: campos editáveis. Calculado pelo XPAN: valores em painéis sombreados. Campos com * são obrigatórios para adicionar um ingrediente.</p>
+                <p>1. Confira unidades e pesos. 2. Informe insumos, quantidades e etapas. 3. Preencha o rendimento. 4. Informe o limite máximo da batida.</p>
+                <p>Preenchimento manual: campos editáveis. Calculado pelo XPAN: valores em painéis sombreados. Campos com * são obrigatórios para adicionar um insumo.</p>
               </div>
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
@@ -1948,13 +1955,13 @@ export function ProductFormDialog({
                     <h3 className="text-sm font-semibold text-foreground">2. Composição da receita · Preenchimento manual</h3>
                     <p className="text-xs text-muted-foreground">
                       A ficha é montada em BLOCOS, na mesma ordem em que a produção executa: cada
-                      etapa tem os ingredientes dela e o seu próprio modo de preparo. O mesmo insumo
+                      etapa tem os insumos dela e o seu próprio modo de preparo. O mesmo insumo
                       pode entrar em mais de um bloco (ex.: farinha na esponja e na massa) com pesos
                       próprios.
                     </p>
                   </div>
                   <span className="rounded-full border border-border/70 bg-panel/30 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-                    {recipeStageBlocks.length} bloco(s) · {formState.recipe.length} ingrediente(s)
+                    {recipeStageBlocks.length} bloco(s) · {formState.recipe.length} insumo(s)
                   </span>
                 </div>
 
@@ -1982,8 +1989,8 @@ export function ProductFormDialog({
                             </h4>
                             <span className="text-xs text-muted-foreground">
                               {block.items.length === 0
-                                ? "sem ingredientes"
-                                : `${block.items.length} ingrediente(s)`}
+                                ? "sem insumos"
+                                : `${block.items.length} insumo(s)`}
                             </span>
                           </div>
                           <div className="flex gap-1">
@@ -2018,7 +2025,7 @@ export function ProductFormDialog({
                               disabled={!blockCanBeRemoved}
                               title={
                                 block.items.length > 0
-                                  ? "Remova os ingredientes antes de excluir o bloco"
+                                  ? "Remova os insumos antes de excluir o bloco"
                                   : "Remover este bloco da ficha"
                               }
                               aria-label={`Remover bloco ${recipeStageLabels[block.stage]}`}
@@ -2042,7 +2049,7 @@ export function ProductFormDialog({
                             placeholder={`Como executar ${recipeStageLabels[block.stage].toLowerCase()}: mistura, tempo, ponto...`}
                           />
                           <p className="text-xs text-muted-foreground">
-                            Instrução deste bloco — sai junto dos ingredientes dele na folha. A
+                            Instrução deste bloco — sai junto dos insumos dele na folha. A
                             instrução geral do produto continua em “Instruções de preparo”, no fim
                             desta aba.
                           </p>
@@ -2050,7 +2057,7 @@ export function ProductFormDialog({
 
                         {block.items.length === 0 ? (
                           <p className="rounded-lg border border-dashed border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
-                            Nenhum ingrediente neste bloco ainda.
+                            Nenhum insumo neste bloco ainda.
                           </p>
                         ) : (
                           <div className="overflow-x-auto rounded-xl border border-border/70">
@@ -2208,8 +2215,8 @@ export function ProductFormDialog({
                                           aria-pressed={item.isMain ?? false}
                                           title={
                                             item.isMain
-                                              ? "Ingrediente principal (clique para desmarcar)"
-                                              : "Marcar como ingrediente principal — referência dos percentuais da receita"
+                                              ? "Insumo principal (clique para desmarcar)"
+                                              : "Marcar como insumo principal — referência dos percentuais da receita"
                                           }
                                         >
                                           <Star
@@ -2244,7 +2251,7 @@ export function ProductFormDialog({
                                           size="icon-sm"
                                           className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
                                           onClick={() => removeRecipeItem(item.id)}
-                                          title="Remover ingrediente"
+                                          title="Remover insumo"
                                         >
                                           <Trash2 className="size-4" />
                                         </Button>
@@ -2260,7 +2267,7 @@ export function ProductFormDialog({
                         <div className="grid gap-3 rounded-lg border border-border/70 bg-card p-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                           <div className="grid gap-2">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <Label>Ingrediente / Produto MPI *</Label>
+                              <Label>Insumo / Produto MPI *</Label>
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -2272,7 +2279,7 @@ export function ProductFormDialog({
                                 }}
                               >
                                 <Plus className="size-3.5" />
-                                Novo ingrediente
+                                Novo insumo
                               </Button>
                             </div>
                             <SearchableSelect
@@ -2283,8 +2290,19 @@ export function ProductFormDialog({
                                 searchPlaceholder="Buscar por nome, código XPAN ou código ERP..."
                                 emptyMessage="Nenhuma referência encontrada."
                                 title={`Adicionar em ${recipeStageLabels[block.stage]}`}
-                                description="Busque por nome, código XPAN ou código ERP do ingrediente ou produto MPI."
+                                description="Busque por nome, código XPAN ou código ERP do insumo ou produto MPI."
                               />
+                              {(() => {
+                                const picked = snapshot.ingredients.find(
+                                  (ingredient) => ingredient.id === draft.sourceId,
+                                );
+                                const warning = supplyClassStageWarning(picked?.supplyClass, block.stage);
+                                return warning ? (
+                                  <p role="status" className="text-xs leading-relaxed text-warning-foreground">
+                                    {warning}
+                                  </p>
+                                ) : null;
+                              })()}
                           </div>
                           <div className="grid gap-2">
                             <Label>Quantidade *</Label>
@@ -2327,7 +2345,7 @@ export function ProductFormDialog({
                             type="button"
                             onClick={() => addRecipeItem(block.stage)}
                             disabled={!draft.sourceId || !draft.quantity}
-                            title={`Adicionar ingrediente em ${recipeStageLabels[block.stage]}`}
+                            title={`Adicionar insumo em ${recipeStageLabels[block.stage]}`}
                           >
                             <Plus className="size-4" />
                             Adicionar
@@ -2413,7 +2431,7 @@ export function ProductFormDialog({
                       }
                     />
                     <p className="text-[11px] text-amber-900/70">
-                      Vazio = usa a soma dos ingredientes.
+                      Vazio = usa a soma dos insumos.
                     </p>
                   </div>
                   <div className="grid gap-2">
@@ -2545,7 +2563,7 @@ export function ProductFormDialog({
                   <h3 className="text-sm font-semibold text-foreground">4. Capacidade e parâmetros de produção</h3>
                   <p className="text-xs text-muted-foreground">
                     Validade, lote mínimo (aviso) e limite da masseira. A capacidade por batida
-                    é calculada pela soma dos ingredientes marcados em “Na batida?”.
+                    é calculada pela soma dos insumos marcados em “Na batida?”.
                   </p>
                 </div>
 
@@ -2600,7 +2618,7 @@ export function ProductFormDialog({
                       {formState.maxBatchWeightKg == null
                           ? "Informe a capacidade total da masseira para ativar o cálculo automático. Produtos existentes conservam sua configuração até o preenchimento."
                           : derivedBatchCapacity === null
-                            ? "Revise os ingredientes marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira."
+                            ? "Revise os insumos marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira."
                             : `Capacidade ${formatLocaleNumber(derivedBatchCapacity)} ${salesUnitLabel} por batida · base econômica ${formatKgLabel(
                                 formState.economicProductionKg,
                                 { minimumFractionDigits: 3, maximumFractionDigits: 3 },
@@ -2616,7 +2634,7 @@ export function ProductFormDialog({
                     <Label>Calculado pelo XPAN</Label>
                     <p>{derivedBatchCapacity ?? "—"} {salesUnitLabel} inteiras por batida</p>
                     <p>Peso planejado: {formatKgLabel(mixerCapacity.plannedWeightKg)}</p>
-                    <p className="text-xs">Soma os ingredientes marcados em “Na batida?” e arredonda as unidades para baixo. Na OP, o restante gera uma batida complementar com ingredientes proporcionais.</p>
+                    <p className="text-xs">Soma os insumos marcados em “Na batida?” e arredonda as unidades para baixo. Na OP, o restante gera uma batida complementar com insumos proporcionais.</p>
                   </div>
                   <div className="grid gap-2">
                     <Label>Unidade do lote econômico</Label>
@@ -2691,7 +2709,7 @@ export function ProductFormDialog({
                     Totais da Receita
                   </p>
                   <p className="mt-2 text-lg font-semibold text-foreground">
-                    Total de ingredientes:{" "}
+                    Total de insumos:{" "}
                     {formatKgLabel(recipeTotals.totalIngredientsKg, {
                       minimumFractionDigits: 3,
                       maximumFractionDigits: 3,
@@ -2946,7 +2964,7 @@ export function ProductFormDialog({
                   />
                   <div>
                     <Label htmlFor="mpi-enabled" className="text-sm font-semibold">
-                      Este produto pode ser usado como ingrediente (MPI)
+                      Este produto pode ser usado como insumo (MPI)
                     </Label>
                     <p className="text-sm text-muted-foreground">
                       Quando ativado, o produto aparece como insumo disponível nas receitas de
@@ -2955,10 +2973,10 @@ export function ProductFormDialog({
                     <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                       <strong className="text-foreground">Produto MPI</strong> = item que pode
                       ser <em>vendido</em> e também <em>reutilizado</em> em outra receita. É
-                      diferente do <strong className="text-foreground">ingrediente puro</strong>{" "}
+                      diferente do <strong className="text-foreground">insumo puro</strong>{" "}
                       (comprado direto do fornecedor) e do{" "}
-                      <strong className="text-foreground">ingrediente misturado</strong>{" "}
-                      (receita interna que não é vendida), cadastrados em Ingredientes.
+                      <strong className="text-foreground">insumo misturado</strong>{" "}
+                      (receita interna que não é vendida), cadastrados em Insumos.
                     </p>
                   </div>
                 </div>
@@ -2966,8 +2984,8 @@ export function ProductFormDialog({
                 {formState.canBeIngredient ? (
                   <div className="space-y-4">
                     <IngredientProfileFields
-                      title="Perfil espelhado do ingrediente"
-                      description="Os mesmos campos do ingrediente ficam disponíveis aqui para o MPI reaproveitável."
+                      title="Perfil espelhado do insumo"
+                      description="Os mesmos campos do insumo ficam disponíveis aqui para o MPI reaproveitável."
                       profile={{
                         unit: formState.ingredientProfile?.unit ?? "Kg",
                         weightKg:
@@ -3043,7 +3061,7 @@ export function ProductFormDialog({
 
                     <IngredientCompositionEditor
                       title="Composição do MPI"
-                      description="Espelho somente leitura da receita técnica que alimenta este ingrediente reutilizável."
+                      description="Espelho somente leitura da receita técnica que alimenta este insumo reutilizável."
                       composition={mpiCompositionPreview}
                       emptyMessage="Nenhum item na receita. Adicione componentes na aba Receita."
                       readOnly
@@ -3051,7 +3069,7 @@ export function ProductFormDialog({
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-border/70 bg-panel/20 p-4 text-sm text-muted-foreground">
-                    Ative a flag acima para espelhar os campos do cadastro de ingrediente dentro do
+                    Ative a flag acima para espelhar os campos do cadastro de insumo dentro do
                     produto.
                   </div>
                 )}

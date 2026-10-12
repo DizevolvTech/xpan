@@ -27,7 +27,7 @@ const AUDITED_FIELDS: Array<{ field: string; label: string }> = [
   { field: "capacity_per_batch", label: "Capacidade por batida" },
   { field: "max_batch_weight_kg", label: "Limite máximo da batida (Kg)" },
   { field: "economic_batch_unit", label: "Unidade do lote econômico" },
-  { field: "main_ingredient_limit_kg", label: "Limite do ingrediente principal (Kg)" },
+  { field: "main_ingredient_limit_kg", label: "Limite do insumo principal (Kg)" },
   { field: "validity_days", label: "Validade (dias)" },
   { field: "production_days", label: "Dias de produção" },
   { field: "expedition_lead_days", label: "Lead de expedição" },
@@ -36,7 +36,7 @@ const AUDITED_FIELDS: Array<{ field: string; label: string }> = [
   { field: "break_percent", label: "Quebra (%)" },
   { field: "lab_test", label: "Teste de laboratório" },
   { field: "break_stage", label: "Etapa da quebra" },
-  { field: "can_be_ingredient", label: "Pode ser ingrediente (MPI)" },
+  { field: "can_be_ingredient", label: "Pode ser insumo (MPI)" },
   { field: "is_sold_loose", label: "Vendido a granel" },
   { field: "weight_label", label: "Peso" },
 ];

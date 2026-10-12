@@ -684,3 +684,33 @@ test("teste de laboratório compara o assado com a MASSA (sem operacional): assa
   // OP: teste incompleto escala com 3 casas (completo usaria 6).
   assert.equal(scaleRecipeQuantity(1, product, [], [], 0.123456), 0.012);
 });
+
+// ── A classe do insumo (MP/ME/MC) só classifica: nenhum cálculo a lê ─────────────────────────────
+test("classe do insumo não muda massa, quebra, peso total nem rendimento: MP == ME == MC na mesma etapa", () => {
+  const item = (stage: "massa" | "operacional") => ({ id: "r", sourceType: "ingrediente" as const, sourceId: "ingredient-eggs", label: "Insumo", quantity: 2, unit: "Kg" as const, stage });
+  const eggs = ingredients.find((entry) => entry.id === "ingredient-eggs")!;
+  for (const stage of ["massa", "operacional"] as const) {
+    const totals = (supplyClass: "MP" | "ME" | "MC") =>
+      getProductRecipeTotalsFromData({ ...baseProduct, labTest: undefined, breakPercent: 10, recipe: [item(stage)] }, [{ ...eggs, supplyClass }], []);
+    const mp = totals("MP");
+    assert.deepEqual(totals("ME"), mp, `ME == MP em ${stage}`);
+    assert.deepEqual(totals("MC"), mp, `MC == MP em ${stage}`);
+  }
+});
+
+test("ME/MC todos os tipos entram na ficha: na etapa operacional contam no peso final e fora da massa", () => {
+  const eggs = ingredients.find((entry) => entry.id === "ingredient-eggs")!;
+  const product: ProductionProduct = { ...baseProduct, labTest: undefined, breakPercent: 0, recipe: [
+    { id: "m", sourceType: "ingrediente", sourceId: "ingredient-eggs", label: "MP", quantity: 10, unit: "Kg", stage: "massa" },
+    { id: "e", sourceType: "ingrediente", sourceId: "me", label: "ME", quantity: 0.2, unit: "Kg", stage: "operacional" },
+    { id: "c", sourceType: "ingrediente", sourceId: "mc", label: "MC", quantity: 0.1, unit: "Kg", stage: "operacional" },
+  ] };
+  const list: ProductionIngredient[] = [
+    { ...eggs, supplyClass: "MP" },
+    { ...eggs, id: "me", supplyClass: "ME" },
+    { ...eggs, id: "mc", supplyClass: "MC" },
+  ];
+  const totals = getProductRecipeTotalsFromData(product, list, []);
+  assert.equal(totals.totalIngredientsKg, 10.3, "peso total inclui ME e MC");
+  assert.equal(totals.doughKg, 10, "massa não inclui ME e MC");
+});

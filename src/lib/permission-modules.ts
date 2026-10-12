@@ -234,7 +234,7 @@ export const permissionModules = [
   },
   {
     id: "gestor-dados.ingredientes",
-    label: "Ingredientes",
+    label: "Insumos",
     route: "/gestor-dados/ingredientes",
     group: "gestor-dados",
     icon: "package",
@@ -351,7 +351,7 @@ export const permissionModules = [
   },
   {
     id: "gestor-fabrica.consumo-ingredientes",
-    label: "Consumo de Ingredientes",
+    label: "Consumo de Insumos",
     route: "/gestor-fabrica/consumo-ingredientes",
     group: "gestor-fabrica",
     icon: "package",

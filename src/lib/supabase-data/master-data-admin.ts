@@ -11,7 +11,7 @@ import type {
   RecipeIngredientReference,
   StoreMasterData,
 } from "@/lib/production-planning";
-import { normalizeRecipeStage, normalizeRecipeStageConfig, defaultCountsTowardMixer } from "@/lib/production-planning";
+import { normalizeRecipeStage, normalizeRecipeStageConfig, defaultCountsTowardMixer, normalizeSupplyClass } from "@/lib/production-planning";
 import { isProductCodeSource, normalizeGtin, type ProductCodeSource } from "@/lib/product-identity";
 import { normalizeLabTest } from "@/lib/lab-test";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -114,7 +114,7 @@ async function withCalculatedBatchCapacity(input: ProductInput, supabase: Supaba
   if (input.maxBatchWeightKg == null) return input;
   const snapshot = await getMasterDataSnapshot({ supabase, tenantId, includeProfileNames: false, forceRefresh: true });
   const result = calculateMixerCapacity({ ...input, id: "draft", code: input.code ?? "" }, snapshot.ingredients, snapshot.products);
-  if (result.capacity == null) throw new MasterDataValidationError("Limite máximo da batida inválido: informe a capacidade, ingredientes com peso e rendimento suficientes para pelo menos uma unidade inteira.");
+  if (result.capacity == null) throw new MasterDataValidationError("Limite máximo da batida inválido: informe a capacidade, insumos com peso e rendimento suficientes para pelo menos uma unidade inteira.");
   return { ...input, capacityPerBatch: result.capacity };
 }
 
@@ -745,7 +745,7 @@ async function assertIngredientExternalCodeEditable(
     assertSupabaseResult(recipeUsageResult, "Failed to load ingredient recipe usage").length > 0;
 
   if (hasUsage) {
-    throw new Error("O código ERP não pode ser alterado após o ingrediente entrar em movimentação.");
+    throw new Error("O código ERP não pode ser alterado após o insumo entrar em movimentação.");
   }
 }
 
@@ -802,6 +802,7 @@ export async function createIngredient(input: IngredientInput, options: Mutation
       name: input.name.trim(),
       short_name: normalizeOptionalText(input.shortName),
       type: input.type,
+      supply_class: normalizeSupplyClass(input.supplyClass),
       unit: input.unit,
       purchase_unit: input.purchaseUnit ?? input.unit,
       purchase_to_consumption_factor:
@@ -816,10 +817,11 @@ export async function createIngredient(input: IngredientInput, options: Mutation
   };
 
   let insertResult = await supabase.from("ingredients").insert(insertPayload).select("id").single();
-  if (isSupabaseMissingSchemaError(insertResult.error, ["weight_kg", "recipe_yield_kg"])) {
-    const { weight_kg: _w, recipe_yield_kg: _y, ...legacyPayload } = insertPayload;
+  if (isSupabaseMissingSchemaError(insertResult.error, ["weight_kg", "recipe_yield_kg", "supply_class"])) {
+    const { weight_kg: _w, recipe_yield_kg: _y, supply_class: _c, ...legacyPayload } = insertPayload;
     void _w;
     void _y;
+    void _c;
     insertResult = await supabase.from("ingredients").insert(legacyPayload).select("id").single();
   }
 
@@ -855,6 +857,7 @@ export async function updateIngredient(
       name: input.name.trim(),
       short_name: normalizeOptionalText(input.shortName),
       type: input.type,
+      supply_class: normalizeSupplyClass(input.supplyClass),
       unit: input.unit,
       purchase_unit: input.purchaseUnit ?? input.unit,
       purchase_to_consumption_factor:
@@ -870,10 +873,11 @@ export async function updateIngredient(
   };
 
   let result = await supabase.from("ingredients").update(updatePayload).eq("id", ingredientId);
-  if (isSupabaseMissingSchemaError(result.error, ["weight_kg", "recipe_yield_kg"])) {
-    const { weight_kg: _w, recipe_yield_kg: _y, ...legacyPayload } = updatePayload;
+  if (isSupabaseMissingSchemaError(result.error, ["weight_kg", "recipe_yield_kg", "supply_class"])) {
+    const { weight_kg: _w, recipe_yield_kg: _y, supply_class: _c, ...legacyPayload } = updatePayload;
     void _w;
     void _y;
+    void _c;
     result = await supabase.from("ingredients").update(legacyPayload).eq("id", ingredientId);
   }
 

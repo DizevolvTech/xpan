@@ -197,7 +197,7 @@ function buildRowNotes(
   }
 
   if (ingredient?.type === "misturado") {
-    return ingredient.observation || "Ingrediente misturado com composição cadastrada.";
+    return ingredient.observation || "Insumo misturado com composição cadastrada.";
   }
 
   return ingredient?.observation || ingredient?.metadata || undefined;
