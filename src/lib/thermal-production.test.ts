@@ -55,3 +55,15 @@ test("fichas de uma OP trazem o código lido pelo leitor, uma por batida", () =>
   }] } as unknown as ProductionSheetDocument;
   assert.deepEqual(buildThermalTickets(doc, "260902-011").map((t) => t.barcode), ["OP260902011-B01", "OP260902011-B02", "OP260902011-B03"]);
 });
+
+test("Qtd OP por ficha: cada batida mostra só a sua; a soma das fichas fecha o pedido (1.000 un, masseira 230)", () => {
+  const input = { totalKg: 425, capacityPerBatch: 230, salesToKgFactor: 0.425, salesUnit: "Un" };
+  const doc = { deliveryGap: { days: [], label: null }, ingredientSections: [], productSections: [{
+    productId: "p1", productCode: "PR01", productName: "Panetone", plannedKg: 425, requestedQuantity: 1000, requestedUnit: "Un", unitWeightKg: 0.425, unitsCount: 1000,
+    batchSplit: computePreWeighBatchSplit(input), items: [],
+  }] } as unknown as ProductionSheetDocument;
+  const tickets = buildThermalTickets(doc, "260902-011");
+  assert.deepEqual(tickets.map((t) => t.quantity), [230, 230, 230, 230, 80]);
+  assert.equal(tickets.reduce((sum, t) => sum + t.quantity, 0), 1000, "a soma das OPs é o total do pedido");
+  assert.deepEqual(tickets.map((t) => t.complementary), [false, false, false, false, true]);
+});

@@ -46,12 +46,15 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       .thermal-ticket p { margin: 4px 0; }
       .thermal-ticket table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 8px 0; }
       .thermal-ticket th, .thermal-ticket td { border-bottom: 1px dashed #777; padding: 4px 2px; text-align: left; vertical-align: top; }
-      .thermal-ticket th:last-child, .thermal-ticket td:last-child { width: 27mm; text-align: right; }
+      .thermal-ticket th:last-child, .thermal-ticket td:last-child { text-align: right; }
       .thermal-ticket footer { margin-top: 8px; padding-top: 4px; }
       .thermal-ticket .t-head { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; font-size: 11px; line-height: 1.3; margin: 2px 0 4px; }
       .thermal-ticket .t-head p { margin: 0; }
       .thermal-ticket .t-head .line { display: inline-block; width: 16mm; border-bottom: 1px solid #000; height: 11px; vertical-align: bottom; }
-      .thermal-ticket col.c-code { width: 15mm; } .thermal-ticket col.c-qty { width: 20mm; }
+      .thermal-ticket col.c-code { width: 15mm; } .thermal-ticket col.c-qty { width: 19mm; } .thermal-ticket col.c-dp { width: 11mm; }
+      .thermal-ticket th.dp, .thermal-ticket td.dp { text-align: center; padding: 4px 0; white-space: nowrap; font-size: 10px; }
+      .thermal-ticket .box { display: inline-block; width: 3.2mm; height: 3.2mm; border: 1px solid #000; margin: 0 .6mm; vertical-align: middle; }
+      .thermal-ticket .t-head .rend { grid-column: 1 / -1; }
       .thermal-ticket td.code { font-size: 10px; word-break: break-all; }
       .thermal-ticket .ticket-codes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; }
       .thermal-ticket .ticket-qr svg { width: 17mm; height: 17mm; display: block; }
@@ -79,17 +82,16 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       <h1>{ticket.productName}</h1>
       <div className="t-head">
         <p><strong>OP: {code.replace(/^OP-?/i, "")}</strong></p><p>Linha: {line}</p>
-        <p>DT Kit: {productionDate}</p><p><strong>Batida: {ticket.number} de {ticket.count}{ticket.complementary ? " (Parcial)" : ""}</strong></p>
+        <p>DT Kit: <span className="line" /></p><p><strong>Batida: {ticket.number} de {ticket.count}{ticket.complementary ? " (Parcial)" : ""}</strong></p>
         <p>DT Prod: {productionDate}</p><p>Peso: {formatDisplayQuantity(sumTicketWeightKg(ticket.items), "Kg", weight, { maximumFractionDigits: 3 })}</p>
-        <p>DT Entrega: {deliveryDate}</p><p>Qtd OP: {formatTicketQuantity(ticket.totalQuantity, ticket.unit, ticket.kind, weight)}</p>
-        <p>Usuário: <span className="line" /></p><p>REND: <span className="line" /></p>
+        <p>DT Entrega: {deliveryDate}</p><p><strong>Qtd OP: {formatTicketQuantity(ticket.quantity, ticket.unit, ticket.kind, weight)}</strong></p>
+        <p>Usuário: <span className="line" /></p><p className="rend">REND: prev. {formatTicketQuantity(ticket.quantity, ticket.unit, ticket.kind, weight)} · real <span className="line" /></p>
       </div>
-      <p><strong>Esta batida: {formatTicketQuantity(ticket.quantity, ticket.unit, ticket.kind, weight)}</strong></p>
       {groupPrintRowsByStage(ticket.items, ticket.recipeStageConfig).map(group => <section key={group.stage}>
         <h2>{group.label}</h2>
-        <table><colgroup><col className="c-code" /><col /><col className="c-qty" /></colgroup>
-        <thead><tr><th>Código</th><th>Insumo / Massa</th><th>Peso</th></tr></thead><tbody>
-          {group.rows.map(row => { const { code: rowCode, name } = splitRecipeLabel(row.label); return <tr key={row.key}><td className="code">{rowCode}</td><td>□ {name}{row.notes && <div>{row.notes}</div>}{row.alsoPrintedOn && <div>Também em: {row.alsoPrintedOn}</div>}</td><td>{formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, { maximumFractionDigits: 3 })}</td></tr>; })}
+        <table><colgroup><col className="c-code" /><col /><col className="c-dp" /><col className="c-qty" /></colgroup>
+        <thead><tr><th>Código</th><th>Insumo / Massa</th><th className="dp">D&nbsp;&nbsp;P</th><th>Peso</th></tr></thead><tbody>
+          {group.rows.map(row => { const { code: rowCode, name } = splitRecipeLabel(row.label); return <tr key={row.key}><td className="code">{rowCode}</td><td>{name}{row.notes && <div>{row.notes}</div>}{row.alsoPrintedOn && <div>Também em: {row.alsoPrintedOn}</div>}</td><td className="dp"><span className="box" /><span className="box" /></td><td>{formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, { maximumFractionDigits: 3 })}</td></tr>; })}
         </tbody></table>
         {group.instructions && <p style={{ whiteSpace: "pre-line" }}>{group.instructions}</p>}
       </section>)}
