@@ -20,7 +20,7 @@ function formatTicketQuantity(value: number, unit: string, kind: "ingredient" | 
 function TicketCodes({ value }: { value: string }) {
   const svgs = useMemo(() => ({
     qr: toSVG({ bcid: "qrcode", text: value, scale: 2, includetext: false }),
-    bar: toSVG({ bcid: "code128", text: value, scale: 2, height: 9, includetext: false }),
+    bar: toSVG({ bcid: "code128", text: value, scale: 2, height: 12, paddingwidth: 6, includetext: false }),
   }), [value]);
   return <div className="ticket-codes">
     <div className="ticket-qr" aria-label={`QR ${value}`} dangerouslySetInnerHTML={{ __html: svgs.qr }} />
@@ -56,7 +56,7 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       .thermal-ticket .ticket-codes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; }
       .thermal-ticket .ticket-qr svg { width: 17mm; height: 17mm; display: block; }
       .thermal-ticket .ticket-bar { flex: 1; text-align: center; min-width: 0; }
-      .thermal-ticket .ticket-bar svg { width: 100%; height: 11mm; display: block; }
+      .thermal-ticket .ticket-bar svg { width: 100%; height: auto; display: block; }
       .thermal-ticket .ticket-bar small { font-size: 9px; letter-spacing: .04em; }
       .thermal-ticket .sign { margin-top: 6px; border-bottom: 1px solid #000; padding-bottom: 14px; font-size: 11px; }
       @media print {
