@@ -8,14 +8,18 @@ import type {
 import {
   defaultRecipeStage,
   getRecipeStageInstructions,
+  hasCustomRecipePrintDestinations,
   hasStagedRecipe,
   normalizeRecipeStage,
+  recipePrintDestinationLabels,
   recipeStageLabels,
   recipeStages,
+  resolveRecipePrintDestinations,
   resolveRecipeStageOrder,
+  type RecipePrintDestination,
 } from "@/lib/production-planning";
 import type { ProductionOrderRow } from "@/lib/order-planning";
-import type { UnitCode } from "@/lib/factory-planning/units";
+import { isMassOrVolumeUnit, type UnitCode } from "@/lib/factory-planning/units";
 import { round3, scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
 import { getProductDisplayCode, relabelRecipeLineWithClientCode } from "@/lib/product-identity";
 import { getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
@@ -39,6 +43,16 @@ export type PrintIngredientRow = {
   /** Quantidade para a parcial/extra (só quando há parcial). */
   partialQuantity?: number;
   notes?: string;
+  /**
+   * Onde a linha da receita é impressa. Ausente = padrão (produção + pré-pesagem), como sempre
+   * foi. Cada folha filtra por aqui; consumo e peso não leem este campo.
+   */
+  printDestinations?: RecipePrintDestination[];
+  /**
+   * Rótulo "Também em: …" com os OUTROS destinos da linha. Só existe quando a linha tem destinos
+   * fora do padrão — quem não configurou não vê nenhuma marca nova.
+   */
+  alsoPrintedOn?: string;
 };
 
 export type PreWeighingProductSection = {
@@ -412,6 +426,16 @@ function buildScaledRecipeRowsForProduct(
       batchQuantity,
       partialQuantity,
       notes: buildRowNotes(recipeItem, ingredient, sourceProduct),
+      // Só entra no documento quando a linha foi configurada: quem não mexeu continua com a
+      // MESMA linha de sempre (o padrão é aplicado por `printsOn` quando o campo não existe).
+      ...(hasCustomRecipePrintDestinations(recipeItem)
+        ? {
+            printDestinations: resolveRecipePrintDestinations(recipeItem),
+            alsoPrintedOn: resolveRecipePrintDestinations(recipeItem)
+              .map((destination) => recipePrintDestinationLabels[destination])
+              .join(", "),
+          }
+        : {}),
     };
   });
 }
@@ -543,6 +567,11 @@ function collectIngredientProductSections(
     );
 }
 
+/** A linha sai nesta folha? (Consumo, peso e custo não passam por aqui: contam a receita inteira.) */
+function printsOn(row: { printDestinations?: RecipePrintDestination[] }, destination: RecipePrintDestination) {
+  return resolveRecipePrintDestinations(row).includes(destination);
+}
+
 export function buildPreWeighingDocument(
   op: ProductionOrderRow,
   source: {
@@ -600,6 +629,11 @@ export function buildPreWeighingDocument(
         return;
       }
 
+      // Destino da linha: embalagem e consumo não se pesam na balança.
+      if (!printsOn(row, "prepesagem")) {
+        return;
+      }
+
       if (row.sectionKind === "additional") {
         additionalIngredients.push(row);
         return;
@@ -640,6 +674,68 @@ export function buildPreWeighingDocument(
     productSections,
     ingredientProducts: collectIngredientProductSections(op, source),
   };
+}
+
+export type PackagingSeparationLine = {
+  /** Chave estável: o mesmo insumo na mesma unidade é UMA linha, vindo de quantos produtos forem. */
+  key: string;
+  label: string;
+  unit: UnitCode;
+  /**
+   * Total a separar para a OP inteira. Unidade CONTADA ("Un") sobe para o inteiro seguinte: não se
+   * separa 0,4 de uma caixa. Peso/volume mantém 3 casas.
+   */
+  quantity: number;
+  /** Quantidade antes de arredondar (aparece quando difere, para o conferente entender a folga). */
+  exactQuantity: number;
+  usedBy: Array<{ productName: string; quantity: number }>;
+};
+
+export type PackagingSeparationDocument = {
+  lines: PackagingSeparationLine[];
+};
+
+/**
+ * Relatório de SEPARAÇÃO DE EMBALAGENS da OP: só as linhas da receita marcadas para esse destino.
+ * Soma o mesmo insumo entre os produtos da OP (uma caixa usada por três produtos é uma linha só).
+ * É uma vista de apresentação: consumo, peso e custo continuam vindo da receita, uma vez só.
+ */
+export function buildPackagingSeparationDocument(
+  op: ProductionOrderRow,
+  source: {
+    products: ProductionProduct[];
+    ingredients: ProductionIngredient[];
+  },
+): PackagingSeparationDocument {
+  const { productsById } = buildSourceMaps(source);
+  const byKey = new Map<string, PackagingSeparationLine>();
+
+  op.items.forEach((item) => {
+    const baseProduct = productsById.get(item.productId);
+    const product = baseProduct ? withFrozenRecipe(baseProduct, item.frozenRecipe) : undefined;
+    if (!product) return;
+    buildScaledRecipeRowsForProduct(product, item.totalKg, source)
+      .filter((row) => printsOn(row, "separacao_embalagem"))
+      .forEach((row) => {
+        // Mesmo insumo + mesma unidade = mesma linha. O rótulo já traz o código do cliente.
+        const key = `${row.label}::${row.unit}`;
+        const current = byKey.get(key);
+        const quantity = round3((current?.exactQuantity ?? 0) + row.estimatedQuantity);
+        const usedBy = [...(current?.usedBy ?? [])];
+        const existing = usedBy.find((entry) => entry.productName === item.productName);
+        if (existing) existing.quantity = round3(existing.quantity + row.estimatedQuantity);
+        else usedBy.push({ productName: item.productName, quantity: round3(row.estimatedQuantity) });
+        byKey.set(key, { key, label: row.label, unit: row.unit, quantity, exactQuantity: quantity, usedBy });
+      });
+  });
+
+  const lines = Array.from(byKey.values())
+    .map((line) => ({
+      ...line,
+      quantity: isMassOrVolumeUnit(line.unit) ? line.exactQuantity : Math.ceil(line.exactQuantity - 1e-9),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  return { lines };
 }
 
 /** Diferença em dias entre duas chaves `YYYY-MM-DD`. `null` quando alguma não é uma data. */
@@ -759,10 +855,12 @@ export function buildProductionSheetDocument(
         item.totalKg,
         source,
         split.batched ? { fullBatchKg: split.fullBatchKg, partialKg: split.partialKg } : undefined,
-      ).map<ProductionSheetRow>((row) => ({
-        ...row,
-        quantityPerUnit: unitsCount > 0 ? round3(row.estimatedQuantity / unitsCount) : null,
-      })),
+      )
+        .filter((row) => printsOn(row, "producao"))
+        .map<ProductionSheetRow>((row) => ({
+          ...row,
+          quantityPerUnit: unitsCount > 0 ? round3(row.estimatedQuantity / unitsCount) : null,
+        })),
     };
     });
 

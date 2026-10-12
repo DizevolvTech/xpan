@@ -24,7 +24,12 @@ import type {
   WeeklyProductionSchedule,
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
-import { normalizeRecipeStage, normalizeRecipeStageConfig, normalizeSupplyClass } from "@/lib/production-planning";
+import {
+  normalizeRecipeStage,
+  normalizeRecipeStageConfig,
+  normalizeSupplyClass,
+  resolveRecipePrintDestinations,
+} from "@/lib/production-planning";
 import { normalizeLabTest } from "@/lib/lab-test";
 import { normalizeScheduleDayPriorities } from "@/lib/production-data-utils";
 import { normalizeProductPreparationStages } from "@/lib/production-workflow";
@@ -384,6 +389,10 @@ async function loadMasterDataSnapshot(
         typeof (row as Record<string, unknown>).counts_toward_mixer === "boolean"
           ? Boolean((row as Record<string, unknown>).counts_toward_mixer)
           : undefined,
+      // Base sem a coluna = ausente = padrão (folha de produção + pré-pesagem).
+      printDestinations: Array.isArray((row as Record<string, unknown>).print_destinations)
+        ? resolveRecipePrintDestinations({ printDestinations: (row as Record<string, unknown>).print_destinations })
+        : undefined,
     });
     acc.set(key, current);
     return acc;

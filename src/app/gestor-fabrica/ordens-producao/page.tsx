@@ -552,6 +552,7 @@ export default function OrdensProducaoPage() {
           <ProductionOrderActionsMenu
             detailHref={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
             preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            packagingHref={`/impressao/separacao-embalagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
             productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
             onOpenWorkflow={() => openWorkflowDialog(item.id)}
             onOpenPrint={openPrintPage}

@@ -6,6 +6,7 @@ import type {
   PlannedOrderRow,
   ProductionItemStatus,
 } from "@/lib/order-planning";
+import type { ProductionProduct } from "@/lib/production-planning";
 import { getProductionStatusProgress } from "@/lib/production-workflow";
 import type { DeliveryExecutionStatus } from "@/lib/delivery-workflow";
 
@@ -202,6 +203,10 @@ export function applyFactoryWorkflowState(
     // `isReleased`). Quando omitido, o status da OP fica só na produção (compat:
     // chamadas de teste/motor/métricas inalteradas).
     resolveDeliveryStatus?: (orderId: string) => DeliveryExecutionStatus | null;
+    // Receitas congeladas na liberação (`pedido → produto → receita`). O motor já as usa ao
+    // expandir MPI; aqui entram para a OP RECONSTRUÍDA dos itens liberados levar a mesma receita
+    // na folha impressa. Omitido (testes antigos) = imprime a receita ao vivo, como antes.
+    releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>;
   },
 ): FactoryPlanningData {
   const itemDeps: ItemWorkflowDeps = {
@@ -223,7 +228,7 @@ export function applyFactoryWorkflowState(
   const planItemsWithState = planSourceItems.map((item) => applyItemWorkflowState(item, itemDeps));
   const releasedItems = planItemsWithState.filter((item) => item.releasedToProduction);
   const { productionOrders: baseProductionOrders, opsByOrderId, opCodeByPlanningKey } =
-    buildProductionOrdersFromPlannedItems(releasedItems, data.referenceDate);
+    buildProductionOrdersFromPlannedItems(releasedItems, data.referenceDate, workflow.releasedRecipeByOrderProduct);
 
   // Status EFETIVO da OP: dobra a ENTREGA por cima do status de produção (que
   // satura em aguardando_expedicao). Agrega por ELO MAIS FRACO entre os pedidos

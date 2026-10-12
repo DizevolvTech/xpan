@@ -11,7 +11,13 @@ import type {
   RecipeIngredientReference,
   StoreMasterData,
 } from "@/lib/production-planning";
-import { normalizeRecipeStage, normalizeRecipeStageConfig, defaultCountsTowardMixer, normalizeSupplyClass } from "@/lib/production-planning";
+import {
+  normalizeRecipeStage,
+  normalizeRecipeStageConfig,
+  defaultCountsTowardMixer,
+  normalizeSupplyClass,
+  resolveRecipePrintDestinations,
+} from "@/lib/production-planning";
 import { isProductCodeSource, normalizeGtin, type ProductCodeSource } from "@/lib/product-identity";
 import { normalizeLabTest } from "@/lib/lab-test";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -925,6 +931,7 @@ async function replaceProductRecipeItems(
       // Etapa/função da linha; `sort_order` ordena DENTRO da etapa.
       stage: normalizeRecipeStage(item.stage),
       counts_toward_mixer: item.countsTowardMixer ?? defaultCountsTowardMixer(item.stage),
+      print_destinations: resolveRecipePrintDestinations(item),
     })),
   );
 
@@ -934,9 +941,30 @@ async function replaceProductRecipeItems(
   }
 
   type RecipeItemRow = (typeof rows)[number];
-  let pendingRows: Array<Omit<RecipeItemRow, "counts_toward_mixer"> | Omit<RecipeItemRow, "counts_toward_mixer" | "stage">> =
-    rows;
+  let pendingRows: Array<
+    | Omit<RecipeItemRow, "counts_toward_mixer" | "print_destinations">
+    | Omit<RecipeItemRow, "counts_toward_mixer" | "stage" | "print_destinations">
+    | Omit<RecipeItemRow, "print_destinations">
+  > = rows;
   let pendingError = insertResult.error;
+
+  // Base sem a coluna de destino de impressão: a receita não pode se perder (DELETE + INSERT sem
+  // transação). Regrava sem a coluna — todas as linhas voltam ao padrão (produção + pré-pesagem).
+  if (isSupabaseMissingSchemaError(pendingError, ["print_destinations"])) {
+    pendingRows = rows.map((row) => {
+      const { print_destinations: droppedDestinations, ...rest } = row;
+      void droppedDestinations;
+      return rest;
+    });
+    const destinationsRetry = await supabase.from("product_recipe_items").insert(pendingRows);
+    if (!destinationsRetry.error) {
+      console.warn(
+        "[master-data-admin] coluna `print_destinations` ausente em product_recipe_items — receita gravada sem destino de impressão. Aplique a migration 20261012130000.",
+      );
+      return;
+    }
+    pendingError = destinationsRetry.error;
+  }
 
   if (isSupabaseMissingSchemaError(pendingError, ["counts_toward_mixer"])) {
     pendingRows = rows.map((row) => {
@@ -2078,6 +2106,10 @@ export async function cloneProduct(
       counts_toward_mixer:
         (item as Record<string, unknown>).counts_toward_mixer ??
         defaultCountsTowardMixer(normalizeRecipeStage((item as Record<string, unknown>).stage)),
+      // Copiar o produto copia também onde cada linha é impressa.
+      print_destinations: resolveRecipePrintDestinations({
+        printDestinations: (item as Record<string, unknown>).print_destinations,
+      }),
       tenant_id: item.tenant_id,
     }));
     const insertRecipeResult = await supabase.from("product_recipe_items").insert(clonedRecipeItems);

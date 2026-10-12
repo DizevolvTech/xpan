@@ -47,6 +47,7 @@ export async function getFactoryPlanningSnapshot(
     const startedKeys = new Set(workflowState.productionStartedKeys);
 
     return applyFactoryWorkflowState(basePlanning, {
+      releasedRecipeByOrderProduct: factoryInput.releasedRecipeByOrderProduct,
       isReleased(orderId) {
         return workflowState.releasedOrders.includes(orderId);
       },

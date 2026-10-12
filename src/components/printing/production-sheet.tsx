@@ -169,6 +169,9 @@ function IngredientTable({
                   </td>
                   <td className="border-t border-stone-200 px-3 py-2 align-top text-xs leading-snug text-stone-600">
                     {row.notes}
+                    {row.alsoPrintedOn ? (
+                      <span className="block font-semibold text-stone-500">Também em: {row.alsoPrintedOn}</span>
+                    ) : null}
                   </td>
                 </tr>
               ))}

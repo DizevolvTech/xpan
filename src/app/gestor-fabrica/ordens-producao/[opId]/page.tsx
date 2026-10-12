@@ -163,6 +163,10 @@ export default function OrdemProducaoDetailsPage() {
             <Printer className="size-4" />
             Pré-pesagem
           </Button>
+          <Button type="button" variant="outline" onClick={() => openPrintPage(appendWeightUnitParam(`/impressao/separacao-embalagem/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`, weightUnit))}>
+            <Printer className="size-4" />
+            Separação de embalagens
+          </Button>
           <Button type="button" variant="outline" onClick={() => openPrintPage(appendWeightUnitParam(`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`, weightUnit))}>
             <Printer className="size-4" />
             Produção A4

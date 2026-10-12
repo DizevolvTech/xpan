@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Factory, MoreHorizontal, Scale, SquarePen } from "lucide-react";
+import { ArrowUpRight, Factory, MoreHorizontal, Package, Scale, SquarePen } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,8 @@ import {
 type ProductionOrderActionsMenuProps = {
   detailHref: string;
   preWeighingHref: string;
+  /** Separação de embalagens da OP. Opcional: telas que não passam o link não mostram o item. */
+  packagingHref?: string;
   productionPrintHref: string;
   onOpenWorkflow: () => void;
   onOpenPrint: (pathname: string) => void;
@@ -24,6 +26,7 @@ type ProductionOrderActionsMenuProps = {
 export function ProductionOrderActionsMenu({
   detailHref,
   preWeighingHref,
+  packagingHref,
   productionPrintHref,
   onOpenWorkflow,
   onOpenPrint,
@@ -77,6 +80,12 @@ export function ProductionOrderActionsMenu({
             <Scale className="size-4" />
             Pré-pesagem
           </DropdownMenuItem>
+          {packagingHref ? (
+            <DropdownMenuItem className={itemClassName} onSelect={handleAction(() => onOpenPrint(packagingHref))}>
+              <Package className="size-4" />
+              Separação de embalagens
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem className={itemClassName} onSelect={handleAction(() => onOpenPrint(productionPrintHref))}>
             <Factory className="size-4" />
             Produção A4

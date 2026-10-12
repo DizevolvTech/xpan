@@ -311,6 +311,55 @@ export function getRecipeStageInstructions(
   return normalizeRecipeStageConfig(config).find((entry) => entry.stage === stage)?.instructions ?? "";
 }
 
+/**
+ * Onde a linha da receita é IMPRESSA. Só apresentação: consumo, peso, massa, quebra, batida e
+ * custo vêm da receita inteira e nunca leem este campo (cada insumo conta uma vez só).
+ * - `producao`   folha de produção (A4 e 80 mm, que mostram o mesmo conteúdo).
+ * - `prepesagem` folha de pré-pesagem (quem pesa na balança).
+ * - `separacao_embalagem` relatório de separação de embalagens.
+ * Lista vazia = a linha não sai em nenhuma folha, só conta no consumo.
+ */
+export type RecipePrintDestination = "producao" | "prepesagem" | "separacao_embalagem";
+
+export const recipePrintDestinations: RecipePrintDestination[] = ["producao", "prepesagem", "separacao_embalagem"];
+
+export const recipePrintDestinationLabels: Record<RecipePrintDestination, string> = {
+  producao: "Folha de produção",
+  prepesagem: "Pré-pesagem",
+  separacao_embalagem: "Separação de embalagens",
+};
+
+/** O que toda linha existente imprime hoje: não muda nada para quem não configurou. */
+export const defaultRecipePrintDestinations: RecipePrintDestination[] = ["producao", "prepesagem"];
+
+/** ME e MC são contados e separados, não pesados na balança: entram na produção e na separação. */
+export const packagingRecipePrintDestinations: RecipePrintDestination[] = ["producao", "separacao_embalagem"];
+
+/**
+ * Destinos efetivos da linha. Ausente/inválido = o padrão (receita antiga e receita congelada
+ * antes desta mudança imprimem exatamente como antes). Lista vazia é respeitada.
+ */
+export function resolveRecipePrintDestinations(item: { printDestinations?: unknown }): RecipePrintDestination[] {
+  if (!Array.isArray(item.printDestinations)) return defaultRecipePrintDestinations;
+  const known = item.printDestinations.filter((value): value is RecipePrintDestination =>
+    recipePrintDestinations.includes(value as RecipePrintDestination),
+  );
+  return recipePrintDestinations.filter((destination) => known.includes(destination));
+}
+
+export function recipeItemPrintsOn(item: { printDestinations?: unknown }, destination: RecipePrintDestination) {
+  return resolveRecipePrintDestinations(item).includes(destination);
+}
+
+/** Linha com destinos diferentes do padrão: só ela ganha a marca "Também em" nas folhas. */
+export function hasCustomRecipePrintDestinations(item: { printDestinations?: unknown }) {
+  const resolved = resolveRecipePrintDestinations(item);
+  return (
+    resolved.length !== defaultRecipePrintDestinations.length ||
+    resolved.some((destination, index) => destination !== defaultRecipePrintDestinations[index])
+  );
+}
+
 export interface RecipeIngredientReference {
   id: string;
   sourceType: RecipeSourceType;
@@ -330,6 +379,8 @@ export interface RecipeIngredientReference {
    * Óleo na mesa e chocolate no fim do panetone ficam de fora do limite físico.
    */
   countsTowardMixer?: boolean;
+  /** Onde a linha é impressa. Ausente = folha de produção + pré-pesagem (como sempre foi). */
+  printDestinations?: RecipePrintDestination[];
 }
 
 /**

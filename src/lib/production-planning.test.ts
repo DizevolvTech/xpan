@@ -199,3 +199,46 @@ test("aviso de etapa: ME/MC em etapa de massa avisa; fora da massa ou MP não av
   assert.equal(supplyClassStageWarning("MP", "massa"), null);
   assert.equal(supplyClassStageWarning(undefined, "massa"), null);
 });
+
+// ── Destino de impressão da linha da receita ────────────────────────────────────────────────────
+import {
+  defaultRecipePrintDestinations,
+  hasCustomRecipePrintDestinations,
+  packagingRecipePrintDestinations,
+  recipeItemPrintsOn,
+  resolveRecipePrintDestinations,
+} from "./production-planning";
+
+test("destino da linha: ausente ou inválido = padrão (produção + pré-pesagem), como sempre foi", () => {
+  assert.deepEqual(defaultRecipePrintDestinations, ["producao", "prepesagem"]);
+  for (const value of [undefined, null, "producao", 3, {}]) {
+    assert.deepEqual(resolveRecipePrintDestinations({ printDestinations: value }), ["producao", "prepesagem"], String(value));
+  }
+  assert.deepEqual(resolveRecipePrintDestinations({}), ["producao", "prepesagem"]);
+});
+
+test("destino da linha: lista vazia é respeitada (só conta no consumo); lixo é descartado e a ordem é canônica", () => {
+  assert.deepEqual(resolveRecipePrintDestinations({ printDestinations: [] }), []);
+  assert.deepEqual(
+    resolveRecipePrintDestinations({ printDestinations: ["separacao_embalagem", "xx", "producao", 7, "producao"] }),
+    ["producao", "separacao_embalagem"],
+  );
+  assert.deepEqual(resolveRecipePrintDestinations({ printDestinations: ["xx", "yy"] }), [], "só lixo não vira o padrão");
+});
+
+test("destino da linha: embalagem sugerida = produção + separação (fora da balança)", () => {
+  assert.deepEqual(packagingRecipePrintDestinations, ["producao", "separacao_embalagem"]);
+  assert.equal(recipeItemPrintsOn({ printDestinations: packagingRecipePrintDestinations }, "prepesagem"), false);
+  assert.equal(recipeItemPrintsOn({ printDestinations: packagingRecipePrintDestinations }, "separacao_embalagem"), true);
+  assert.equal(recipeItemPrintsOn({}, "prepesagem"), true);
+  assert.equal(recipeItemPrintsOn({}, "separacao_embalagem"), false);
+});
+
+test("destino da linha: só destinos fora do padrão contam como configurados", () => {
+  assert.equal(hasCustomRecipePrintDestinations({}), false);
+  assert.equal(hasCustomRecipePrintDestinations({ printDestinations: ["producao", "prepesagem"] }), false);
+  assert.equal(hasCustomRecipePrintDestinations({ printDestinations: ["prepesagem", "producao"] }), false, "ordem não importa");
+  assert.equal(hasCustomRecipePrintDestinations({ printDestinations: [] }), true);
+  assert.equal(hasCustomRecipePrintDestinations({ printDestinations: ["producao"] }), true);
+  assert.equal(hasCustomRecipePrintDestinations({ printDestinations: ["producao", "prepesagem", "separacao_embalagem"] }), true);
+});

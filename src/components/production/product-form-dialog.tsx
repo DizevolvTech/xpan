@@ -39,6 +39,10 @@ import {
   recipeItemCountsTowardMixer,
   recipeStageLabels,
   recipeStages,
+  packagingRecipePrintDestinations,
+  recipePrintDestinationLabels,
+  recipePrintDestinations,
+  resolveRecipePrintDestinations,
   supplyClassLabels,
   supplyClassStageWarning,
   type BreakStage,
@@ -47,6 +51,7 @@ import {
   type ProductLabTest,
   type ProductUnitProfile,
   type ProductionIngredient,
+  type RecipePrintDestination,
   type ProductionLine,
   type ProductionProduct,
   type RecipeIngredientReference,
@@ -712,6 +717,16 @@ export function ProductFormDialog({
         unit: draft.unit,
         stage,
         countsTowardMixer: defaultCountsTowardMixer(stage),
+        // Embalagem e consumo se contam e separam, não se pesam: nascem fora da pré-pesagem.
+        // Os demais ficam sem o campo (= padrão de sempre). O usuário pode trocar na linha.
+        ...(() => {
+          const picked = sourceOption.sourceType === "ingrediente"
+            ? snapshot.ingredients.find((ingredient) => ingredient.id === sourceOption.id)
+            : undefined;
+          return picked?.supplyClass === "ME" || picked?.supplyClass === "MC"
+            ? { printDestinations: packagingRecipePrintDestinations }
+            : {};
+        })(),
       }),
     }));
     clearRecipeDraft(stage);
@@ -726,7 +741,7 @@ export function ProductFormDialog({
 
   function updateRecipeItem(
     recipeId: string,
-    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit" | "countsTowardMixer">>,
+    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit" | "countsTowardMixer" | "printDestinations">>,
   ) {
     setFormState((current) => ({
       ...current,
@@ -739,6 +754,8 @@ export function ProductFormDialog({
               countsTowardMixer:
                 patch.countsTowardMixer ?? item.countsTowardMixer ?? defaultCountsTowardMixer(item.stage),
               stage: item.stage ?? defaultRecipeStage,
+              // `undefined` no patch = não mexe; lista (inclusive vazia) = nova escolha do usuário.
+              printDestinations: patch.printDestinations ?? item.printDestinations,
             }
           : item,
       ),
@@ -2086,6 +2103,9 @@ export function ProductFormDialog({
                                     Na batida?
                                   </th>
                                   <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
+                                    Imprime em
+                                  </th>
+                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
                                     Mover para outra etapa
                                   </th>
                                   <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
@@ -2179,6 +2199,34 @@ export function ProductFormDialog({
                                         aria-label={`${item.label} entra na masseira`}
                                         title="Desmarque para incorporação fora do mixer (óleo na mesa, chocolate no fim)"
                                       />
+                                    </td>
+                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-xs">
+                                      <fieldset className="grid min-w-36 gap-1.5">
+                                        <legend className="sr-only">Onde {item.label} é impresso</legend>
+                                        {recipePrintDestinations.map((destination) => {
+                                          const current = resolveRecipePrintDestinations(item);
+                                          return (
+                                            <label key={destination} className="flex items-center gap-2">
+                                              <Checkbox
+                                                checked={current.includes(destination)}
+                                                disabled={isReadOnly}
+                                                onCheckedChange={(checked) =>
+                                                  updateRecipeItem(item.id, {
+                                                    printDestinations: recipePrintDestinations.filter((entry) =>
+                                                      entry === destination ? checked === true : current.includes(entry),
+                                                    ) as RecipePrintDestination[],
+                                                  })
+                                                }
+                                                aria-label={`${recipePrintDestinationLabels[destination]}: ${item.label}`}
+                                              />
+                                              <span>{recipePrintDestinationLabels[destination]}</span>
+                                            </label>
+                                          );
+                                        })}
+                                        {resolveRecipePrintDestinations(item).length === 0 ? (
+                                          <span className="text-muted-foreground">Só conta no consumo</span>
+                                        ) : null}
+                                      </fieldset>
                                     </td>
                                     <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
                                       <Select

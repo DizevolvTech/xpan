@@ -967,3 +967,127 @@ test("folha de produto em Kg menor que a batida: uma ficha só, com o peso exato
   assert.equal(tickets[0].quantity, 0.4);
   assert.equal(tickets[0].complementary, true);
 });
+
+// ── Destino de impressão por insumo da receita ───────────────────────────────────────────────────
+import { buildPackagingSeparationDocument } from "@/lib/printing-documents";
+import { getRecipeReferenceWeightKgFromData, getProductRecipeTotalsFromData } from "@/lib/production-data-utils";
+import type { RecipePrintDestination } from "@/lib/production-planning";
+
+function destinationProduct(id: string, code: string, name: string, destinations: Record<string, RecipePrintDestination[] | undefined>) {
+  const line = (lineId: string, label: string, sourceId: string, quantity: number, unit: "Kg" | "Un") => ({
+    id: lineId, sourceType: "ingrediente" as const, sourceId, label, quantity, unit, stage: "massa" as const,
+    ...(destinations[lineId] ? { printDestinations: destinations[lineId] } : {}),
+  });
+  return buildProduct(id, code, name, [
+    line("d1", "Farinha de trigo", "ing-farinha", 5, "Kg"),
+    line("d2", "Cobertura de chocolate", "ing-cobertura", 2, "Kg"),
+    line("d3", "Caixa 20cm", "ing-caixa", 1, "Un"),
+  ]);
+}
+const ingredientsWithBox: ProductionIngredient[] = [
+  ...ingredients,
+  { id: "ing-caixa", code: "IN-000099", name: "Caixa 20cm", type: "puro", supplyClass: "ME", unit: "Un", weightKg: 0.05, metadata: "", observation: "", composition: [], status: "ativo" },
+];
+const labelsOf = (rows: Array<{ label: string }>) => rows.map((row) => row.label);
+
+test("destino: sem configurar, produção e pré-pesagem listam as MESMAS linhas de sempre (padrão)", () => {
+  const product = destinationProduct("p-dest", "PR-D1", "Bolo", {});
+  const src = { products: [product], ingredients: ingredientsWithBox };
+  const sheet = buildProductionSheetDocument(buildOp(product, 10), src);
+  const pre = buildPreWeighingDocument(buildOp(product, 10), src);
+  assert.deepEqual(labelsOf(sheet.productSections[0].items).sort(), ["Caixa 20cm", "Cobertura de chocolate", "Farinha de trigo"].sort());
+  const preLabels = labelsOf([...pre.productSections[0].baseIngredients, ...pre.productSections[0].additionalIngredients]);
+  assert.deepEqual(preLabels.sort(), ["Caixa 20cm", "Cobertura de chocolate", "Farinha de trigo"].sort());
+  assert.equal(sheet.productSections[0].items.every((row) => row.alsoPrintedOn === undefined), true, "sem marca nova");
+});
+
+test("destino: ME na produção + separação NÃO sai na pré-pesagem, e a farinha segue nas duas", () => {
+  const product = destinationProduct("p-dest2", "PR-D2", "Bolo", { d3: ["producao", "separacao_embalagem"] });
+  const src = { products: [product], ingredients: ingredientsWithBox };
+  const sheet = buildProductionSheetDocument(buildOp(product, 10), src);
+  const pre = buildPreWeighingDocument(buildOp(product, 10), src);
+  assert.ok(labelsOf(sheet.productSections[0].items).includes("Caixa 20cm"), "caixa na produção");
+  const preLabels = labelsOf([...pre.productSections[0].baseIngredients, ...pre.productSections[0].additionalIngredients]);
+  assert.ok(!preLabels.includes("Caixa 20cm"), "caixa fora da balança");
+  assert.ok(preLabels.includes("Farinha de trigo"), "farinha continua na pré-pesagem");
+  const caixa = sheet.productSections[0].items.find((row) => row.label === "Caixa 20cm")!;
+  assert.match(caixa.alsoPrintedOn ?? "", /Separação de embalagens/, "marca 'também em' só na linha configurada");
+  assert.equal(sheet.productSections[0].items.find((row) => row.label === "Farinha de trigo")!.alsoPrintedOn, undefined);
+});
+
+test("destino: quantidade cheia em cada folha (não divide) e lista vazia some das folhas", () => {
+  const product = destinationProduct("p-dest3", "PR-D3", "Bolo", { d3: ["producao", "prepesagem", "separacao_embalagem"], d2: [] });
+  const src = { products: [product], ingredients: ingredientsWithBox };
+  const sheet = buildProductionSheetDocument(buildOp(product, 10), src);
+  const pre = buildPreWeighingDocument(buildOp(product, 10), src);
+  const onSheet = sheet.productSections[0].items.find((row) => row.label === "Caixa 20cm")!;
+  const onPre = [...pre.productSections[0].baseIngredients, ...pre.productSections[0].additionalIngredients].find((row) => row.label === "Caixa 20cm")!;
+  assert.equal(onSheet.estimatedQuantity, onPre.estimatedQuantity, "mesma quantidade cheia nas duas folhas");
+  assert.ok(!labelsOf(sheet.productSections[0].items).includes("Cobertura de chocolate"), "lista vazia: fora da produção");
+  assert.ok(!labelsOf([...pre.productSections[0].baseIngredients, ...pre.productSections[0].additionalIngredients]).includes("Cobertura de chocolate"), "lista vazia: fora da pré-pesagem");
+});
+
+test("destino NÃO muda consumo, peso nem massa: receita com e sem destinos tem os mesmos totais", () => {
+  const plain = destinationProduct("p-dest4", "PR-D4", "Bolo", {});
+  const configured = destinationProduct("p-dest4", "PR-D4", "Bolo", { d1: [], d2: ["separacao_embalagem"], d3: ["producao"] });
+  const a = getProductRecipeTotalsFromData(plain, ingredientsWithBox, []);
+  const b = getProductRecipeTotalsFromData(configured, ingredientsWithBox, []);
+  assert.deepEqual(b, a);
+  const byId = new Map(ingredientsWithBox.map((entry) => [entry.id, entry]));
+  for (const [x, y] of plain.recipe.map((item, index) => [item, configured.recipe[index]] as const)) {
+    assert.equal(getRecipeReferenceWeightKgFromData(y, byId, new Map()), getRecipeReferenceWeightKgFromData(x, byId, new Map()), x.label);
+  }
+});
+
+test("separação de embalagens: soma a mesma caixa entre produtos, arredonda unidade contada para cima", () => {
+  const a = destinationProduct("p-sep-a", "PR-S1", "Bolo A", { d3: ["separacao_embalagem"] });
+  const b = destinationProduct("p-sep-b", "PR-S2", "Bolo B", { d3: ["separacao_embalagem"] });
+  const op = buildOp(a, 10);
+  op.items = [buildOpItem(a, 10), buildOpItem(b, 4)];
+  const doc = buildPackagingSeparationDocument(op, { products: [a, b], ingredients: ingredientsWithBox });
+  assert.equal(doc.lines.length, 1, "Caixa 20cm é UMA linha");
+  const line = doc.lines[0];
+  assert.equal(line.label, "Caixa 20cm");
+  assert.equal(line.exactQuantity, 14 * 0 + line.exactQuantity);
+  assert.equal(Number.isInteger(line.quantity), true, "unidade contada = inteiro");
+  assert.ok(line.quantity >= line.exactQuantity, "arredonda para cima, nunca para baixo");
+  assert.deepEqual(line.usedBy.map((entry) => entry.productName).sort(), ["Bolo A", "Bolo B"]);
+});
+
+test("separação de embalagens: linha só de produção/pré-pesagem não entra; sem embalagem o relatório é vazio", () => {
+  const product = destinationProduct("p-sep-c", "PR-S3", "Bolo C", {});
+  const doc = buildPackagingSeparationDocument(buildOp(product, 10), { products: [product], ingredients: ingredientsWithBox });
+  assert.deepEqual(doc.lines, []);
+});
+
+test("separação de embalagens: peso/volume mantém as 3 casas (não vira inteiro)", () => {
+  const product = destinationProduct("p-sep-d", "PR-S4", "Bolo D", { d2: ["separacao_embalagem"] });
+  const doc = buildPackagingSeparationDocument(buildOp(product, 7.3), { products: [product], ingredients: ingredientsWithBox });
+  const line = doc.lines.find((entry) => entry.label === "Cobertura de chocolate")!;
+  assert.equal(line.quantity, line.exactQuantity);
+  assert.equal(Number.isInteger(line.quantity), false);
+});
+
+test("destino: OP liberada ANTES da mudança (receita congelada sem o campo) imprime como sempre", () => {
+  const live = destinationProduct("p-frz", "PR-F1", "Bolo", { d3: ["separacao_embalagem"], d1: [] });
+  // O congelamento antigo não tinha `printDestinations` em nenhuma linha.
+  const frozen = live.recipe.map(({ printDestinations: _ignored, ...line }) => { void _ignored; return line; });
+  const op = buildOp(live, 10);
+  op.items = [{ ...op.items[0], frozenRecipe: frozen }];
+  const src = { products: [live], ingredients: ingredientsWithBox };
+  const sheet = buildProductionSheetDocument(op, src);
+  const pre = buildPreWeighingDocument(op, src);
+  assert.deepEqual(labelsOf(sheet.productSections[0].items).sort(), ["Caixa 20cm", "Cobertura de chocolate", "Farinha de trigo"].sort(), "receita viva mudou, a OP congelada não");
+  const preLabels = labelsOf([...pre.productSections[0].baseIngredients, ...pre.productSections[0].additionalIngredients]);
+  assert.deepEqual(preLabels.sort(), ["Caixa 20cm", "Cobertura de chocolate", "Farinha de trigo"].sort());
+  assert.deepEqual(buildPackagingSeparationDocument(op, src).lines, [], "congelada sem destino: nada na separação");
+});
+
+test("destino: OP liberada DEPOIS da mudança congela o destino junto com a receita", () => {
+  const live = destinationProduct("p-frz2", "PR-F2", "Bolo", { d3: ["separacao_embalagem"] });
+  const op = buildOp(live, 10);
+  op.items = [{ ...op.items[0], frozenRecipe: JSON.parse(JSON.stringify(live.recipe)) }];
+  const changedLater = { ...live, recipe: live.recipe.map((line) => ({ ...line, printDestinations: ["producao" as const] })) };
+  const doc = buildPackagingSeparationDocument(op, { products: [changedLater], ingredients: ingredientsWithBox });
+  assert.equal(doc.lines.length, 1, "a edição posterior da receita não apaga a separação da OP já liberada");
+});

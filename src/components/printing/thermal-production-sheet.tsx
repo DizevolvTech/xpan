@@ -60,7 +60,7 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       {groupPrintRowsByStage(ticket.items, ticket.recipeStageConfig).map(group => <section key={group.stage}>
         <h2>{group.label}</h2>
         <table><thead><tr><th>Insumo / massa</th><th>Quantidade</th></tr></thead><tbody>
-          {group.rows.map(row => <tr key={row.key}><td>□ {row.label}{row.notes && <div>{row.notes}</div>}</td><td>{formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, { maximumFractionDigits: 3 })}</td></tr>)}
+          {group.rows.map(row => <tr key={row.key}><td>□ {row.label}{row.notes && <div>{row.notes}</div>}{row.alsoPrintedOn && <div>Também em: {row.alsoPrintedOn}</div>}</td><td>{formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, { maximumFractionDigits: 3 })}</td></tr>)}
         </tbody></table>
         {group.instructions && <p style={{ whiteSpace: "pre-line" }}>{group.instructions}</p>}
       </section>)}
