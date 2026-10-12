@@ -931,3 +931,39 @@ test("impressão: MPI e linhas da receita saem com o código do cliente; sem ele
   const semErp = buildPreWeighingDocument(buildOp(produto, 10), { products: [produto, mpiChantilly], ingredients });
   assert.equal(semErp.ingredientProducts[0].productCode, "PR-00090");
 });
+
+test("folha e fichas 80 mm de produto em Kg com batida de 4 kg: 10,4 kg = 4 + 4 + 2,4 e os insumos somam a carga", async () => {
+  const { buildThermalTickets } = await import("@/lib/thermal-production");
+  const pao = buildProduct("product-pao-kg", "PR-71837", "Pão Caseiro", [
+    { id: "k1", sourceType: "ingrediente", sourceId: "ing-farinha", label: "Farinha de trigo", quantity: 2, unit: "Kg" },
+  ], { capacityPerBatch: 4, salesToKgFactor: 1 });
+  const op = buildOp(pao, 10.4);
+  op.items = [{ ...op.items[0], capacityPerBatch: 4 }];
+  const document = buildProductionSheetDocument(op, { products: [pao], ingredients });
+  const [section] = document.productSections;
+
+  assert.equal(section.batchSplit?.fullBatchCount, 2);
+  assert.equal(section.batchSplit?.fullBatchUnits, 4);
+  assert.equal(section.batchSplit?.partialUnits, 2.4);
+
+  const tickets = buildThermalTickets(document);
+  assert.deepEqual(tickets.map((t) => t.quantity), [4, 4, 2.4]);
+  assert.deepEqual(tickets.map((t) => t.complementary), [false, false, true]);
+  assert.equal(Number(tickets.reduce((s, t) => s + t.quantity, 0).toFixed(3)), 10.4);
+  const farinha = tickets.map((t) => t.items.find((r) => r.label === "Farinha de trigo")!.estimatedQuantity);
+  // 2 kg de farinha por kg de produto no teste; o que importa é a soma fechar com a OP inteira.
+  assert.equal(Number(farinha.reduce((s, q) => s + q, 0).toFixed(3)), Number(section.items.find((r) => r.label === "Farinha de trigo")!.estimatedQuantity.toFixed(3)));
+});
+
+test("folha de produto em Kg menor que a batida: uma ficha só, com o peso exato (antes saía ficha vazia)", async () => {
+  const { buildThermalTickets } = await import("@/lib/thermal-production");
+  const pao = buildProduct("product-pao-kg2", "PR-71838", "Pão Caseiro 2", [
+    { id: "k1", sourceType: "ingrediente", sourceId: "ing-farinha", label: "Farinha de trigo", quantity: 2, unit: "Kg" },
+  ], { capacityPerBatch: 4, salesToKgFactor: 1 });
+  const op = buildOp(pao, 0.4);
+  op.items = [{ ...op.items[0], capacityPerBatch: 4 }];
+  const tickets = buildThermalTickets(buildProductionSheetDocument(op, { products: [pao], ingredients }));
+  assert.equal(tickets.length, 1);
+  assert.equal(tickets[0].quantity, 0.4);
+  assert.equal(tickets[0].complementary, true);
+});

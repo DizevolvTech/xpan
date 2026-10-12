@@ -311,7 +311,7 @@ export default function OrdemProducaoDetailsPage() {
                         </p>
                       ) : item.batchUnitLabel !== "Kg" && item.batchUnitLabel !== "L" ? (
                         <p className="text-sm text-muted-foreground tabular-nums">
-                          {item.batchSizes.reduce((sum, size) => sum + size, 0)} {item.batchUnitLabel}
+                          {Math.round(item.batchSizes.reduce((sum, size) => sum + size, 0) * 1000) / 1000} {item.batchUnitLabel}
                         </p>
                       ) : null}
                     </td>

@@ -368,3 +368,74 @@ test("S2.3: Un cadastrada 170 g vence salesToKgFactor default 1", () => {
     0.17,
   );
 });
+
+// ── Produto vendido em Kg: a batida é um PESO exato, não uma contagem inteira ─────────────────
+const somaKg = (s: ReturnType<typeof computePreWeighBatchSplit>) =>
+  Number((s.fullBatchCount * s.fullBatchKg + s.partialKg).toFixed(3));
+
+test("Kg: 10,4 kg com batida de 4 kg = 4 + 4 + 2,4 e a soma das fichas é a carga da OP", () => {
+  const input = { totalKg: 10.4, capacityPerBatch: 4, salesToKgFactor: 1, salesUnit: "Kg" };
+  assert.deepEqual(planBatches(input).batchSizes, [4, 4, 2.4]);
+  const s = computePreWeighBatchSplit(input);
+  assert.equal(s.fullBatchCount, 2);
+  assert.equal(s.partialUnits, 2.4);
+  assert.equal(somaKg(s), 10.4);
+});
+
+test("Kg: pedido menor que a batida vira UMA parcial com o valor exato (antes virava ficha vazia)", () => {
+  const input = { totalKg: 0.4, capacityPerBatch: 4, salesToKgFactor: 1, salesUnit: "Kg" };
+  assert.deepEqual(planBatches(input).batchSizes, [0.4]);
+  const s = computePreWeighBatchSplit(input);
+  assert.equal(s.fullBatchCount, 0);
+  assert.equal(s.partialKg, 0.4);
+  assert.equal(somaKg(s), 0.4);
+});
+
+test("Kg: capacidade decimal (4,5 kg) é respeitada, não cortada para 4", () => {
+  const input = { totalKg: 13.6, capacityPerBatch: 4.5, salesToKgFactor: 1, salesUnit: "Kg" };
+  assert.deepEqual(planBatches(input).batchSizes, [4.5, 4.5, 4.5, 0.1]);
+  const s = computePreWeighBatchSplit(input);
+  assert.equal(s.fullBatchUnits, 4.5);
+  assert.equal(somaKg(s), 13.6);
+});
+
+test("Kg: múltiplo exato não cria parcial e a divisão não deriva em ponto flutuante", () => {
+  const input = { totalKg: 0.9, capacityPerBatch: 0.3, salesToKgFactor: 1, salesUnit: "Kg" };
+  assert.deepEqual(planBatches(input).batchSizes, [0.3, 0.3, 0.3]);
+  const s = computePreWeighBatchSplit(input);
+  assert.equal(s.fullBatchCount, 3);
+  assert.equal(s.partialUnits, 0);
+});
+
+test("Kg: soma das fichas = carga da OP em toda a faixa de pedidos (varredura)", () => {
+  for (const cap of [0.5, 4, 4.5, 76, 1000]) {
+    for (let milli = 1; milli <= 3000; milli += 37) {
+      const totalKg = milli / 1000;
+      const input = { totalKg, capacityPerBatch: cap, salesToKgFactor: 1, salesUnit: "Kg" };
+      const sizes = planBatches(input).batchSizes;
+      assert.ok(sizes.every((x) => x > 0), `ficha vazia em ${totalKg} kg / cap ${cap}`);
+      assert.equal(Number(sizes.reduce((a, b) => a + b, 0).toFixed(3)), totalKg, `plano ${totalKg} kg / cap ${cap}`);
+      assert.equal(somaKg(computePreWeighBatchSplit(input)), totalKg, `split ${totalKg} kg / cap ${cap}`);
+    }
+  }
+});
+
+test("Kg: capacidade abaixo de 1 grama é recusada com mensagem de peso", () => {
+  const input = { totalKg: 1, capacityPerBatch: 0.0004, salesToKgFactor: 1, salesUnit: "Kg" };
+  assert.throws(() => planBatches(input), /0,001 kg/);
+  assert.throws(() => computePreWeighBatchSplit(input), /0,001 kg/);
+});
+
+test("Un: continua em unidades INTEIRAS (a correção não vaza para produto contado)", () => {
+  const input = { totalKg: 125.2, capacityPerBatch: 100.9, salesToKgFactor: 0.5, salesUnit: "Un" };
+  assert.deepEqual(planBatches(input).batchSizes, [100, 100, 50]);
+  const s = computePreWeighBatchSplit(input);
+  assert.equal(s.fullBatchUnits, 100);
+  assert.equal(Number.isInteger(s.partialUnits), true);
+  assert.throws(() => planBatches({ totalKg: 1, capacityPerBatch: 0.5, salesToKgFactor: 1, salesUnit: "Un" }), /unidade inteira/);
+});
+
+test("unidade escrita 'KG' ou com espaço também é peso", () => {
+  const input = { totalKg: 10.4, capacityPerBatch: 4, salesToKgFactor: 1, salesUnit: " KG " };
+  assert.deepEqual(planBatches(input).batchSizes, [4, 4, 2.4]);
+});

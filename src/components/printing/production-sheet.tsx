@@ -209,8 +209,18 @@ function IngredientProductSection({ section, weight }: { section: ProductIngredi
         <div className="whitespace-nowrap px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
           <div>Peso finalizado: {formatKgCell(section.requiredKg, weight)}</div>
           {section.batchSplit?.batched ? (
-            <div className="mt-1 normal-case tracking-normal text-stone-700">
-              {formatBatchSplitPhrase(section.batchSplit, "units", weight)}
+            // `whitespace-normal`: a frase "2 cheias de 4 Kg + 1 parcial de 2,4 Kg" é mais larga que a
+            // coluna do cabeçalho. Quebra só ENTRE as partes ("cheias" / "+ 1 parcial"); o espaço
+            // sem quebra mantém número e unidade juntos.
+            <div className="mt-1 whitespace-normal normal-case tracking-normal text-stone-700">
+              {formatBatchSplitPhrase(section.batchSplit, "units", weight)
+                .split(" + ")
+                .map((part, index) => (
+                  <span key={part} className="block">
+                    {index > 0 ? "+ " : ""}
+                    {part.replace(/ (?=[^ ]+$)/, "\u00a0").replace(/(\d) (?=Kg|Un|g|L)/gi, "$1\u00a0")}
+                  </span>
+                ))}
             </div>
           ) : null}
         </div>
@@ -261,8 +271,18 @@ function ProductSection({ section, weight }: { section: ProductionSheetProductSe
           <div>Peso un.: {formatKgCell(section.unitWeightKg, weight)}</div>
           <div className="mt-1">Carga: {formatKgCell(section.plannedKg, weight)}</div>
           {section.batchSplit?.batched ? (
-            <div className="mt-1 normal-case tracking-normal text-stone-700">
-              {formatBatchSplitPhrase(section.batchSplit, "units", weight)}
+            // `whitespace-normal`: a frase "2 cheias de 4 Kg + 1 parcial de 2,4 Kg" é mais larga que a
+            // coluna do cabeçalho. Quebra só ENTRE as partes ("cheias" / "+ 1 parcial"); o espaço
+            // sem quebra mantém número e unidade juntos.
+            <div className="mt-1 whitespace-normal normal-case tracking-normal text-stone-700">
+              {formatBatchSplitPhrase(section.batchSplit, "units", weight)
+                .split(" + ")
+                .map((part, index) => (
+                  <span key={part} className="block">
+                    {index > 0 ? "+ " : ""}
+                    {part.replace(/ (?=[^ ]+$)/, "\u00a0").replace(/(\d) (?=Kg|Un|g|L)/gi, "$1\u00a0")}
+                  </span>
+                ))}
             </div>
           ) : null}
         </div>

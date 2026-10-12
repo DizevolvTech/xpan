@@ -18,28 +18,61 @@ export interface PlanBatchesInput {
 }
 
 /**
+ * Unidade de venda CONTÍNUA (peso): a quantidade da batida é um peso exato, não uma contagem.
+ * Em unidade contada ("Un") a batida é inteira; em "Kg" o arredondamento para inteiro fazia a
+ * soma das fichas diferir da carga da OP em até 0,5 kg (e um pedido pequeno virava ficha vazia).
+ */
+function isContinuousUnit(unit: string) {
+  return unit.trim().toLowerCase() === "kg";
+}
+
+/** Quantidades em milésimos (inteiros): evita deriva de ponto flutuante ao dividir em batidas. */
+const MILLI = 1000;
+
+/**
+ * Total e capacidade na unidade de venda, já em milésimos para unidade contínua e em unidades
+ * inteiras para unidade contada. `scale` volta o valor para a unidade de venda.
+ */
+function resolveBatchQuantities(input: PlanBatchesInput) {
+  const { totalKg, capacityPerBatch, salesToKgFactor, salesUnit } = input;
+  const factor = salesToKgFactor > 0 ? salesToKgFactor : 1;
+  const continuous = isContinuousUnit(salesUnit);
+  const scale = continuous ? MILLI : 1;
+  const total = Math.max(0, Math.round((totalKg / factor) * scale));
+  let cap: number | null = null;
+  if (capacityPerBatch && capacityPerBatch > 0) {
+    cap = continuous ? Math.round(capacityPerBatch * scale) : Math.floor(capacityPerBatch);
+    if (!Number.isFinite(cap) || cap < 1) {
+      throw new Error(
+        continuous
+          ? "Capacidade da batida deve ser de pelo menos 0,001 kg."
+          : "Capacidade da batida deve comportar pelo menos uma unidade inteira.",
+      );
+    }
+  }
+  return { factor, scale, total, cap };
+}
+
+/**
  * Calcula o plano de batidas de um item de OP.
  * - Converte o total (kg) para a unidade de venda via salesToKgFactor.
  * - Sem capacidade (null/<=0) → 1 batida com o total.
  * - Com capacidade → enche cada batida até o máximo; a última leva a sobra.
  */
 export function planBatches(input: PlanBatchesInput): BatchPlan {
-  const { totalKg, capacityPerBatch, salesToKgFactor, salesUnit } = input;
-  const factor = salesToKgFactor > 0 ? salesToKgFactor : 1;
-  const totalUnits = Math.max(0, Math.round(totalKg / factor));
+  const { salesUnit } = input;
+  const { scale, total, cap } = resolveBatchQuantities(input);
 
-  if (!capacityPerBatch || capacityPerBatch <= 0) {
-    return { batchCount: 1, batchSizes: [totalUnits], unitLabel: salesUnit };
+  if (cap == null) {
+    return { batchCount: 1, batchSizes: [total / scale], unitLabel: salesUnit };
   }
 
-  const cap = Math.floor(capacityPerBatch);
-  if (!Number.isFinite(cap) || cap < 1) throw new Error("Capacidade da batida deve comportar pelo menos uma unidade inteira.");
-  const batchCount = Math.max(1, Math.ceil(totalUnits / cap));
+  const batchCount = Math.max(1, Math.ceil(total / cap));
   const batchSizes: number[] = [];
-  let remaining = totalUnits;
+  let remaining = total;
   for (let i = 0; i < batchCount; i += 1) {
     const size = Math.min(cap, remaining);
-    batchSizes.push(size);
+    batchSizes.push(size / scale);
     remaining -= size;
   }
   return { batchCount, batchSizes, unitLabel: salesUnit };
@@ -68,17 +101,26 @@ export interface PreWeighBatchSplit {
  * espelhando a matemática de `planBatches` (mesma conversão kg→un e mesmo cap).
  */
 export function computePreWeighBatchSplit(input: PlanBatchesInput): PreWeighBatchSplit {
-  const { totalKg, capacityPerBatch, salesToKgFactor, salesUnit } = input;
-  const factor = salesToKgFactor > 0 ? salesToKgFactor : 1;
-  const totalUnits = Math.max(0, Math.round(totalKg / factor));
-  if (!capacityPerBatch || capacityPerBatch <= 0) {
+  const { totalKg, salesUnit } = input;
+  const { factor, scale, total, cap } = resolveBatchQuantities(input);
+  const totalUnits = total / scale;
+  if (cap == null) {
     return { batched: false, fullBatchCount: 0, fullBatchUnits: 0, fullBatchKg: 0, partialUnits: totalUnits, partialKg: totalKg, totalUnits, unitLabel: salesUnit };
   }
-  const cap = Math.floor(capacityPerBatch);
-  if (!Number.isFinite(cap) || cap < 1) throw new Error("Capacidade da batida deve comportar pelo menos uma unidade inteira.");
-  const fullBatchCount = Math.floor(totalUnits / cap);
-  const partialUnits = totalUnits - fullBatchCount * cap;
-  return { batched: true, fullBatchCount, fullBatchUnits: cap, fullBatchKg: Number((cap * factor).toFixed(3)), partialUnits, partialKg: Number((partialUnits * factor).toFixed(3)), totalUnits, unitLabel: salesUnit };
+  const fullBatchCount = Math.floor(total / cap);
+  const partial = total - fullBatchCount * cap;
+  const fullBatchUnits = cap / scale;
+  const partialUnits = partial / scale;
+  return {
+    batched: true,
+    fullBatchCount,
+    fullBatchUnits,
+    fullBatchKg: Number((fullBatchUnits * factor).toFixed(3)),
+    partialUnits,
+    partialKg: Number((partialUnits * factor).toFixed(3)),
+    totalUnits,
+    unitLabel: salesUnit,
+  };
 }
 
 function formatBatchAmount(value: number) {
