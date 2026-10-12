@@ -1091,3 +1091,108 @@ test("destino: OP liberada DEPOIS da mudança congela o destino junto com a rece
   const doc = buildPackagingSeparationDocument(op, { products: [changedLater], ingredients: ingredientsWithBox });
   assert.equal(doc.lines.length, 1, "a edição posterior da receita não apaga a separação da OP já liberada");
 });
+
+// ── Embalagens e etiquetas do DIA programado ─────────────────────────────────────────────────────
+import { buildDayLabels, buildDayPackagingSeparation } from "@/lib/day-packaging-labels";
+
+function opWith(id: string, code: string, items: Array<{ product: ProductionProduct; totalKg: number }>): ProductionOrderRow {
+  const base = buildOp(items[0].product, items[0].totalKg);
+  return { ...base, id, code, items: items.map((entry) => buildOpItem(entry.product, entry.totalKg)) };
+}
+
+test("dia: a mesma caixa em duas OPs vira UMA linha, com o total do dia e o detalhe por produto", () => {
+  const a = destinationProduct("p-da", "PR-DA", "Bolo A", { d3: ["separacao_embalagem"] });
+  const b = destinationProduct("p-db", "PR-DB", "Bolo B", { d3: ["separacao_embalagem"] });
+  const src = { products: [a, b], ingredients: ingredientsWithBox };
+  const lines = buildDayPackagingSeparation([opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }]), opWith("op-2", "OP-2", [{ product: b, totalKg: 20 }])], src);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0].opCount, 2);
+  assert.deepEqual(lines[0].usedBy.map((u) => u.productName).sort(), ["Bolo A", "Bolo B"]);
+  const sum = lines[0].usedBy.reduce((t, u) => t + u.quantity, 0);
+  assert.ok(Math.abs(sum - lines[0].exactQuantity) < 0.002, "o detalhe por produto fecha com o total");
+});
+
+test("dia: arredonda a unidade contada UMA vez no total (0,4 + 0,4 = 1 caixa, não 2)", () => {
+  // Cada OP precisa de ~0,4 de caixa: sozinha arredondaria para 1; as duas juntas, ~0,8, ainda cabem em 1.
+  const mk = (id: string) => { const p = destinationProduct(id, `PR-${id}`, `Bolo ${id}`, { d3: ["separacao_embalagem"] }); return { ...p, recipe: p.recipe.map((line) => (line.id === "d3" ? { ...line, quantity: 0.28 } : line)) }; };
+  const a = mk("p-r1"); const b = mk("p-r2");
+  const src = { products: [a, b], ingredients: ingredientsWithBox };
+  const ops = [opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }]), opWith("op-2", "OP-2", [{ product: b, totalKg: 10 }])];
+  const perOp = ops.flatMap((op) => buildPackagingSeparationDocument(op, src).lines);
+  assert.deepEqual(perOp.map((l) => l.quantity), [1, 1], "cada OP sozinha arredondaria para 1");
+  const day = buildDayPackagingSeparation(ops, src);
+  assert.equal(day.length, 1);
+  assert.ok(day[0].exactQuantity < 1 && day[0].exactQuantity > 0.5, `exato ${day[0].exactQuantity}`);
+  assert.equal(day[0].exactQuantity, Math.round((perOp[0].exactQuantity + perOp[1].exactQuantity) * 1000) / 1000, "o total é a soma dos exatos, não dos arredondados");
+  assert.equal(day[0].quantity, 1, "o dia separa 1 caixa, não 2");
+});
+
+test("dia: peso/volume mantém 3 casas; embalagem em unidade diferente nunca se soma", () => {
+  const a = destinationProduct("p-w1", "PR-W1", "Bolo W1", { d2: ["separacao_embalagem"], d3: ["separacao_embalagem"] });
+  const src = { products: [a], ingredients: ingredientsWithBox };
+  const day = buildDayPackagingSeparation([opWith("op-1", "OP-1", [{ product: a, totalKg: 7.3 }])], src);
+  const cobertura = day.find((l) => l.label.includes("Cobertura"))!;
+  assert.equal(cobertura.quantity, cobertura.exactQuantity);
+  assert.equal(Number.isInteger(cobertura.quantity), false);
+  assert.equal(new Set(day.map((l) => l.key)).size, day.length, "uma linha por insumo+unidade");
+});
+
+test("dia: sem nenhuma embalagem marcada, o relatório é vazio", () => {
+  const a = destinationProduct("p-v1", "PR-V1", "Bolo V1", {});
+  assert.deepEqual(buildDayPackagingSeparation([opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }])], { products: [a], ingredients: ingredientsWithBox }), []);
+});
+
+test("etiquetas do dia: uma por produto, somando o mesmo produto em OPs diferentes", () => {
+  const a = destinationProduct("p-e1", "PR-E1", "Bolo Chocolate", {});
+  const b = destinationProduct("p-e2", "PR-E2", "Bolo Laranja", {});
+  const src = { products: [a, b], ingredients: ingredientsWithBox };
+  const ops = [opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }, { product: b, totalKg: 4 }]), opWith("op-2", "OP-2", [{ product: a, totalKg: 6 }])];
+  const labels = buildDayLabels(ops, src);
+  assert.deepEqual(labels.map((l) => l.productName), ["Bolo Chocolate", "Bolo Laranja"]);
+  const choc = labels.find((l) => l.productName === "Bolo Chocolate")!;
+  const laranja = labels.find((l) => l.productName === "Bolo Laranja")!;
+  assert.deepEqual(choc.opCodes, ["OP-1", "OP-2"]);
+  assert.equal(laranja.opCodes.length, 1);
+  const chocSingle = buildDayLabels([ops[0]], src).find((l) => l.productName === "Bolo Chocolate")!;
+  const chocSecond = buildDayLabels([ops[1]], src).find((l) => l.productName === "Bolo Chocolate")!;
+  assert.ok(Math.abs(choc.quantity - (chocSingle.quantity + chocSecond.quantity)) < 0.002, "soma das OPs");
+});
+
+test("etiquetas do dia: usa o código que o cliente reconhece e o peso da etiqueta do teste de laboratório", () => {
+  const base = destinationProduct("p-c1", "PR-C1", "Pão", {});
+  const a = { ...base, externalCode: "1720", labTest: { labelWeightKg: 0.263 } } as unknown as ProductionProduct;
+  const [label] = buildDayLabels([opWith("op-1", "OP-1", [{ product: a, totalKg: 5 }])], { products: [a], ingredients: ingredientsWithBox });
+  assert.equal(label.code, "1720");
+  assert.equal(label.labelWeightKg, 0.263);
+  const [semTeste] = buildDayLabels([opWith("op-1", "OP-1", [{ product: base, totalKg: 5 }])], { products: [base], ingredients: ingredientsWithBox });
+  assert.equal(semTeste.labelWeightKg, null);
+});
+
+test("dia: o MESMO produto em duas OPs soma na linha de 'usado em' (não sobrescreve)", () => {
+  const a = destinationProduct("p-us", "PR-US", "Bolo US", { d3: ["separacao_embalagem"] });
+  const src = { products: [a], ingredients: ingredientsWithBox };
+  const one = buildDayPackagingSeparation([opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }])], src)[0];
+  const two = buildDayPackagingSeparation([opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }]), opWith("op-2", "OP-2", [{ product: a, totalKg: 10 }])], src)[0];
+  assert.equal(two.usedBy.length, 1, "um produto, uma entrada");
+  assert.ok(Math.abs(two.usedBy[0].quantity - 2 * one.usedBy[0].quantity) < 0.002);
+});
+
+test("etiquetas do dia: o mesmo produto em unidades diferentes (Un numa OP, Kg noutra) não se soma", () => {
+  const base = destinationProduct("p-un", "PR-UN", "Pão Misto", {});
+  const withUnit = (id: string, unit: "Un" | "Kg", qty: number) => {
+    const op = opWith(id, id.toUpperCase(), [{ product: base, totalKg: 5 }]);
+    return { ...op, sourceItems: op.sourceItems.map((item) => ({ ...item, requestedUnit: unit, requestedQuantity: qty })) } as ProductionOrderRow;
+  };
+  const labels = buildDayLabels([withUnit("op-a", "Un", 20), withUnit("op-b", "Kg", 5)], { products: [base], ingredients: ingredientsWithBox });
+  assert.equal(labels.length, 2, "uma etiqueta por unidade");
+  assert.deepEqual(labels.map((l) => l.unit).sort(), ["Kg", "Un"]);
+  assert.equal(labels.find((l) => l.unit === "Un")!.quantity, 20);
+  assert.equal(labels.find((l) => l.unit === "Kg")!.quantity, 5);
+});
+
+test("etiquetas do dia: a mesma OP não aparece duas vezes na lista de OPs do produto", () => {
+  const a = destinationProduct("p-oc", "PR-OC", "Bolo OC", {});
+  const op = opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }, { product: a, totalKg: 6 }]);
+  const [label] = buildDayLabels([op], { products: [a], ingredients: ingredientsWithBox });
+  assert.deepEqual(label.opCodes, ["OP-1"]);
+});

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Printer } from "lucide-react";
+import { AlertTriangle, Package, Printer, Tag } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -104,6 +104,29 @@ export function DayPrintButton({ date, dayLabel, opCount, productCount, totalKg 
               </p>
             </div>
           ) : null}
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={() => window.open(`/impressao/embalagens-dia/${encodeURIComponent(date)}`, "_blank", "noopener")}
+            >
+              <Package className="size-4" aria-hidden />
+              Embalagens do dia (total)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={() => window.open(`/impressao/etiquetas-dia/${encodeURIComponent(date)}`, "_blank", "noopener")}
+            >
+              <Tag className="size-4" aria-hidden />
+              Etiquetas por produto
+            </Button>
+          </div>
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
