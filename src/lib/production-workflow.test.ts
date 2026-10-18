@@ -90,3 +90,16 @@ test("S0.7: OP continua avançando depois que a ficha perde etapas no meio da op
   assert.equal(canTransitionProductionItemStatusLenient("em_producao", "concluido", liveStages), true);
   assert.equal(canTransitionProductionItemStatusLenient("nao_iniciado", "concluido", liveStages), false);
 });
+
+test("getOpAdvanceMode — OP só com itens batidos não promete avanço por status", async () => {
+  const { getOpAdvanceMode } = await import("@/lib/production-workflow");
+  const batched = { status: "nao_iniciado" as const, capacityPerBatch: 4 };
+  const plain = { status: "nao_iniciado" as const, capacityPerBatch: null };
+  assert.equal(getOpAdvanceMode([batched]), "batches");
+  assert.equal(getOpAdvanceMode([batched, batched]), "batches");
+  assert.equal(getOpAdvanceMode([batched, plain]), "status");
+  assert.equal(getOpAdvanceMode([plain]), "status");
+  assert.equal(getOpAdvanceMode([{ status: "concluido", capacityPerBatch: 4 }]), "none");
+  assert.equal(getOpAdvanceMode([{ status: "concluido", capacityPerBatch: null }, batched]), "batches");
+  assert.equal(getOpAdvanceMode([]), "none");
+});

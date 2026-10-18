@@ -227,3 +227,32 @@ export function getProductionStatusProgress(
 
   return Number(((currentIndex / (flow.length - 1)) * 100).toFixed(1));
 }
+
+type AdvanceCandidate = {
+  status: ProductionItemStatus;
+  capacityPerBatch?: number | null;
+  preparationStages?: ProductPreparationStageKey[] | null;
+};
+
+/** Item batido (capacidade de batida > 0): avança pelas batidas da pré-pesagem, não por status. */
+export function isBatchedProductionItem(item: Pick<AdvanceCandidate, "capacityPerBatch">) {
+  return item.capacityPerBatch != null && item.capacityPerBatch > 0;
+}
+
+/**
+ * Como o card da OP no Chão deve se comportar:
+ * - "status": há ao menos um item não-batido com próxima etapa → o botão avança por status;
+ * - "batches": só restam itens batidos pendentes → o botão leva à OP (batidas), sem prometer avanço;
+ * - "none": nada pendente.
+ */
+export function getOpAdvanceMode(items: AdvanceCandidate[]): "status" | "batches" | "none" {
+  const pending = items.filter((item) => item.status !== "concluido");
+  if (pending.length === 0) return "none";
+  const canAdvanceByStatus = pending.some(
+    (item) =>
+      !isBatchedProductionItem(item) &&
+      getNextProductionItemStatus(item.status, item.preparationStages) != null,
+  );
+  if (canAdvanceByStatus) return "status";
+  return pending.some(isBatchedProductionItem) ? "batches" : "none";
+}

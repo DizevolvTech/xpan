@@ -31,7 +31,12 @@ import type {
   ProductionOrderRow,
 } from "@/lib/factory-planning";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
-import { getNextProductionActionLabel, getNextProductionItemStatus } from "@/lib/production-workflow";
+import {
+  getNextProductionActionLabel,
+  getNextProductionItemStatus,
+  getOpAdvanceMode,
+  isBatchedProductionItem,
+} from "@/lib/production-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
@@ -163,7 +168,7 @@ function advanceableItemsOf(
   return op.items
     .filter(
       (item) =>
-        item.status !== "concluido" && !(item.capacityPerBatch != null && item.capacityPerBatch > 0),
+        item.status !== "concluido" && !isBatchedProductionItem(item),
     )
     .flatMap((item) => {
       const next = getNextProductionItemStatus(item.status, item.preparationStages);
@@ -770,6 +775,8 @@ function ChaoOpCard({
   // Itens ainda não concluídos da OP.
   const pendingItems = op.items.filter((item) => item.status !== "concluido");
   const hasPendingItems = pendingItems.length > 0;
+  // Só itens batidos pendentes: não há avanço por status; o botão leva à OP (batidas).
+  const advanceMode = getOpAdvanceMode(op.items);
   // Data de ENTREGA (dos pedidos), não a de produção.
   const deliveryLabel = deriveOpDeliveryLabel(op);
   // PRÓXIMO passo CONCRETO ("Iniciar produção", "Enviar para forno"…) quando todos
@@ -865,7 +872,14 @@ function ChaoOpCard({
           read-only ("geridas no Chão") com atalho p/ o detalhe. Quando os itens estão
           em etapas diferentes, o rótulo cai para "Avançar etapa" (o diálogo resolve
           item a item). */}
-      {hasPendingItems ? (
+      {hasPendingItems && advanceMode === "batches" ? (
+        <Button asChild size="lg" className="mt-1 w-full">
+          <Link href={opDetailHref} aria-label={`Abrir OP ${op.code} para avançar as batidas`}>
+            <ArrowRight className="size-4 shrink-0" aria-hidden />
+            <span className="truncate">Abrir OP: avançar pelas batidas</span>
+          </Link>
+        </Button>
+      ) : hasPendingItems ? (
         // Ação PRINCIPAL do card: botão primário cheio (antes era um <button> apagado que
         // parecia desabilitado). `size="lg"` garante alvo de toque de 44px pro chão.
         <Button
