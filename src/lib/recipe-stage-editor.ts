@@ -260,3 +260,42 @@ export function moveRecipeItemToStage<T extends RecipeStageEditorItem>(
   const remaining = recipe.filter((_, index) => index !== currentIndex);
   return insertRecipeItemInStage(remaining, moved);
 }
+
+/** Uma linha da visão "lista única" da ficha: o insumo + a posição da etapa dele na sequência. */
+export interface RecipeListRow<T extends RecipeStageEditorItem = RecipeStageEditorItem> {
+  item: T;
+  stage: RecipeStage;
+  /** Posição (1-based) da etapa na sequência dos blocos da ficha. */
+  stageOrder: number;
+}
+
+/**
+ * Visão "lista única" (feedback 3 do cliente): todos os insumos numa tabela só, com a coluna
+ * Etapa. Só apresentação — não altera `recipe` nem `recipeStageConfig`.
+ *
+ * - `stageFilter`: "todas" ou uma etapa;
+ * - `sortByStageSequence`: false = ordem em que os insumos estão na ficha (`recipe`);
+ *   true = agrupado pela sequência das etapas (ordem dentro da etapa preservada).
+ */
+export function buildRecipeListRows<T extends RecipeStageEditorItem>(
+  config: RecipeStageConfigEntry[] | undefined,
+  recipe: T[],
+  options: { stageFilter?: RecipeStage | "todas"; sortByStageSequence?: boolean } = {},
+): RecipeListRow<T>[] {
+  const order = getRecipeStageBlockOrder(config, recipe);
+  const orderOf = new Map(order.map((stage, index) => [stage, index + 1]));
+  const rows = recipe.map((item) => {
+    const stage = normalizeRecipeStage(item.stage);
+    return { item, stage, stageOrder: orderOf.get(stage) ?? order.length + 1 };
+  });
+  const filtered =
+    options.stageFilter && options.stageFilter !== "todas"
+      ? rows.filter((row) => row.stage === options.stageFilter)
+      : rows;
+  if (!options.sortByStageSequence) return filtered;
+  // sort estável: dentro da mesma etapa mantém a ordem da ficha.
+  return filtered
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => a.row.stageOrder - b.row.stageOrder || a.index - b.index)
+    .map(({ row }) => row);
+}

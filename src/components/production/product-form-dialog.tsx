@@ -61,6 +61,7 @@ import {
 import {
   addRecipeStage,
   canRemoveRecipeStage,
+  buildRecipeListRows,
   getAddableRecipeStages,
   getRecipeStageBlocks,
   insertRecipeItemInStage,
@@ -214,6 +215,11 @@ export function ProductFormDialog({
   // Bloco que abriu o cadastro de ingrediente inline — o insumo criado volta pro rascunho dele.
   const [ingredientDialogStage, setIngredientDialogStage] = useState<RecipeStage>(defaultRecipeStage);
   const [formError, setFormError] = useState<string | null>(null);
+  // Visão da composição da receita: blocos por etapa (padrão) ou lista única com coluna Etapa.
+  // Só muda a apresentação — os dados e a ordem salvos são os mesmos.
+  const [recipeView, setRecipeView] = useState<"blocos" | "lista">("blocos");
+  const [recipeListStageFilter, setRecipeListStageFilter] = useState<RecipeStage | "todas">("todas");
+  const [recipeListSortedByStage, setRecipeListSortedByStage] = useState(false);
   const [invalidFields, setInvalidFields] = useState<ProductValidationField[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("cadastro");
@@ -539,6 +545,14 @@ export function ProductFormDialog({
   const recipeStageBlocks = useMemo(
     () => getRecipeStageBlocks(formState.recipeStageConfig, formState.recipe),
     [formState.recipeStageConfig, formState.recipe],
+  );
+  const recipeListRows = useMemo(
+    () =>
+      buildRecipeListRows(formState.recipeStageConfig, formState.recipe, {
+        stageFilter: recipeListStageFilter,
+        sortByStageSequence: recipeListSortedByStage,
+      }),
+    [formState.recipeStageConfig, formState.recipe, recipeListStageFilter, recipeListSortedByStage],
   );
   const addableRecipeStages = useMemo(
     () => getAddableRecipeStages(formState.recipeStageConfig, formState.recipe),
@@ -1982,6 +1996,195 @@ export function ProductFormDialog({
                   </span>
                 </div>
 
+                <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Visão da composição da receita">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={recipeView === "blocos" ? "default" : "outline"}
+                    aria-pressed={recipeView === "blocos"}
+                    onClick={() => setRecipeView("blocos")}
+                  >
+                    Blocos por etapa
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={recipeView === "lista" ? "default" : "outline"}
+                    aria-pressed={recipeView === "lista"}
+                    onClick={() => setRecipeView("lista")}
+                  >
+                    Lista única
+                  </Button>
+                </div>
+
+                {recipeView === "lista" ? (
+                  <div className="space-y-3" data-testid="recipe-list-view">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="grid gap-1.5">
+                        <Label>Filtrar por etapa</Label>
+                        <Select
+                          value={recipeListStageFilter}
+                          onValueChange={(value) => setRecipeListStageFilter(value as RecipeStage | "todas")}
+                        >
+                          <SelectTrigger aria-label="Filtrar insumos por etapa" className="w-48">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todas">Todas as etapas</SelectItem>
+                            {recipeStageBlocks.map((block) => (
+                              <SelectItem key={block.stage} value={block.stage}>
+                                {recipeStageLabels[block.stage]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={recipeListSortedByStage ? "default" : "outline"}
+                        aria-pressed={recipeListSortedByStage}
+                        onClick={() => setRecipeListSortedByStage((current) => !current)}
+                        title="Agrupa os insumos pela sequência das etapas da ficha"
+                      >
+                        Ordenar pela sequência das etapas
+                      </Button>
+                    </div>
+
+                    {recipeListRows.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-border/70 bg-card px-3 py-3 text-sm text-muted-foreground">
+                        Nenhum insumo para mostrar. Adicione insumos na visão “Blocos por etapa”.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-border/70">
+                        <table className="w-full min-w-[820px] border-collapse">
+                          <thead className="bg-card">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Etapa</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Referência</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Quantidade *</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Unidade</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">% total</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {recipeListRows.map(({ item, stage, stageOrder }) => (
+                              <tr key={item.id}>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span className="rounded-full bg-info/15 px-2 py-1 text-[11px] font-semibold text-info-foreground">
+                                      {stageOrder}º
+                                    </span>
+                                    <Select
+                                      value={stage}
+                                      onValueChange={(value) => changeRecipeItemStage(item.id, value as RecipeStage)}
+                                    >
+                                      <SelectTrigger aria-label={`Etapa de ${item.label}`} className="w-40">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {recipeStages.map((entry) => (
+                                          <SelectItem key={entry} value={entry}>
+                                            {recipeStageLabels[entry]}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                  {relabelRecipeLineWithClientCode(
+                                    item.label,
+                                    item.sourceType === "ingrediente"
+                                      ? snapshot.ingredients.find((ingredient) => ingredient.id === item.sourceId)
+                                      : snapshot.products.find((entry) => entry.id === item.sourceId),
+                                  )}
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.001"
+                                    aria-label={`Quantidade de ${item.label}`}
+                                    value={item.quantity}
+                                    onChange={(event) =>
+                                      updateRecipeItem(item.id, { quantity: Number(event.target.value) })
+                                    }
+                                  />
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                  <Select
+                                    value={item.unit}
+                                    onValueChange={(value) =>
+                                      updateRecipeItem(item.id, { unit: value as RecipeIngredientReference["unit"] })
+                                    }
+                                  >
+                                    <SelectTrigger aria-label={`Unidade de ${item.label}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {getOperationalUnitOptions(item.unit).map((unit) => (
+                                        <SelectItem key={unit} value={unit}>
+                                          {getOperationalUnitLabel(unit)}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-right text-sm tabular-nums">
+                                  {recipeLineMetrics.get(item.id)?.overTotal != null
+                                    ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overTotal, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}%`
+                                    : "—"}
+                                </td>
+                                <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    className="text-danger-foreground/80 hover:bg-danger/35 hover:text-danger-foreground"
+                                    onClick={() => removeRecipeItem(item.id)}
+                                    title="Remover insumo"
+                                    aria-label={`Remover ${item.label}`}
+                                  >
+                                    <Trash2 className="size-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    <div className="rounded-lg border border-border/70 bg-card p-3">
+                      <h4 className="text-sm font-semibold text-foreground">Etapas do processo</h4>
+                      <ol className="mt-2 space-y-2 text-sm">
+                        {recipeStageBlocks.map((block, blockIndex) => (
+                          <li key={block.stage} className="flex flex-col gap-0.5">
+                            <span className="font-medium text-foreground">
+                              {blockIndex + 1}º · {recipeStageLabels[block.stage]}{" "}
+                              <span className="font-normal text-muted-foreground">
+                                ({block.items.length} insumo(s))
+                              </span>
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {block.instructions.trim()
+                                ? block.instructions
+                                : "Sem modo de preparo — edite na visão “Blocos por etapa”."}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  </div>
+                ) : null}
+
+                {recipeView === "blocos" ? (
+                <>
                 <div className="space-y-4">
                   {recipeStageBlocks.map((block, blockIndex) => {
                     const draft = getRecipeDraft(block.stage);
@@ -2431,6 +2634,8 @@ export function ProductFormDialog({
                       </Select>
                     </div>
                   </div>
+                ) : null}
+                </>
                 ) : null}
               </section>
 

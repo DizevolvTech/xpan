@@ -287,3 +287,34 @@ test("RETROCOMPAT: fluxo legado inteiro sem tocar em bloco mantém config vazia"
   );
   assert.deepEqual(getRecipeStageBlockOrder(config, recipe), ["massa"]);
 });
+
+test("buildRecipeListRows — lista única: ordem da ficha, filtro por etapa e sequência das etapas", async () => {
+  const { buildRecipeListRows } = await import("@/lib/recipe-stage-editor");
+  const recipe: Item[] = [
+    { id: "a", stage: "massa" },
+    { id: "b", stage: "esponja" },
+    { id: "c", stage: "massa" },
+    { id: "d", stage: "recheio" },
+  ];
+  // config: esponja → massa → recheio
+  const config: RecipeStageConfigEntry[] = [
+    { stage: "esponja", instructions: "" },
+    { stage: "massa", instructions: "" },
+    { stage: "recheio", instructions: "" },
+  ];
+  const ids = (rows: { item: Item }[]) => rows.map((row) => row.item.id);
+
+  // sem ordenar: mantém a ordem em que os insumos estão na ficha
+  assert.deepEqual(ids(buildRecipeListRows(config, recipe)), ["a", "b", "c", "d"]);
+  // ordenar pela sequência das etapas: esponja, massa (a, c na ordem original), recheio
+  const sorted = buildRecipeListRows(config, recipe, { sortByStageSequence: true });
+  assert.deepEqual(ids(sorted), ["b", "a", "c", "d"]);
+  assert.deepEqual(sorted.map((row) => row.stageOrder), [1, 2, 2, 3]);
+  // filtro
+  assert.deepEqual(ids(buildRecipeListRows(config, recipe, { stageFilter: "massa" })), ["a", "c"]);
+  assert.deepEqual(ids(buildRecipeListRows(config, recipe, { stageFilter: "todas" })), ["a", "b", "c", "d"]);
+  // não altera a entrada
+  assert.deepEqual(ids(recipe.map((item) => ({ item }))), ["a", "b", "c", "d"]);
+  // receita legada (sem config, sem itens): lista vazia, sem erro
+  assert.deepEqual(buildRecipeListRows(undefined, []), []);
+});
