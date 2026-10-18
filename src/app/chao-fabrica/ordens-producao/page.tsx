@@ -13,6 +13,8 @@ import {
   Truck,
 } from "lucide-react";
 
+import { StatusFilterBar } from "@/components/shared/status-filter-bar";
+import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { DayPrintButton } from "@/components/production/day-print-button";
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
@@ -73,6 +75,8 @@ type DailyLineRow = {
   itemsCount: number;
 };
 
+const OP_FINAL_STATUSES = ["aguardando_expedicao", "rota_entrega", "entregue", "cancelado"] as const;
+
 const ORDER_STATUS_FILTER_OPTIONS: Array<{ value: OrderStatus; label: string }> = [
   { value: "em_espera", label: "Em Espera" },
   { value: "agendado", label: "Agendado" },
@@ -90,7 +94,12 @@ export default function OrdensProducaoPage() {
   const router = useRouter();
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [productionDateFilter, setProductionDateFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Feedback 5/6: por padrão só as pendências; multi-status, Ver histórico e padrão salvo por página.
+  const statusFilter = useListStatusFilter({
+    pageKey: "chao-fabrica-ordens-producao",
+    finalStatuses: OP_FINAL_STATUSES,
+    validStatuses: ORDER_STATUS_FILTER_OPTIONS.map((option) => option.value),
+  });
   const [sectorFilter, setSectorFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -151,12 +160,13 @@ export default function OrdensProducaoPage() {
     [capacityByLineId, planningData.productionOrders],
   );
 
+  const matchesStatusFilter = statusFilter.matches;
   const filteredOps = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
 
     return opRows.filter((item) => {
       const matchesDate = productionDateFilter === "all" || item.productionDate === productionDateFilter;
-      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesStatus = matchesStatusFilter(item.status);
       const matchesCategory = sectorFilter === "all" || item.sectorName === sectorFilter;
       const matchesSubcategory = lineFilter === "all" || item.lineName === lineFilter;
       const matchesSearch =
@@ -172,7 +182,7 @@ export default function OrdensProducaoPage() {
 
       return matchesDate && matchesStatus && matchesCategory && matchesSubcategory && matchesSearch;
     });
-  }, [lineFilter, opRows, productionDateFilter, searchTerm, sectorFilter, statusFilter]);
+  }, [lineFilter, opRows, productionDateFilter, searchTerm, sectorFilter, matchesStatusFilter]);
   const sortedOps = useMemo(
     () => sortItemsByTemporalValue(filteredOps, sortOrder, ["productionDate"]),
     [filteredOps, sortOrder],
@@ -407,7 +417,7 @@ export default function OrdensProducaoPage() {
   const activeFiltersCount = [
     searchTerm.trim().length > 0 ? 1 : 0,
     productionDateFilter !== "all" ? 1 : 0,
-    statusFilter !== "all" ? 1 : 0,
+    statusFilter.isCustom ? 1 : 0,
     sectorFilter !== "all" ? 1 : 0,
     lineFilter !== "all" ? 1 : 0,
   ].reduce((sum, value) => sum + value, 0);
@@ -415,7 +425,7 @@ export default function OrdensProducaoPage() {
   function clearFilters() {
     setSearchTerm("");
     setProductionDateFilter("all");
-    setStatusFilter("all");
+    statusFilter.reset();
     setSectorFilter("all");
     setLineFilter("all");
     setOpPage(1);
@@ -601,16 +611,6 @@ export default function OrdensProducaoPage() {
             options: planningData.productionDates.map((date) => ({ value: date, label: formatDateKeyBr(date) })),
           },
           {
-            key: "status",
-            label: "Status",
-            value: statusFilter,
-            onChange: (value) => {
-              setStatusFilter(value);
-              setOpPage(1);
-            },
-            options: statusOptions,
-          },
-          {
             key: "sector",
             label: hierarchyLabels.sector,
             value: sectorFilter,
@@ -632,6 +632,8 @@ export default function OrdensProducaoPage() {
           },
         ]}
       />
+
+      <StatusFilterBar control={statusFilter} options={statusOptions} onChange={() => setOpPage(1)} />
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-border/60">

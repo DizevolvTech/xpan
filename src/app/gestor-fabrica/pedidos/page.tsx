@@ -28,6 +28,8 @@ import {
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
+import { StatusFilterBar } from "@/components/shared/status-filter-bar";
+import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -63,6 +65,17 @@ function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
 }
 
+const ORDER_STATUS_FILTER_OPTIONS = [
+  { value: "em_espera", label: "Em Espera" },
+  { value: "agendado", label: "Agendado" },
+  { value: "em_producao", label: "Em Produção" },
+  { value: "aguardando_expedicao", label: "Aguardando Expedição" },
+  { value: "rota_entrega", label: "Rota de Entrega" },
+  { value: "entregue", label: "Entregue" },
+  { value: "cancelado", label: "Cancelado" },
+];
+const ORDER_FINAL_STATUSES = ["entregue", "cancelado"] as const;
+
 export default function PedidosFabricaPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const searchParams = useSearchParams();
@@ -70,7 +83,13 @@ export default function PedidosFabricaPage() {
   const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState("");
   // AJ-0002: filtro inicial vindo do deep-link dos cards do dashboard.
-  const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") ?? "all");
+  // Feedback 5/6: por padrão só as pendências; multi-status, Ver histórico e padrão salvo por página.
+  const statusFilter = useListStatusFilter({
+    pageKey: "gestor-fabrica-pedidos",
+    finalStatuses: ORDER_FINAL_STATUSES,
+    validStatuses: ORDER_STATUS_FILTER_OPTIONS.map((option) => option.value),
+    initialStatus: searchParams.get("status"),
+  });
   const [storeFilter, setStoreFilter] = useState("all");
   const [deliveryFilter, setDeliveryFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
@@ -163,6 +182,7 @@ export default function PedidosFabricaPage() {
     return { filled, total, pending: total - filled };
   }, [openBatchSlots, summaryRows]);
 
+  const matchesStatusFilter = statusFilter.matches;
   const filteredOrders = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase();
     return summaryRows.filter((item) => {
@@ -170,12 +190,12 @@ export default function PedidosFabricaPage() {
         normalizedTerm.length === 0 ||
         item.code.toLowerCase().includes(normalizedTerm) ||
         item.storeName.toLowerCase().includes(normalizedTerm);
-      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesStatus = matchesStatusFilter(item.status);
       const matchesStore = storeFilter === "all" || item.storeName === storeFilter;
       const matchesDelivery = deliveryFilter === "all" || item.deliveryDate === deliveryFilter;
       return matchesSearch && matchesStatus && matchesStore && matchesDelivery;
     });
-  }, [deliveryFilter, searchTerm, statusFilter, storeFilter, summaryRows]);
+  }, [deliveryFilter, searchTerm, matchesStatusFilter, storeFilter, summaryRows]);
   const sortedOrders = useMemo(
     () => sortItemsByTemporalValue(filteredOrders, sortOrder, ["orderedAtKey", "deliveryDate", "orderedAt"]),
     [filteredOrders, sortOrder],
@@ -270,7 +290,7 @@ export default function PedidosFabricaPage() {
 
   function clearFilters() {
     setSearchTerm("");
-    setStatusFilter("all");
+    statusFilter.reset();
     setStoreFilter("all");
     setDeliveryFilter("all");
     setPage(1);
@@ -616,22 +636,6 @@ export default function PedidosFabricaPage() {
             }}
             fields={[
               {
-                key: "status",
-                label: "Status",
-                value: statusFilter,
-                onChange: (value) => {
-                  setStatusFilter(value);
-                  setPage(1);
-                },
-                options: [
-                  { value: "em_espera", label: "Em Espera" },
-                  { value: "agendado", label: "Agendado" },
-                  { value: "em_producao", label: "Em Produção" },
-                  { value: "aguardando_expedicao", label: "Aguardando Expedição" },
-                  { value: "cancelado", label: "Cancelado" },
-                ],
-              },
-              {
                 key: "store",
                 label: "Loja",
                 value: storeFilter,
@@ -654,12 +658,14 @@ export default function PedidosFabricaPage() {
             ]}
             activeFiltersCount={[
               searchTerm.trim().length > 0 ? 1 : 0,
-              statusFilter !== "all" ? 1 : 0,
+              statusFilter.isCustom ? 1 : 0,
               storeFilter !== "all" ? 1 : 0,
               deliveryFilter !== "all" ? 1 : 0,
             ].reduce((sum, item) => sum + item, 0)}
             onClear={clearFilters}
           />
+
+          <StatusFilterBar control={statusFilter} options={ORDER_STATUS_FILTER_OPTIONS} onChange={() => setPage(1)} />
 
           <div className="overflow-x-auto rounded-xl border border-border/80">
             <table className="w-full min-w-[800px] border-collapse">
