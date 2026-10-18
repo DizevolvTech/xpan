@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, CalendarClock, CalendarRange, ClipboardList, Factory, PackageCheck, Pencil, ShoppingCart, Truck } from "lucide-react";
 
@@ -139,6 +139,7 @@ function pickAggregateStatus(statuses: OrderStatus[]): OrderStatus {
 export default function OrdensProducaoPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [productionDateFilter, setProductionDateFilter] = useState("all");
   // AJ-0002: filtro inicial vindo do deep-link dos cards do dashboard.
   const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") ?? "all");
@@ -923,7 +924,7 @@ export default function OrdensProducaoPage() {
             keyField="id"
             pagination={false}
             showFooterControls={false}
-            onRowClick={(item) => window.location.assign(`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)}
+            onRowClick={(item) => router.push(`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)}
             // Esqueleto não abre detalhe (não há OP real pra acionar) e fica MUTED.
             isRowClickable={(item) => !isSkeletonOp(item)}
             rowClassName={(item) => (isSkeletonOp(item) ? "text-muted-foreground opacity-[0.72]" : "")}

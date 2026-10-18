@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -86,6 +87,7 @@ function openPrintPage(pathname: string) {
 }
 
 export default function OrdensProducaoPage() {
+  const router = useRouter();
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [productionDateFilter, setProductionDateFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -643,7 +645,7 @@ export default function OrdensProducaoPage() {
             pagination={false}
             showFooterControls={false}
             onRowClick={(item) =>
-              window.location.assign(
+              router.push(
                 `/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`,
               )
             }
