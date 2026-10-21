@@ -1,5 +1,6 @@
 import "server-only";
 
+import { buildDeliveryAlreadyReleasedMessage } from "@/lib/batch-release-guard";
 import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import type { FactoryPlanningInput, StoreOrder, StoreProfile } from "@/lib/order-planning";
 import { getOperationalOrderWindow, getTodayDateKey } from "@/lib/order-planning";
@@ -452,6 +453,25 @@ export async function createStoreOrder(
       );
     }
     batchId = batch.id;
+
+    // Feedback 9: entrega com pedido já LIBERADO para produção não aceita pedido novo —
+    // ele entraria na soma de uma produção que pode já estar andando.
+    const sameDateOrders = await supabase
+      .from("store_orders")
+      .select("id")
+      .eq("delivery_date", input.deliveryDate)
+      .eq("management_status", "ativo");
+    const sameDateIds = (sameDateOrders.data ?? []).map((row: { id: string }) => row.id);
+    if (sameDateIds.length > 0) {
+      const released = await supabase
+        .from("workflow_order_releases")
+        .select("order_id")
+        .in("order_id", sameDateIds)
+        .limit(1);
+      if ((released.data ?? []).length > 0) {
+        throw new Error(buildDeliveryAlreadyReleasedMessage(input.deliveryDate));
+      }
+    }
   }
 
   const { snapshot, store, orderWindow, validatedItems } = await validateStoreOrderItems(input.items, {

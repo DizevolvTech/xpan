@@ -30,6 +30,7 @@ export type ReleaseBlockReason =
   | "order_cancelled"
   | "order_not_planned"
   | "order_not_releasable"
+  | "batch_stores_pending"
   // Trava de data futura: o servidor responde 400 + reason ao tentar concluir
   // produção (ou bater a última batida) em data futura. forceable=true só p/ gestor.
   | "production_in_future"

@@ -24,6 +24,8 @@ import {
   assertPlanningAllowsRelease,
   isSkeletonOrderId,
 } from "@/lib/supabase-data/release-validation";
+import { buildPendingStoresMessage, findPendingBatchStores } from "@/lib/batch-release-guard";
+import type { OrderBatchSlot } from "@/lib/order-batch-plan";
 import { appendProductionOrderEvent } from "@/lib/supabase-data/production-order-events";
 import {
   calculateProductionLeftover,
@@ -445,6 +447,45 @@ async function validateOrderReleasable(
   return assertPlanningAllowsRelease(orderRow, planning, orderId);
 }
 
+/**
+ * Feedback 9: lojas do MESMO lote e MESMA entrega do pedido que ainda não têm pedido ativo.
+ * Devolve a mensagem pronta (ou null). Pedido fora de lote não tem o que checar.
+ */
+async function describePendingBatchStores(
+  orderDbId: string,
+  supabase: SupabaseDataClient,
+): Promise<string | null> {
+  const orderResult = await supabase
+    .from("store_orders")
+    .select("batch_id, delivery_date")
+    .eq("id", orderDbId)
+    .maybeSingle();
+  const order = orderResult.data as { batch_id: string | null; delivery_date: string } | null;
+  if (!order?.batch_id) return null;
+
+  const batchResult = await supabase.from("order_batches").select("slots").eq("id", order.batch_id).maybeSingle();
+  const slots = (Array.isArray(batchResult.data?.slots) ? batchResult.data.slots : []) as OrderBatchSlot[];
+  if (slots.length === 0) return null;
+
+  const activeResult = await supabase
+    .from("store_orders")
+    .select("store_id")
+    .eq("delivery_date", order.delivery_date)
+    .eq("management_status", "ativo");
+  const activeDbIds = new Set((activeResult.data ?? []).map((row: { store_id: string }) => row.store_id));
+
+  const slotStoreIds = [...new Set(slots.filter((slot) => slot.deliveryDate === order.delivery_date).map((slot) => slot.storeId))];
+  if (slotStoreIds.length === 0) return null;
+  const storesResult = await supabase.from("stores").select("id, legacy_id, name").in("legacy_id", slotStoreIds);
+  const stores = (storesResult.data ?? []) as Array<{ id: string; legacy_id: string; name: string }>;
+  const withOrder = stores.filter((store) => activeDbIds.has(store.id)).map((store) => store.legacy_id);
+
+  const pending = findPendingBatchStores(slots, order.delivery_date, withOrder);
+  if (pending.length === 0) return null;
+  const names = pending.map((legacyId) => stores.find((store) => store.legacy_id === legacyId)?.name ?? legacyId);
+  return buildPendingStoresMessage(names, order.delivery_date);
+}
+
 export async function releaseOrder(
   orderId: string,
   releasedByProfileId?: string | null,
@@ -493,6 +534,18 @@ export async function releaseOrder(
       "order_cancelled",
       "pedido cancelado não pode ser liberado para produção.",
     );
+  }
+
+  // Feedback 9: liberação MANUAL avisa as lojas do lote que ainda não pediram. O cron de
+  // auto-liberação (sem perfil) segue como antes; "liberar mesmo assim" registra a exceção.
+  if (releasedByProfileId && orderRow.management_status !== "cancelado") {
+    const pendingMessage = await describePendingBatchStores(orderRow.id, supabase);
+    if (pendingMessage) {
+      if (!options.force) {
+        throw new OrderReleaseValidationError("batch_stores_pending", pendingMessage);
+      }
+      forcedReason = forcedReason ? `${forcedReason} | ${pendingMessage}` : pendingMessage;
+    }
   }
 
   const upsertResult = await supabase.from("workflow_order_releases").upsert(

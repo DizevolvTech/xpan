@@ -29,6 +29,7 @@ function isClientValidationError(message: string) {
     normalized.includes("dia de entrega") ||
     normalized.includes("só produz") ||
     normalized.includes("já existe um pedido ativo") ||
+    normalized.includes("já foi liberada para produção") ||
     normalized.includes("fora de um lote") ||
     normalized.includes("lote") ||
     normalized.includes("whole numbers")

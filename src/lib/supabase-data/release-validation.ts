@@ -7,7 +7,9 @@ export type OrderReleaseValidationReason =
   | "order_empty"
   // FASE 2 (blindagem): o id não corresponde a um pedido real (slot de esqueleto
   // do cronograma, qtd 0). Liberar isso criaria um release órfão.
-  | "order_not_real";
+  | "order_not_real"
+  // Feedback 9: outras lojas do mesmo lote/entrega ainda não pediram (forçável).
+  | "batch_stores_pending";
 
 /**
  * FASE 2 — prefixo dos ids do esqueleto do cronograma (`skeleton:<schedule.id>`

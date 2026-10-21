@@ -12,7 +12,8 @@
 export type ReleaseBlockReason =
   | "order_cancelled"
   | "order_not_planned"
-  | "order_not_releasable";
+  | "order_not_releasable"
+  | "batch_stores_pending";
 
 const REAUDIT_HINT =
   "Se você editou um produto recentemente, o cronograma volta a pendente — reaudite o cronograma e tente liberar de novo.";
