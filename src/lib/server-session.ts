@@ -2,6 +2,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import { ACCESS_CACHE_PREFIX, getCachedServerDataUnlessNull } from "@/lib/server-data-cache";
+
 import type { ManagedUser } from "@/lib/admin-users";
 import type { SessionUser } from "@/lib/auth";
 import { type PermissionMap } from "@/lib/permission-modules";
@@ -47,15 +49,34 @@ function buildSessionUser(name: string, email: string, role: SessionUser["role"]
   };
 }
 
+// Cada chamada de API refazia 2-3 consultas seriais (perfil, permissões, tenant) — ~0,5 s a
+// cada requisição. O token continua validado a cada chamada (`auth.getUser()`); só a leitura
+// do perfil/tenant fica em cache curto por usuário. Escritas de usuário/permissão/tenant
+// chamam `invalidateAccessCaches()`, então a mudança vale na hora nesta instância e em até
+// ACCESS_CACHE_TTL_MS nas demais.
+const ACCESS_CACHE_TTL_MS = 10_000;
+
 async function resolveManagedUserFromSession(
   authUserId: string,
   options: ResolveManagedUserOptions = {},
 ): Promise<ManagedUser | null> {
-  const supabase = await createSupabaseServerClient();
-  return findManagedUserByAuthUserId(authUserId, {
-    supabase,
-    includeStoreAccess: options.includeStoreAccess ?? false,
-  });
+  const includeStoreAccess = options.includeStoreAccess ?? false;
+  return getCachedServerDataUnlessNull(
+    `${ACCESS_CACHE_PREFIX}user:${authUserId}:${includeStoreAccess ? "stores" : "base"}`,
+    ACCESS_CACHE_TTL_MS,
+    async () => {
+      const supabase = await createSupabaseServerClient();
+      return findManagedUserByAuthUserId(authUserId, { supabase, includeStoreAccess });
+    },
+  );
+}
+
+async function resolveTenantCached(identifier: string) {
+  return getCachedServerDataUnlessNull(
+    `${ACCESS_CACHE_PREFIX}tenant:${identifier}`,
+    ACCESS_CACHE_TTL_MS,
+    () => getTenantByIdentifier(identifier),
+  );
 }
 
 export async function resolveServerSession(): Promise<ResolvedServerSession | null> {
@@ -105,7 +126,7 @@ export async function resolveServerAccess(
   if (!isMasterRole(managedUser.role)) {
     const tenant =
       managedUser.tenantId
-        ? await getTenantByIdentifier(managedUser.tenantId)
+        ? await resolveTenantCached(managedUser.tenantId)
         : null;
 
     if (tenant && tenant.status !== "ativo") {
@@ -138,7 +159,7 @@ export async function resolveServerAccess(
   const cookieStore = await cookies();
   const selectedTenantIdentifier = cookieStore.get(MASTER_TENANT_COOKIE_NAME)?.value ?? null;
   const selectedTenantRecord = selectedTenantIdentifier
-    ? await getTenantByIdentifier(selectedTenantIdentifier)
+    ? await resolveTenantCached(selectedTenantIdentifier)
     : null;
   const selectedTenant = selectedTenantRecord
     ? {

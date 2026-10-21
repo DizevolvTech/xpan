@@ -1,5 +1,7 @@
 import "server-only";
 
+import { invalidateAccessCaches } from "@/lib/server-data-cache";
+
 import type { Database } from "@/lib/database.types";
 import type {
   CreateMasterClientPayload,
@@ -328,6 +330,7 @@ export async function updateTenantStatus(
   ).single();
 
   const row = assertSupabaseResult(result, "Failed to update tenant status") as TenantRow;
+  invalidateAccessCaches();
 
   return mapTenantClient(row, {
     users: 0,

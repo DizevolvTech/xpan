@@ -1,5 +1,7 @@
 import "server-only";
 
+import { invalidateAccessCaches } from "@/lib/server-data-cache";
+
 import type {
   ManagedUser,
   ManagedUserProfileInput,
@@ -581,6 +583,7 @@ export async function createManagedUser(
     throw new Error("Created user could not be loaded");
   }
 
+  invalidateAccessCaches();
   return {
     user: createdUser,
     temporaryPassword: authProvisioning?.createdAuthUser
@@ -643,6 +646,7 @@ export async function updateManagedUser(
     throw new Error("Updated user could not be loaded");
   }
 
+  invalidateAccessCaches();
   return managedUser;
 }
 
@@ -670,6 +674,7 @@ export async function saveManagedUserPermissions(
     throw new Error("Updated user could not be loaded");
   }
 
+  invalidateAccessCaches();
   return managedUser;
 }
 
@@ -725,5 +730,6 @@ export async function saveManagedUserProfile(
     throw new Error("Updated user could not be loaded");
   }
 
+  invalidateAccessCaches();
   return managedUser;
 }

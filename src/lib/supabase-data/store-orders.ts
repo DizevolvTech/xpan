@@ -1,5 +1,6 @@
 import "server-only";
 
+import { fetchAllRows } from "@/lib/paged-rows";
 import { buildDeliveryAlreadyReleasedMessage } from "@/lib/batch-release-guard";
 import { isDiscreteUnit, type UnitCode } from "@/lib/factory-planning/units";
 import type { FactoryPlanningInput, StoreOrder, StoreProfile } from "@/lib/order-planning";
@@ -331,16 +332,25 @@ export async function listFactoryStoreOrders(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<StoreOrder[]> {
   const [ordersResult, itemsResult, storesResult, productsResult] = await Promise.all([
-    supabase
-      .from("store_orders")
-      .select("id, legacy_id, code, store_id, ordered_at, delivery_date, opened_at")
-      .order("ordered_at", { ascending: false }),
-    supabase
-      .from("store_order_items")
-      .select("id, legacy_id, order_id, product_id, requested_quantity, requested_unit")
-      .order("created_at", { ascending: true }),
-    supabase.from("stores").select("id, legacy_id"),
-    supabase.from("products").select("id, legacy_id"),
+    // Leituras paginadas: o PostgREST corta em 1000 linhas sem avisar (ver paged-rows.ts).
+    fetchAllRows((from, to) =>
+      supabase
+        .from("store_orders")
+        .select("id, legacy_id, code, store_id, ordered_at, delivery_date, opened_at")
+        .order("ordered_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows((from, to) =>
+      supabase
+        .from("store_order_items")
+        .select("id, legacy_id, order_id, product_id, requested_quantity, requested_unit")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows((from, to) => supabase.from("stores").select("id, legacy_id").order("id").range(from, to)),
+    fetchAllRows((from, to) => supabase.from("products").select("id, legacy_id").order("id").range(from, to)),
   ]);
 
   const orderRows = assertSupabaseResult(ordersResult, "Failed to load store orders");

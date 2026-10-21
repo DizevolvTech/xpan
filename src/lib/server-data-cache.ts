@@ -116,3 +116,28 @@ export function invalidatePlanningCaches(tenantId?: string | null) {
 export function invalidateDeliveryExecutionCaches(tenantId?: string | null) {
   invalidateTenantCacheSegments(tenantId, ["delivery-executions"]);
 }
+
+/** Prefixo das chaves do cache de acesso (usuário/tenant resolvidos por requisição). */
+export const ACCESS_CACHE_PREFIX = "access:";
+
+/** Invalida o cache de acesso — chamar em qualquer escrita de usuário, permissão ou tenant. */
+export function invalidateAccessCaches() {
+  invalidateServerDataCache(ACCESS_CACHE_PREFIX);
+}
+
+/**
+ * Como `getCachedServerData`, mas NÃO guarda resultado nulo: "usuário/tenant não encontrado"
+ * deve ser reavaliado na próxima chamada (conta recém-criada, tenant reativado).
+ */
+export async function getCachedServerDataUnlessNull<T>(
+  key: string,
+  ttlMs: number,
+  loader: () => Promise<T | null>,
+): Promise<T | null> {
+  const value = await getCachedServerData<T | null>(key, ttlMs, loader);
+  if (value === null || value === undefined) {
+    invalidateServerDataCache(key);
+    return null;
+  }
+  return value;
+}

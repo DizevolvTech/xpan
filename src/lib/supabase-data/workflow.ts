@@ -1,5 +1,6 @@
 import "server-only";
 
+import { fetchAllRows } from "@/lib/paged-rows";
 import type { ProductionItemStatus } from "@/lib/order-planning";
 import { buildFactoryPlanningData } from "@/lib/order-planning";
 import { applyFactoryWorkflowState } from "@/lib/factory-workflow-logic";
@@ -107,11 +108,30 @@ export async function getPersistedWorkflowState(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<PersistedWorkflowState> {
   const [releasesResult, statusesResult, startsResult, batchesResult, ordersResult] = await Promise.all([
-    supabase.from("workflow_order_releases").select("order_id"),
-    supabase.from("workflow_production_items").select("production_item_key, status"),
-    supabase.from("workflow_production_starts").select("production_item_key"),
-    supabase.from("workflow_production_batches").select("production_item_key, batches_done"),
-    supabase.from("store_orders").select("id, legacy_id, management_status"),
+    // Leituras paginadas: o PostgREST corta em 1000 linhas sem avisar (ver paged-rows.ts).
+    fetchAllRows((from, to) =>
+      supabase.from("workflow_order_releases").select("order_id").order("order_id").range(from, to),
+    ),
+    fetchAllRows((from, to) =>
+      supabase
+        .from("workflow_production_items")
+        .select("production_item_key, status")
+        .order("production_item_key")
+        .range(from, to),
+    ),
+    fetchAllRows((from, to) =>
+      supabase.from("workflow_production_starts").select("production_item_key").order("production_item_key").range(from, to),
+    ),
+    fetchAllRows((from, to) =>
+      supabase
+        .from("workflow_production_batches")
+        .select("production_item_key, batches_done")
+        .order("production_item_key")
+        .range(from, to),
+    ),
+    fetchAllRows((from, to) =>
+      supabase.from("store_orders").select("id, legacy_id, management_status").order("id").range(from, to),
+    ),
   ]);
 
   const orderRows = isSupabaseMissingSchemaError(ordersResult.error, ["management_status"])

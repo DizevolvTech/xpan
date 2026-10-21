@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   getCachedServerData,
+  getCachedServerDataUnlessNull,
+  invalidateAccessCaches,
   invalidateDeliveryExecutionCaches,
   invalidateMasterDataCaches,
   invalidatePlanningCaches,
@@ -143,4 +145,38 @@ test("delivery execution invalidation is tenant-scoped", async () => {
 
   assert.equal(tenantADeliveryLoads, 2);
   assert.equal(tenantBDeliveryLoads, 1);
+});
+
+test("cache de acesso: reaproveita o usuário, isola por usuário e some após invalidar", async () => {
+  let loadsA = 0;
+  let loadsB = 0;
+  const loadA = () => getCachedServerDataUnlessNull("access:user:a:base", 60_000, async () => {
+    loadsA += 1;
+    return { id: "a" };
+  });
+  const loadB = () => getCachedServerDataUnlessNull("access:user:b:base", 60_000, async () => {
+    loadsB += 1;
+    return { id: "b" };
+  });
+
+  assert.deepEqual(await loadA(), { id: "a" });
+  assert.deepEqual(await loadA(), { id: "a" });
+  assert.deepEqual(await loadB(), { id: "b" });
+  assert.equal(loadsA, 1);
+  assert.equal(loadsB, 1);
+
+  invalidateAccessCaches();
+  await loadA();
+  assert.equal(loadsA, 2);
+});
+
+test("cache de acesso: resultado nulo (não encontrado) não fica guardado", async () => {
+  let loads = 0;
+  const load = () => getCachedServerDataUnlessNull("access:tenant:novo", 60_000, async () => {
+    loads += 1;
+    return loads === 1 ? null : { id: "t" };
+  });
+  assert.equal(await load(), null);
+  assert.deepEqual(await load(), { id: "t" });
+  assert.equal(loads, 2);
 });

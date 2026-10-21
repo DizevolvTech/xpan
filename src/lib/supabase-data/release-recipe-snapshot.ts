@@ -1,3 +1,4 @@
+import { fetchAllRows } from "@/lib/paged-rows";
 import "server-only";
 
 import type { ProductionProduct } from "@/lib/production-planning";
@@ -23,7 +24,14 @@ const TABLE = "workflow_release_recipe_snapshots";
 export async function getReleasedRecipeSnapshots(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<ReleasedRecipeByOrderProduct> {
-  const result = await supabase.from(TABLE).select("order_id, product_id, recipe");
+  const result = await fetchAllRows((from, to) =>
+    supabase
+      .from(TABLE)
+      .select("order_id, product_id, recipe")
+      .order("order_id", { ascending: true })
+      .order("product_id", { ascending: true })
+      .range(from, to),
+  );
   if (result.error) {
     if (isSupabaseMissingSchemaError(result.error, [TABLE])) {
       return new Map();
