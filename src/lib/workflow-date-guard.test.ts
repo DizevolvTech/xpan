@@ -8,6 +8,8 @@ import {
   canOverrideFutureWorkflowDate,
   getOperationalTodayKey,
   getProductionDateFromKey,
+  isFirstProductionBatch,
+  isProductionStartTransition,
 } from "@/lib/workflow-date-guard";
 
 const TODAY = "2026-06-02";
@@ -72,4 +74,30 @@ test("canOverrideFutureWorkflowDate: só gestor de fábrica e administrador for�
   assert.equal(canOverrideFutureWorkflowDate("loja"), false);
   assert.equal(canOverrideFutureWorkflowDate(null), false);
   assert.equal(canOverrideFutureWorkflowDate(undefined), false);
+});
+
+test("trava é no INÍCIO: só nao_iniciado (ou sem registro) conta como início", () => {
+  assert.equal(isProductionStartTransition("nao_iniciado"), true);
+  assert.equal(isProductionStartTransition(undefined), true);
+  assert.equal(isProductionStartTransition(null), true);
+  for (const started of ["em_preparacao", "em_producao", "em_forno", "embalando", "concluido"]) {
+    assert.equal(isProductionStartTransition(started), false, started);
+  }
+});
+
+test("batida: só a 1ª conta como início", () => {
+  assert.equal(isFirstProductionBatch(0), true);
+  assert.equal(isFirstProductionBatch(1), false);
+  assert.equal(isFirstProductionBatch(3), false);
+});
+
+test("mensagem da trava fala em INICIAR, não em concluir", () => {
+  try {
+    assertProductionNotInFuture("2999-01-01|line|product", TODAY);
+    assert.fail("deveria lançar");
+  } catch (error) {
+    assert.ok(error instanceof FutureWorkflowDateError);
+    assert.match(error.message, /iniciar a produção/);
+    assert.doesNotMatch(error.message, /concluir a produção/);
+  }
 });

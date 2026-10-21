@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, CalendarClock, CalendarRange, ClipboardList, Factory, PackageCheck, Pencil, ShoppingCart, Truck } from "lucide-react";
 
+import { OpDayGroupsTable } from "@/components/production/op-day-groups-table";
+import { groupOpsByProductionDay, summarizeOpDates } from "@/lib/op-day-groups";
+import { getOperationalTodayKey } from "@/lib/workflow-date-guard";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
@@ -156,7 +159,9 @@ export default function OrdensProducaoPage() {
   const [sectorFilter, setSectorFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
+  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("old_first");
+  // Feedback 10: OPs de dias futuros ficam escondidas por padrão; "Exibir futuras" mostra todas.
+  const [showFuture, setShowFuture] = useState(false);
   const [opPage, setOpPage] = useState(1);
   const [opPageSize, setOpPageSize] = useState(20);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
@@ -263,7 +268,22 @@ export default function OrdensProducaoPage() {
     });
   }, [filteredOps, sortOrder]);
 
-  const opPagination = useMemo(() => paginateArray(sortedOps, opPage, opPageSize), [opPage, opPageSize, sortedOps]);
+  const todayKey = getOperationalTodayKey();
+  const visibleOps = useMemo(
+    () => (showFuture ? sortedOps : sortedOps.filter((op) => op.productionDate <= todayKey)),
+    [showFuture, sortedOps, todayKey],
+  );
+  const hiddenFutureCount = sortedOps.length - visibleOps.length;
+  const opPagination = useMemo(() => paginateArray(visibleOps, opPage, opPageSize), [opPage, opPageSize, visibleOps]);
+  const opDayGroups = useMemo(
+    () =>
+      groupOpsByProductionDay(opPagination.items, todayKey, {
+        showFuture: true,
+        // Slot de esqueleto (sem pedido) nunca está "atrasado": não há o que produzir.
+        isFinished: (op) => isSkeletonOp(op) || (OP_FINAL_STATUSES as readonly string[]).includes(op.status),
+      }).groups,
+    [opPagination.items, todayKey],
+  );
 
   const categoryOptions = useMemo(
     () =>
@@ -494,11 +514,29 @@ export default function OrdensProducaoPage() {
   ];
 
   const columns = [
-    { key: "code", header: "OP" },
-    { key: "productionDateLabel", header: "Data de produção" },
-    { key: "sectorName", header: hierarchyLabels.sector },
-    { key: "lineName", header: hierarchyLabels.line },
-    { key: "scheduleName", header: hierarchyLabels.schedule },
+    { key: "code", header: "OP", className: "whitespace-nowrap" },
+    {
+      key: "delivery",
+      header: "Entregar",
+      render: (item: OpQueueRow) => (
+        <span className="text-xs tabular-nums text-foreground">
+          {summarizeOpDates(
+            item.sourceItems.map((src) => ({ date: src.deliveryDate, label: src.deliveryDateLabel })),
+          ) ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "sale",
+      header: "Vender",
+      render: (item: OpQueueRow) => (
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {summarizeOpDates(item.sourceItems.map((src) => ({ date: src.saleDate, label: src.saleDateLabel }))) ?? "—"}
+        </span>
+      ),
+    },
+    { key: "lineName", header: hierarchyLabels.line, className: "whitespace-nowrap text-xs" },
+    { key: "scheduleName", header: hierarchyLabels.schedule, className: "whitespace-nowrap text-xs" },
     { key: "productsCount", header: "Produtos" },
     {
       key: "totalKg",
@@ -519,24 +557,6 @@ export default function OrdensProducaoPage() {
         }
         return formatKgValue(item.totalKg);
       },
-    },
-    {
-      key: "completion",
-      header: "% conclusão",
-      render: (item: OpQueueRow) =>
-        isSkeletonOp(item) ? (
-          <span className="text-xs text-muted-foreground/70">Aguardando pedido</span>
-        ) : (
-          <div className="min-w-[220px]">
-            <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-              <span>{item.completion.toFixed(1)}%</span>
-              <span>{formatKgValue(item.capacityKg)} Kg/dia de capacidade</span>
-            </div>
-            <div className="h-2 rounded-full bg-panel">
-              <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.completion, 100)}%` }} />
-            </div>
-          </div>
-        ),
     },
     {
       key: "status",
@@ -561,6 +581,7 @@ export default function OrdensProducaoPage() {
             —
           </span>
         ) : (
+          <div onClick={(event) => event.stopPropagation()}>
           <ProductionOrderActionsMenu
             detailHref={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
             preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
@@ -569,13 +590,14 @@ export default function OrdensProducaoPage() {
             onOpenWorkflow={() => openWorkflowDialog(item.id)}
             onOpenPrint={openPrintPage}
           />
+          </div>
         ),
     },
   ];
 
   const dailyColumns = [
     { key: "productionDateLabel", header: "Data" },
-    { key: "lineName", header: hierarchyLabels.line },
+    { key: "lineName", header: hierarchyLabels.line, className: "whitespace-nowrap text-xs" },
     { key: "totalKg", header: "Kg planejados" },
     { key: "opsCount", header: "OPs" },
     { key: "itemsCount", header: "Itens consolidados" },
@@ -921,18 +943,37 @@ export default function OrdensProducaoPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <DataTable
-            data={opPagination.items}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>
+              {hiddenFutureCount > 0 && !showFuture
+                ? `${hiddenFutureCount} OP${hiddenFutureCount === 1 ? "" : "s"} de dias futuros escondida${hiddenFutureCount === 1 ? "" : "s"}.`
+                : showFuture
+                  ? "Mostrando também as OPs de dias futuros."
+                  : "Mostrando as OPs de hoje e atrasadas."}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant={showFuture ? "default" : "outline"}
+              aria-pressed={showFuture}
+              onClick={() => {
+                setShowFuture((current) => !current);
+                setOpPage(1);
+              }}
+            >
+              Exibir futuras{hiddenFutureCount > 0 && !showFuture ? ` (${hiddenFutureCount})` : ""}
+            </Button>
+          </div>
+          <OpDayGroupsTable
+            groups={opDayGroups}
             columns={columns}
-            keyField="id"
-            pagination={false}
-            showFooterControls={false}
-            onRowClick={(item) => router.push(`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)}
+            onRowClick={(item) =>
+              router.push(`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)
+            }
             // Esqueleto não abre detalhe (não há OP real pra acionar) e fica MUTED.
             isRowClickable={(item) => !isSkeletonOp(item)}
             rowClassName={(item) => (isSkeletonOp(item) ? "text-muted-foreground opacity-[0.72]" : "")}
             emptyMessage="Nenhuma OP encontrada para os filtros"
-            stickyHeader
           />
 
           <PaginationControls

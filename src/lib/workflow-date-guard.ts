@@ -55,7 +55,21 @@ export function getProductionDateFromKey(productionItemKey: string): string | nu
 }
 
 /**
- * Lança `FutureWorkflowDateError` se a produção (data da chave) estiver no futuro
+ * Feedback 10 (cliente): em data futura o que se trava é o INÍCIO da produção, não a conclusão.
+ * Quem já iniciou (item fora de `nao_iniciado`, ou com ao menos uma batida) conclui sem override.
+ * Saltar direto de `nao_iniciado` para `concluido` conta como início — continua travado.
+ */
+export function isProductionStartTransition(currentStatus: string | null | undefined): boolean {
+  return !currentStatus || currentStatus === "nao_iniciado";
+}
+
+/** Batida nº 1 é o início da produção em batidas; da 2ª em diante a produção já começou. */
+export function isFirstProductionBatch(batchesDoneBefore: number): boolean {
+  return batchesDoneBefore <= 0;
+}
+
+/**
+ * Lança `FutureWorkflowDateError` se o INÍCIO da produção (data da chave) estiver no futuro
  * relativo a `today`. Chaves sem data válida (formato inesperado) não bloqueiam —
  * a trava nunca deve travar por não conseguir interpretar a chave.
  */
@@ -67,7 +81,7 @@ export function assertProductionNotInFuture(
   if (productionDate && productionDate > today) {
     throw new FutureWorkflowDateError(
       "production_in_future",
-      `Não é possível concluir a produção de ${formatDateKeyBr(productionDate)} antes da data chegar (hoje é ${formatDateKeyBr(today)}).`,
+      `Não é possível iniciar a produção de ${formatDateKeyBr(productionDate)} antes da data chegar (hoje é ${formatDateKeyBr(today)}). Só o gestor pode liberar o início antecipado; depois de iniciada, a produção pode ser concluída normalmente.`,
     );
   }
 }

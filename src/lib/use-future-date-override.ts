@@ -6,7 +6,7 @@ import { ReleaseOrderBlockedError } from "@/lib/use-factory-planning";
 /**
  * Override de gestor para a TRAVA de data futura (produção concluída).
  *
- * Quando o servidor bloqueia a conclusão de produção em data futura, ele responde
+ * Quando o servidor bloqueia o INÍCIO de produção em data futura, ele responde
  * 400 com `reason: "production_in_future"` e `forceable` refletindo o PAPEL
  * (true só para gestor-fabrica/administrador; o chão recebe false). O `readJson`
  * converte isso em `ReleaseOrderBlockedError`.
@@ -38,10 +38,10 @@ export function useFutureDateOverride() {
       }
 
       const confirmed = await confirm({
-        title: "Concluir produção em data futura?",
+        title: "Iniciar a produção antes da data?",
         description: error.message,
         tone: "default",
-        confirmLabel: "Concluir mesmo assim",
+        confirmLabel: "Iniciar mesmo assim",
         cancelLabel: "Cancelar",
       });
       if (confirmed) {
@@ -49,7 +49,7 @@ export function useFutureDateOverride() {
           await retryForced();
         } catch (forceError) {
           onForceError?.(
-            forceError instanceof Error ? forceError.message : "Falha ao concluir a produção.",
+            forceError instanceof Error ? forceError.message : "Falha ao iniciar a produção.",
           );
         }
       }

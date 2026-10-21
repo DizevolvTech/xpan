@@ -245,7 +245,7 @@ export default function ChaoFabricaPage() {
         toast.success(`${result.advanced} item(ns) avançado(s) — ${label}.`);
       }
       if (result.blockedCount > 0) {
-        toast.warning(`${result.blockedCount} item(ns) em data futura não avançaram (só gestor/admin força).`);
+        toast.warning(`${result.blockedCount} item(ns) não iniciaram: a data de produção ainda não chegou (só gestor/admin libera).`);
       }
       if (result.failed.length > 0) {
         toast.error(`${result.failed.length} item(ns) falharam ao avançar.`);

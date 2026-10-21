@@ -32,7 +32,11 @@ import {
   recordProductionLeftover,
 } from "@/lib/supabase-data/production-leftovers";
 import { deriveBatchStatus } from "@/lib/production-batches";
-import { assertProductionNotInFuture } from "@/lib/workflow-date-guard";
+import {
+  assertProductionNotInFuture,
+  isFirstProductionBatch,
+  isProductionStartTransition,
+} from "@/lib/workflow-date-guard";
 
 export interface PersistedWorkflowState {
   releasedOrders: string[];
@@ -676,11 +680,11 @@ export async function updateProductionItemStatus(
     return;
   }
 
-  // Trava de DATA FUTURA: não permitir marcar produção como CONCLUÍDA antes da
-  // data de produção chegar (a data é a 1ª parte da chave canônica). Evita que um
-  // `concluido` adiantado jogue o pedido direto para "Aguardando expedição".
-  // `force` (override de gestor, autorizado no route) pula a trava.
-  if (status === "concluido" && !force) {
+  // Trava de DATA FUTURA (feedback 10): o que se trava é o INÍCIO da produção antes da data
+  // (a data é a 1ª parte da chave canônica). Quem já iniciou conclui normalmente; saltar de
+  // `nao_iniciado` direto para `concluido` conta como início, então segue travado e não joga
+  // o pedido para "Aguardando expedição" sem produção. `force` (gestor, autorizado no route) pula.
+  if (!force && isProductionStartTransition(currentStatus)) {
     assertProductionNotInFuture(canonicalKey);
   }
 
@@ -783,12 +787,12 @@ export async function completeProductionBatch(
   const next = Math.min(cap, current + 1);
   if (next === current) return;
 
-  // Trava de DATA FUTURA: NENHUMA batida pode ser registrada antes da data de
-  // produção chegar. NÃO gateamos por `next >= cap` — o `batchCount` (logo o `cap`)
+  // Trava de DATA FUTURA: a 1ª batida (início) não pode ser registrada antes da data de
+  // produção chegar; da 2ª em diante a produção já começou. NÃO gateamos por `next >= cap` — o `batchCount` (logo o `cap`)
   // vem do CLIENTE; um batchCount inflado faria `next < cap` pular a trava enquanto
   // o motor, com o SEU plano autoritativo, deriva `concluido` (bypass real). Bloquear
   // qualquer batida em data futura fecha esse vetor. `force` (gestor) pula a trava.
-  if (!force) {
+  if (!force && isFirstProductionBatch(current)) {
     assertProductionNotInFuture(canonicalKey);
   }
 

@@ -13,6 +13,9 @@ import {
   Truck,
 } from "lucide-react";
 
+import { OpDayGroupsTable } from "@/components/production/op-day-groups-table";
+import { groupOpsByProductionDay, summarizeOpDates } from "@/lib/op-day-groups";
+import { getOperationalTodayKey } from "@/lib/workflow-date-guard";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { DayPrintButton } from "@/components/production/day-print-button";
@@ -103,7 +106,9 @@ export default function OrdensProducaoPage() {
   const [sectorFilter, setSectorFilter] = useState("all");
   const [lineFilter, setLineFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
+  const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("old_first");
+  // Feedback 10: OPs de dias futuros ficam escondidas por padrão; "Exibir futuras" mostra todas.
+  const [showFuture, setShowFuture] = useState(false);
   const [opPage, setOpPage] = useState(1);
   const [opPageSize, setOpPageSize] = useState(20);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
@@ -188,7 +193,21 @@ export default function OrdensProducaoPage() {
     [filteredOps, sortOrder],
   );
 
-  const opPagination = useMemo(() => paginateArray(sortedOps, opPage, opPageSize), [opPage, opPageSize, sortedOps]);
+  const todayKey = getOperationalTodayKey();
+  const visibleOps = useMemo(
+    () => (showFuture ? sortedOps : sortedOps.filter((op) => op.productionDate <= todayKey)),
+    [showFuture, sortedOps, todayKey],
+  );
+  const hiddenFutureCount = sortedOps.length - visibleOps.length;
+  const opPagination = useMemo(() => paginateArray(visibleOps, opPage, opPageSize), [opPage, opPageSize, visibleOps]);
+  const opDayGroups = useMemo(
+    () =>
+      groupOpsByProductionDay(opPagination.items, todayKey, {
+        showFuture: true,
+        isFinished: (op) => (OP_FINAL_STATUSES as readonly string[]).includes(op.status),
+      }).groups,
+    [opPagination.items, todayKey],
+  );
 
   const categoryOptions = useMemo(
     () =>
@@ -332,57 +351,40 @@ export default function OrdensProducaoPage() {
       key: "code",
       header: "OP",
       render: (item: OpQueueRow) => (
-        <span className="font-mono text-base font-semibold tabular-nums text-foreground">
-          {item.code}
+        <span className="whitespace-nowrap font-mono text-sm font-semibold tabular-nums text-foreground">{item.code}</span>
+      ),
+    },
+    {
+      key: "delivery",
+      header: "Entregar",
+      render: (item: OpQueueRow) => (
+        <span className="text-xs tabular-nums text-foreground">
+          {summarizeOpDates(
+            item.sourceItems.map((src) => ({ date: src.deliveryDate, label: src.deliveryDateLabel })),
+          ) ?? "—"}
         </span>
       ),
     },
     {
-      key: "productionDateLabel",
-      header: "Data de produção",
+      key: "sale",
+      header: "Vender",
       render: (item: OpQueueRow) => (
-        <span className="text-sm tabular-nums text-foreground">{item.productionDateLabel}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {summarizeOpDates(item.sourceItems.map((src) => ({ date: src.saleDate, label: src.saleDateLabel }))) ?? "—"}
+        </span>
       ),
     },
-    { key: "sectorName", header: hierarchyLabels.sector },
-    { key: "lineName", header: hierarchyLabels.line },
-    { key: "scheduleName", header: hierarchyLabels.schedule },
+    { key: "lineName", header: hierarchyLabels.line, className: "whitespace-nowrap text-xs" },
     {
       key: "productsCount",
       header: "Produtos",
-      render: (item: OpQueueRow) => (
-        <span className="text-sm tabular-nums text-foreground">{item.productsCount}</span>
-      ),
+      render: (item: OpQueueRow) => <span className="tabular-nums text-foreground">{item.productsCount}</span>,
     },
     {
       key: "totalKg",
       header: "Carga (Kg)",
       render: (item: OpQueueRow) => (
-        <span className="text-sm font-semibold tabular-nums text-foreground">
-          {formatKgValue(item.totalKg)}
-        </span>
-      ),
-    },
-    {
-      key: "completion",
-      header: "% conclusão",
-      render: (item: OpQueueRow) => (
-        <div className="min-w-[200px]">
-          <div className="mb-1 flex items-baseline justify-between gap-2">
-            <span className="text-sm font-semibold tabular-nums text-foreground">
-              {item.completion.toFixed(1)}%
-            </span>
-            <span className="text-[11px] tabular-nums text-muted-foreground">
-              {formatKgValue(item.capacityKg)} Kg/dia
-            </span>
-          </div>
-          <div className="h-2.5 rounded-full bg-panel">
-            <div
-              className="h-full rounded-full bg-info"
-              style={{ width: `${Math.min(item.completion, 100)}%` }}
-            />
-          </div>
-        </div>
+        <span className="font-semibold tabular-nums text-foreground">{formatKgValue(item.totalKg)}</span>
       ),
     },
     {
@@ -394,21 +396,23 @@ export default function OrdensProducaoPage() {
       key: "documents",
       header: "Ações",
       render: (item: OpQueueRow) => (
-        <ProductionOrderActionsMenu
-          detailHref={`/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
-          preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
-          packagingHref={`/impressao/separacao-embalagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
-          productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
-          onOpenWorkflow={() => openWorkflowDialog(item.id)}
-          onOpenPrint={openPrintPage}
-        />
+        <div onClick={(event) => event.stopPropagation()}>
+          <ProductionOrderActionsMenu
+            detailHref={`/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            packagingHref={`/impressao/separacao-embalagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
+            onOpenWorkflow={() => openWorkflowDialog(item.id)}
+            onOpenPrint={openPrintPage}
+          />
+        </div>
       ),
     },
   ];
 
   const dailyColumns = [
     { key: "productionDateLabel", header: "Data" },
-    { key: "lineName", header: hierarchyLabels.line },
+    { key: "lineName", header: hierarchyLabels.line, className: "whitespace-nowrap text-xs" },
     { key: "totalKg", header: "Kg planejados" },
     { key: "opsCount", header: "OPs" },
     { key: "itemsCount", header: "Itens consolidados" },
@@ -640,20 +644,36 @@ export default function OrdensProducaoPage() {
           <CardTitle>Fila de OPs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <DataTable
-            data={opPagination.items}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>
+              {hiddenFutureCount > 0 && !showFuture
+                ? `${hiddenFutureCount} OP${hiddenFutureCount === 1 ? "" : "s"} de dias futuros escondida${hiddenFutureCount === 1 ? "" : "s"}.`
+                : showFuture
+                  ? "Mostrando também as OPs de dias futuros."
+                  : "Mostrando as OPs de hoje e atrasadas."}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant={showFuture ? "default" : "outline"}
+              aria-pressed={showFuture}
+              onClick={() => {
+                setShowFuture((current) => !current);
+                setOpPage(1);
+              }}
+            >
+              Exibir futuras{hiddenFutureCount > 0 && !showFuture ? ` (${hiddenFutureCount})` : ""}
+            </Button>
+          </div>
+          <OpDayGroupsTable
+            groups={opDayGroups}
             columns={columns}
-            keyField="id"
-            pagination={false}
-            showFooterControls={false}
             onRowClick={(item) =>
               router.push(
                 `/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`,
               )
             }
-            rowClassName={() => "min-h-[44px]"}
             emptyMessage="Nenhuma OP encontrada para os filtros"
-            stickyHeader
           />
 
           <PaginationControls
