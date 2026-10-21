@@ -479,11 +479,14 @@ export default function PedidosLojaPage() {
     () =>
       // XPAN-Lote: criando num slot do lote → a entrega É a data do slot (trava o
       // formulário nela). Fora do lote (fluxo legado) → regra da janela operacional.
+      // Feedback 8 (Mistoquentaria): EDITAR pedido aberto pela fábrica → a entrega é a data
+      // comprometida do pedido, não a janela de hoje (antes a venda saía num dia errado).
+      (editingOrderId ? editingOrderTargetDelivery : null) ??
       creatingForSlotDate ??
       (selectedStore
         ? getDeliveryDateByStoreRule(effectiveBaseDateKey, selectedStore, snapshot.operationalSettings)
         : effectiveBaseDateKey),
-    [creatingForSlotDate, effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
+    [creatingForSlotDate, editingOrderId, editingOrderTargetDelivery, effectiveBaseDateKey, selectedStore, snapshot.operationalSettings],
   );
   const deliveryDate = useMemo(() => new Date(`${deliveryDateKey}T00:00:00`), [deliveryDateKey]);
   const saleDate = useMemo(() => {
