@@ -5,6 +5,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { computeFactoryMetrics } from "@/lib/supabase-data/factory-metrics";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 import { getTodayDateKey } from "@/lib/order-planning";
+import { getCachedServerData } from "@/lib/server-data-cache";
+import { buildTenantCacheKey } from "@/lib/supabase-data/common";
 
 export async function GET(request: Request) {
   const authorization = await authorizeApiRequest({
@@ -29,13 +31,28 @@ export async function GET(request: Request) {
       authorization.effectiveTenantId,
       createSupabaseAdminClient(),
     );
-    const metrics = await computeFactoryMetrics(
-      {
+    const safeWindowDays = Number.isFinite(windowDays) ? windowDays : 7;
+    // Os dois cards da Visão Geral (métricas e alertas) pedem o mesmo endpoint ao mesmo tempo:
+    // cada chamada refazia ~20 consultas. Chave sob ":planning:" para a invalidação de
+    // planejamento limpar também; chamadas simultâneas dividem a mesma carga.
+    const metrics = await getCachedServerData(
+      buildTenantCacheKey(
+        authorization.effectiveTenantId,
+        "planning",
+        "metrics",
         referenceDate,
-        windowDays: Number.isFinite(windowDays) ? windowDays : 7,
-        tenantId: authorization.effectiveTenantId,
-      },
-      supabase,
+        String(safeWindowDays),
+      ),
+      15_000,
+      () =>
+        computeFactoryMetrics(
+          {
+            referenceDate,
+            windowDays: safeWindowDays,
+            tenantId: authorization.effectiveTenantId,
+          },
+          supabase,
+        ),
     );
     return NextResponse.json(metrics);
   } catch (error) {
