@@ -54,3 +54,10 @@ next-env.d.ts
 
 # artefato/manifesto gerado
 xpan-software.xml 
+
+# Cloudflare Workers (OpenNext) - saidas de build
+.open-next/
+.wrangler/
+dist-worker/
+publish/
+.dev.vars

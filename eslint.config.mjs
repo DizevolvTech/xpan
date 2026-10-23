@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
     // Workspace helper content not part of the app source.
     "skills/**",
     "Docs/**",
+    // Saidas do build da Cloudflare (OpenNext/Wrangler).
+    ".open-next/**",
+    ".wrangler/**",
+    "dist-worker/**",
   ]),
 ]);
 

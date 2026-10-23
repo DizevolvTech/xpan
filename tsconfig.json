@@ -33,6 +33,11 @@
   "exclude": [
     "node_modules",
     "skills",
-    "Docs"
+    "Docs",
+    "cloudflare",
+    "open-next.config.ts",
+    ".open-next",
+    ".wrangler",
+    "dist-worker"
   ]
 }
