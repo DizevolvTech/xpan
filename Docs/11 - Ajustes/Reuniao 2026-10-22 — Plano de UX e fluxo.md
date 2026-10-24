@@ -46,21 +46,29 @@ Cada item: pedido (tempo da gravação) · como está hoje (develop 28cc9bf) · 
 ### 5. Resposta ao clique
 - Pedido (6:50, 9:20): clique demora, parece que não funcionou.
 - Fazer: indicador imediato de carregando; navegação sem recarga total. Upgrade do banco (Nano) é decisão do Lucas.
+- Feito (24/10, no teste): barra fina no topo aparece no clique de qualquer link interno ou linha que abre tela (`navigation-progress.tsx`, `pushWithProgress`) e some quando a tela abre; Pedidos, Expedição, Entregas e Fila de OPs mostram "Carregando…" em vez de "0 pedidos" enquanto os dados chegam; no celular o caminho de navegação não fica mais embaixo do botão de menu.
 
 ### 6. Dia de produção
 - Pedido (10:50–19:47): o que produzir hoje/amanhã/atrasado; data de produção ao lado da entrega; antecipar com aviso.
 - Hoje: fila de OPs por dia de produção no ar desde 23/10 (cliente não viu); lista de Pedidos só mostra entrega.
 - Fazer: dias de produção na lista de Pedidos; filtro por dia de produção; trocar a trava de data futura por aviso (`workflow-date-guard.ts`).
+- Feito (24/10, no teste): Pedidos mostra "Produz dd/mm" (ou "Produz dd/mm a dd/mm (N dias)") abaixo da entrega e tem filtro "Dia de produção" (`order-production-days.ts`); adiantar produção não trava mais para ninguém: avança e mostra o aviso "Produção antecipada: estava prevista para dd/mm" (`describeProductionAnticipation`, evento `xpan:workflow-notice`).
 
 ### 7. Pedidos e lotes
 - Pedido (20:50–30:22): painel de lotes (abertos, % de lojas, prazo, liberados; liberado sai); aviso de lote esquecido; "Pedido para entrega em dd/mm"; auto-liberar só com lote completo ou prazo encerrado.
 - Hoje: só contador "Lote aberto X/Y"; lotes nunca fecham (Grupo Chama: 3 abertos, 2 desde 24/09); `autoReleaseEligibleOrders` libera pedido a pedido; aviso de lojas pendentes só na liberação manual.
+- Feito (24/10, no teste): painel de lotes em Pedidos (`order-batches-panel.tsx`, `/api/order-batches/overview`): um cartão por "Pedido para entrega em dd/mm" com lojas que pediram (X/Y e %), prazo das lojas (entrega − antecedência, no horário de corte), quem falta, já liberados e "Liberar lote" (`/api/order-batches/release`; antes do prazo e com loja faltando pede confirmação). Lote todo liberado fecha e sai do painel. Aviso "Lote não aberto" quando o cronograma pede uma entrega sem lote e o prazo está nas próximas 72 h, com "Abrir lote". Auto-liberar só libera pedido de lote completo ou com prazo encerrado (o resto fica "aguardando lojas"). Lógica em `order-batch-progress.ts`.
 
 ### 8. Extras
 - Lembrete por e-mail às lojas X horas antes do prazo (25:40) — não existe envio de e-mail.
 - Soma por produto antes de liberar (28:16).
 - Cadastro alterado não mexe em lote/OP já gerados (36:25–38:35) — receita já congelada na liberação; data de produção ainda recalculada.
 - Excluir OP, só Master, com lixeira (39:03).
+- Feito (24/10, no teste):
+  - Soma por produto: botão "Soma por produto" em cada lote (quantidade, kg e nº de lojas) antes de liberar (`order-product-sum.ts`).
+  - Cadastro alterado: na liberação, além da receita, ficam congeladas a data de produção e a entrega de cada produto (`workflow_release_recipe_snapshots.production_date/delivery_date`); mudar dias, antecedência ou cronograma depois não move a OP gerada. Pedidos liberados antes desta versão seguem o cálculo ao vivo. A Expedição mostra em "Ver o que falta" o produto do pedido que ficou sem OP (era a causa do "75% com 4/4 OPs").
+  - Excluir OP: só o Master (perfil administrador-master, aberto no cliente) vê "Excluir OP (Master)" no menu da OP e a "Lixeira de OPs" na fila; a OP vai para a lixeira (`production_order_trash`), some da fila, quadros e impressões; "Restaurar" devolve. Pedido novo na mesma linha e dia faz a OP voltar. Nada é apagado.
+  - Lembrete às lojas: dentro do sistema a loja vê em cada data do lote "Prazo para pedir: dd/mm às hh:mm", em destaque ("Faltam N h") nas últimas 24 h e "Prazo encerrado" depois. O envio por e-mail precisa de remetente e aprovação (o sistema não envia e-mail hoje).
 
 ## Ambiente de teste
 Prometido na reunião (38:35): o cliente testa numa cópia, sem risco para a operação.

@@ -11,6 +11,9 @@ import {
 } from "@/lib/supabase-data/common";
 import { canonicalProductionItemKey, getPersistedWorkflowState } from "@/lib/supabase-data/workflow";
 import { getPersistedDeliveryExecutions } from "@/lib/supabase-data/delivery";
+import { listTrashedProductionOrders } from "@/lib/supabase-data/production-order-trash";
+import { filterTrashedProductionOrders } from "@/lib/production-order-trash-filter";
+import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
 const FACTORY_PLANNING_CACHE_TTL_MS = 10_000;
 
@@ -32,7 +35,7 @@ export async function getFactoryPlanningSnapshot(
   );
 
   return getCachedServerData(cacheKey, FACTORY_PLANNING_CACHE_TTL_MS, async () => {
-    const [factoryInput, workflowState, deliveryExecutions] = await Promise.all([
+    const [factoryInput, workflowState, deliveryExecutions, trashedOps] = await Promise.all([
       buildFactoryInputFromDb({
         supabase: options.supabase,
         includeProfileNames,
@@ -40,13 +43,15 @@ export async function getFactoryPlanningSnapshot(
       }),
       getPersistedWorkflowState(options.supabase),
       getPersistedDeliveryExecutions({ supabase: options.supabase, tenantId }),
+      // Lixeira de OPs (bloco 8): sempre escopada ao tenant.
+      listTrashedProductionOrders(createTenantScopedSupabaseClient(tenantId, options.supabase)),
     ]);
 
     const basePlanning = buildFactoryPlanningData(referenceDate, factoryInput);
 
     const startedKeys = new Set(workflowState.productionStartedKeys);
 
-    return applyFactoryWorkflowState(basePlanning, {
+    const planning = applyFactoryWorkflowState(basePlanning, {
       releasedRecipeByOrderProduct: factoryInput.releasedRecipeByOrderProduct,
       isReleased(orderId) {
         return workflowState.releasedOrders.includes(orderId);
@@ -74,5 +79,7 @@ export async function getFactoryPlanningSnapshot(
         return deliveryExecutions[orderId]?.status ?? null;
       },
     });
+    if (trashedOps.length === 0) return planning;
+    return { ...planning, productionOrders: filterTrashedProductionOrders(planning.productionOrders, trashedOps) };
   });
 }

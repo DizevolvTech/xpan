@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ListChecks, ShoppingCart, Truck, Zap } from "lucide-react";
 
 import {
@@ -30,6 +30,8 @@ import { InfoHint } from "@/components/shared/info-hint";
 import { KPICard } from "@/components/shared/kpi-card";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
+import { OrderBatchesPanel } from "@/components/production/order-batches-panel";
+import { summarizeOrderProductionDays, type OrderProductionDays } from "@/lib/order-production-days";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
@@ -61,9 +63,14 @@ import { performReleaseOrderWithConfirm } from "@/lib/release-order-with-confirm
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 
+function summaryRowsLengthIsZero(data: { orders: unknown[] }) {
+  return data.orders.length === 0;
+}
+
 type OrderSummaryRow = PlannedOrderRow & {
   productsCount: number;
   visibleStatus: ExpeditionVisibleStatus;
+  productionDays: OrderProductionDays;
 };
 
 function openPrintPage(pathname: string) {
@@ -97,6 +104,8 @@ export default function PedidosFabricaPage() {
   });
   const [storeFilter, setStoreFilter] = useState("all");
   const [deliveryFilter, setDeliveryFilter] = useState("all");
+  // Reunião 22/10 (bloco 6): filtro por dia de PRODUÇÃO, além da entrega.
+  const [productionFilter, setProductionFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
@@ -111,25 +120,7 @@ export default function PedidosFabricaPage() {
   const factoryOpensOrders = isFactoryOpensOrdersEnabled();
   const { snapshot: masterData } = useMasterDataSnapshot();
   const [isOpenOrdersDialogOpen, setIsOpenOrdersDialogOpen] = useState(false);
-  // XPAN-Lote: slots (loja × data) dos lotes ABERTOS — base do card "Lote aberto: X/Y".
-  const [openBatchSlots, setOpenBatchSlots] = useState<Array<{ storeId: string; deliveryDate: string }>>([]);
-  const refreshOpenBatches = useCallback(() => {
-    if (!factoryOpensOrders) {
-      setOpenBatchSlots([]);
-      return;
-    }
-    void fetch("/api/store-orders/open")
-      .then((response) => (response.ok ? response.json() : []))
-      .then((data: Array<{ slots?: Array<{ storeId: string; deliveryDate: string }> }>) =>
-        setOpenBatchSlots(
-          Array.isArray(data) ? data.flatMap((batch) => batch.slots ?? []) : [],
-        ),
-      )
-      .catch(() => setOpenBatchSlots([]));
-  }, [factoryOpensOrders]);
-  useEffect(() => {
-    refreshOpenBatches();
-  }, [refreshOpenBatches]);
+  const [batchesReloadKey, setBatchesReloadKey] = useState(0);
   // A10: modo padrão "semana" (deriva os dias do cronograma); "manual" mantém a
   // abertura de UMA data de entrega específica (fluxo anterior).
   const [openMode, setOpenMode] = useState<"week" | "manual">("week");
@@ -140,7 +131,16 @@ export default function PedidosFabricaPage() {
   const [openReferenceDate, setOpenReferenceDate] = useState(() => getTodayDateKey());
   const [openStoreIds, setOpenStoreIds] = useState<string[]>([]);
   const [isOpeningOrders, setIsOpeningOrders] = useState(false);
-  const { planningData: planningSnapshot, releaseOrder, cancelOrder, reopenOrder, refresh } = useFactoryPlanningSnapshot(anchorDate);
+  const {
+    planningData: planningSnapshot,
+    isLoading: isPlanningLoading,
+    releaseOrder,
+    cancelOrder,
+    reopenOrder,
+    refresh,
+  } = useFactoryPlanningSnapshot(anchorDate);
+  // Bloco 5 (22/10): enquanto carrega, mostrar "Carregando" e não "0 pedidos".
+  const showLoading = isPlanningLoading && summaryRowsLengthIsZero(planningSnapshot);
   // Merge do status derivado da produção com a execução de entrega (mesmo padrão
   // da tela de expedição): uma entrega já avançada vence o status defasado.
   const deliveryExecutionState = useDeliveryExecution();
@@ -174,26 +174,11 @@ export default function PedidosFabricaPage() {
         ...order,
         productsCount: new Set(items.map((item) => item.productId)).size,
         visibleStatus: getExpeditionVisibleStatus(order.status, execution.status),
+        productionDays: summarizeOrderProductionDays(items),
       };
     });
   }, [deliveryExecutionState, orderItemsByOrderId, planningData.orders]);
 
-  // XPAN-Lote: status do lote aberto — quantos slots (loja × data) já viraram pedido real
-  // (X) sobre o total liberado (Y). "Preenchido" = existe um pedido não-cancelado da loja
-  // com aquela data de entrega.
-  const openBatchStatus = useMemo(() => {
-    const total = openBatchSlots.length;
-    if (total === 0) return null;
-    const orderedKeys = new Set(
-      summaryRows
-        .filter((order) => order.status !== "cancelado")
-        .map((order) => `${order.storeId}|${order.deliveryDate}`),
-    );
-    const filled = openBatchSlots.filter((slot) =>
-      orderedKeys.has(`${slot.storeId}|${slot.deliveryDate}`),
-    ).length;
-    return { filled, total, pending: total - filled };
-  }, [openBatchSlots, summaryRows]);
 
   const matchesStatusFilter = statusFilter.matches;
   const filteredOrders = useMemo(() => {
@@ -206,9 +191,11 @@ export default function PedidosFabricaPage() {
       const matchesStatus = matchesStatusFilter(item.visibleStatus);
       const matchesStore = storeFilter === "all" || item.storeName === storeFilter;
       const matchesDelivery = deliveryFilter === "all" || item.deliveryDate === deliveryFilter;
-      return matchesSearch && matchesStatus && matchesStore && matchesDelivery;
+      const matchesProduction =
+        productionFilter === "all" || item.productionDays.dates.includes(productionFilter);
+      return matchesSearch && matchesStatus && matchesStore && matchesDelivery && matchesProduction;
     });
-  }, [deliveryFilter, searchTerm, matchesStatusFilter, storeFilter, summaryRows]);
+  }, [deliveryFilter, productionFilter, searchTerm, matchesStatusFilter, storeFilter, summaryRows]);
   const sortedOrders = useMemo(
     () => sortItemsByTemporalValue(filteredOrders, sortOrder, ["orderedAtKey", "deliveryDate", "orderedAt"]),
     [filteredOrders, sortOrder],
@@ -267,6 +254,13 @@ export default function PedidosFabricaPage() {
     () => planningData.deliveryDates.map((date) => ({ value: date, label: formatDateKeyBr(date) })),
     [planningData.deliveryDates],
   );
+  const productionOptions = useMemo(
+    () =>
+      Array.from(new Set(summaryRows.flatMap((row) => row.productionDays.dates)))
+        .sort((a, b) => a.localeCompare(b))
+        .map((date) => ({ value: date, label: formatDateKeyBr(date) })),
+    [summaryRows],
+  );
 
   // Totais do topo seguem o filtro de status (pendências por padrão) e o status visível:
   // pedido entregue não conta como liberado nem como pronto para expedição.
@@ -309,6 +303,7 @@ export default function PedidosFabricaPage() {
     statusFilter.reset();
     setStoreFilter("all");
     setDeliveryFilter("all");
+    setProductionFilter("all");
     setPage(1);
   }
 
@@ -371,7 +366,7 @@ export default function PedidosFabricaPage() {
         throw new Error(result?.message ?? "Falha ao abrir o lote.");
       }
       await refresh();
-      refreshOpenBatches();
+      setBatchesReloadKey((value) => value + 1);
       const slotCount = result?.slots?.length ?? 0;
       const storeCount = new Set((result?.slots ?? []).map((slot) => slot.storeId)).size;
       toast.success(
@@ -403,7 +398,7 @@ export default function PedidosFabricaPage() {
     const confirmed = await confirm({
       title: `Auto-liberar ${eligibleCount} pedido(s) elegível(eis)?`,
       description:
-        "Pedidos que passem na validação serão liberados de uma vez. Pedidos bloqueados (sem data de produção viável / MPI / janela) ficam de fora e podem ser tratados manualmente.",
+        "Pedidos que passem na validação serão liberados de uma vez. Pedido de lote só vai quando o lote está completo (todas as lojas pediram) ou o prazo das lojas acabou. Bloqueados ficam de fora e podem ser tratados manualmente.",
       confirmLabel: "Auto-liberar",
       cancelLabel: "Voltar",
     });
@@ -421,6 +416,7 @@ export default function PedidosFabricaPage() {
         const payload = (await response.json().catch(() => null)) as { message?: string } | null;
         throw new Error(payload?.message ?? "Falha na auto-liberação");
       }
+      setBatchesReloadKey((value) => value + 1);
       const result = (await response.json()) as {
         released: Array<{ orderCode: string }>;
         skipped: Array<{ orderCode: string; reason: string }>;
@@ -560,21 +556,6 @@ export default function PedidosFabricaPage() {
               Abrir lote
             </Button>
           ) : null}
-          {/* XPAN-Lote: status do lote aberto — quantas datas já viraram pedido (X/Y). */}
-          {factoryOpensOrders && openBatchStatus ? (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-info/30 bg-info/[var(--opacity-subtle)] px-2.5 py-1 text-[11px] font-medium tabular-nums text-info"
-              title="Datas do lote já preenchidas pelas lojas / total liberado."
-            >
-              <CalendarRange className="size-3.5" aria-hidden />
-              Lote aberto: {openBatchStatus.filled}/{openBatchStatus.total}
-              {openBatchStatus.pending > 0 ? (
-                <span className="text-info/70">· {openBatchStatus.pending} a preencher</span>
-              ) : (
-                <span className="text-info/70">· completo</span>
-              )}
-            </span>
-          ) : null}
           {/* AJ-A6: libera todos os pedidos elegíveis num clique. Aplica a mesma
               trava do A1 — os bloqueados aparecem como falhas no resumo. */}
           <Button
@@ -599,6 +580,23 @@ export default function PedidosFabricaPage() {
           </div>
         </div>
       </div>
+
+      {/* Reunião 22/10 (bloco 7): lotes abertos com % de lojas, prazo e Liberar lote. */}
+      {factoryOpensOrders ? (
+        <OrderBatchesPanel
+          orderItems={planningData.orderItems}
+          reloadKey={batchesReloadKey}
+          onChanged={async () => {
+            await refresh();
+          }}
+          onOpenBatchForDate={(deliveryDate, storeIds) => {
+            setOpenMode("manual");
+            setOpenDeliveryDate(deliveryDate);
+            setOpenStoreIds(storeIds);
+            setIsOpenOrdersDialogOpen(true);
+          }}
+        />
+      ) : null}
 
       {/* KPIs reduzidos 4 → 3 (cortado "Pedidos" — redundante com 'X de Y' abaixo). */}
       <div className="grid gap-3 sm:grid-cols-3">
@@ -630,7 +628,7 @@ export default function PedidosFabricaPage() {
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                {filteredOrders.length} de {summaryRows.length} pedidos visíveis
+                {showLoading ? "Carregando pedidos…" : `${filteredOrders.length} de ${summaryRows.length} pedidos visíveis`}
               </p>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={toggleExpandAll}>
@@ -641,7 +639,7 @@ export default function PedidosFabricaPage() {
         <CardContent className="space-y-4">
           <OperationFiltersCard
             title="Filtros dos Pedidos"
-            summary={`${filteredOrders.length} de ${summaryRows.length} pedidos visíveis`}
+            summary={showLoading ? "Carregando…" : `${filteredOrders.length} de ${summaryRows.length} pedidos visíveis`}
             helperText="Filtre por pedido, loja, data de entrega ou status."
             searchLabel="Busca"
             searchPlaceholder="Buscar por pedido ou loja..."
@@ -671,12 +669,23 @@ export default function PedidosFabricaPage() {
                 },
                 options: deliveryOptions,
               },
+              {
+                key: "production",
+                label: "Dia de produção",
+                value: productionFilter,
+                onChange: (value) => {
+                  setProductionFilter(value);
+                  setPage(1);
+                },
+                options: productionOptions,
+              },
             ]}
             activeFiltersCount={[
               searchTerm.trim().length > 0 ? 1 : 0,
               statusFilter.isCustom ? 1 : 0,
               storeFilter !== "all" ? 1 : 0,
               deliveryFilter !== "all" ? 1 : 0,
+              productionFilter !== "all" ? 1 : 0,
             ].reduce((sum, item) => sum + item, 0)}
             onClear={clearFilters}
           />
@@ -689,12 +698,19 @@ export default function PedidosFabricaPage() {
                 <tr>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Pedido</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Entrega prevista</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Entrega / produção</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
                   <th className="sticky right-0 z-[1] w-px whitespace-nowrap bg-panel px-4 py-3 text-right text-xs font-semibold text-muted-foreground shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">Ações</th>
                 </tr>
               </thead>
               <tbody>
+                {showLoading ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-muted-foreground" role="status">
+                      Carregando pedidos…
+                    </td>
+                  </tr>
+                ) : null}
                 {pagination.items.map((order) => {
                   const items = orderItemsByOrderId.get(order.id) ?? [];
                   const aggregatedItems = aggregateOrderItems(items);
@@ -721,6 +737,11 @@ export default function PedidosFabricaPage() {
                             {order.deliveryDateLabel}
                           </span>
                           <p className="mt-1 text-[11px] text-muted-foreground">{order.dPlusLabel}</p>
+                          {order.productionDays.label ? (
+                            <p className="mt-0.5 whitespace-nowrap text-[11px] font-medium text-foreground/80">
+                              {order.productionDays.label}
+                            </p>
+                          ) : null}
                         </td>
                         <td className="min-w-[140px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <StatusBadge status={visibleStatus} />
@@ -1053,7 +1074,7 @@ export default function PedidosFabricaPage() {
             </div>
             {openMode === "week" ? (
               <div className="grid gap-2">
-                <Label htmlFor="open-reference-date">Data de referência</Label>
+                <Label htmlFor="open-reference-date">Semana começando em</Label>
                 <Input
                   id="open-reference-date"
                   type="date"
@@ -1061,12 +1082,12 @@ export default function PedidosFabricaPage() {
                   onChange={(event) => setOpenReferenceDate(event.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Início da semana rolante de 7 dias. Padrão: hoje.
+                  O lote libera as datas de ENTREGA dos próximos 7 dias a partir deste dia, conforme o cronograma. Padrão: hoje.
                 </p>
               </div>
             ) : (
               <div className="grid gap-2">
-                <Label htmlFor="open-delivery-date">Data de entrega *</Label>
+                <Label htmlFor="open-delivery-date">Pedido para entrega em *</Label>
                 <Input
                   id="open-delivery-date"
                   type="date"

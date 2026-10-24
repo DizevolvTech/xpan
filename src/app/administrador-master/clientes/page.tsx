@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -176,15 +177,14 @@ export default function AdministradorMasterClientesPage() {
       icon: "view" as const,
       label: "Ver detalhe",
       onClick: (client: MasterClient) => {
-        router.push(`/administrador-master/clientes/${getTenantIdentifier(client)}`);
+        pushWithProgress(router, `/administrador-master/clientes/${getTenantIdentifier(client)}`);
       },
     },
     {
       icon: "alert" as const,
       label: "Ver ocorrências",
       onClick: (client: MasterClient) => {
-        router.push(
-          `/administrador-master/clientes/${getTenantIdentifier(client)}?tab=occurrences`,
+        pushWithProgress(router, `/administrador-master/clientes/${getTenantIdentifier(client)}?tab=occurrences`,
         );
       },
     },
@@ -422,7 +422,7 @@ export default function AdministradorMasterClientesPage() {
             stickyHeader
             tableClassName="min-w-[1200px]"
             onRowClick={(client) =>
-              router.push(`/administrador-master/clientes/${getTenantIdentifier(client)}`)
+              pushWithProgress(router, `/administrador-master/clientes/${getTenantIdentifier(client)}`)
             }
             emptyStateAction={{
               label: "Cadastrar cliente",

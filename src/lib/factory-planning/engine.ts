@@ -56,6 +56,11 @@ export interface FactoryPlanningInput {
    * anterior). Ver `getReleasedRecipeSnapshots`.
    */
   releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>;
+  /**
+   * Reunião 22/10 (bloco 8): datas de produção/entrega CONGELADAS na liberação
+   * (`orderId → productId → datas`). Mudar o cadastro depois não move a OP já gerada.
+   */
+  releasedScheduleByOrderProduct?: Map<string, Map<string, { productionDate: string; deliveryDate: string | null }>>;
 }
 
 export interface ResolvedPlanningSource {
@@ -67,6 +72,7 @@ export interface ResolvedPlanningSource {
   ingredients: ProductionIngredient[];
   schedules: WeeklyProductionSchedule[];
   releasedRecipeByOrderProduct?: Map<string, Map<string, ProductionProduct["recipe"]>>;
+  releasedScheduleByOrderProduct?: Map<string, Map<string, { productionDate: string; deliveryDate: string | null }>>;
 }
 
 const weekdayByIndex: ProductionWeekDay[] = [
@@ -497,6 +503,7 @@ export function resolvePlanningSource(input: FactoryPlanningInput): ResolvedPlan
     ingredients: input.ingredients ?? [],
     schedules: input.schedules,
     releasedRecipeByOrderProduct: input.releasedRecipeByOrderProduct,
+    releasedScheduleByOrderProduct: input.releasedScheduleByOrderProduct,
   };
 }
 
@@ -638,7 +645,7 @@ function buildPlannedItems(
           return [];
         }
 
-        const availability = resolveScheduledProductAvailability(
+        const liveAvailability = resolveScheduledProductAvailability(
           order.orderedAt,
           store,
           input.source.settings,
@@ -655,6 +662,19 @@ function buildPlannedItems(
             targetDeliveryDate: order.committedDeliveryDate ?? null,
           },
         );
+        // Reunião 22/10 (bloco 8): pedido já liberado mantém as datas do momento da
+        // liberação — mudar dias/lead/cronograma do produto depois não move a OP gerada.
+        const frozen = input.source.releasedScheduleByOrderProduct?.get(order.id)?.get(product.id);
+        const availability = frozen
+          ? {
+              ...liveAvailability,
+              productionDate: frozen.productionDate,
+              deliveryDate: frozen.deliveryDate ?? liveAvailability.deliveryDate,
+              available: true,
+              delayed: false,
+              blockedReason: null,
+            }
+          : liveAvailability;
         const salesFactor = sanitizeFactor(product.salesToKgFactor);
         const expeditionFactor = sanitizeFactor(product.expeditionToKgFactor);
         const internalKg = round2(orderItem.quantity * salesFactor);
@@ -665,7 +685,9 @@ function buildPlannedItems(
             ? round2(internalKg)
             : roundQuantityForUnit(expeditionQuantityRaw, product.expeditionUnit);
 
-        const canPlan = Boolean(schedule && availability.available && availability.productionDate);
+        const canPlan = frozen
+          ? Boolean(availability.productionDate)
+          : Boolean(schedule && availability.available && availability.productionDate);
         const scheduleDayPriority =
           canPlan && scheduleItem && availability.productionDate
             ? getScheduleItemDayPriority(scheduleItem, getWeekDayKey(availability.productionDate))

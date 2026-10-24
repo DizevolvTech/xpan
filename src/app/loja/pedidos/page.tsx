@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
@@ -72,6 +73,7 @@ import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSuggestions, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
+import { SlotDeadlineHint } from "@/components/orders/slot-deadline-hint";
 import {
   findActiveWindowOrder,
   isStoreOrderEditable,
@@ -857,7 +859,7 @@ export default function PedidosLojaPage() {
     {
       icon: "view" as const,
       label: "Visualizar",
-      onClick: (item: StoreOrderSummary) => router.push(buildOrderDetailPath(item.id, anchorDate)),
+      onClick: (item: StoreOrderSummary) => pushWithProgress(router, buildOrderDetailPath(item.id, anchorDate)),
     },
     {
       icon: "edit" as const,
@@ -1860,11 +1862,13 @@ export default function PedidosLojaPage() {
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">
-                        Entrega {formatDateKeyWithWeekday(deliveryDate)}
+                        Pedido para entrega em {formatDateKeyWithWeekday(deliveryDate)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Ainda sem pedido nesta data.
-                      </p>
+                      <SlotDeadlineHint
+                        deliveryDate={deliveryDate}
+                        leadDays={Number(snapshot.operationalSettings.expeditionLeadDays) || 0}
+                        cutoffTime={snapshot.operationalSettings.orderCutoffTime || "18:00"}
+                      />
                     </div>
                     <Button
                       type="button"
@@ -1899,7 +1903,7 @@ export default function PedidosLojaPage() {
             columns={columns}
             actions={actions}
             keyField="id"
-            onRowClick={(item) => router.push(buildOrderDetailPath(item.id, anchorDate))}
+            onRowClick={(item) => pushWithProgress(router, buildOrderDetailPath(item.id, anchorDate))}
             isLoading={isLoadingOrders}
             emptyMessage={isLoadingOrders ? "Carregando pedidos…" : "Nenhum pedido encontrado"}
             stickyHeader

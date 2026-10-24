@@ -445,9 +445,8 @@ export default function OrdemProducaoDetailsPage() {
 
       {op.productionDate > getOperationalTodayKey() ? (
         <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning-foreground">
-          Produção agendada para <strong>{op.productionDateLabel}</strong> (data futura). O início da
-          produção só é liberado quando a data chegar — antes disso depende de liberação do gestor.
-          Depois de iniciada, a produção pode ser concluída normalmente.
+          Produção prevista para <strong>{op.productionDateLabel}</strong>. Dá para adiantar: se iniciar
+          hoje, o sistema só avisa que a produção foi antecipada.
         </div>
       ) : null}
 

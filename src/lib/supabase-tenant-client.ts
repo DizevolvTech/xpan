@@ -38,6 +38,7 @@ const tenantOwnedTables = new Set([
   "tenant_support_occurrence_events",
   "business_code_sequences",
   "production_leftovers",
+  "production_order_trash",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

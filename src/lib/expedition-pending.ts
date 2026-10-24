@@ -78,3 +78,40 @@ export function summarizeOpsByOrder(productionOrders: readonly ProductionOrderRo
   }
   return summary;
 }
+
+export interface UnplannedOrderProduct {
+  productCode: string;
+  productName: string;
+  quantity: number;
+  unit: string;
+}
+
+/**
+ * Produtos do pedido que não estão em OP nenhuma (sem data de produção possível — p.ex. o
+ * cadastro do produto mudou depois da liberação). Eles seguram o % do pedido abaixo de 100
+ * mesmo com todas as OPs prontas, então a Expedição precisa mostrá-los.
+ */
+export function listUnplannedOrderProducts(
+  orderId: string,
+  orderItems: ReadonlyArray<{
+    orderId: string;
+    opCode: string | null;
+    productCode: string;
+    productName: string;
+    requestedQuantity: number;
+    requestedUnit: string;
+    isIntermediate?: boolean;
+    demandSource?: string;
+  }>,
+): UnplannedOrderProduct[] {
+  return orderItems
+    .filter(
+      (item) => item.orderId === orderId && !item.opCode && !item.isIntermediate && item.demandSource !== "cronograma",
+    )
+    .map((item) => ({
+      productCode: item.productCode,
+      productName: item.productName,
+      quantity: item.requestedQuantity,
+      unit: item.requestedUnit,
+    }));
+}

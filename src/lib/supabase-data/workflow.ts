@@ -33,8 +33,14 @@ import {
   recordProductionLeftover,
 } from "@/lib/supabase-data/production-leftovers";
 import { deriveBatchStatus } from "@/lib/production-batches";
+import { isDeadlinePassed, slotOrderDeadline } from "@/lib/order-batch-progress";
 import {
-  assertProductionNotInFuture,
+  closeFinishedBatches,
+  getOperationalNow,
+  getOrderBatchOverview,
+} from "@/lib/supabase-data/order-batch-overview";
+import {
+  describeProductionAnticipation,
   isFirstProductionBatch,
   isProductionStartTransition,
 } from "@/lib/workflow-date-guard";
@@ -468,7 +474,19 @@ async function validateOrderReleasable(
   });
   const planning = buildFactoryPlanningData(referenceDate, input);
 
-  return assertPlanningAllowsRelease(orderRow, planning, orderId);
+  // Bloco 8 (22/10): datas de cada produto do pedido agora, para congelar na liberação.
+  const orderKey = orderRow.legacy_id ?? orderRow.id;
+  const scheduleByProduct = new Map<string, { productionDate: string; deliveryDate: string | null }>();
+  const conflicting = new Set<string>();
+  for (const item of planning.orderItems) {
+    if (item.orderId !== orderKey || !item.productionDate || !item.canPlan) continue;
+    const previous = scheduleByProduct.get(item.productId);
+    if (previous && previous.productionDate !== item.productionDate) conflicting.add(item.productId);
+    scheduleByProduct.set(item.productId, { productionDate: item.productionDate, deliveryDate: item.deliveryDate });
+  }
+  conflicting.forEach((productId) => scheduleByProduct.delete(productId));
+
+  return { ...assertPlanningAllowsRelease(orderRow, planning, orderId), scheduleByProduct };
 }
 
 /**
@@ -486,6 +504,23 @@ async function describePendingBatchStores(
     .maybeSingle();
   const order = orderResult.data as { batch_id: string | null; delivery_date: string } | null;
   if (!order?.batch_id) return null;
+
+  // Reunião 22/10 (bloco 7): depois do PRAZO do pedido, quem não pediu não pede mais — o lote
+  // está fechado e pode ir para a produção sem esperar.
+  const settingsResult = await supabase
+    .from("operational_settings")
+    .select("expedition_lead_days, order_cutoff_time")
+    .limit(1)
+    .maybeSingle();
+  const settingsRow = settingsResult.data as { expedition_lead_days?: number | null; order_cutoff_time?: string | null } | null;
+  if (settingsRow) {
+    const deadline = slotOrderDeadline(
+      order.delivery_date,
+      Number(settingsRow.expedition_lead_days) || 0,
+      String(settingsRow.order_cutoff_time ?? "18:00").slice(0, 5),
+    );
+    if (isDeadlinePassed(deadline, getOperationalNow())) return null;
+  }
 
   const batchResult = await supabase.from("order_batches").select("slots").eq("id", order.batch_id).maybeSingle();
   const slots = (Array.isArray(batchResult.data?.slots) ? batchResult.data.slots : []) as OrderBatchSlot[];
@@ -530,6 +565,7 @@ export async function releaseOrder(
   const orderRow = await resolveOrderRow(orderId, supabase);
 
   let forcedReason: string | null = null;
+  let scheduleByProduct = new Map<string, { productionDate: string; deliveryDate: string | null }>();
 
   if (options.tenantId) {
     const referenceDate = options.referenceDate ?? new Date().toISOString().slice(0, 10);
@@ -541,6 +577,9 @@ export async function releaseOrder(
       supabase,
     );
 
+    if ("scheduleByProduct" in validation && validation.scheduleByProduct) {
+      scheduleByProduct = validation.scheduleByProduct;
+    }
     if (!validation.ok) {
       if (!options.force) {
         throw validation.error;
@@ -562,7 +601,9 @@ export async function releaseOrder(
 
   // Feedback 9: liberação MANUAL avisa as lojas do lote que ainda não pediram. O cron de
   // auto-liberação (sem perfil) segue como antes; "liberar mesmo assim" registra a exceção.
-  if (releasedByProfileId && orderRow.management_status !== "cancelado") {
+  // Reunião 22/10 (bloco 7): vale também para a auto-liberação — lote só vai para a produção
+  // completo (todas as lojas pediram) ou com o prazo encerrado.
+  if (orderRow.management_status !== "cancelado") {
     const pendingMessage = await describePendingBatchStores(orderRow.id, supabase);
     if (pendingMessage) {
       if (!options.force) {
@@ -593,7 +634,7 @@ export async function releaseOrder(
   // aqui NUNCA bloqueia a liberação (fallback = receita ao vivo, comportamento anterior).
   if (options.tenantId) {
     try {
-      await captureReleaseRecipeSnapshot(orderRow, options.tenantId, supabase);
+      await captureReleaseRecipeSnapshot(orderRow, options.tenantId, supabase, scheduleByProduct);
     } catch (snapshotError) {
       console.warn(
         `[releaseOrder] falha ao congelar a receita do pedido ${orderRow.id}: ${
@@ -653,7 +694,7 @@ export async function updateProductionItemStatus(
   // (só usada quando `status === "concluido"`). `null` = não informada → o
   // registro de sobra cai na estimativa do plano de batidas, como antes.
   reportedProducedQuantity: number | null = null,
-) {
+): Promise<string | null> {
   const updatedByDatabaseId = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   // Chave CANÔNICA (3 partes, sem scheduleId): persistimos e validamos sempre por
   // ela para nunca orfanar status ao mudar a revisão do cronograma.
@@ -697,16 +738,16 @@ export async function updateProductionItemStatus(
   // production_order_events com rows `status_from=status_to` que inflavam
   // amostras de lead-time em A7.
   if (currentStatus === status) {
-    return;
+    return null;
   }
 
-  // Trava de DATA FUTURA (feedback 10): o que se trava é o INÍCIO da produção antes da data
-  // (a data é a 1ª parte da chave canônica). Quem já iniciou conclui normalmente; saltar de
-  // `nao_iniciado` direto para `concluido` conta como início, então segue travado e não joga
-  // o pedido para "Aguardando expedição" sem produção. `force` (gestor, autorizado no route) pula.
-  if (!force && isProductionStartTransition(currentStatus)) {
-    assertProductionNotInFuture(canonicalKey);
-  }
+  // Reunião 22/10 (bloco 6), decisão do Lucas 24/10: iniciar antes da data NÃO trava mais,
+  // para ninguém; só devolve um aviso para a tela mostrar ("produção antecipada").
+  // `force` segue aceito por compatibilidade, sem efeito.
+  void force;
+  const anticipation = isProductionStartTransition(currentStatus)
+    ? describeProductionAnticipation(canonicalKey)
+    : null;
 
   const upsertResult = await supabase.from("workflow_production_items").upsert(
     {
@@ -736,6 +777,7 @@ export async function updateProductionItemStatus(
       reportedProducedQuantity,
     );
   }
+  return anticipation;
 }
 
 /**
@@ -788,7 +830,7 @@ export async function completeProductionBatch(
   // Quantidade EFETIVAMENTE produzida informada pelo operador. Só tem efeito na
   // ÚLTIMA batida (a que fecha o item em `concluido`); `null` = usar a estimativa.
   reportedProducedQuantity: number | null = null,
-) {
+): Promise<string | null> {
   const updatedBy = await resolveProfileDatabaseId(supabase, updatedByProfileId ?? null);
   const canonicalKey = canonicalProductionItemKey(productionItemKey);
   const currentResult = await supabase
@@ -805,16 +847,11 @@ export async function completeProductionBatch(
   const current = Number(currentResult.data?.batches_done ?? 0);
   const cap = Math.max(1, Math.floor(batchCount));
   const next = Math.min(cap, current + 1);
-  if (next === current) return;
+  if (next === current) return null;
 
-  // Trava de DATA FUTURA: a 1ª batida (início) não pode ser registrada antes da data de
-  // produção chegar; da 2ª em diante a produção já começou. NÃO gateamos por `next >= cap` — o `batchCount` (logo o `cap`)
-  // vem do CLIENTE; um batchCount inflado faria `next < cap` pular a trava enquanto
-  // o motor, com o SEU plano autoritativo, deriva `concluido` (bypass real). Bloquear
-  // qualquer batida em data futura fecha esse vetor. `force` (gestor) pula a trava.
-  if (!force && isFirstProductionBatch(current)) {
-    assertProductionNotInFuture(canonicalKey);
-  }
+  // Reunião 22/10 (bloco 6): 1ª batida antes da data só gera AVISO (sem trava, decisão do Lucas 24/10).
+  void force;
+  const anticipation = isFirstProductionBatch(current) ? describeProductionAnticipation(canonicalKey) : null;
 
   const upsertResult = await supabase.from("workflow_production_batches").upsert(
     {
@@ -849,6 +886,7 @@ export async function completeProductionBatch(
       reportedProducedQuantity,
     );
   }
+  return anticipation;
 }
 
 /**
@@ -975,6 +1013,11 @@ export async function autoReleaseEligibleOrders(
       });
       result.released.push({ orderId: id, orderCode: code });
     } catch (error) {
+      // Lote ainda esperando lojas dentro do prazo: não é falha, é espera (bloco 7).
+      if (error instanceof OrderReleaseValidationError && error.reason === "batch_stores_pending") {
+        result.skipped.push({ orderId: id, orderCode: code, reason: "lote_aguardando_lojas" });
+        continue;
+      }
       // Não interrompemos o batch quando um pedido falha — outros podem ser
       // liberados normalmente. O motivo fica registrado no resultado.
       result.failed.push({
@@ -983,6 +1026,14 @@ export async function autoReleaseEligibleOrders(
         error: error instanceof Error ? error.message : "Erro desconhecido ao liberar",
       });
     }
+  }
+
+  // Lote todo liberado sai do painel (status 'fechado'). Best-effort: não derruba a liberação.
+  try {
+    const overview = await getOrderBatchOverview(tenantId, supabase, { includeMissing: false });
+    await closeFinishedBatches(overview.groups, supabase);
+  } catch (closeError) {
+    console.warn("[autoReleaseEligibleOrders] falha ao fechar lotes liberados", closeError);
   }
 
   return result;

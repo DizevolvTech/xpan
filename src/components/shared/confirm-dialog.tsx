@@ -22,6 +22,8 @@ interface ConfirmOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: ConfirmTone;
+  /** Libera o confirmar no modo leitura do Master (ações que só o Master faz, ex.: lixeira de OP). */
+  allowInReadOnly?: boolean;
 }
 
 interface ConfirmDialogProps extends ConfirmOptions {
@@ -38,6 +40,7 @@ function ConfirmDialog({
   confirmLabel = "Confirmar",
   cancelLabel = "Cancelar",
   tone = "default",
+  allowInReadOnly = false,
   onConfirm,
 }: ConfirmDialogProps) {
   const titleId = React.useId();
@@ -90,6 +93,7 @@ function ConfirmDialog({
               <Button
                 variant={tone === "destructive" ? "destructive" : "default"}
                 className="min-h-11 sm:min-h-10"
+                allowInReadOnly={allowInReadOnly}
                 onClick={onConfirm}
               >
                 {confirmLabel}
@@ -153,6 +157,7 @@ function ConfirmProvider({ children }: { children: React.ReactNode }) {
         confirmLabel={state.confirmLabel}
         cancelLabel={state.cancelLabel}
         tone={state.tone}
+        allowInReadOnly={state.allowInReadOnly}
         onConfirm={() => settle(true)}
       />
     </ConfirmContext.Provider>

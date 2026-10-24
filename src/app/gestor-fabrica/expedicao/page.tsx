@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -45,7 +46,7 @@ import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import type { OperationalDateScopeMode } from "@/lib/operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
-import { buildOrderOpProgress, summarizeOpsByOrder } from "@/lib/expedition-pending";
+import { buildOrderOpProgress, listUnplannedOrderProducts, summarizeOpsByOrder } from "@/lib/expedition-pending";
 import {
   EXPEDITION_FINAL_STATUSES,
   EXPEDITION_STATUS_FILTER_OPTIONS,
@@ -67,7 +68,7 @@ type ExpeditionOrderRow = ExpeditionRow & {
 function describeChecklistStatus(item: ExpeditionOrderRow) {
   if (!item.checklistReady) {
     if (item.totalOpsCount > 0 && item.readyOpsCount === item.totalOpsCount) {
-      return "Todas as OPs estao prontas, mas o pedido ainda nao fechou 100% para a expedicao.";
+      return "Todas as OPs estão prontas, mas há produto do pedido sem OP. Clique em “Ver o que falta”.";
     }
     if (item.totalOpsCount > 0) {
       return `Aguardando produção completa: ${item.readyOpsCount}/${item.totalOpsCount} OPs prontas`;
@@ -107,7 +108,7 @@ export default function ExpedicaoPage() {
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
-  const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData: planningSnapshot, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(anchorDate);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -504,6 +505,7 @@ export default function ExpedicaoPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <DataTable
+            isLoading={isPlanningLoading && planningSnapshot.expedition.length === 0}
             data={ordersPagination.items}
             columns={columns}
             keyField="id"
@@ -511,7 +513,7 @@ export default function ExpedicaoPage() {
             showFooterControls={false}
             onRowClick={(item) => {
               if (item.checklistReady) {
-                router.push(`/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
+                pushWithProgress(router, `/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
               } else {
                 toggleOrderDetail(item.id);
               }
@@ -520,6 +522,7 @@ export default function ExpedicaoPage() {
             renderExpandedRow={(item) => (
               <ExpeditionOrderOpsDetail
                 rows={buildOrderOpProgress(item.orderId, planningData.productionOrders)}
+                unplanned={listUnplannedOrderProducts(item.orderId, planningData.orderItems)}
                 opBasePath="/gestor-fabrica/ordens-producao"
                 anchorDate={anchorDate}
               />

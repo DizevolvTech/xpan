@@ -1,8 +1,9 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Factory, MoreHorizontal, Package, Scale, SquarePen } from "lucide-react";
+import { ArrowUpRight, Factory, MoreHorizontal, Package, Scale, SquarePen, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,8 @@ type ProductionOrderActionsMenuProps = {
   productionPrintHref: string;
   onOpenWorkflow: () => void;
   onOpenPrint: (pathname: string) => void;
+  /** Reunião 22/10 (bloco 8): só o Master recebe — manda a OP para a lixeira. */
+  onTrash?: () => void;
 };
 
 export function ProductionOrderActionsMenu({
@@ -30,6 +33,7 @@ export function ProductionOrderActionsMenu({
   productionPrintHref,
   onOpenWorkflow,
   onOpenPrint,
+  onTrash,
 }: ProductionOrderActionsMenuProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -95,10 +99,22 @@ export function ProductionOrderActionsMenu({
             Produção 80 mm
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem className={itemClassName} onSelect={handleAction(() => router.push(detailHref))}>
+          <DropdownMenuItem className={itemClassName} onSelect={handleAction(() => pushWithProgress(router, detailHref))}>
             <ArrowUpRight className="size-4" />
             Abrir OP
           </DropdownMenuItem>
+          {onTrash ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:bg-destructive/10 focus:text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
+                onSelect={handleAction(onTrash)}
+              >
+                <Trash2 className="size-4" />
+                Excluir OP (Master)
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

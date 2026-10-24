@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -124,6 +125,7 @@ export default function OrdensProducaoPage() {
   const [isScopeOpen, setIsScopeOpen] = useState(false);
   const {
     planningData: planningSnapshot,
+    isLoading: isPlanningLoading,
     updateProductionItemStatus,
     advanceProductionItems,
   } = useFactoryPlanningSnapshot(anchorDate);
@@ -692,11 +694,14 @@ export default function OrdensProducaoPage() {
             groups={opDayGroups}
             columns={columns}
             onRowClick={(item) =>
-              router.push(
-                `/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`,
+              pushWithProgress(router, `/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`,
               )
             }
-            emptyMessage="Nenhuma OP encontrada para os filtros"
+            emptyMessage={
+              isPlanningLoading && planningSnapshot.productionOrders.length === 0
+                ? "Carregando OPs…"
+                : "Nenhuma OP encontrada para os filtros"
+            }
           />
 
           <PaginationControls

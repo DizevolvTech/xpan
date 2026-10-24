@@ -68,8 +68,17 @@ async function readJson<T>(input: RequestInfo | URL, init?: RequestInit) {
     }
     throw new Error(body?.message ?? `Request failed with status ${response.status}`);
   }
-  return (await response.json()) as T;
+  const result = (await response.json()) as T;
+  // Reunião 22/10 (bloco 6): produção antecipada não trava; o servidor manda o aviso e a
+  // tela mostra (ouvinte no provedor de avisos).
+  const anticipatedMessage = (result as { anticipatedMessage?: unknown } | null)?.anticipatedMessage;
+  if (typeof anticipatedMessage === "string" && anticipatedMessage && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(WORKFLOW_NOTICE_EVENT, { detail: anticipatedMessage }));
+  }
+  return result;
 }
+
+export const WORKFLOW_NOTICE_EVENT = "xpan:workflow-notice";
 
 function buildFactoryPlanningCacheKey(referenceDate: string) {
   return buildClientTenantCacheKey("factory-planning", referenceDate);

@@ -15,6 +15,14 @@ export type ReleasedRecipeByOrderProduct = Map<string, Map<string, ProductionPro
 
 const TABLE = "workflow_release_recipe_snapshots";
 
+/** Datas congeladas na liberação: `orderId → productId → {produção, entrega}` (bloco 8, 22/10). */
+export type ReleasedScheduleByOrderProduct = Map<string, Map<string, { productionDate: string; deliveryDate: string | null }>>;
+
+export interface ReleasedSnapshots {
+  recipes: ReleasedRecipeByOrderProduct;
+  schedule: ReleasedScheduleByOrderProduct;
+}
+
 /**
  * XPAN #6: carrega as receitas CONGELADAS na liberação de todos os pedidos do tenant.
  * O motor usa esse mapa para expandir a receita de pedidos liberados com a versão do
@@ -24,35 +32,66 @@ const TABLE = "workflow_release_recipe_snapshots";
 export async function getReleasedRecipeSnapshots(
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
 ): Promise<ReleasedRecipeByOrderProduct> {
-  const result = await fetchAllRows((from, to) =>
+  return (await getReleasedSnapshots(supabase)).recipes;
+}
+
+function loadSnapshotRows(supabase: SupabaseDataClient, columns: string) {
+  return fetchAllRows((from, to) =>
     supabase
       .from(TABLE)
-      .select("order_id, product_id, recipe")
+      .select(columns)
       .order("order_id", { ascending: true })
       .order("product_id", { ascending: true })
       .range(from, to),
   );
+}
+
+/**
+ * Receitas e datas congeladas na liberação. Sem as colunas de data (banco ainda sem a
+ * migração) cai para só as receitas — as datas seguem o cálculo ao vivo, como antes.
+ */
+export async function getReleasedSnapshots(
+  supabase: SupabaseDataClient = createSupabaseAdminClient(),
+): Promise<ReleasedSnapshots> {
+  let result = await loadSnapshotRows(supabase, "order_id, product_id, recipe, production_date, delivery_date");
+  if (result.error && /production_date|delivery_date/.test(result.error.message ?? "")) {
+    result = await loadSnapshotRows(supabase, "order_id, product_id, recipe");
+  }
   if (result.error) {
     if (isSupabaseMissingSchemaError(result.error, [TABLE])) {
-      return new Map();
+      return { recipes: new Map(), schedule: new Map() };
     }
     throw new Error(`Failed to load release recipe snapshots: ${result.error.message}`);
   }
-  const rows = (result.data ?? []) as Array<{
+  const rows = (result.data ?? []) as unknown as Array<{
     order_id: string;
     product_id: string;
     recipe: ProductionProduct["recipe"] | null;
+    production_date?: string | null;
+    delivery_date?: string | null;
   }>;
-  const map: ReleasedRecipeByOrderProduct = new Map();
+  const recipes: ReleasedRecipeByOrderProduct = new Map();
+  const schedule: ReleasedScheduleByOrderProduct = new Map();
   for (const row of rows) {
-    let byProduct = map.get(row.order_id);
+    let byProduct = recipes.get(row.order_id);
     if (!byProduct) {
       byProduct = new Map();
-      map.set(row.order_id, byProduct);
+      recipes.set(row.order_id, byProduct);
     }
     byProduct.set(row.product_id, Array.isArray(row.recipe) ? row.recipe : []);
+    if (row.production_date) {
+      let dates = schedule.get(row.order_id);
+      if (!dates) {
+        dates = new Map();
+        schedule.set(row.order_id, dates);
+      }
+      dates.set(row.product_id, {
+        productionDate: row.production_date.slice(0, 10),
+        deliveryDate: row.delivery_date ? row.delivery_date.slice(0, 10) : null,
+      });
+    }
   }
-  return map;
+  return { recipes, schedule };
 }
 
 /** Percorre a ÁRVORE de receita (só refs `produto`, cycle-safe) coletando `productId → receita`. */
@@ -90,6 +129,8 @@ export async function captureReleaseRecipeSnapshot(
   orderRow: { id: string; legacy_id: string | null },
   tenantId: string,
   supabase: SupabaseDataClient = createSupabaseAdminClient(),
+  /** Datas do produto do pedido no momento da liberação (bloco 8): `productId → datas`. */
+  scheduleByProduct: Map<string, { productionDate: string; deliveryDate: string | null }> = new Map(),
 ): Promise<void> {
   const orderLegacyId = orderRow.legacy_id ?? orderRow.id;
 
@@ -134,6 +175,12 @@ export async function captureReleaseRecipeSnapshot(
       order_id: orderLegacyId,
       product_id: productId,
       recipe,
+      ...(scheduleByProduct.has(productId)
+        ? {
+            production_date: scheduleByProduct.get(productId)!.productionDate,
+            delivery_date: scheduleByProduct.get(productId)!.deliveryDate,
+          }
+        : {}),
     })),
   );
   if (insertResult.error) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
@@ -103,7 +104,7 @@ export default function PedidoLojaDetailsPage() {
     void refresh();
   });
   const { cancelOrder, isSubmitting: isCancelling } = useCancelStoreOrder(() => {
-    router.push("/loja/pedidos");
+    pushWithProgress(router, "/loja/pedidos");
   });
   const [isEditing, setIsEditing] = useState(false);
   const [draftNote, setDraftNote] = useState("");
@@ -330,7 +331,7 @@ export default function PedidoLojaDetailsPage() {
                 </Button>
               </>
             ) : (
-              <Button type="button" variant="outline" onClick={() => router.push(`/loja/pedidos?editOrder=${order.id}`)}>
+              <Button type="button" variant="outline" onClick={() => pushWithProgress(router, `/loja/pedidos?editOrder=${order.id}`)}>
                 <PencilLine className="size-4" />
                 Editar pedido
               </Button>

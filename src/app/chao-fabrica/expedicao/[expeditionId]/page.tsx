@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -181,7 +182,7 @@ export default function ExpedicaoDetailsPage() {
 
     if (ok) {
       // Handoff: checklist concluído leva o operador direto pra fila de entregas.
-      router.push("/chao-fabrica/entregas?status=pronto_coleta");
+      pushWithProgress(router, "/chao-fabrica/entregas?status=pronto_coleta");
     }
   }
 

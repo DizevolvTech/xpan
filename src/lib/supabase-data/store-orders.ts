@@ -24,7 +24,7 @@ import {
   type SupabaseDataClient,
 } from "@/lib/supabase-data/common";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
-import { getReleasedRecipeSnapshots } from "@/lib/supabase-data/release-recipe-snapshot";
+import { getReleasedSnapshots } from "@/lib/supabase-data/release-recipe-snapshot";
 
 export interface CreateStoreOrderInput {
   storeId: string;
@@ -397,7 +397,7 @@ export async function buildFactoryInputFromDb(
   } = {},
 ): Promise<FactoryPlanningInput> {
   const supabase = options.supabase ?? createSupabaseAdminClient();
-  const [snapshot, storeOrders, releasedRecipeByOrderProduct] = await Promise.all([
+  const [snapshot, storeOrders, releasedSnapshots] = await Promise.all([
     getMasterDataSnapshot({
       supabase,
       includeProfileNames: options.includeProfileNames,
@@ -405,7 +405,8 @@ export async function buildFactoryInputFromDb(
     }),
     listFactoryStoreOrders(supabase),
     // XPAN #6: receitas congeladas na liberação — o motor as usa p/ pedidos liberados.
-    getReleasedRecipeSnapshots(supabase),
+    // Bloco 8 (22/10): datas de produção/entrega congeladas na liberação também.
+    getReleasedSnapshots(supabase),
   ]);
 
   return {
@@ -427,7 +428,8 @@ export async function buildFactoryInputFromDb(
     products: snapshot.products,
     ingredients: snapshot.ingredients,
     schedules: snapshot.schedules,
-    releasedRecipeByOrderProduct,
+    releasedRecipeByOrderProduct: releasedSnapshots.recipes,
+    releasedScheduleByOrderProduct: releasedSnapshots.schedule,
   };
 }
 

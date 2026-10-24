@@ -2472,3 +2472,40 @@ test("OP e itens do planejamento mostram o código do cliente (ERP) — pedido e
   const plannedSemErp = run(semErp);
   assert.ok(plannedSemErp.orderItems.every((item) => item.productCode === "PR-58451"), "sem ERP cai no código da fábrica");
 });
+
+test("Reunião 22/10 (bloco 8): pedido liberado mantém a data de produção congelada mesmo com o cadastro alterado", () => {
+  // Liberado com o bolo produzindo quarta 29/04 → entrega 30/04. Depois o cadastro mudou
+  // para produzir só sexta (e o cronograma também). A OP já gerada não pode mudar de dia.
+  const boloAlterado = buildBoloProduct({ id: "bolo4", code: "BL-004", productionDays: ["sexta"], expeditionLeadDays: 2 });
+  const input = {
+    stores: [boloStore],
+    storeOrders: [
+      {
+        id: "order-bolo-1",
+        code: "PD-BOLO-1",
+        storeId: "store-bolo",
+        orderedAt: "2026-04-29T09:00:00",
+        deliveryDate: "2026-05-01",
+        items: [{ id: "item-1", productId: "bolo4", quantity: 10, unit: "Un" as const }],
+      },
+    ],
+    settings,
+    sectors: boloSectors,
+    lines: boloLines,
+    products: [boloAlterado],
+    schedules: buildBoloSchedule([{ id: "sch-bolo4", productId: "bolo4", productionDays: ["sexta"] }]),
+  };
+  const live = buildFactoryPlanningData("2026-04-29", input).orderItems[0];
+  assert.notEqual(live?.productionDate, "2026-04-29");
+
+  const frozen = buildFactoryPlanningData("2026-04-29", {
+    ...input,
+    releasedScheduleByOrderProduct: new Map([
+      ["order-bolo-1", new Map([["bolo4", { productionDate: "2026-04-29", deliveryDate: "2026-04-30" }]])],
+    ]),
+  }).orderItems[0];
+  assert.equal(frozen?.productionDate, "2026-04-29");
+  assert.equal(frozen?.deliveryDate, "2026-04-30");
+  assert.equal(frozen?.canPlan, true);
+  assert.equal(frozen?.productionItemKey, "2026-04-29|line-bolo|bolo4");
+});

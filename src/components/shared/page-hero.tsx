@@ -30,8 +30,9 @@ export function PageHero({
         className,
       )}
     >
+      {/* Abaixo de lg o botão de menu fica fixo no canto: o caminho começa à direita dele. */}
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="relative mb-4 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <nav className="relative mb-4 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground max-lg:min-h-11 max-lg:pl-14">
           {breadcrumbs.map((crumb, index) => (
             <span key={`${crumb.label}-${index}`} className="inline-flex items-center gap-1.5">
               {index > 0 && <ChevronRight className="size-3" />}

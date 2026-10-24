@@ -101,3 +101,17 @@ export function assertDeliveryNotInFuture(
     );
   }
 }
+
+/**
+ * Reunião 22/10 (bloco 6) — decisão do Lucas (24/10): antecipar produção é só AVISO, sem
+ * bloqueio, para qualquer usuário. Devolve a mensagem de aviso quando o INÍCIO da produção
+ * acontece antes da data prevista; `null` quando está no dia ou atrasada.
+ */
+export function describeProductionAnticipation(
+  productionItemKey: string,
+  today: string = getOperationalTodayKey(),
+): string | null {
+  const productionDate = getProductionDateFromKey(productionItemKey);
+  if (!productionDate || productionDate <= today) return null;
+  return `Produção antecipada: estava prevista para ${formatDateKeyBr(productionDate)} (hoje é ${formatDateKeyBr(today)}).`;
+}

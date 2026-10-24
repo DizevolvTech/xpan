@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Clock3, Layers3, Plus } from "lucide-react";
@@ -231,7 +232,7 @@ export default function LinhasProducaoPage() {
     {
       icon: "view" as const,
       label: "Abrir",
-      onClick: (item: LinhaRow) => router.push(`/gestor-dados/linhas-producao/${item.id}`),
+      onClick: (item: LinhaRow) => pushWithProgress(router, `/gestor-dados/linhas-producao/${item.id}`),
     },
     {
       icon: "edit" as const,
@@ -344,7 +345,7 @@ export default function LinhasProducaoPage() {
           columns={columns}
           actions={actions}
           keyField="id"
-          onRowClick={(item) => router.push(`/gestor-dados/linhas-producao/${item.id}`)}
+          onRowClick={(item) => pushWithProgress(router, `/gestor-dados/linhas-producao/${item.id}`)}
           stickyHeader
           emptyMessage={
             isLoading

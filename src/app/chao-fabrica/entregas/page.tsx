@@ -122,7 +122,7 @@ export default function EntregasPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const { planningData: planningSnapshot } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData: planningSnapshot, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(anchorDate);
   const { snapshot: masterDataSnapshot } = useMasterDataSnapshot();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
@@ -671,6 +671,7 @@ export default function EntregasPage() {
 
           <div className="hidden md:block">
             <DataTable
+            isLoading={isPlanningLoading && planningSnapshot.expedition.length === 0}
               data={paginatedRows.items}
               columns={columns}
               keyField="id"

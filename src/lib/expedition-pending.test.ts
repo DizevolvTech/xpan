@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { ProductionOrderRow } from "@/lib/factory-planning/types";
 
-import { buildOrderOpProgress, isOpReadyForExpedition, summarizeOpsByOrder } from "./expedition-pending";
+import { buildOrderOpProgress, isOpReadyForExpedition, listUnplannedOrderProducts, summarizeOpsByOrder } from "./expedition-pending";
 
 function op(partial: Partial<ProductionOrderRow> & { id: string; status: ProductionOrderRow["status"]; orders: string[] }): ProductionOrderRow {
   return {
@@ -76,4 +76,14 @@ test("mostra só as OPs do pedido, as que faltam primeiro, com os produtos do pe
   assert.deepEqual(rows.map((row) => [row.opId, row.ready]), [["falta", false], ["pronta", true]]);
   assert.equal(rows[0].products.length, 1);
   assert.equal(rows[0].products[0].productName, "Produto falta");
+});
+
+test("produto do pedido sem OP aparece em 'o que falta' (segura o % abaixo de 100)", () => {
+  const rows = listUnplannedOrderProducts("o1", [
+    { orderId: "o1", opCode: "OP-1", productCode: "A", productName: "Pão", requestedQuantity: 2, requestedUnit: "un" },
+    { orderId: "o1", opCode: null, productCode: "B", productName: "Bolo", requestedQuantity: 3, requestedUnit: "un" },
+    { orderId: "o1", opCode: null, productCode: "M", productName: "Massa", requestedQuantity: 1, requestedUnit: "kg", isIntermediate: true },
+    { orderId: "o2", opCode: null, productCode: "C", productName: "Outro", requestedQuantity: 1, requestedUnit: "un" },
+  ]);
+  assert.deepEqual(rows, [{ productCode: "B", productName: "Bolo", quantity: 3, unit: "un" }]);
 });

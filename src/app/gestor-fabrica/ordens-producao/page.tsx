@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -47,6 +48,7 @@ import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal
 import { hierarchyLabels } from "@/lib/production-planning";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { OpTrashButton, useIsMasterTenantView, useOpTrashActions } from "@/components/production/op-trash";
 import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { ProductFormDialog } from "@/components/production/product-form-dialog";
@@ -181,11 +183,16 @@ export default function OrdensProducaoPage() {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const {
     planningData: planningSnapshot,
+    isLoading: isPlanningLoading,
     updateProductionItemStatus,
     advanceProductionItems,
     completeProductionBatch,
     undoProductionBatch,
+    refresh: refreshPlanning,
   } = useFactoryPlanningSnapshot(anchorDate);
+  // Reunião 22/10 (bloco 8): só o Master exclui OP, com lixeira.
+  const isMasterView = useIsMasterTenantView();
+  const opTrash = useOpTrashActions(anchorDate, refreshPlanning);
   const batchActions = useGestorBatchActions(completeProductionBatch, undoProductionBatch, setWorkflowError);
   // Reunião 22/10 (bloco 4): avançar etapa direto da fila, uma ou várias OPs.
   const queueAdvance = useOpQueueAdvance(advanceProductionItems);
@@ -615,6 +622,7 @@ export default function OrdensProducaoPage() {
             productionPrintHref={`/impressao/producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
             onOpenWorkflow={() => openWorkflowDialog(item.id)}
             onOpenPrint={openPrintPage}
+            onTrash={isMasterView ? () => void opTrash.trash(item) : undefined}
           />
           </div>
         ),
@@ -977,6 +985,8 @@ export default function OrdensProducaoPage() {
                   ? "Mostrando também as OPs de dias futuros."
                   : "Mostrando as OPs de hoje e atrasadas."}
             </span>
+            <div className="flex flex-wrap items-center gap-2">
+            {isMasterView ? <OpTrashButton version={opTrash.version} onRestored={refreshPlanning} /> : null}
             <Button
               type="button"
               size="sm"
@@ -989,18 +999,23 @@ export default function OrdensProducaoPage() {
             >
               Exibir futuras{hiddenFutureCount > 0 && !showFuture ? ` (${hiddenFutureCount})` : ""}
             </Button>
+            </div>
           </div>
           <OpQueueAdvanceBar control={queueAdvance} ops={opDayGroups.flatMap((group) => group.ops)} />
           <OpDayGroupsTable
             groups={opDayGroups}
             columns={columns}
             onRowClick={(item) =>
-              router.push(`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)
+              pushWithProgress(router, `/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`)
             }
             // Esqueleto não abre detalhe (não há OP real pra acionar) e fica MUTED.
             isRowClickable={(item) => !isSkeletonOp(item)}
             rowClassName={(item) => (isSkeletonOp(item) ? "text-muted-foreground opacity-[0.72]" : "")}
-            emptyMessage="Nenhuma OP encontrada para os filtros"
+            emptyMessage={
+              isPlanningLoading && planningSnapshot.productionOrders.length === 0
+                ? "Carregando OPs…"
+                : "Nenhuma OP encontrada para os filtros"
+            }
           />
 
           <PaginationControls

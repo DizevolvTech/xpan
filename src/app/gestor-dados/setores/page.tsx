@@ -1,5 +1,6 @@
 "use client";
 
+import { pushWithProgress } from "@/lib/navigation-progress";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Building, Clock3, Plus } from "lucide-react";
@@ -125,7 +126,7 @@ export default function SetoresPage() {
     {
       icon: "view" as const,
       label: "Visualizar",
-      onClick: (item: SetorRow) => router.push(`/gestor-dados/setores/${item.id}`),
+      onClick: (item: SetorRow) => pushWithProgress(router, `/gestor-dados/setores/${item.id}`),
     },
     {
       icon: "edit" as const,
@@ -230,7 +231,7 @@ export default function SetoresPage() {
           columns={columns}
           actions={actions}
           keyField="id"
-          onRowClick={(item) => router.push(`/gestor-dados/setores/${item.id}`)}
+          onRowClick={(item) => pushWithProgress(router, `/gestor-dados/setores/${item.id}`)}
           stickyHeader
           emptyMessage={isLoading ? "Carregando categorias..." : "Nenhuma categoria encontrada"}
         />

@@ -284,6 +284,16 @@ function ToastHost({ children }: { children: React.ReactNode }) {
     [push, dismiss],
   );
 
+  // Avisos do fluxo de produção (ex.: "Produção antecipada") vindos de qualquer tela.
+  React.useEffect(() => {
+    const onNotice = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail;
+      if (message) api.warning(message, { title: "Produção antecipada" });
+    };
+    window.addEventListener("xpan:workflow-notice", onNotice);
+    return () => window.removeEventListener("xpan:workflow-notice", onNotice);
+  }, [api]);
+
   return (
     <ToastContext.Provider value={api}>
       <ToastProvider>

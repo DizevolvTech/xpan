@@ -1,6 +1,7 @@
 "use client";
 
 import { Menu } from "lucide-react";
+import { NavigationProgress } from "@/components/layout/navigation-progress";
 import { useState } from "react";
 
 import { Sidebar } from "@/components/layout/sidebar";
@@ -43,6 +44,7 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[auto_1fr]">
+      <NavigationProgress />
       <Sidebar navigationContext={navigationContext} className="hidden lg:flex" />
       <Sidebar
         navigationContext={navigationContext}

@@ -154,17 +154,9 @@ export async function PATCH(request: Request) {
         authorization.effectiveTenantId,
         createSupabaseAdminClient(),
       );
-      if (body.force === true && !canOverrideFutureWorkflowDate(authorization.user.role)) {
-        return NextResponse.json(
-          {
-            message:
-              "Apenas gestor de fábrica ou administrador podem forçar produção em data futura.",
-          },
-          { status: 403 },
-        );
-      }
+      let anticipatedMessage: string | null = null;
       try {
-        await updateProductionItemStatus(
+        anticipatedMessage = await updateProductionItemStatus(
           body.productionItemKey,
           body.status,
           authorization.user.id,
@@ -189,7 +181,7 @@ export async function PATCH(request: Request) {
         throw error;
       }
       invalidatePlanningCaches(authorization.effectiveTenantId);
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, anticipatedMessage });
     }
 
     if (body.action === "start-production-item") {
@@ -236,18 +228,10 @@ export async function PATCH(request: Request) {
         authorization.effectiveTenantId,
         createSupabaseAdminClient(),
       );
+      let batchAnticipatedMessage: string | null = null;
       if (body.action === "complete-production-batch") {
-        if (body.force === true && !canOverrideFutureWorkflowDate(authorization.user.role)) {
-          return NextResponse.json(
-            {
-              message:
-                "Apenas gestor de fábrica ou administrador podem forçar produção em data futura.",
-            },
-            { status: 403 },
-          );
-        }
         try {
-          await completeProductionBatch(
+          batchAnticipatedMessage = await completeProductionBatch(
             body.productionItemKey,
             body.batchCount,
             authorization.user.id,
@@ -278,7 +262,7 @@ export async function PATCH(request: Request) {
         );
       }
       invalidatePlanningCaches(authorization.effectiveTenantId);
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, anticipatedMessage: batchAnticipatedMessage });
     }
 
     if (body.action === "advance-production-items") {
@@ -292,12 +276,6 @@ export async function PATCH(request: Request) {
 
       if ("response" in authorization) {
         return authorization.response;
-      }
-      if (body.force === true && !canOverrideFutureWorkflowDate(authorization.user.role)) {
-        return NextResponse.json(
-          { message: "Apenas gestor de fábrica ou administrador podem forçar produção em data futura." },
-          { status: 403 },
-        );
       }
 
       const supabase = createTenantScopedSupabaseClient(
@@ -314,12 +292,13 @@ export async function PATCH(request: Request) {
         ).values(),
       );
       let advanced = 0;
+      let anticipated = 0;
       // `blocked` = data futura (recuperável via force por gestor/admin); `failed` = demais.
       const blocked: string[] = [];
       const failed: Array<{ productionItemKey: string; message: string }> = [];
       const advanceOne = async (item: { productionItemKey: string; status: ProductionItemStatus }) => {
         try {
-          await updateProductionItemStatus(
+          const anticipation = await updateProductionItemStatus(
             item.productionItemKey,
             item.status,
             authorization.user.id,
@@ -328,6 +307,7 @@ export async function PATCH(request: Request) {
             body.force === true,
           );
           advanced += 1;
+          if (anticipation) anticipated += 1;
         } catch (error) {
           if (error instanceof FutureWorkflowDateError) {
             blocked.push(item.productionItemKey);
@@ -351,6 +331,9 @@ export async function PATCH(request: Request) {
         ok: failed.length === 0,
         advanced,
         blockedCount: blocked.length,
+        anticipatedCount: anticipated,
+        anticipatedMessage:
+          anticipated > 0 ? `${anticipated} produto(s) iniciado(s) antes da data de produção prevista.` : null,
         forceable: canOverrideFutureWorkflowDate(authorization.user.role),
         failed,
       });
