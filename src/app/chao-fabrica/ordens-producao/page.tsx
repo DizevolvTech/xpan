@@ -235,7 +235,8 @@ export default function OrdensProducaoPage() {
   const dailyLineRows = useMemo<DailyLineRow[]>(() => {
     const map = new Map<string, DailyLineRow>();
 
-    opRows.forEach((op) => {
+    // Reunião 22/10 (bloco 1): carga por linha segue o filtro da fila (pendentes por padrão).
+    opRows.filter((op) => matchesStatusFilter(op.status)).forEach((op) => {
       const key = `${op.productionDate}|${op.lineName}`;
       const current = map.get(key);
 
@@ -264,7 +265,7 @@ export default function OrdensProducaoPage() {
       }
       return a.lineName.localeCompare(b.lineName);
     });
-  }, [opRows]);
+  }, [opRows, matchesStatusFilter]);
 
   const alignedLineRows = useMemo(() => {
     const lines = Array.from(new Set(opRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
