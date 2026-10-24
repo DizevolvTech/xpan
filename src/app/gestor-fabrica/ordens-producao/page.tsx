@@ -230,6 +230,12 @@ export default function OrdensProducaoPage() {
   // demanda real. Os slots de esqueleto continuam visíveis na Fila de OPs abaixo,
   // mas não inflam contagem de OPs liberadas, conclusão média nem batelada.
   const demandOpRows = useMemo(() => opRows.filter((op) => !isSkeletonOp(op)), [opRows]);
+  // Reunião 22/10 (bloco 1): os quadros de carga, batelada e linhas seguem o mesmo filtro da
+  // fila — por padrão só o que está pendente; OP pronta/entregue aparece com "Ver histórico".
+  const visibleDemandOpRows = useMemo(
+    () => demandOpRows.filter((op) => statusFilter.matches(op.status)),
+    [demandOpRows, statusFilter],
+  );
 
   const matchesStatusFilter = statusFilter.matches;
   const filteredOps = useMemo(() => {
@@ -311,7 +317,7 @@ export default function OrdensProducaoPage() {
   const dailyLineRows = useMemo<DailyLineRow[]>(() => {
     const map = new Map<string, DailyLineRow>();
 
-    demandOpRows.forEach((op) => {
+    visibleDemandOpRows.forEach((op) => {
       const key = `${op.productionDate}|${op.lineName}`;
       const current = map.get(key);
 
@@ -340,7 +346,7 @@ export default function OrdensProducaoPage() {
       }
       return a.lineName.localeCompare(b.lineName);
     });
-  }, [demandOpRows]);
+  }, [visibleDemandOpRows]);
 
   const batchDemandRows = useMemo<BatchDemandRow[]>(() => {
     const map = new Map<
@@ -356,7 +362,7 @@ export default function OrdensProducaoPage() {
     >();
 
     planningData.productionOrders
-      .filter((op) => !isSkeletonOp(op))
+      .filter((op) => !isSkeletonOp(op) && statusFilter.matches(op.status))
       .forEach((op) => {
       op.items.forEach((item) => {
         // Item de cronograma (qtd 0) não é demanda — não entra na batelada.
@@ -429,16 +435,16 @@ export default function OrdensProducaoPage() {
         }
         return b.totalKg - a.totalKg;
       });
-  }, [planningData.productionOrders]);
+  }, [planningData.productionOrders, statusFilter]);
 
   const alignedLineRows = useMemo(() => {
-    const lines = Array.from(new Set(demandOpRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
-    const dates = Array.from(new Set(demandOpRows.map((item) => item.productionDate))).sort((a, b) =>
+    const lines = Array.from(new Set(visibleDemandOpRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
+    const dates = Array.from(new Set(visibleDemandOpRows.map((item) => item.productionDate))).sort((a, b) =>
       a.localeCompare(b),
     );
     const map = new Map<string, OpQueueRow[]>();
 
-    demandOpRows.forEach((row) => {
+    visibleDemandOpRows.forEach((row) => {
       const key = `${row.lineName}|${row.productionDate}`;
       if (!map.has(key)) {
         map.set(key, []);
@@ -447,7 +453,7 @@ export default function OrdensProducaoPage() {
     });
 
     return { lines, dates, map };
-  }, [demandOpRows]);
+  }, [visibleDemandOpRows]);
 
   const kpis = useMemo(
     () => ({
