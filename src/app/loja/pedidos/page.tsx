@@ -73,7 +73,8 @@ import { useStoreOccurrences } from "@/lib/use-store-occurrences";
 import { useStoreScope } from "@/lib/use-store-scope";
 import { useCreateStoreOrder, useStoreOrderCatalog, useStoreOrderDetail, useStoreOrderSuggestions, useStoreOrderSummaries, useUpdateStoreOrder } from "@/lib/use-store-orders";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
-import { SlotDeadlineHint } from "@/components/orders/slot-deadline-hint";
+import { SlotDeadlineHint, useOperationalNow } from "@/components/orders/slot-deadline-hint";
+import { isDeadlinePassed, slotOrderDeadline } from "@/lib/order-batch-progress";
 import {
   findActiveWindowOrder,
   isStoreOrderEditable,
@@ -418,6 +419,7 @@ export default function PedidosLojaPage() {
   // XPAN-Lote: datas (slots) do lote AINDA SEM pedido para a loja selecionada — o que a
   // loja pode pedir. Remove as datas que já viraram pedido (evita duplicidade + limpa a
   // lista conforme a loja vai criando).
+  const operationalNow = useOperationalNow();
   const pendingSlotDatesForStore = useMemo(() => {
     if (!selectedStoreId) return [] as string[];
     const orderedDates = new Set(
@@ -436,8 +438,20 @@ export default function PedidosLojaPage() {
         dates.push(slot.deliveryDate);
       }
     }
-    return dates.sort((a, b) => a.localeCompare(b));
-  }, [openBatches, selectedStoreId, storeOrderSummaries]);
+    // Reunião 22/10 (bloco 7/8): depois do prazo a data não aceita mais pedido — sai da lista.
+    const leadDays = Number(snapshot.operationalSettings.expeditionLeadDays) || 0;
+    const cutoff = snapshot.operationalSettings.orderCutoffTime || "18:00";
+    return dates
+      .filter((date) => !operationalNow || !isDeadlinePassed(slotOrderDeadline(date, leadDays, cutoff), operationalNow))
+      .sort((a, b) => a.localeCompare(b));
+  }, [
+    openBatches,
+    operationalNow,
+    selectedStoreId,
+    snapshot.operationalSettings.expeditionLeadDays,
+    snapshot.operationalSettings.orderCutoffTime,
+    storeOrderSummaries,
+  ]);
 
   useEffect(() => {
     refreshOpenOrders();
