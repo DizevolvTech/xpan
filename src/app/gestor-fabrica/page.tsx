@@ -47,7 +47,7 @@ import {
 } from "@/components/ui/select";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { isInFieldDeliveryStatus } from "@/lib/expedition-status-filter";
-import { countOpenOrders } from "@/lib/factory-planning/order-status";
+import { isOpenOrderStatus } from "@/lib/factory-planning/order-status";
 import type { PlannedOrderRow, ProductionOrderRow } from "@/lib/factory-planning/types";
 import {
   filterFactoryPlanningDataByOperationalScope,
@@ -371,7 +371,12 @@ export default function GestorFabricaPage() {
   });
 
   const metrics = useMemo(() => {
-    const totalOrders = countOpenOrders(planningData.orders);
+    // Em aberto pelo status visível (com a execução de entrega): entregue não conta.
+    const totalOrders = planningData.orders.filter(
+      (order) =>
+        isOpenOrderStatus(order.status) &&
+        deliveryExecution.resolveExecution(order.id, order.status === "aguardando_expedicao").status !== "entregue",
+    ).length;
     const awaitingRelease = planningData.orders.filter((item) => !item.releasedToProduction).length;
     const inProduction = planningData.orders.filter((item) => item.status === "em_producao").length;
     const checklistPending = planningData.expedition.filter((item) => {

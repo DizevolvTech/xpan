@@ -38,7 +38,11 @@ import { useToast } from "@/components/shared/toast";
 import { useConfirm } from "@/components/shared/confirm-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
-import { getExpeditionVisibleStatus, isOrderReadyForDeliveryExecution } from "@/lib/delivery-workflow";
+import {
+  getExpeditionVisibleStatus,
+  isOrderReadyForDeliveryExecution,
+  type ExpeditionVisibleStatus,
+} from "@/lib/delivery-workflow";
 import { aggregateOrderItems } from "@/lib/order-item-aggregation";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
@@ -59,6 +63,7 @@ import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 
 type OrderSummaryRow = PlannedOrderRow & {
   productsCount: number;
+  visibleStatus: ExpeditionVisibleStatus;
 };
 
 function openPrintPage(pathname: string) {
@@ -158,12 +163,20 @@ export default function PedidosFabricaPage() {
   const summaryRows = useMemo<OrderSummaryRow[]>(() => {
     return planningData.orders.map((order) => {
       const items = orderItemsByOrderId.get(order.id) ?? [];
+      // Status visível = produção mesclada com a execução de entrega: o filtro usa o MESMO
+      // status da etiqueta, senão um pedido entregue (planning ainda em expedição) ficava
+      // nas pendências (reunião 22/10, bloco 1).
+      const execution = deliveryExecutionState.resolveExecution(
+        order.id,
+        isOrderReadyForDeliveryExecution(order.status),
+      );
       return {
         ...order,
         productsCount: new Set(items.map((item) => item.productId)).size,
+        visibleStatus: getExpeditionVisibleStatus(order.status, execution.status),
       };
     });
-  }, [orderItemsByOrderId, planningData.orders]);
+  }, [deliveryExecutionState, orderItemsByOrderId, planningData.orders]);
 
   // XPAN-Lote: status do lote aberto — quantos slots (loja × data) já viraram pedido real
   // (X) sobre o total liberado (Y). "Preenchido" = existe um pedido não-cancelado da loja
@@ -190,7 +203,7 @@ export default function PedidosFabricaPage() {
         normalizedTerm.length === 0 ||
         item.code.toLowerCase().includes(normalizedTerm) ||
         item.storeName.toLowerCase().includes(normalizedTerm);
-      const matchesStatus = matchesStatusFilter(item.status);
+      const matchesStatus = matchesStatusFilter(item.visibleStatus);
       const matchesStore = storeFilter === "all" || item.storeName === storeFilter;
       const matchesDelivery = deliveryFilter === "all" || item.deliveryDate === deliveryFilter;
       return matchesSearch && matchesStatus && matchesStore && matchesDelivery;
@@ -685,9 +698,7 @@ export default function PedidosFabricaPage() {
                   const isExpanded = expandedOrderIds.includes(order.id);
                   // Status visível = status derivado da produção mesclado com a
                   // execução de entrega (entregue/em_rota/etc. vencem o defasado).
-                  const expeditionReady = isOrderReadyForDeliveryExecution(order.status);
-                  const execution = deliveryExecutionState.resolveExecution(order.id, expeditionReady);
-                  const visibleStatus = getExpeditionVisibleStatus(order.status, execution.status);
+                  const visibleStatus = order.visibleStatus;
                   return (
                     <Fragment key={order.id}>
                       <tr className="hover:bg-panel/30">
