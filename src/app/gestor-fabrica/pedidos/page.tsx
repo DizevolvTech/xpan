@@ -268,11 +268,14 @@ export default function PedidosFabricaPage() {
     [planningData.deliveryDates],
   );
 
+  // Totais do topo seguem o filtro de status (pendências por padrão) e o status visível:
+  // pedido entregue não conta como liberado nem como pronto para expedição.
+  const kpiRows = summaryRows.filter((item) => matchesStatusFilter(item.visibleStatus));
   const kpis = {
-    total: summaryRows.length,
-    liberados: summaryRows.filter((item) => item.releasedToProduction).length,
-    emProducao: summaryRows.filter((item) => item.status === "em_producao").length,
-    aguardandoExpedicao: summaryRows.filter((item) => item.status === "aguardando_expedicao").length,
+    total: kpiRows.length,
+    liberados: kpiRows.filter((item) => item.releasedToProduction).length,
+    emProducao: kpiRows.filter((item) => item.visibleStatus === "em_producao").length,
+    aguardandoExpedicao: kpiRows.filter((item) => item.visibleStatus === "aguardando_expedicao").length,
   };
 
   const scopeLabel = useMemo(() => {

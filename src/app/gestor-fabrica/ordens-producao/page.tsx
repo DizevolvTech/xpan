@@ -457,17 +457,17 @@ export default function OrdensProducaoPage() {
 
   const kpis = useMemo(
     () => ({
-      totalOps: demandOpRows.length,
-      totalKg: Number(demandOpRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
+      totalOps: visibleDemandOpRows.length,
+      totalKg: Number(visibleDemandOpRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
       avgCompletion:
-        demandOpRows.length === 0
+        visibleDemandOpRows.length === 0
           ? 0
           : Number(
-              (demandOpRows.reduce((sum, item) => sum + item.completion, 0) / demandOpRows.length).toFixed(1),
+              (visibleDemandOpRows.reduce((sum, item) => sum + item.completion, 0) / visibleDemandOpRows.length).toFixed(1),
             ),
-      activeSubcategories: new Set(demandOpRows.map((item) => item.lineName)).size,
+      activeSubcategories: new Set(visibleDemandOpRows.map((item) => item.lineName)).size,
     }),
-    [demandOpRows],
+    [visibleDemandOpRows],
   );
 
   const selectedOp = useMemo(

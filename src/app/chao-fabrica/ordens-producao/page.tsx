@@ -268,11 +268,14 @@ export default function OrdensProducaoPage() {
   }, [opRows, matchesStatusFilter]);
 
   const alignedLineRows = useMemo(() => {
-    const lines = Array.from(new Set(opRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
-    const dates = planningData.productionDates;
+    // Reunião 22/10 (bloco 1): o quadro segue o filtro da fila (pendentes por padrão).
+    const visibleRows = opRows.filter((row) => matchesStatusFilter(row.status));
+    const lines = Array.from(new Set(visibleRows.map((item) => item.lineName))).sort((a, b) => a.localeCompare(b));
+    const visibleDates = new Set(visibleRows.map((row) => row.productionDate));
+    const dates = planningData.productionDates.filter((date) => visibleDates.has(date));
     const map = new Map<string, OpQueueRow[]>();
 
-    opRows.forEach((row) => {
+    visibleRows.forEach((row) => {
       const key = `${row.lineName}|${row.productionDate}`;
       if (!map.has(key)) {
         map.set(key, []);
@@ -281,19 +284,21 @@ export default function OrdensProducaoPage() {
     });
 
     return { lines, dates, map };
-  }, [opRows, planningData.productionDates]);
+  }, [opRows, planningData.productionDates, matchesStatusFilter]);
 
+  // KPIs seguem o filtro da fila (pendentes por padrão; tudo com Ver histórico).
+  const kpiOpRows = useMemo(() => opRows.filter((op) => matchesStatusFilter(op.status)), [opRows, matchesStatusFilter]);
   const kpis = useMemo(
     () => ({
-      totalOps: opRows.length,
-      totalKg: Number(opRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
+      totalOps: kpiOpRows.length,
+      totalKg: Number(kpiOpRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
       avgCompletion:
-        opRows.length === 0
+        kpiOpRows.length === 0
           ? 0
-          : Number((opRows.reduce((sum, item) => sum + item.completion, 0) / opRows.length).toFixed(1)),
-      activeSubcategories: new Set(opRows.map((item) => item.lineName)).size,
+          : Number((kpiOpRows.reduce((sum, item) => sum + item.completion, 0) / kpiOpRows.length).toFixed(1)),
+      activeSubcategories: new Set(kpiOpRows.map((item) => item.lineName)).size,
     }),
-    [opRows],
+    [kpiOpRows],
   );
 
   // Stats secundárias: dados úteis, mas não competem com os 3 KPIs primários.
