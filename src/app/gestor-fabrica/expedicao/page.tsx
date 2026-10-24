@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, CalendarRange, Factory, ListChecks, ShoppingCart, Truck } from "lucide-react";
 
 import { DataTable } from "@/components/shared/data-table";
@@ -12,6 +13,7 @@ import { OperationFiltersCard } from "@/components/shared/operation-filters-card
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,6 +44,12 @@ import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import type { OperationalDateScopeMode } from "@/lib/operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { useListStatusFilter } from "@/lib/use-list-status-filter";
+import {
+  EXPEDITION_FINAL_STATUSES,
+  EXPEDITION_STATUS_FILTER_OPTIONS,
+  EXPEDITION_VALID_STATUSES,
+} from "@/lib/expedition-status-filter";
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -86,7 +94,14 @@ export default function ExpedicaoPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [deliveryDateFilter, setDeliveryDateFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const searchParams = useSearchParams();
+  // Reunião 22/10 (bloco 1): só pendências por padrão; entregue/cancelado ficam no histórico.
+  const statusFilter = useListStatusFilter({
+    pageKey: "gestor-fabrica-expedicao",
+    finalStatuses: EXPEDITION_FINAL_STATUSES,
+    validStatuses: EXPEDITION_VALID_STATUSES,
+    initialStatus: searchParams.get("status"),
+  });
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(20);
@@ -158,7 +173,7 @@ export default function ExpedicaoPage() {
         item.storeName.toLowerCase().includes(normalizedTerm);
       const matchesDelivery = deliveryDateFilter === "all" || item.deliveryDate === deliveryDateFilter;
       const matchesStore = storeFilter === "all" || item.storeName === storeFilter;
-      const matchesStatus = statusFilter === "all" || item.visibleStatus === statusFilter;
+      const matchesStatus = statusFilter.matches(item.visibleStatus);
 
       return matchesSearch && matchesDelivery && matchesStore && matchesStatus;
     });
@@ -186,11 +201,15 @@ export default function ExpedicaoPage() {
     [ordersPage, ordersPageSize, sortedOrders],
   );
 
+  // Totais do topo contam só o que ainda está em aberto (entregue/cancelado é histórico).
+  const pendingRows = orderRows.filter(
+    (item) => !(EXPEDITION_FINAL_STATUSES as readonly string[]).includes(item.visibleStatus),
+  );
   const kpis = {
-    pedidos: orderRows.length,
-    itens: orderRows.reduce((sum, item) => sum + item.itemsCount, 0),
-    totalKg: Number(orderRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
-    prontos: orderRows.filter((item) => item.checklistReady && item.checklistStatus === "aguardando_expedicao").length,
+    pedidos: pendingRows.length,
+    itens: pendingRows.reduce((sum, item) => sum + item.itemsCount, 0),
+    totalKg: Number(pendingRows.reduce((sum, item) => sum + item.totalKg, 0).toFixed(2)),
+    prontos: pendingRows.filter((item) => item.checklistReady && item.checklistStatus === "aguardando_expedicao").length,
   };
 
   const scopeLabel = useMemo(() => {
@@ -297,14 +316,14 @@ export default function ExpedicaoPage() {
     searchTerm.trim().length > 0 ? 1 : 0,
     deliveryDateFilter !== "all" ? 1 : 0,
     storeFilter !== "all" ? 1 : 0,
-    statusFilter !== "all" ? 1 : 0,
+    statusFilter.isCustom ? 1 : 0,
   ].reduce((sum, value) => sum + value, 0);
 
   function clearFilters() {
     setSearchTerm("");
     setDeliveryDateFilter("all");
     setStoreFilter("all");
-    setStatusFilter("all");
+    statusFilter.reset();
     setOrdersPage(1);
   }
 
@@ -448,27 +467,13 @@ export default function ExpedicaoPage() {
             },
             options: storeOptions,
           },
-          {
-            key: "status",
-            label: "Status",
-            value: statusFilter,
-            onChange: (value) => {
-              setStatusFilter(value);
-              setOrdersPage(1);
-            },
-            options: [
-              { value: "em_espera", label: "Em espera" },
-              { value: "agendado", label: "Agendado" },
-              { value: "em_producao", label: "Em produção" },
-              { value: "aguardando_expedicao", label: "Aguardando expedição" },
-              { value: "pronto_coleta", label: "Pronto para coleta" },
-              { value: "em_rota", label: "Em rota" },
-              { value: "no_destino", label: "No destino" },
-              { value: "entregue", label: "Entregue" },
-              { value: "tentativa_falha", label: "Tentativa falha" },
-            ],
-          },
         ]}
+      />
+
+      <StatusFilterBar
+        control={statusFilter}
+        options={EXPEDITION_STATUS_FILTER_OPTIONS}
+        onChange={() => setOrdersPage(1)}
       />
 
       <Card className="overflow-hidden">

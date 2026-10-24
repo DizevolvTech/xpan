@@ -3,6 +3,7 @@ import { Sora, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastHost } from "@/components/shared/toast";
 import { ConfirmProvider } from "@/components/shared/confirm-dialog";
+import { TestEnvironmentBanner } from "@/components/shared/test-environment-banner";
 import { brand } from "@/lib/brand";
 import "./globals.css";
 
@@ -41,6 +42,7 @@ export default function RootLayout({
       <body
         className={`${headingFont.variable} ${bodyFont.variable} ${monoFont.variable} bg-canvas text-foreground antialiased`}
       >
+        <TestEnvironmentBanner />
         <TooltipProvider>
           <ToastHost>
             <ConfirmProvider>{children}</ConfirmProvider>

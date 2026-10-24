@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { isInFieldDeliveryStatus } from "@/lib/expedition-status-filter";
 import { countOpenOrders } from "@/lib/factory-planning/order-status";
 import type { PlannedOrderRow, ProductionOrderRow } from "@/lib/factory-planning/types";
 import {
@@ -500,7 +501,7 @@ export default function GestorFabricaPage() {
         tone: "primary",
         statuses: ["aguardando_expedicao"],
       },
-      { key: "rota", title: "Em rota / entregue", tone: "success", statuses: ["rota_entrega"] },
+      { key: "rota", title: "Em rota", tone: "success", statuses: ["rota_entrega"] },
     ];
 
     const mapped: KanbanColumn[] = orderColumns.map((column) => ({
@@ -526,13 +527,11 @@ export default function GestorFabricaPage() {
             );
           }
           if (column.key === "rota") {
-            if (order.status === "rota_entrega") {
-              return true;
+            // Reunião 22/10 (bloco 1): entregue sai da Visão Geral; consulta pelo histórico da Expedição.
+            if (order.status !== "rota_entrega" && order.status !== "aguardando_expedicao") {
+              return false;
             }
-            return (
-              order.status === "aguardando_expedicao" &&
-              deliveryExecution.resolveExecution(order.id, true).status !== "aguardando_expedicao"
-            );
+            return isInFieldDeliveryStatus(deliveryExecution.resolveExecution(order.id, true).status);
           }
           return column.statuses.includes(order.status);
         })

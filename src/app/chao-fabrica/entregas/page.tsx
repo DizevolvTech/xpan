@@ -14,6 +14,7 @@ import { OperationFiltersCard } from "@/components/shared/operation-filters-card
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useConfirm } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
 import { ReleaseOrderBlockedError } from "@/lib/use-factory-planning";
@@ -38,6 +39,12 @@ import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
+import { useListStatusFilter } from "@/lib/use-list-status-filter";
+import {
+  DELIVERY_FINAL_STATUSES,
+  DELIVERY_STATUS_FILTER_OPTIONS,
+  DELIVERY_VALID_STATUSES,
+} from "@/lib/expedition-status-filter";
 import { buildDeliveryRoutes } from "@/lib/delivery-routing";
 import type { StoreProfile } from "@/lib/factory-planning/types";
 
@@ -103,9 +110,13 @@ export default function EntregasPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [deliveryDateFilter, setDeliveryDateFilter] = useState("all");
   // AJ-0002: filtro inicial vindo do deep-link dos cards do dashboard.
-  const [executionStatusFilter, setExecutionStatusFilter] = useState(
-    () => searchParams.get("status") ?? "all",
-  );
+  // Reunião 22/10 (bloco 1): entregue sai da lista por padrão e fica no "Ver histórico".
+  const executionStatusFilter = useListStatusFilter({
+    pageKey: "chao-fabrica-entregas",
+    finalStatuses: DELIVERY_FINAL_STATUSES,
+    validStatuses: DELIVERY_VALID_STATUSES,
+    initialStatus: searchParams.get("status"),
+  });
   const [zoneFilter, setZoneFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<TemporalSortOrder>("recent_first");
   const [page, setPage] = useState(1);
@@ -264,7 +275,7 @@ export default function EntregasPage() {
         item.storeName.toLowerCase().includes(normalizedTerm) ||
         item.routeCode.toLowerCase().includes(normalizedTerm);
       const matchesDeliveryDate = deliveryDateFilter === "all" || item.deliveryDate === deliveryDateFilter;
-      const matchesExecutionStatus = executionStatusFilter === "all" || item.executionStatus === executionStatusFilter;
+      const matchesExecutionStatus = executionStatusFilter.matches(item.executionStatus);
       const matchesZone = zoneFilter === "all" || item.zone === zoneFilter;
 
       return matchesSearch && matchesDeliveryDate && matchesExecutionStatus && matchesZone;
@@ -286,7 +297,7 @@ export default function EntregasPage() {
     if (deliveryDateFilter !== "all") {
       count += 1;
     }
-    if (executionStatusFilter !== "all") {
+    if (executionStatusFilter.isCustom) {
       count += 1;
     }
     if (zoneFilter !== "all") {
@@ -454,7 +465,7 @@ export default function EntregasPage() {
   function clearFilters() {
     setSearchTerm("");
     setDeliveryDateFilter("all");
-    setExecutionStatusFilter("all");
+    executionStatusFilter.reset();
     setZoneFilter("all");
     setPage(1);
   }
@@ -545,26 +556,15 @@ export default function EntregasPage() {
                   .sort((a, b) => a.localeCompare(b))
                   .map((zone) => ({ value: zone, label: zone })),
               },
-              {
-                key: "execution",
-                label: "Execução",
-                value: executionStatusFilter,
-                onChange: (value) => {
-                  setExecutionStatusFilter(value);
-                  setPage(1);
-                },
-                options: [
-                  { value: "aguardando_expedicao", label: "Aguardando Expedição" },
-                  { value: "pronto_coleta", label: "Pronto p/ Coleta" },
-                  { value: "em_rota", label: "Em Rota" },
-                  { value: "no_destino", label: "No Destino" },
-                  { value: "entregue", label: "Entregue" },
-                  { value: "tentativa_falha", label: "Tentativa Falhou" },
-                ],
-              },
             ]}
             activeFiltersCount={activeFiltersCount}
             onClear={clearFilters}
+          />
+
+          <StatusFilterBar
+            control={executionStatusFilter}
+            options={DELIVERY_STATUS_FILTER_OPTIONS}
+            onChange={() => setPage(1)}
           />
 
           <div className="grid gap-3 md:hidden">

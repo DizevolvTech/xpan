@@ -163,7 +163,7 @@ def run():
             goto(page, "/gestor-fabrica")
             try:
                 page.get_by_text("Acompanhamento", exact=True).first.wait_for(timeout=20000)
-                cols = ["Aberto", "Em produção", "Aguardando expedição", "Em rota / entregue"]
+                cols = ["Aberto", "Em produção", "Aguardando expedição", "Em rota"]
                 ncol = sum(1 for c in cols if page.get_by_text(c, exact=True).count() > 0)
                 if ncol >= 3:
                     rec("AJ-0001", "PASS", f"Kanban 'Acompanhamento' ({ncol}/4 colunas)")

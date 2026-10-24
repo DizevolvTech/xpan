@@ -58,6 +58,14 @@ Cada item: pedido (tempo da gravação) · como está hoje (develop 28cc9bf) · 
 
 ## Ambiente de teste
 Prometido na reunião (38:35): o cliente testa numa cópia, sem risco para a operação.
+Montado em 24/10 (Lucas: "sim"):
+
+- Endereço do cliente: `https://preview-xpan.dizevolv.com` (Worker `hf-xpan-03f0f7a7-preview`), faixa amarela "Sistema de TESTE" no topo (`src/lib/test-environment.ts`, só pelo endereço).
+- Banco: Supabase self-hosted no dize-db, stack `/opt/dizevolv/xpan-teste/stack` (projeto compose `xpan-teste`: db, auth, rest, api-gw; porta 127.0.0.1:4141), exposto por Caddy em `https://api-teste-xpan.dizevolv.com` (DNS A sem proxy). Envio de e-mail desligado (SMTP inválido), cadastro aberto desligado.
+- Dados: cópia da produção de 24/10 15:00 UTC (`supabase db dump` do projeto de produção: schema + dados, inclusive `auth.users`; mesmas senhas). Contagens conferidas iguais à produção (28 usuários, 22 pedidos, 86 produtos, 7 tenants). Arquivos em `/opt/dizevolv/xpan-teste/restore` (root, 600).
+- Worker de teste: `NEXT_PUBLIC_SUPABASE_URL` = API de teste, `SUPABASE_PROJECT_REF=api-teste-xpan` (cookie `sb-api-teste-xpan-auth-token`), chaves do banco de teste como secrets (1Password: "Xpan - teste (dize-db) - chaves Supabase self-hosted"). Removidos do Worker de teste os segredos de produção sem uso (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`). Sem agendamentos (cron) no Worker de teste.
+- Fluxo: cada bloco é publicado primeiro no teste; o cliente aprova; depois vai para `xpan.dizevolv.com`.
+- Atualizar a cópia: novo `supabase db dump --linked --dry-run` (schema e `--data-only`) a partir do host Hefesto, transferir ao dize-db, recriar o banco do stack (`docker compose down -v` só do projeto `xpan-teste`, `up -d db auth rest api-gw`) e restaurar com `psql -U supabase_admin`; o único erro esperado é `storage.buckets` (storage não é usado).
 
 ## Fora de mudança
 - Mix de produtos: esboço prometido pelo Lucas (segue adiado no snapshot).
