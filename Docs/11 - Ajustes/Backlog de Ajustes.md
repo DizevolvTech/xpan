@@ -736,3 +736,5 @@ Lote entregue por Giuseppe na data-alvo da Onda 1. Sem mudança de regra de neg�
 
 - [x] 2026-10-11 — Insumos operacionais e acabamento fora da massa e da quebra (etapa "operacional"): no ar em `7fdd29d`. Ver Changelog Vivo 2026-10.
 - [ ] Revisar com o cliente o teste de laboratório do Bento Cake Chocolate (Grupo Chama): registra quebra 0% e agora é tratado como incompleto.
+
+- [Reunião 22/10/2026 — Plano de UX e fluxo](Reuniao%202026-10-22%20—%20Plano%20de%20UX%20e%20fluxo.md): 8 blocos na ordem do Lucas (UX primeiro), decisões de 24/10.
