@@ -121,6 +121,8 @@ export default function PedidosFabricaPage() {
   const { snapshot: masterData } = useMasterDataSnapshot();
   const [isOpenOrdersDialogOpen, setIsOpenOrdersDialogOpen] = useState(false);
   const [batchesReloadKey, setBatchesReloadKey] = useState(0);
+  // Pedidos de lote ainda esperando lojas dentro do prazo (vem do painel de lotes).
+  const [waitingBatchOrderCodes, setWaitingBatchOrderCodes] = useState<Set<string>>(() => new Set());
   // A10: modo padrão "semana" (deriva os dias do cronograma); "manual" mantém a
   // abertura de UMA data de entrega específica (fluxo anterior).
   const [openMode, setOpenMode] = useState<"week" | "manual">("week");
@@ -385,13 +387,21 @@ export default function PedidosFabricaPage() {
   async function handleAutoReleaseEligible() {
     if (isAutoReleasing) return;
 
+    // Bloco 7 (22/10): pedido de lote esperando lojas dentro do prazo não entra na conta.
     const eligibleCount = summaryRows.filter(
       (order) =>
-        !order.releasedToProduction && order.status !== "cancelado" && order.availableForRelease,
+        !order.releasedToProduction &&
+        order.status !== "cancelado" &&
+        order.availableForRelease &&
+        !waitingBatchOrderCodes.has(order.code),
     ).length;
 
     if (eligibleCount === 0) {
-      toast.info("Nenhum pedido elegível para auto-liberação na janela atual.");
+      toast.info(
+        waitingBatchOrderCodes.size > 0
+          ? "Nenhum pedido para liberar agora: os pedidos de lote aguardam as outras lojas ou o fim do prazo."
+          : "Nenhum pedido elegível para auto-liberação na janela atual.",
+      );
       return;
     }
 
@@ -427,7 +437,9 @@ export default function PedidosFabricaPage() {
       const parts: string[] = [];
       if (result.released.length > 0) parts.push(`${result.released.length} liberado(s)`);
       if (result.failed.length > 0) parts.push(`${result.failed.length} bloqueado(s)`);
-      if (result.skipped.length > 0) parts.push(`${result.skipped.length} pulado(s)`);
+      const waitingLot = result.skipped.filter((item) => item.reason === "lote_aguardando_lojas").length;
+      if (waitingLot > 0) parts.push(`${waitingLot} aguardando as lojas do lote`);
+      if (result.skipped.length - waitingLot > 0) parts.push(`${result.skipped.length - waitingLot} pulado(s)`);
 
       const summary = parts.join(" · ");
       if (result.released.length > 0 && result.failed.length === 0) {
@@ -571,11 +583,11 @@ export default function PedidosFabricaPage() {
           {/* Linha-stats minúscula (KPIs secundários). */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
             <span>
-              <span className="font-medium text-foreground/80">{kpis.total}</span> no período
+              <span className="font-medium text-foreground/80">{showLoading ? "…" : kpis.total}</span> no período
             </span>
             <span aria-hidden className="text-muted-foreground/40">·</span>
             <span>
-              <span className="font-medium text-foreground/80">{kpis.liberados}</span> liberados
+              <span className="font-medium text-foreground/80">{showLoading ? "…" : kpis.liberados}</span> liberados
             </span>
           </div>
         </div>
@@ -586,6 +598,7 @@ export default function PedidosFabricaPage() {
         <OrderBatchesPanel
           orderItems={planningData.orderItems}
           reloadKey={batchesReloadKey}
+          onWaitingOrderCodesChange={setWaitingBatchOrderCodes}
           onChanged={async () => {
             await refresh();
           }}
@@ -600,9 +613,9 @@ export default function PedidosFabricaPage() {
 
       {/* KPIs reduzidos 4 → 3 (cortado "Pedidos" — redundante com 'X de Y' abaixo). */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <KPICard title="Liberados" value={kpis.liberados} icon={ListChecks} tone="info" compactValue />
-        <KPICard title="Em Produção" value={kpis.emProducao} icon={Factory} tone="warning" compactValue />
-        <KPICard title="Prontos p/ Expedição" value={kpis.aguardandoExpedicao} icon={Truck} tone="success" compactValue />
+        <KPICard title="Liberados" value={showLoading ? "…" : kpis.liberados} icon={ListChecks} tone="info" compactValue />
+        <KPICard title="Em Produção" value={showLoading ? "…" : kpis.emProducao} icon={Factory} tone="warning" compactValue />
+        <KPICard title="Prontos p/ Expedição" value={showLoading ? "…" : kpis.aguardandoExpedicao} icon={Truck} tone="success" compactValue />
       </div>
 
       <Card className="overflow-hidden">
@@ -862,7 +875,7 @@ export default function PedidosFabricaPage() {
             </table>
           </div>
 
-          <PaginationControls
+          {showLoading ? null : <PaginationControls
             page={pagination.page}
             totalPages={pagination.totalPages}
             pageSize={pagination.pageSize}
@@ -880,7 +893,7 @@ export default function PedidosFabricaPage() {
               setSortOrder(nextSortOrder);
               setPage(1);
             }}
-          />
+          />}
         </CardContent>
       </Card>
 

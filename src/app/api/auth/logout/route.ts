@@ -7,7 +7,9 @@ import { MASTER_TENANT_COOKIE_NAME } from "@/lib/tenant";
 
 export async function POST(request: NextRequest) {
   const { supabase, applyResponseCookies } = createSupabaseRequestClient(request);
-  await supabase.auth.signOut();
+  // Sair só NESTE aparelho. O padrão do Supabase (global) derrubava a mesma conta em todos os
+  // computadores/tablets da fábrica ao mesmo tempo.
+  await supabase.auth.signOut({ scope: "local" });
 
   const response = NextResponse.json({ ok: true });
   const authCookieBaseName = `sb-${getSupabaseProjectRef()}-auth-token`;

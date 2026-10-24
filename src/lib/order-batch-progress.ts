@@ -112,7 +112,9 @@ export function buildBatchGroups(
       const missingStoreIds = [...storeIds].filter((storeId) => !orderedStores.has(storeId)).sort();
       const pendingOrderIds = groupOrders.filter((order) => !order.released).map((order) => order.orderId);
       const releasedOrders = groupOrders.filter((order) => order.released).length;
-      const complete = missingStoreIds.length === 0 || deadlinePassed;
+      // Liberado o que tinha, a entrega fecha: pedido novo para uma entrega já liberada é
+      // recusado (createStoreOrder), então quem faltou não pede mais e o cartão sai.
+      const complete = missingStoreIds.length === 0 || deadlinePassed || (releasedOrders > 0 && pendingOrderIds.length === 0);
       const state: BatchGroupState =
         complete && pendingOrderIds.length === 0
           ? "liberado"

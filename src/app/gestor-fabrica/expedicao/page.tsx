@@ -109,6 +109,9 @@ export default function ExpedicaoPage() {
   const [ordersPageSize, setOrdersPageSize] = useState(20);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
   const { planningData: planningSnapshot, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(anchorDate);
+  // Bloco 5 (22/10): no primeiro carregamento, contadores mostram "…" e não 0.
+  const isFirstLoad = isPlanningLoading && planningSnapshot.expedition.length === 0;
+  const kpiValue = (value: string | number) => (isFirstLoad ? "…" : value);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -427,19 +430,19 @@ export default function ExpedicaoPage() {
         {/* Linha-stats minúscula — pedidos e itens (eram KPIs redundantes). */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] tabular-nums text-muted-foreground/80">
           <span>
-            <span className="font-medium text-foreground/80">{kpis.pedidos}</span> pedidos
+            <span className="font-medium text-foreground/80">{kpiValue(kpis.pedidos)}</span> pedidos
           </span>
           <span aria-hidden className="text-muted-foreground/40">·</span>
           <span>
-            <span className="font-medium text-foreground/80">{kpis.itens}</span> itens
+            <span className="font-medium text-foreground/80">{kpiValue(kpis.itens)}</span> itens
           </span>
         </div>
       </div>
 
       {/* KPIs 4 → 2 primários (pedidos e itens viraram linha-stats). */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <KPICard title="Carga total" value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })} icon={ListChecks} tone="success" compactValue />
-        <KPICard title="Prontos para checklist" value={kpis.prontos} icon={ShoppingCart} tone="warning" compactValue />
+        <KPICard title="Carga total" value={kpiValue(formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 }))} icon={ListChecks} tone="success" compactValue />
+        <KPICard title="Prontos para checklist" value={kpiValue(kpis.prontos)} icon={ShoppingCart} tone="warning" compactValue />
       </div>
 
       <OperationFiltersCard
@@ -531,7 +534,7 @@ export default function ExpedicaoPage() {
             stickyHeader
           />
 
-          <PaginationControls
+          {isFirstLoad ? null : <PaginationControls
             page={ordersPagination.page}
             pageSize={ordersPagination.pageSize}
             totalItems={ordersPagination.totalItems}
@@ -549,7 +552,7 @@ export default function ExpedicaoPage() {
               setSortOrder(nextSortOrder);
               setOrdersPage(1);
             }}
-          />
+          />}
         </CardContent>
       </Card>
 

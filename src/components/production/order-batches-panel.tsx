@@ -33,11 +33,14 @@ export function OrderBatchesPanel({
   reloadKey,
   onChanged,
   onOpenBatchForDate,
+  onWaitingOrderCodesChange,
 }: {
   orderItems: PlannedOrderItem[];
   reloadKey: number;
   onChanged: () => Promise<void> | void;
   onOpenBatchForDate: (deliveryDate: string, storeIds: string[]) => void;
+  /** Códigos dos pedidos de lote que ainda esperam as lojas (não entram no Auto-liberar). */
+  onWaitingOrderCodesChange?: (codes: Set<string>) => void;
 }) {
   const [overview, setOverview] = useState<OrderBatchOverview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -53,10 +56,17 @@ export function OrderBatchesPanel({
       if (!response.ok || !data) throw new Error(data?.message ?? "Falha ao carregar os lotes.");
       setOverview(data);
       setLoadError(null);
+      onWaitingOrderCodesChange?.(
+        new Set(
+          data.groups
+            .filter((group) => group.state === "aguardando_lojas")
+            .flatMap((group) => group.orders.filter((order) => !order.released).map((order) => order.orderCode)),
+        ),
+      );
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Falha ao carregar os lotes.");
     }
-  }, []);
+  }, [onWaitingOrderCodesChange]);
 
   useEffect(() => {
     // Busca assíncrona: o setState acontece depois da resposta, não no efeito.

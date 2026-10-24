@@ -110,6 +110,9 @@ export default function ExpedicaoPage() {
   const [ordersPageSize, setOrdersPageSize] = useState(20);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
   const { planningData: planningSnapshot, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(anchorDate);
+  // Bloco 5 (22/10): no primeiro carregamento, contadores mostram "…" e não 0.
+  const isFirstLoad = isPlanningLoading && planningSnapshot.expedition.length === 0;
+  const kpiValue = (value: string | number) => (isFirstLoad ? "…" : value);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -218,7 +221,7 @@ export default function ExpedicaoPage() {
 
   // Stats secundárias: dado útil mas não compete com os 3 KPIs primários.
   const secondaryStats = [
-    { label: "Itens", value: kpis.itens },
+    { label: "Itens", value: kpiValue(kpis.itens) },
   ];
 
   const scopeLabel =
@@ -475,17 +478,17 @@ export default function ExpedicaoPage() {
 
       {/* 3 KPIs primários — número grande, leitura de longe no tablet/totem. */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <KPICard title="Pedidos" value={kpis.pedidos} icon={Truck} tone="info" compactValue />
+        <KPICard title="Pedidos" value={kpiValue(kpis.pedidos)} icon={Truck} tone="info" compactValue />
         <KPICard
           title="Prontos para checklist"
-          value={kpis.prontos}
+          value={kpiValue(kpis.prontos)}
           icon={ListChecks}
           tone="warning"
           compactValue
         />
         <KPICard
           title="Carga total"
-          value={formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 })}
+          value={kpiValue(formatKgLabel(kpis.totalKg, { maximumFractionDigits: 2 }))}
           icon={Factory}
           tone="success"
           compactValue
@@ -580,7 +583,7 @@ export default function ExpedicaoPage() {
             stickyHeader
           />
 
-          <PaginationControls
+          {isFirstLoad ? null : <PaginationControls
             page={ordersPagination.page}
             pageSize={ordersPagination.pageSize}
             totalItems={ordersPagination.totalItems}
@@ -598,7 +601,7 @@ export default function ExpedicaoPage() {
               setSortOrder(nextSortOrder);
               setOrdersPage(1);
             }}
-          />
+          />}
         </CardContent>
       </Card>
 

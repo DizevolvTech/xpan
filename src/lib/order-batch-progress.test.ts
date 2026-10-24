@@ -101,3 +101,10 @@ test("aviso de lote esquecido: só datas sem lote e com prazo nas próximas hora
     [["2026-10-30", ["a", "b"]]],
   );
 });
+
+test("entrega liberada sem todas as lojas antes do prazo fecha (cartão sai)", () => {
+  const before = { dateKey: "2026-10-25", time: "10:00" };
+  const groups = buildBatchGroups([batch], [order({ storeId: "a", released: true })], settings, before);
+  assert.equal(groups[0].state, "liberado");
+  assert.equal(isBatchFinished(groups, "b1"), true);
+});
