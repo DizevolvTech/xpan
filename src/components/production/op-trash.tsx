@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { readClientAccessContext } from "@/lib/client-access-context";
 import type { ProductionOrderRow } from "@/lib/factory-planning/types";
 import { productionOrderPlanningKey } from "@/lib/production-order-trash-filter";
-import { formatKgValue } from "@/lib/utils";
+import { formatKgLabel } from "@/lib/utils";
 
 interface TrashItem {
   id: string;
@@ -47,7 +47,7 @@ export function useOpTrashActions(referenceDate: string, onChanged: () => Promis
     async (op: ProductionOrderRow) => {
       const ok = await confirm({
         title: `Excluir a ${op.code}?`,
-        description: `A OP vai para a lixeira e some da fila, dos quadros e das impressões (${op.lineName}, ${op.productionDateLabel}, ${formatKgValue(op.totalKg)}). Os pedidos não são apagados. Dá para restaurar pela Lixeira. Se entrar pedido novo nesta linha e dia, a OP volta.`,
+        description: `A OP vai para a lixeira e some da fila, dos quadros e das impressões (${op.lineName}, ${op.productionDateLabel}, ${formatKgLabel(op.totalKg)}). Os pedidos não são apagados. Dá para restaurar pela Lixeira. Se entrar pedido novo nesta linha e dia, a OP volta.`,
         confirmLabel: "Mandar para a lixeira",
         cancelLabel: "Voltar",
         tone: "destructive",
@@ -147,7 +147,7 @@ export function OpTrashButton({
                     <span className="font-mono font-semibold">{item.opCode ?? "OP"}</span>
                     <span className="block text-xs text-muted-foreground">
                       {item.lineName ?? "—"} · produção {item.productionDate?.split("-").reverse().join("/") ?? "—"}
-                      {item.totalKg != null ? ` · ${formatKgValue(item.totalKg)}` : ""} · excluída em{" "}
+                      {item.totalKg != null ? ` · ${formatKgLabel(item.totalKg)}` : ""} · excluída em{" "}
                       {new Date(item.deletedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}
                     </span>
                   </span>
