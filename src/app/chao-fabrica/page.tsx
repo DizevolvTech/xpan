@@ -32,10 +32,9 @@ import type {
 } from "@/lib/factory-planning";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import {
+  advanceableItemsOf,
   getNextProductionActionLabel,
-  getNextProductionItemStatus,
   getOpAdvanceMode,
-  isBatchedProductionItem,
 } from "@/lib/production-workflow";
 import { formatKgLabel, formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
@@ -157,23 +156,6 @@ function deriveOpDeliveryLabel(op: ProductionOrderRow): string | null {
   const sorted = [...labelByDate.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   const [, firstLabel] = sorted[0];
   return sorted.length === 1 ? firstLabel : `${firstLabel} +${sorted.length - 1}`;
-}
-
-// Itens de uma OP que avançam POR STATUS em um clique: pendentes, NÃO-batidos, com uma
-// próxima etapa definida. Cada um leva seu status-alvo. Batidos avançam pelas batidas
-// (pré-pesagem) — ficam de fora do avanço em massa por status.
-function advanceableItemsOf(
-  op: ProductionOrderRow,
-): Array<{ productionItemKey: string; status: ProductionItemStatus }> {
-  return op.items
-    .filter(
-      (item) =>
-        item.status !== "concluido" && !isBatchedProductionItem(item),
-    )
-    .flatMap((item) => {
-      const next = getNextProductionItemStatus(item.status, item.preparationStages);
-      return next ? [{ productionItemKey: item.productionItemKey, status: next }] : [];
-    });
 }
 
 // O board do chão tem 4 colunas. "Produção" agrupa os 3 estágios intermediários

@@ -32,6 +32,7 @@ import {
   getPreviousProductionActionLabel,
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
+  isBatchedProductionItem,
 } from "@/lib/production-workflow";
 import { formatBatchSizesPhrase } from "@/lib/production-batches";
 import { formatKgValue } from "@/lib/utils";
@@ -558,7 +559,7 @@ export default function OrdemProducaoDetailsPage() {
                           Abaixo do mínimo
                         </span>
                       ) : null}
-                      {item.batchCount > 1 ? (
+                      {isBatchedProductionItem(item) ? (
                         <p className="text-sm text-muted-foreground tabular-nums">
                           {item.batchesDone}/{item.batchCount} batidas ·{" "}
                           {formatBatchSizesPhrase(item.batchSizes, item.batchUnitLabel, weightUnit)}
@@ -574,7 +575,7 @@ export default function OrdemProducaoDetailsPage() {
                     <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                       <div className="space-y-2">
                         <StatusBadge status={item.status} />
-                        {item.batchCount > 1 ? (
+                        {isBatchedProductionItem(item) ? (
                           (() => {
                             const done = item.batchesDone;
                             const isDone = done >= item.batchCount;

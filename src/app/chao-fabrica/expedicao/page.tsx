@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, CalendarRange, Factory, ListChecks, Package, Truck } from "lucide-react";
 
+import { ExpeditionOrderOpsDetail } from "@/components/production/expedition-order-ops-detail";
 import { DataTable } from "@/components/shared/data-table";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { KPICard } from "@/components/shared/kpi-card";
@@ -38,7 +39,6 @@ import {
 import {
   formatDateKeyBr,
   type ExpeditionRow,
-  type ProductionOrderRow,
 } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
 import { sortItemsByTemporalValue, type TemporalSortOrder } from "@/lib/temporal-table-sort";
@@ -46,6 +46,7 @@ import { formatKgLabel } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
+import { buildOrderOpProgress, summarizeOpsByOrder } from "@/lib/expedition-pending";
 import {
   EXPEDITION_FINAL_STATUSES,
   EXPEDITION_STATUS_FILTER_OPTIONS,
@@ -113,23 +114,15 @@ export default function ExpedicaoPage() {
     [planningSnapshot, scope],
   );
   const deliveryExecutionState = useDeliveryExecution();
-  const opsSummaryByOrderId = useMemo(() => {
-    const summary = new Map<string, { readyOpsCount: number; totalOpsCount: number }>();
-
-    planningData.productionOrders.forEach((op: ProductionOrderRow) => {
-      const relatedOrderIds = new Set(op.sourceItems.map((sourceItem) => sourceItem.orderId));
-      relatedOrderIds.forEach((orderId) => {
-        const current = summary.get(orderId) ?? { readyOpsCount: 0, totalOpsCount: 0 };
-        current.totalOpsCount += 1;
-        if (op.status === "aguardando_expedicao") {
-          current.readyOpsCount += 1;
-        }
-        summary.set(orderId, current);
-      });
-    });
-
-    return summary;
-  }, [planningData.productionOrders]);
+  const router = useRouter();
+  const [expandedOrderIds, setExpandedOrderIds] = useState<string[]>([]);
+  const toggleOrderDetail = (id: string) =>
+    setExpandedOrderIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]));
+  // OP entregue/em rota também conta como pronta (antes os entregues mostravam 0/N).
+  const opsSummaryByOrderId = useMemo(
+    () => summarizeOpsByOrder(planningData.productionOrders),
+    [planningData.productionOrders],
+  );
 
   const orderRows = useMemo<ExpeditionOrderRow[]>(
     () =>
@@ -321,7 +314,7 @@ export default function ExpedicaoPage() {
       key: "workflowProgress",
       header: "Conclusão",
       render: (item: ExpeditionOrderRow) => (
-        <div className="min-w-[170px]">
+        <div className="min-w-0 sm:min-w-[120px]">
           <div className="mb-1 flex items-baseline justify-between gap-2">
             <span className="text-sm font-semibold tabular-nums text-foreground">
               {item.workflowProgress.toFixed(1)}%
@@ -348,7 +341,7 @@ export default function ExpedicaoPage() {
       key: "actions",
       header: "Ações",
       render: (item: ExpeditionOrderRow) => (
-        <div className="flex min-w-[260px] flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2 sm:min-w-[220px]">
           <div className="flex flex-wrap gap-2">
             {item.checklistReady ? (
               <Button
@@ -362,8 +355,14 @@ export default function ExpedicaoPage() {
                 </Link>
               </Button>
             ) : (
-              <Button type="button" size="lg" disabled>
-                Aguardando produção
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                aria-expanded={expandedOrderIds.includes(item.id)}
+                onClick={() => toggleOrderDetail(item.id)}
+              >
+                {expandedOrderIds.includes(item.id) ? "Fechar detalhe" : "Ver o que falta"}
               </Button>
             )}
             <Button
@@ -573,10 +572,19 @@ export default function ExpedicaoPage() {
             showFooterControls={false}
             onRowClick={(item) => {
               if (item.checklistReady) {
-                window.location.assign(`/chao-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
+                router.push(`/chao-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
+              } else {
+                toggleOrderDetail(item.id);
               }
             }}
-            isRowClickable={(item) => item.checklistReady}
+            isRowExpanded={(item) => expandedOrderIds.includes(item.id)}
+            renderExpandedRow={(item) => (
+              <ExpeditionOrderOpsDetail
+                rows={buildOrderOpProgress(item.orderId, planningData.productionOrders)}
+                opBasePath="/chao-fabrica/ordens-producao"
+                anchorDate={anchorDate}
+              />
+            )}
             rowClassName={() => "min-h-[44px]"}
             emptyMessage="Nenhum pedido encontrado para os filtros"
             stickyHeader

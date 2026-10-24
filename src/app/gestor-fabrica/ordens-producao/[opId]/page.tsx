@@ -9,6 +9,7 @@ import { FactoryFlow } from "@/components/shared/factory-flow";
 import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
+import { GestorBatchControls, useGestorBatchActions } from "@/components/production/gestor-batch-controls";
 import { ProductionOrderTimeline } from "@/components/production/production-order-timeline";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,9 @@ export default function OrdemProducaoDetailsPage() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
-  const { planningData, isLoading, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const { planningData, isLoading, updateProductionItemStatus, completeProductionBatch, undoProductionBatch } =
+    useFactoryPlanningSnapshot(anchorDate);
+  const batchActions = useGestorBatchActions(completeProductionBatch, undoProductionBatch, setWorkflowError);
   const tryFutureDateOverride = useFutureDateOverride();
   const { snapshot } = useMasterDataSnapshot();
   // Só apresentação: o cadastro segue em Kg; a escolha da tela vai junto para a impressão (?unit=).
@@ -325,11 +328,14 @@ export default function OrdemProducaoDetailsPage() {
                       <div className="space-y-2">
                         <StatusBadge status={item.status} />
                         {item.capacityPerBatch != null && item.capacityPerBatch > 0 ? (
-                          // Item BATIDO: status vem das batidas (geridas no Chão);
-                          // os botões de avançar/voltar seriam no-op aqui.
-                          <p className="text-xs text-muted-foreground tabular-nums">
-                            {item.batchesDone}/{item.batchCount} batidas · geridas no Chão
-                          </p>
+                          // Item BATIDO: status vem das batidas; o gestor também conclui/desfaz.
+                          <GestorBatchControls
+                            batchesDone={item.batchesDone}
+                            batchCount={item.batchCount}
+                            busy={batchActions.pendingKey === item.productionItemKey}
+                            onComplete={() => void batchActions.complete(item.productionItemKey, item.batchCount)}
+                            onUndo={() => void batchActions.undo(item.productionItemKey)}
+                          />
                         ) : (
                           <div className="flex flex-wrap gap-2">
                             {getPreviousProductionItemStatus(item.status, item.preparationStages) ? (

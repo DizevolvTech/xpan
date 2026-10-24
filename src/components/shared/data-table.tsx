@@ -231,6 +231,13 @@ export function DataTable<T extends object>({
     [paginated, pagination, sortedData],
   );
   const visibleData = pagination ? paginated.items : sortedData;
+  // Reunião 22/10 (bloco 3): a coluna de ações fica sempre à vista, presa à direita,
+  // mesmo quando a tabela precisa rolar para o lado.
+  const hasActionsColumn = Boolean(actions && actions.length > 0);
+  const lastColumnKey = columns[columns.length - 1]?.key;
+  const stickyLastColumnKey = !hasActionsColumn && lastColumnKey === "actions" ? lastColumnKey : null;
+  const stickyCellClass =
+    "sticky right-0 z-[1] shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]";
 
   if (isLoading) {
     const hasActions = Boolean(actions && actions.length > 0);
@@ -344,6 +351,7 @@ export function DataTable<T extends object>({
                   className={cn(
                     "whitespace-nowrap px-4 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
                     compact ? "py-2.5" : "py-3.5",
+                    column.key === stickyLastColumnKey && cn(stickyCellClass, "bg-panel"),
                   )}
                 >
                   {sortableColumns.has(column.key) ? (
@@ -376,6 +384,8 @@ export function DataTable<T extends object>({
                   className={cn(
                     "w-px whitespace-nowrap px-4 text-right text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
                     compact ? "py-2.5" : "py-3.5",
+                    stickyCellClass,
+                    "bg-panel",
                   )}
                 >
                   Ações
@@ -426,6 +436,7 @@ export function DataTable<T extends object>({
                         ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
                         : "bg-card group-hover/row:bg-transparent",
                       compact ? "py-2.5" : "py-3",
+                      column.key === stickyLastColumnKey && cn(stickyCellClass, "bg-card group-hover/row:bg-card"),
                     )}
                   >
                     {column.render
@@ -442,6 +453,8 @@ export function DataTable<T extends object>({
                         ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
                         : "bg-card group-hover/row:bg-transparent",
                       compact ? "py-2.5" : "py-3",
+                      stickyCellClass,
+                      "bg-card group-hover/row:bg-card",
                     )}
                   >
                     <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">

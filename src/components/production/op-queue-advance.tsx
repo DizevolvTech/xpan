@@ -1,0 +1,153 @@
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+import { FastForward, Loader2 } from "lucide-react";
+
+import { useConfirm } from "@/components/shared/confirm-dialog";
+import { useToast } from "@/components/shared/toast";
+import { Button } from "@/components/ui/button";
+import type { ProductionItemStatus, ProductionOrderRow } from "@/lib/factory-planning/types";
+import { advanceableItemsOf } from "@/lib/production-workflow";
+
+type AdvanceFn = (
+  items: Array<{ productionItemKey: string; status: ProductionItemStatus }>,
+  options?: { force?: boolean },
+) => Promise<{ advanced: number; blockedCount: number; forceable: boolean; failed: unknown[] }>;
+
+/**
+ * Avanço de etapa DIRETO DA FILA de OPs, uma ou várias de uma vez
+ * (reunião 22/10, bloco 4: "mudar o status direto da fila, sem entrar produto a produto").
+ * Cada produto não batido da OP vai para a próxima etapa dele; batidos seguem pelas batidas.
+ */
+export function useOpQueueAdvance(advanceProductionItems: AdvanceFn) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  const toggle = useCallback(
+    (id: string) =>
+      setSelectedIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id])),
+    [],
+  );
+  const clear = useCallback(() => setSelectedIds([]), []);
+
+  const advance = useCallback(
+    async (ops: ProductionOrderRow[], label: string) => {
+      const items = ops.flatMap(advanceableItemsOf);
+      if (items.length === 0) {
+        toast.info("Nada a avançar por etapa: produtos por batida avançam pelas batidas, dentro da OP.");
+        return;
+      }
+      setBusy(true);
+      try {
+        let result = await advanceProductionItems(items);
+        if (result.blockedCount > 0 && result.forceable) {
+          const go = await confirm({
+            title: "Iniciar antes da data de produção?",
+            description: `${result.blockedCount} produto(s) ainda não chegaram na data de produção.`,
+            tone: "default",
+            confirmLabel: "Iniciar mesmo assim",
+            cancelLabel: "Deixar para a data",
+          });
+          if (go) {
+            const forced = await advanceProductionItems(items, { force: true });
+            result = { ...forced, advanced: result.advanced + forced.advanced };
+          }
+        } else if (result.blockedCount > 0) {
+          toast.warning(`${result.blockedCount} produto(s) só iniciam na data de produção.`);
+        }
+        if (result.advanced > 0) toast.success(`${result.advanced} produto(s) avançado(s) — ${label}.`);
+        if (result.failed.length > 0) toast.error(`${result.failed.length} produto(s) não avançaram.`);
+        setSelectedIds([]);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Falha ao avançar a produção.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [advanceProductionItems, confirm, toast],
+  );
+
+  return useMemo(
+    () => ({ selectedIds, isSelected: (id: string) => selectedIds.includes(id), toggle, clear, advance, busy }),
+    [selectedIds, toggle, clear, advance, busy],
+  );
+}
+
+export type OpQueueAdvanceControl = ReturnType<typeof useOpQueueAdvance>;
+
+/** Caixa de seleção da linha (não abre a OP ao clicar). */
+export function OpQueueSelectCell({ control, op }: { control: OpQueueAdvanceControl; op: ProductionOrderRow }) {
+  const canAdvance = advanceableItemsOf(op).length > 0;
+  return (
+    <label
+      className="flex size-9 cursor-pointer items-center justify-center"
+      data-stop-row-click="true"
+      onClick={(event) => event.stopPropagation()}
+      title={canAdvance ? "Selecionar para avançar" : "Nada a avançar por etapa nesta OP"}
+    >
+      <input
+        type="checkbox"
+        className="size-4 accent-primary"
+        disabled={!canAdvance || control.busy}
+        checked={control.isSelected(op.id)}
+        onChange={() => control.toggle(op.id)}
+        aria-label={`Selecionar ${op.code}`}
+      />
+    </label>
+  );
+}
+
+/** Botão "Avançar" da própria linha. */
+export function OpQueueAdvanceButton({ control, op }: { control: OpQueueAdvanceControl; op: ProductionOrderRow }) {
+  const canAdvance = advanceableItemsOf(op).length > 0;
+  if (!canAdvance) return null;
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="h-8 gap-1 px-2 text-xs"
+      disabled={control.busy}
+      data-stop-row-click="true"
+      onClick={(event) => {
+        event.stopPropagation();
+        void control.advance([op], op.code);
+      }}
+      title="Avança cada produto desta OP para a próxima etapa"
+    >
+      <FastForward className="size-3.5" aria-hidden />
+      Avançar
+    </Button>
+  );
+}
+
+/** Barra que aparece com OPs marcadas. */
+export function OpQueueAdvanceBar({
+  control,
+  ops,
+}: {
+  control: OpQueueAdvanceControl;
+  ops: ProductionOrderRow[];
+}) {
+  const selected = ops.filter((op) => control.selectedIds.includes(op.id));
+  if (selected.length === 0) return null;
+  return (
+    <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-card px-3 py-2 shadow-[var(--shadow-soft)]">
+      <span className="text-sm font-semibold">{selected.length} OP(s) selecionada(s)</span>
+      <Button
+        type="button"
+        size="sm"
+        disabled={control.busy}
+        onClick={() => void control.advance(selected, `${selected.length} OP(s)`)}
+      >
+        {control.busy ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <FastForward className="size-4" aria-hidden />}
+        Avançar etapa das selecionadas
+      </Button>
+      <Button type="button" size="sm" variant="ghost" disabled={control.busy} onClick={control.clear}>
+        Limpar seleção
+      </Button>
+    </div>
+  );
+}

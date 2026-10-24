@@ -256,3 +256,19 @@ export function getOpAdvanceMode(items: AdvanceCandidate[]): "status" | "batches
   if (canAdvanceByStatus) return "status";
   return pending.some(isBatchedProductionItem) ? "batches" : "none";
 }
+
+/**
+ * Itens de uma OP que avançam POR STATUS em um clique: pendentes, não-batidos, com uma
+ * próxima etapa definida. Cada um leva seu status-alvo. Batidos avançam pelas batidas.
+ * Usado no quadro do chão e na fila de OPs (avanço de várias OPs de uma vez).
+ */
+export function advanceableItemsOf(op: {
+  items: ReadonlyArray<AdvanceCandidate & { productionItemKey: string }>;
+}): Array<{ productionItemKey: string; status: ProductionItemStatus }> {
+  return op.items
+    .filter((item) => item.status !== "concluido" && !isBatchedProductionItem(item))
+    .flatMap((item) => {
+      const next = getNextProductionItemStatus(item.status, item.preparationStages);
+      return next ? [{ productionItemKey: item.productionItemKey, status: next }] : [];
+    });
+}

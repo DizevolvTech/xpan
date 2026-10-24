@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { GestorBatchControls } from "@/components/production/gestor-batch-controls";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,12 @@ type ProductionOrderStatusDialogProps = {
   pendingItemKey: string | null;
   error: string | null;
   onUpdateStatus: (productionItemKey: string, status: ProductionItemStatus) => void | Promise<void>;
+  /** Quando informado, itens por batida ganham os botões de batida aqui mesmo. */
+  batchActions?: {
+    pendingKey: string | null;
+    complete: (productionItemKey: string, batchCount: number) => void | Promise<void>;
+    undo: (productionItemKey: string) => void | Promise<void>;
+  };
 };
 
 export function ProductionOrderStatusDialog({
@@ -44,6 +51,7 @@ export function ProductionOrderStatusDialog({
   pendingItemKey,
   error,
   onUpdateStatus,
+  batchActions,
 }: ProductionOrderStatusDialogProps) {
   return (
     <Dialog open={open && Boolean(op)} onOpenChange={onOpenChange}>
@@ -147,10 +155,20 @@ export function ProductionOrderStatusDialog({
                           </div>
                         </td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-right">
-                          {isBatched ? (
+                          {isBatched && batchActions ? (
+                            <div className="flex justify-end">
+                              <GestorBatchControls
+                                batchesDone={item.batchesDone}
+                                batchCount={item.batchCount}
+                                busy={batchActions.pendingKey === item.productionItemKey}
+                                onComplete={() => void batchActions.complete(item.productionItemKey, item.batchCount)}
+                                onUndo={() => void batchActions.undo(item.productionItemKey)}
+                              />
+                            </div>
+                          ) : isBatched ? (
                             <div className="text-xs text-muted-foreground tabular-nums">
                               {item.batchesDone}/{item.batchCount} batidas
-                              <span className="block text-[11px]">geridas no Chão</span>
+                              <span className="block text-[11px]">na tela da OP</span>
                             </div>
                           ) : (
                             <div className="flex justify-end gap-2">

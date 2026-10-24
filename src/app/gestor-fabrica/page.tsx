@@ -1190,9 +1190,10 @@ export default function GestorFabricaPage() {
                         }`}
                       >
                         <Link
-                          href={`/gestor-fabrica/pedidos?status=${order.status}`}
+                          // Reunião 22/10 (bloco 4): clicar no item abre o próprio pedido.
+                          href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}
                           className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          aria-label={`Abrir pedido ${order.code} de ${order.storeName} na lista`}
+                          aria-label={`Abrir pedido ${order.code} de ${order.storeName}`}
                         >
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-mono text-xs font-semibold text-foreground">
@@ -1225,7 +1226,7 @@ export default function GestorFabricaPage() {
                           </Button>
                         ) : isExpedColumn ? (
                           <Link
-                            href={`/gestor-fabrica/expedicao?status=aguardando_expedicao`}
+                            href={`/gestor-fabrica/expedicao/${order.id}?ref=${anchorDate}`}
                             className="me-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] font-semibold text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             aria-label={`Abrir checklist de expedição do pedido ${order.code}`}
                           >
@@ -1326,15 +1327,17 @@ export default function GestorFabricaPage() {
                               className="overflow-hidden"
                             >
                               <ul className="mt-0.5 space-y-0.5 border-l border-border/40 py-1 pl-2 ms-3">
-                                {op.orderCodes.length === 0 ? (
+                                {op.sourceItems.length === 0 ? (
                                   <li className="px-2 py-1 text-[11px] text-muted-foreground/60">
                                     Sem pedidos vinculados.
                                   </li>
                                 ) : (
-                                  op.orderCodes.map((code) => (
-                                    <li key={code}>
+                                  Array.from(
+                                    new Map(op.sourceItems.map((source) => [source.orderId, source.orderCode])),
+                                  ).map(([orderId, code]) => (
+                                    <li key={orderId}>
                                       <Link
-                                        href={`/gestor-fabrica/pedidos?status=em_producao`}
+                                        href={`/gestor-fabrica/pedidos/${orderId}?ref=${anchorDate}`}
                                         className="block truncate rounded px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                       >
                                         {code}

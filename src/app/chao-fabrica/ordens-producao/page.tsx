@@ -19,6 +19,12 @@ import { getOperationalTodayKey } from "@/lib/workflow-date-guard";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { DayPrintButton } from "@/components/production/day-print-button";
+import {
+  OpQueueAdvanceBar,
+  OpQueueAdvanceButton,
+  OpQueueSelectCell,
+  useOpQueueAdvance,
+} from "@/components/production/op-queue-advance";
 import { ProductionOrderActionsMenu } from "@/components/production/production-order-actions-menu";
 import { ProductionOrderStatusDialog } from "@/components/production/production-order-status-dialog";
 import { DataTable } from "@/components/shared/data-table";
@@ -115,7 +121,13 @@ export default function OrdensProducaoPage() {
   const [pendingItemKey, setPendingItemKey] = useState<string | null>(null);
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
   const [isScopeOpen, setIsScopeOpen] = useState(false);
-  const { planningData: planningSnapshot, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const {
+    planningData: planningSnapshot,
+    updateProductionItemStatus,
+    advanceProductionItems,
+  } = useFactoryPlanningSnapshot(anchorDate);
+  // Reunião 22/10 (bloco 4): avançar etapa direto da fila, uma ou várias OPs.
+  const queueAdvance = useOpQueueAdvance(advanceProductionItems);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -354,6 +366,13 @@ export default function OrdensProducaoPage() {
   // Tablet do chão: tipografia maior em código da OP (visível de longe) e progresso.
   const columns = [
     {
+      key: "select",
+      header: "",
+      className: "w-9 px-1",
+      render: (item: OpQueueRow) =>
+        item.hasDemand === false ? null : <OpQueueSelectCell control={queueAdvance} op={item} />,
+    },
+    {
       key: "code",
       header: "OP",
       render: (item: OpQueueRow) => (
@@ -402,7 +421,8 @@ export default function OrdensProducaoPage() {
       key: "documents",
       header: "Ações",
       render: (item: OpQueueRow) => (
-        <div onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+          <OpQueueAdvanceButton control={queueAdvance} op={item} />
           <ProductionOrderActionsMenu
             detailHref={`/chao-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
             preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
@@ -671,6 +691,7 @@ export default function OrdensProducaoPage() {
               Exibir futuras{hiddenFutureCount > 0 && !showFuture ? ` (${hiddenFutureCount})` : ""}
             </Button>
           </div>
+          <OpQueueAdvanceBar control={queueAdvance} ops={opDayGroups.flatMap((group) => group.ops)} />
           <OpDayGroupsTable
             groups={opDayGroups}
             columns={columns}

@@ -52,7 +52,8 @@ export function DayPrintButton({ date, dayLabel, opCount, productCount, totalKg 
     <>
       <Button
         type="button"
-        variant="outline"
+        // Reunião 22/10 (bloco 4): botão à vista, com o dia no texto.
+        variant={opCount === 0 ? "outline" : "default"}
         size="sm"
         className="gap-1.5"
         disabled={opCount === 0}
@@ -64,7 +65,7 @@ export function DayPrintButton({ date, dayLabel, opCount, productCount, totalKg 
         }
       >
         <Printer className="size-4" aria-hidden />
-        Imprimir folhas do dia
+        {opCount === 0 ? "Imprimir folhas do dia" : `Imprimir folhas de ${dayLabel} (${opCount} OPs)`}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

@@ -48,7 +48,7 @@ export function PageHero({
       )}
 
       <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
+        <div className="min-w-0 sm:min-w-[18rem] sm:flex-1">
           {badge && (
             <span className="inline-flex items-center gap-2 rounded-full border border-accent/[var(--opacity-border)] bg-accent/[var(--opacity-faint)] px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-accent-foreground backdrop-blur-sm">
               <span className="relative flex size-2">
@@ -66,7 +66,8 @@ export function PageHero({
           </div>
         </div>
 
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {/* Reunião 22/10 (bloco 3): ações quebram linha em vez de espremer o título. */}
+        {actions && <div className="flex min-w-0 flex-wrap items-center gap-2 sm:max-w-[65%] sm:justify-end">{actions}</div>}
       </div>
     </section>
   );

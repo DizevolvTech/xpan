@@ -51,6 +51,13 @@ import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { ProductFormDialog } from "@/components/production/product-form-dialog";
 import { DayPrintButton } from "@/components/production/day-print-button";
+import { useGestorBatchActions } from "@/components/production/gestor-batch-controls";
+import {
+  OpQueueAdvanceBar,
+  OpQueueAdvanceButton,
+  OpQueueSelectCell,
+  useOpQueueAdvance,
+} from "@/components/production/op-queue-advance";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 
 type OpQueueRow = ProductionOrderRow & {
@@ -171,7 +178,16 @@ export default function OrdensProducaoPage() {
   // XPAN-4: atalho para editar o produto/receita direto da OP quando o lote mínimo
   // configurado sinaliza a OP — sem sair da tela de produção.
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const { planningData: planningSnapshot, updateProductionItemStatus } = useFactoryPlanningSnapshot(anchorDate);
+  const {
+    planningData: planningSnapshot,
+    updateProductionItemStatus,
+    advanceProductionItems,
+    completeProductionBatch,
+    undoProductionBatch,
+  } = useFactoryPlanningSnapshot(anchorDate);
+  const batchActions = useGestorBatchActions(completeProductionBatch, undoProductionBatch, setWorkflowError);
+  // Reunião 22/10 (bloco 4): avançar etapa direto da fila, uma ou várias OPs.
+  const queueAdvance = useOpQueueAdvance(advanceProductionItems);
   const tryFutureDateOverride = useFutureDateOverride();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
@@ -520,6 +536,13 @@ export default function OrdensProducaoPage() {
   ];
 
   const columns = [
+    {
+      key: "select",
+      header: "",
+      className: "w-9 px-1",
+      render: (item: OpQueueRow) =>
+        isSkeletonOp(item) ? null : <OpQueueSelectCell control={queueAdvance} op={item} />,
+    },
     { key: "code", header: "OP", className: "whitespace-nowrap" },
     {
       key: "delivery",
@@ -587,7 +610,8 @@ export default function OrdensProducaoPage() {
             —
           </span>
         ) : (
-          <div onClick={(event) => event.stopPropagation()}>
+          <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+          <OpQueueAdvanceButton control={queueAdvance} op={item} />
           <ProductionOrderActionsMenu
             detailHref={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
             preWeighingHref={`/impressao/pre-pesagem/${encodeURIComponent(getProductionOrderNavKey(item))}?ref=${anchorDate}`}
@@ -671,7 +695,7 @@ export default function OrdensProducaoPage() {
       key: "progress",
       header: "% conclusão",
       render: (item: BatchDemandRow) => (
-        <div className="min-w-[180px]">
+        <div className="min-w-0 sm:min-w-[160px]">
           <div className="mb-1 text-xs text-muted-foreground">{item.progress.toFixed(1)}%</div>
           <div className="h-2 rounded-full bg-panel">
             <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.progress, 100)}%` }} />
@@ -970,6 +994,7 @@ export default function OrdensProducaoPage() {
               Exibir futuras{hiddenFutureCount > 0 && !showFuture ? ` (${hiddenFutureCount})` : ""}
             </Button>
           </div>
+          <OpQueueAdvanceBar control={queueAdvance} ops={opDayGroups.flatMap((group) => group.ops)} />
           <OpDayGroupsTable
             groups={opDayGroups}
             columns={columns}
@@ -1117,6 +1142,7 @@ export default function OrdensProducaoPage() {
         pendingItemKey={pendingItemKey}
         error={workflowError}
         onUpdateStatus={handleWorkflowAction}
+        batchActions={batchActions}
       />
 
       <ProductFormDialog

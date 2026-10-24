@@ -1,12 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import type { ListStatusFilterControl } from "@/lib/use-list-status-filter";
 import { cn } from "@/lib/utils";
 
 /**
- * Barra de status das listas: chips de multi-seleção + "Ver histórico" + "Salvar como padrão".
- * Sem nada marcado, a lista mostra só as pendências (finalizados ficam no histórico).
+ * Barra de status das listas, compacta (uma faixa): chips de multi-seleção + "Ver histórico"
+ * + padrão salvo no usuário. Sem nada marcado, a lista mostra só as pendências.
  */
 export function StatusFilterBar({
   control,
@@ -21,10 +23,23 @@ export function StatusFilterBar({
 }) {
   const { state } = control;
   const hasSelection = state.selected.length > 0;
+  const [justSaved, setJustSaved] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!justSaved) return;
+    const timer = window.setTimeout(() => setJustSaved(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [justSaved]);
+
   return (
-    <div className={cn("rounded-xl border border-border/70 bg-panel/55 p-3 sm:p-4", className)}>
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por status">
-        <span className="text-xs font-medium text-muted-foreground">Status:</span>
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-1.5 rounded-xl border border-border/70 bg-panel/55 px-3 py-2",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrar por status">
+        <span className="mr-1 text-xs font-medium text-muted-foreground">Status:</span>
         {options.map((option) => {
           const active = state.selected.includes(option.value);
           return (
@@ -32,6 +47,7 @@ export function StatusFilterBar({
               key={option.value}
               type="button"
               size="sm"
+              className="h-7 px-2.5 text-xs"
               variant={active ? "default" : "outline"}
               aria-pressed={active}
               onClick={() => {
@@ -43,11 +59,10 @@ export function StatusFilterBar({
             </Button>
           );
         })}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/65 pt-3 text-xs">
         <Button
           type="button"
           size="sm"
+          className="h-7 px-2.5 text-xs"
           variant={state.showHistory ? "default" : "outline"}
           aria-pressed={state.showHistory}
           disabled={hasSelection}
@@ -59,20 +74,57 @@ export function StatusFilterBar({
         >
           Ver histórico
         </Button>
-        <span className="text-muted-foreground">
-          {hasSelection
-            ? "Mostrando só os status escolhidos."
-            : state.showHistory
-              ? "Mostrando tudo, inclusive finalizadas."
-              : "Mostrando só as pendências."}
-        </span>
-        <span className="flex-1" />
-        <Button type="button" size="sm" variant="ghost" onClick={control.saveAsDefault}>
-          Salvar como padrão desta página
+        {control.isCustom ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => {
+              control.reset();
+              onChange?.();
+            }}
+          >
+            Limpar
+          </Button>
+        ) : null}
+      </div>
+      <span className="text-xs text-muted-foreground" aria-live="polite">
+        {hasSelection
+          ? "· só os status escolhidos"
+          : state.showHistory
+            ? "· tudo, inclusive finalizadas"
+            : "· só as pendências"}
+      </span>
+      <span className="flex-1" />
+      <div className="flex flex-wrap items-center gap-1 text-xs">
+        {control.saveError ? <span className="text-destructive">{control.saveError}</span> : null}
+        {justSaved ? <span className="text-emerald-700 dark:text-emerald-400">{justSaved}</span> : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-xs"
+          disabled={control.saving}
+          title="Fica salvo no seu usuário e vale em qualquer computador"
+          onClick={async () => {
+            if (await control.saveAsDefault()) setJustSaved("Padrão salvo no seu usuário");
+          }}
+        >
+          {control.saving ? "Salvando…" : "Salvar como meu padrão"}
         </Button>
         {control.hasSavedDefault ? (
-          <Button type="button" size="sm" variant="ghost" onClick={control.clearSavedDefault}>
-            Remover padrão salvo
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            disabled={control.saving}
+            onClick={async () => {
+              if (await control.clearSavedDefault()) setJustSaved("Padrão removido");
+            }}
+          >
+            Remover meu padrão
           </Button>
         ) : null}
       </div>

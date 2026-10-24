@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import {
   AlertCircle,
   ChevronLeft,
@@ -309,15 +309,46 @@ function SidebarNav({
   );
 }
 
+const SIDEBAR_COLLAPSED_KEY = "xpan:sidebar-collapsed";
+const SIDEBAR_COLLAPSED_EVENT = "xpan:sidebar-collapsed-change";
+
+function subscribeSidebarCollapsed(onChange: () => void) {
+  window.addEventListener(SIDEBAR_COLLAPSED_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(SIDEBAR_COLLAPSED_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+function readSidebarCollapsed() {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSidebarCollapsed(value: boolean) {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? "1" : "0");
+  } catch {
+    // sem storage: não lembra
+  }
+  window.dispatchEvent(new Event(SIDEBAR_COLLAPSED_EVENT));
+}
+
 export function Sidebar({ navigationContext, mobileOpen, onMobileClose, className }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  // Reunião 22/10 (bloco 3): menu recolhido fica lembrado, para a tela ganhar largura.
+  const collapsed = useSyncExternalStore(subscribeSidebarCollapsed, readSidebarCollapsed, () => false);
+  const toggleCollapsed = useCallback(() => writeSidebarCollapsed(!collapsed), [collapsed]);
 
   const desktopSidebar = useMemo(
     () => (
       <aside
         className={cn(
           "border-sidebar-border/[var(--opacity-prominent)] bg-sidebar text-sidebar-foreground sticky top-0 hidden h-screen flex-col border-r transition-[width] duration-300 ease-out lg:flex",
-          collapsed ? "w-20" : "w-72",
+          collapsed ? "w-20" : "w-64",
           className,
         )}
       >
@@ -326,7 +357,7 @@ export function Sidebar({ navigationContext, mobileOpen, onMobileClose, classNam
             type="button"
             variant="ghost"
             size="icon-sm"
-            onClick={() => setCollapsed((value) => !value)}
+            onClick={toggleCollapsed}
             aria-label={collapsed ? "Expandir navegação" : "Recolher navegação"}
           >
             {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
@@ -335,7 +366,7 @@ export function Sidebar({ navigationContext, mobileOpen, onMobileClose, classNam
         <SidebarNav navigationContext={navigationContext} collapsed={collapsed} />
       </aside>
     ),
-    [className, collapsed, navigationContext],
+    [className, collapsed, navigationContext, toggleCollapsed],
   );
 
   if (typeof mobileOpen === "boolean") {

@@ -684,14 +684,14 @@ export default function PedidosFabricaPage() {
           <StatusFilterBar control={statusFilter} options={ORDER_STATUS_FILTER_OPTIONS} onChange={() => setPage(1)} />
 
           <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[800px] border-collapse">
+            <table className="w-full min-w-[720px] border-collapse">
               <thead className="bg-panel">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Pedido</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Entrega prevista</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
-                  <th className="w-px whitespace-nowrap px-4 py-3 text-right text-xs font-semibold text-muted-foreground">Ações</th>
+                  <th className="sticky right-0 z-[1] w-px whitespace-nowrap bg-panel px-4 py-3 text-right text-xs font-semibold text-muted-foreground shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -715,18 +715,18 @@ export default function PedidosFabricaPage() {
                             <span className="whitespace-nowrap font-mono">{order.code}</span>
                           </button>
                         </td>
-                        <td className="min-w-[210px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{order.storeName}</td>
-                        <td className="min-w-[160px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        <td className="min-w-[150px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{order.storeName}</td>
+                        <td className="min-w-[130px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <span className="inline-flex whitespace-nowrap rounded-md bg-warning/25 px-2 py-1 text-xs font-semibold text-warning-foreground">
                             {order.deliveryDateLabel}
                           </span>
                           <p className="mt-1 text-[11px] text-muted-foreground">{order.dPlusLabel}</p>
                         </td>
-                        <td className="min-w-[190px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        <td className="min-w-[140px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
                           <StatusBadge status={visibleStatus} />
                         </td>
-                        <td className="min-w-[360px] align-top border-t border-border/70 bg-card px-4 py-3 text-right">
-                          <div className="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
+                        <td className="sticky right-0 z-[1] min-w-[260px] align-top border-t border-border/70 bg-card px-4 py-3 text-right shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
                             <Button asChild type="button" variant="outline" size="sm">
                               <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>Detalhe</Link>
                             </Button>
@@ -763,7 +763,7 @@ export default function PedidosFabricaPage() {
                               <Button type="button" variant="outline" size="sm" onClick={() => handleReopenOrder(order)}>
                                 Reabrir
                               </Button>
-                            ) : (
+                            ) : visibleStatus === "entregue" ? null : (
                               <Button
                                 type="button"
                                 variant="outline"

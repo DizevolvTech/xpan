@@ -23,12 +23,12 @@ Cada item: pedido (tempo da gravação) · como está hoje (develop 28cc9bf) · 
 ### 2. Filtros
 - Pedido (4:54–5:00): vários status; salvar filtro como padrão do usuário.
 - Hoje: multi-status só em OPs/Pedidos; padrão em `localStorage` por página; Expedição com 1 status.
-- Fazer: multi-status em todas as listas; padrão gravado por usuário no servidor (tabela de preferências por perfil + página), localStorage só como cache.
+- Feito (24/10, no teste): padrão gravado no usuário em `auth.users.user_metadata.list_filters` por página (`/api/me/list-filters`, `src/lib/saved-list-filters.ts`), sem tabela nova; padrão antigo do navegador migra uma vez. Barra de status compacta numa faixa (`status-filter-bar.tsx`), com "Limpar" e confirmação de salvo.
 
 ### 3. Tela e rolagem
 - Pedido (27:34): rolagem lateral horrível; botão Reabrir escondido à direita; monitor grande não é aproveitado.
 - Hoje: `page-container` com `max-w-[1320px]`; tabelas largas; verificador viu rolagem em /administrador/usuarios a 390 px e cabeçalho do modal da OP espremido a 1280 px.
-- Fazer: largura total (com limite alto só para leitura), tabelas compactas, ações principais à esquerda/visíveis, sem rolagem horizontal em 1280/1920/390 px.
+- Feito (24/10, no teste): `page-container` até 2000 px e menos margem; menu lateral 256 px e recolhido fica lembrado; coluna Ações presa à direita em toda `DataTable` e em Pedidos (sempre à vista); larguras mínimas menores em Pedidos/Expedição; no celular os blocos de progresso não forçam largura; cabeçalho das páginas quebra os botões em vez de espremer o título (`page-hero.tsx`); Pedido entregue não mostra mais "Cancelar".
 
 ### 4. Menos cliques
 - Visão Geral (3:30): clicar no item abre o item (hoje leva à lista com `?status=`, e a Expedição nem lê o parâmetro).
@@ -36,6 +36,12 @@ Cada item: pedido (tempo da gravação) · como está hoje (develop 28cc9bf) · 
 - OP (9:03–9:39): mudar status direto da fila, várias de uma vez, informando quantidade; sem entrar produto a produto.
 - OP Panetones travada (7:40–8:53): OP-260928-012, PR-61488 e PR-23307 em `em_preparacao` 20% no banco, tela "não iniciado" sem ação; itens por batida sem batidas na data. Reproduzir e garantir ação possível em toda OP.
 - Imprimir OPs de amanhã (20:40): botão existe (`DayPrintButton`), deixar visível.
+- Feito (24/10, no teste):
+  - Visão Geral: pedido abre o próprio pedido; "Checklist" abre o checklist do pedido; pedidos dentro da OP abrem o pedido.
+  - Expedição (gestor e chão): "Ver o que falta" abre na lista as OPs do pedido, as que faltam primeiro, com produtos e % (`expedition-pending.ts`, `expedition-order-ops-detail.tsx`); OPs entregues contam como prontas; checklist abre sem recarregar a página.
+  - Fila de OPs (gestor e chão): caixa de seleção + "Avançar etapa das selecionadas" e botão "Avançar" por OP (`op-queue-advance.tsx`, `advanceableItemsOf`). Quantidade produzida continua sendo pedida só na conclusão dentro da OP.
+  - OP de Panetones: causa = produto com capacidade de batida mas 1 batida só; o chão mostrava botões de etapa, o motor lê as batidas e o clique não mudava nada. Agora todo produto por batida mostra "Concluir batida" (chão) e o gestor também conclui/desfaz batida na OP e na janela da fila (`gestor-batch-controls.tsx`).
+  - Botão de impressão do dia em destaque, com o dia e o nº de OPs no texto.
 
 ### 5. Resposta ao clique
 - Pedido (6:50, 9:20): clique demora, parece que não funcionou.

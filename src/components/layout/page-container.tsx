@@ -9,7 +9,8 @@ export function PageContainer({ children, className }: PageContainerProps) {
   return (
     <main
       className={cn(
-        "mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8",
+        // Reunião 22/10 (bloco 3): usa a largura do monitor (limite só em telas muito largas).
+        "mx-auto w-full max-w-[2000px] px-3 py-5 sm:px-5 lg:px-6 lg:py-6",
         className,
       )}
     >
