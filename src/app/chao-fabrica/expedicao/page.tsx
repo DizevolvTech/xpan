@@ -283,32 +283,15 @@ export default function ExpedicaoPage() {
       ),
     },
     {
-      key: "itemsCount",
-      header: "Itens",
-      render: (item: ExpeditionOrderRow) => (
-        <span className="text-sm tabular-nums text-foreground">{item.itemsCount}</span>
-      ),
-    },
-    {
+      // Reunião 22/10 (bloco 3): itens e carga numa coluna só, tabela sem rolar para o lado.
       key: "totalKg",
-      header: "Carga (Kg)",
+      header: "Carga",
       render: (item: ExpeditionOrderRow) => (
-        <span className="text-sm font-semibold tabular-nums text-foreground">
-          {formatKgLabel(item.totalKg)}
+        <span className="whitespace-nowrap text-sm tabular-nums text-foreground">
+          <span className="font-semibold">{formatKgLabel(item.totalKg)}</span>
+          <span className="block text-[11px] text-muted-foreground">{item.itemsCount} itens</span>
         </span>
       ),
-    },
-    {
-      key: "opsProgress",
-      header: "OPs prontas",
-      render: (item: ExpeditionOrderRow) =>
-        item.totalOpsCount > 0 ? (
-          <span className="text-sm font-semibold tabular-nums text-foreground">
-            {item.readyOpsCount}/{item.totalOpsCount}
-          </span>
-        ) : (
-          <span className="text-sm text-muted-foreground">-</span>
-        ),
     },
     {
       key: "workflowProgress",
@@ -320,7 +303,11 @@ export default function ExpedicaoPage() {
               {item.workflowProgress.toFixed(1)}%
             </span>
             <span className="text-[11px] text-muted-foreground">
-              {item.releasedToProduction ? "Liberado" : "Aguardando liberação"}
+              {item.totalOpsCount > 0
+                ? `${item.readyOpsCount}/${item.totalOpsCount} OPs prontas`
+                : item.releasedToProduction
+                  ? "Liberado"
+                  : "Aguardando liberação"}
             </span>
           </div>
           <div className="h-2.5 rounded-full bg-panel">
@@ -341,7 +328,7 @@ export default function ExpedicaoPage() {
       key: "actions",
       header: "Ações",
       render: (item: ExpeditionOrderRow) => (
-        <div className="flex min-w-0 flex-col gap-2 sm:min-w-[220px]">
+        <div className="flex min-w-0 flex-col gap-2 sm:min-w-[180px]">
           <div className="flex flex-wrap gap-2">
             {item.checklistReady ? (
               <Button

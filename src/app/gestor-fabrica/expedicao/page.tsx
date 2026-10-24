@@ -250,13 +250,16 @@ export default function ExpedicaoPage() {
         </span>
       ),
     },
-    { key: "itemsCount", header: "Itens" },
-    { key: "totalKg", header: "Carga (Kg)" },
     {
-      key: "opsProgress",
-      header: "OPs prontas",
-      render: (item: ExpeditionOrderRow) =>
-        item.totalOpsCount > 0 ? `${item.readyOpsCount}/${item.totalOpsCount}` : "-",
+      // Reunião 22/10 (bloco 3): itens e carga numa coluna só, tabela sem rolar para o lado.
+      key: "totalKg",
+      header: "Carga",
+      render: (item: ExpeditionOrderRow) => (
+        <span className="whitespace-nowrap tabular-nums">
+          <span className="font-semibold">{formatKgLabel(item.totalKg)}</span>
+          <span className="block text-[11px] text-muted-foreground">{item.itemsCount} itens</span>
+        </span>
+      ),
     },
     {
       key: "workflowProgress",
@@ -265,7 +268,13 @@ export default function ExpedicaoPage() {
         <div className="min-w-0 sm:min-w-[120px]">
           <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
             <span>{item.workflowProgress.toFixed(1)}%</span>
-            <span>{item.releasedToProduction ? "Liberado" : "Aguardando liberação"}</span>
+            <span>
+              {item.totalOpsCount > 0
+                ? `${item.readyOpsCount}/${item.totalOpsCount} OPs prontas`
+                : item.releasedToProduction
+                  ? "Liberado"
+                  : "Aguardando liberação"}
+            </span>
           </div>
           <div className="h-2 rounded-full bg-panel">
             <div className="h-full rounded-full bg-info" style={{ width: `${Math.min(item.workflowProgress, 100)}%` }} />
@@ -282,7 +291,7 @@ export default function ExpedicaoPage() {
       key: "actions",
       header: "Ações",
       render: (item: ExpeditionOrderRow) => (
-        <div className="flex min-w-0 flex-col gap-2 sm:min-w-[200px]">
+        <div className="flex min-w-0 flex-col gap-2 sm:min-w-[180px]">
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${anchorDate}`)}>
               Imprimir

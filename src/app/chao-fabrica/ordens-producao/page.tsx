@@ -19,6 +19,7 @@ import { getOperationalTodayKey } from "@/lib/workflow-date-guard";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { DayPrintButton } from "@/components/production/day-print-button";
+import { resolveDayPrintDate } from "@/lib/day-print-date";
 import {
   OpQueueAdvanceBar,
   OpQueueAdvanceButton,
@@ -140,12 +141,7 @@ export default function OrdensProducaoPage() {
     const datesWithOps = Array.from(new Set(demandOps.map((op) => op.productionDate))).sort((a, b) =>
       a.localeCompare(b),
     );
-    const printDate =
-      productionDateFilter !== "all"
-        ? productionDateFilter
-        : datesWithOps.includes(anchorDate)
-          ? anchorDate
-          : datesWithOps[0] ?? anchorDate;
+    const printDate = resolveDayPrintDate(datesWithOps, anchorDate, productionDateFilter);
     const dayOps = demandOps.filter((op) => op.productionDate === printDate);
     return {
       printDate,
@@ -399,7 +395,7 @@ export default function OrdensProducaoPage() {
         </span>
       ),
     },
-    { key: "lineName", header: hierarchyLabels.line, className: "whitespace-nowrap text-xs" },
+    { key: "lineName", header: hierarchyLabels.line, className: "min-w-[6rem] text-xs" },
     {
       key: "productsCount",
       header: "Produtos",
@@ -757,7 +753,7 @@ export default function OrdensProducaoPage() {
               <PaginatedSection items={alignedLineRows.lines} label="linhas de produção" initialPageSize={8}>
                 {(paginatedLines) => (
                   <div className="overflow-x-auto rounded-xl border border-border/80">
-                    <table className="w-full min-w-[920px] border-collapse">
+                    <table className="w-full min-w-[640px] border-collapse">
                       <thead className="bg-panel">
                         <tr>
                           <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">{hierarchyLabels.line}</th>

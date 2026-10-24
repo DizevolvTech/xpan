@@ -51,6 +51,7 @@ import { useFutureDateOverride } from "@/lib/use-future-date-override";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { ProductFormDialog } from "@/components/production/product-form-dialog";
 import { DayPrintButton } from "@/components/production/day-print-button";
+import { resolveDayPrintDate } from "@/lib/day-print-date";
 import { useGestorBatchActions } from "@/components/production/gestor-batch-controls";
 import {
   OpQueueAdvanceBar,
@@ -213,12 +214,7 @@ export default function OrdensProducaoPage() {
     const datesWithOps = Array.from(new Set(demandOps.map((op) => op.productionDate))).sort((a, b) =>
       a.localeCompare(b),
     );
-    const printDate =
-      productionDateFilter !== "all"
-        ? productionDateFilter
-        : datesWithOps.includes(anchorDate)
-          ? anchorDate
-          : datesWithOps[0] ?? anchorDate;
+    const printDate = resolveDayPrintDate(datesWithOps, anchorDate, productionDateFilter);
     const dayOps = demandOps.filter((op) => op.productionDate === printDate);
     return {
       printDate,
@@ -564,8 +560,8 @@ export default function OrdensProducaoPage() {
         </span>
       ),
     },
-    { key: "lineName", header: hierarchyLabels.line, className: "whitespace-nowrap text-xs" },
-    { key: "scheduleName", header: hierarchyLabels.schedule, className: "whitespace-nowrap text-xs" },
+    { key: "lineName", header: hierarchyLabels.line, className: "min-w-[6rem] text-xs" },
+    { key: "scheduleName", header: hierarchyLabels.schedule, className: "min-w-[6rem] text-xs" },
     { key: "productsCount", header: "Produtos" },
     {
       key: "totalKg",
@@ -1074,7 +1070,7 @@ export default function OrdensProducaoPage() {
             <PaginatedSection items={alignedLineRows.lines} label="linhas de produção" initialPageSize={8}>
               {(paginatedLines) => (
                 <div className="overflow-x-auto rounded-xl border border-border/80">
-                  <table className="w-full min-w-[920px] border-collapse">
+                  <table className="w-full min-w-[640px] border-collapse">
                     <thead className="bg-panel">
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">{hierarchyLabels.line}</th>

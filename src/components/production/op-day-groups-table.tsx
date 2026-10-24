@@ -64,7 +64,7 @@ export function OpDayGroupsTable<T extends { id: string }>({
 
   return (
     <div className="overflow-x-auto rounded-xl border border-border/80" data-testid="op-day-groups">
-      <table className="w-full min-w-[700px] border-collapse">
+      <table className="w-full min-w-[640px] border-collapse">
         <thead className="sticky top-0 z-10 bg-panel">
           <tr>
             {columns.map((column) => (

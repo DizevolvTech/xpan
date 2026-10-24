@@ -349,7 +349,7 @@ export function DataTable<T extends object>({
                       : "none"
                   }
                   className={cn(
-                    "whitespace-nowrap px-4 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
+                    "whitespace-nowrap px-3 text-left text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
                     compact ? "py-2.5" : "py-3.5",
                     column.key === stickyLastColumnKey && cn(stickyCellClass, "bg-panel"),
                   )}
@@ -382,7 +382,7 @@ export function DataTable<T extends object>({
               {actions && actions.length > 0 && (
                 <th
                   className={cn(
-                    "w-px whitespace-nowrap px-4 text-right text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
+                    "w-px whitespace-nowrap px-3 text-right text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground",
                     compact ? "py-2.5" : "py-3.5",
                     stickyCellClass,
                     "bg-panel",
@@ -431,7 +431,7 @@ export function DataTable<T extends object>({
                   <td
                     key={column.key}
                     className={cn(
-                      "align-top border-t border-border/55 px-4 text-sm text-foreground transition-colors duration-150",
+                      "align-top border-t border-border/55 px-3 text-sm text-foreground transition-colors duration-150",
                       rowExpanded
                         ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
                         : "bg-card group-hover/row:bg-transparent",
@@ -448,7 +448,7 @@ export function DataTable<T extends object>({
                 {actions && actions.length > 0 && (
                   <td
                     className={cn(
-                      "align-top border-t border-border/55 px-4 text-right transition-colors duration-150",
+                      "align-top border-t border-border/55 px-3 text-right transition-colors duration-150",
                       rowExpanded
                         ? "bg-primary/[0.05] first:border-l-2 first:border-l-primary"
                         : "bg-card group-hover/row:bg-transparent",
