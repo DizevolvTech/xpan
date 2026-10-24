@@ -56,7 +56,7 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
           type="button"
           variant="outline"
           size="icon-lg"
-          className="fixed top-4 left-4 z-30 lg:hidden"
+          className="fixed top-[calc(1rem+var(--test-banner-h,0px))] left-4 z-30 lg:hidden"
           onClick={() => setMobileOpen(true)}
           aria-label="Abrir navegação"
         >
