@@ -28,7 +28,10 @@ export function TestEnvironmentBanner() {
       role="status"
       className="sticky top-0 z-[60] flex h-6 w-full items-center justify-center overflow-hidden bg-amber-400 px-3 text-center text-[11px] font-semibold leading-tight text-amber-950"
     >
-      Sistema de TESTE — cópia dos dados reais. O que for feito aqui não afeta a fábrica nem as lojas.
+      <span className="sm:hidden">Sistema de TESTE — não afeta a fábrica nem as lojas</span>
+      <span className="hidden sm:inline">
+        Sistema de TESTE — cópia dos dados reais. O que for feito aqui não afeta a fábrica nem as lojas.
+      </span>
     </div>
   );
 }
