@@ -1264,21 +1264,20 @@ export default function GestorFabricaPage() {
                           aria-controls={`op-${op.id}-orders`}
                           className="block w-full rounded-md px-2 py-1.5 text-left leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="flex min-w-0 items-center gap-1.5">
-                              {isNextInQueue ? (
-                                <span className="shrink-0 rounded-full bg-info px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-info-foreground">
-                                  Próxima
-                                </span>
-                              ) : null}
-                              <span className="truncate font-mono text-xs font-semibold text-foreground">
-                                {op.code}
+                          {/* Reunião 22/10 (bloco 3): código inteiro na 1ª linha; linha/setor abaixo. */}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="whitespace-nowrap font-mono text-xs font-semibold text-foreground">
+                              {op.code}
+                            </span>
+                            {isNextInQueue ? (
+                              <span className="shrink-0 rounded-full bg-info px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-info-foreground">
+                                Próxima
                               </span>
-                            </span>
-                            <span className="shrink-0 truncate text-[10px] text-muted-foreground">
-                              {op.lineName} · {op.sectorName}
-                            </span>
+                            ) : null}
                           </div>
+                          <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                            {op.lineName} · {op.sectorName}
+                          </span>
                           <div className="mt-1.5 flex items-center gap-2">
                             <div
                               aria-hidden

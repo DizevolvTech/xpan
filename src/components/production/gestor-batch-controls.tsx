@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/shared/confirm-dialog";
 import { useFutureDateOverride } from "@/lib/use-future-date-override";
 
 /** Ações de batida do gestor com a mesma trava/override de data do restante da OP. */
@@ -13,9 +14,19 @@ export function useGestorBatchActions(
 ) {
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const tryFutureDateOverride = useFutureDateOverride();
+  const confirm = useConfirm();
 
   const complete = useCallback(
     async (key: string, batchCount: number) => {
+      // Mesmo cuidado do chão: confirmar antes de registrar a batida.
+      const go = await confirm({
+        title: "Concluir esta batida?",
+        description: "A batida fica registrada; a última batida conclui o produto. Dá para desfazer depois.",
+        tone: "default",
+        confirmLabel: "Concluir batida",
+        cancelLabel: "Cancelar",
+      });
+      if (!go) return;
       onError(null);
       setPendingKey(key);
       try {
@@ -31,7 +42,7 @@ export function useGestorBatchActions(
         setPendingKey(null);
       }
     },
-    [completeProductionBatch, onError, tryFutureDateOverride],
+    [completeProductionBatch, confirm, onError, tryFutureDateOverride],
   );
 
   const undo = useCallback(

@@ -12,6 +12,8 @@ export interface OpDayTableColumn<T> {
   className?: string;
 }
 
+const STICKY_LAST = "sticky right-0 z-[1] shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]";
+
 const KIND_STYLE: Record<OpDayKind, string> = {
   atrasada: "bg-danger/10 text-danger-foreground ring-danger/30",
   hoje: "bg-info/10 text-info-foreground ring-info/30",
@@ -67,12 +69,15 @@ export function OpDayGroupsTable<T extends { id: string }>({
       <table className="w-full min-w-[640px] border-collapse">
         <thead className="sticky top-0 z-10 bg-panel">
           <tr>
-            {columns.map((column) => (
+            {columns.map((column, index) => (
               <th
                 key={column.key}
                 className={cn(
-                  "px-2.5 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground",
+                  "px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground",
                   column.className,
+                  // Reunião 22/10 (bloco 3): Ações sempre à vista, presa à direita.
+                  index === columns.length - 1 && STICKY_LAST,
+                  index === columns.length - 1 && "bg-panel",
                 )}
               >
                 {column.header}
@@ -108,8 +113,15 @@ export function OpDayGroupsTable<T extends { id: string }>({
                     rowClassName?.(item),
                   )}
                 >
-                  {columns.map((column) => (
-                    <td key={column.key} className={cn("px-2.5 py-1 align-middle", column.className)}>
+                  {columns.map((column, index) => (
+                    <td
+                      key={column.key}
+                      className={cn(
+                        "px-2 py-1 align-middle",
+                        column.className,
+                        index === columns.length - 1 && cn(STICKY_LAST, "bg-card"),
+                      )}
+                    >
                       {column.render
                         ? column.render(item)
                         : String((item as Record<string, unknown>)[column.key] ?? "")}

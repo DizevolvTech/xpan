@@ -116,9 +116,10 @@ export function OpQueueAdvanceButton({ control, op }: { control: OpQueueAdvanceC
         void control.advance([op], op.code);
       }}
       title="Avança cada produto desta OP para a próxima etapa"
+      aria-label={`Avançar etapa da ${op.code}`}
     >
       <FastForward className="size-3.5" aria-hidden />
-      Avançar
+      <span className="hidden 2xl:inline">Avançar</span>
     </Button>
   );
 }
