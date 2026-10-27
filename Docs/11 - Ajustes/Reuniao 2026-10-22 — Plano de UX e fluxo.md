@@ -121,3 +121,9 @@ Montado em 24/10 (Lucas: "sim"):
 - Celular (390 px): coluna Ações e botão da faixa de lote não ficam fixos por cima do pedido e do prazo.
 - "Já existe lote para todas essas datas e lojas" aparece como aviso, não como erro.
 - Botão "Avançar" da fila de OPs mostra o texto em todas as larguras.
+
+### Correção pós-aceite D14 (27/10, noite)
+
+- Achado do agente revisor: depois de "Liberar lote", a faixa do lote sumia da lista de Pedidos (o lote era fechado e o painel só lia lotes abertos), e as linhas ficavam soltas.
+- Correção: o painel lê os lotes abertos e, dos fechados, as datas de entrega dos últimos 7 dias (`batchesForOverview`). A faixa passa a "Lote liberado" e continua agrupando os pedidos. O cartão do topo continua saindo (o painel só mostra lotes não liberados).
+- Dados de teste criados no sistema de teste para o aceite (PD-261027-0101 a 0114, nota "Dado de teste (Hefesto, aceite quadros 27/10)"); ajustes de lote com cópia em `hefesto_backup._bak_order_batches_20261027c`.

@@ -146,6 +146,29 @@ export function buildBatchGroups(
   return groups.sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate));
 }
 
+/**
+ * Lotes que entram no painel e nas faixas da lista de Pedidos: todos os abertos e, dos fechados
+ * (todas as datas liberadas), só as datas recentes (de `keepClosedDays` dias atrás em diante).
+ * Assim a faixa "Lote liberado" continua na lista depois de liberar o lote (quadro #4, 27/10).
+ */
+export function batchesForOverview<T extends BatchInput & { status: string }>(
+  rows: ReadonlyArray<T>,
+  todayKey: string,
+  keepClosedDays = 7,
+): BatchInput[] {
+  const since = shiftDateKey(todayKey, -keepClosedDays);
+  const result: BatchInput[] = [];
+  for (const row of rows) {
+    if (row.status === "aberto") {
+      result.push({ id: row.id, slots: row.slots });
+    } else if (row.status === "fechado") {
+      const slots = row.slots.filter((slot) => slot.deliveryDate >= since);
+      if (slots.length > 0) result.push({ id: row.id, slots });
+    }
+  }
+  return result;
+}
+
 /** Lote pode ser fechado (sai da tela) quando todas as datas dele estão liberadas. */
 export function isBatchFinished(groups: ReadonlyArray<BatchGroup>, batchId: string): boolean {
   const own = groups.filter((group) => group.batchIds.includes(batchId));

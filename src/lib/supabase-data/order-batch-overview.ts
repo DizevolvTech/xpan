@@ -5,6 +5,7 @@ import type { OrderBatchSlot } from "@/lib/order-batch-plan";
 import {
   buildBatchGroups,
   findMissingBatchDates,
+  batchesForOverview,
   isBatchFinished,
   type BatchGroup,
   type MissingBatchDate,
@@ -76,7 +77,7 @@ export async function getOrderBatchOverview(
     status: row.status,
     slots: Array.isArray(row.slots) ? row.slots : [],
   }));
-  const openBatches = batchRows.filter((row) => row.status === "aberto");
+  const openBatches = batchesForOverview(batchRows, now.dateKey);
 
   const deliveryDates = Array.from(new Set(openBatches.flatMap((batch) => batch.slots.map((slot) => slot.deliveryDate))));
   const storesResult = await supabase.from("stores").select("id, legacy_id, name");

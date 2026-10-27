@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  batchesForOverview,
   buildBatchGroups,
   excludeCoveredSlots,
   planDuplicateSlotCleanup,
@@ -160,4 +161,32 @@ test("quadro #3: limpeza mantém o slot no lote que tem o pedido, senão no mais
     { batchId: "antigo", slots: [{ storeId: "b", deliveryDate: "2026-10-30" }] },
     { batchId: "novo", slots: [{ storeId: "a", deliveryDate: "2026-10-30" }, { storeId: "a", deliveryDate: "2026-10-31" }] },
   ]);
+});
+
+test("quadro #4: lote fechado (tudo liberado) continua no painel nas datas recentes", () => {
+  const rows = [
+    { id: "aberto", status: "aberto", slots: [{ storeId: "a", deliveryDate: "2026-10-31" }] },
+    {
+      id: "fechado",
+      status: "fechado",
+      slots: [
+        { storeId: "a", deliveryDate: "2026-10-28" },
+        { storeId: "a", deliveryDate: "2026-10-10" },
+      ],
+    },
+    { id: "velho", status: "fechado", slots: [{ storeId: "a", deliveryDate: "2026-10-01" }] },
+    { id: "outro", status: "cancelado", slots: [{ storeId: "a", deliveryDate: "2026-10-29" }] },
+  ];
+  const result = batchesForOverview(rows, "2026-10-27");
+  assert.deepEqual(
+    result.map((batch) => `${batch.id}:${batch.slots.map((slot) => slot.deliveryDate).join(",")}`),
+    ["aberto:2026-10-31", "fechado:2026-10-28"],
+  );
+  const groups = buildBatchGroups(
+    result,
+    [{ orderId: "o1", orderCode: "PD-1", storeId: "a", deliveryDate: "2026-10-28", batchId: "fechado", released: true, cancelled: false }],
+    settings,
+    { dateKey: "2026-10-27", time: "20:00" },
+  );
+  assert.equal(groups.find((group) => group.deliveryDate === "2026-10-28")?.state, "liberado");
 });
