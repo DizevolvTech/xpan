@@ -406,7 +406,10 @@ export default function PedidosFabricaPage() {
       setIsOpenOrdersDialogOpen(false);
       setOpenStoreIds([]);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao abrir o lote.");
+      const message = error instanceof Error ? error.message : "Falha ao abrir o lote.";
+      // Lote já existente não é erro: é o aviso do quadro #3 (aceite D13 pediu outro rótulo).
+      if (message.startsWith("Já existe lote")) toast.info(message);
+      else toast.error(message);
     } finally {
       setIsOpeningOrders(false);
     }
@@ -510,8 +513,13 @@ export default function PedidosFabricaPage() {
       compact
       actions={
         <>
-          <Button asChild size="xs"><Link href="/gestor-fabrica/pedidos/centralizado">Pedido centralizado</Link></Button>
-          <Button asChild size="xs" variant="outline"><Link href="/gestor-fabrica/pedidos/centralizado#order-excel">Importar Excel</Link></Button>
+          {/* <a> (navegação cheia): com <Link>, a janela de detalhe (rota interceptada
+              (.)pedidos/[orderId]) capturava "centralizado" como código e mostrava
+              "Pedido não encontrado" (aceite D14, 27/10). */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- fugir da rota interceptada */}
+          <Button asChild size="xs"><a href="/gestor-fabrica/pedidos/centralizado">Pedido centralizado</a></Button>
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- idem */}
+          <Button asChild size="xs" variant="outline"><a href="/gestor-fabrica/pedidos/centralizado#order-excel">Importar Excel</a></Button>
         </>
       }
     >
@@ -746,7 +754,7 @@ export default function PedidosFabricaPage() {
                   <th className="whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-semibold text-muted-foreground">Loja</th>
                   <th className="whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-semibold text-muted-foreground">Entrega / produção</th>
                   <th className="whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-semibold text-muted-foreground">Status</th>
-                  <th className="sticky right-0 z-[1] w-px whitespace-nowrap bg-panel px-2 py-1.5 text-right text-[11px] font-semibold text-muted-foreground shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">Ações</th>
+                  <th className="w-px whitespace-nowrap bg-panel sm:sticky sm:right-0 sm:z-[1] px-2 py-1.5 text-right text-[11px] font-semibold text-muted-foreground shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -803,7 +811,7 @@ export default function PedidosFabricaPage() {
                         <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">
                           <StatusBadge status={visibleStatus} />
                         </td>
-                        <td className="sticky right-0 z-[1] whitespace-nowrap border-t border-border/70 bg-card px-2 py-1 text-right shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
+                        <td className="whitespace-nowrap border-t border-border/70 bg-card px-2 py-1 text-right sm:sticky sm:right-0 sm:z-[1] shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
                           <div className="flex items-center justify-end gap-1">
                             <Button asChild type="button" variant="outline" size="xs">
                               <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>Detalhe</Link>

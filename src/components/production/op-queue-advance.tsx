@@ -156,7 +156,7 @@ export function OpQueueAdvanceButton({ control, op }: { control: OpQueueAdvanceC
       aria-label={`Avançar etapa da ${op.code}`}
     >
       <FastForward className="size-3.5" aria-hidden />
-      <span className="hidden 2xl:inline">Avançar</span>
+      <span>Avançar</span>
     </Button>
   );
 }

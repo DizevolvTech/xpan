@@ -40,7 +40,7 @@ export function BatchBandRow({
           ) : null}
         </span>
       </td>
-      <td className="sticky right-0 z-[1] whitespace-nowrap border-t border-info/30 bg-info/5 px-2 py-1 text-right">
+      <td className="whitespace-nowrap border-t border-info/30 bg-info/5 px-2 py-1 text-right sm:sticky sm:right-0 sm:z-[1]">
         {released ? (
           <span className="text-xs font-semibold text-success-foreground">Lote liberado</span>
         ) : (

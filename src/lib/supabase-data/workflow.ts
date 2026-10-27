@@ -981,6 +981,20 @@ export async function autoReleaseEligibleOrders(
 
   const result: AutoReleaseResult = { released: [], skipped: [], failed: [] };
 
+  // Quadro #4 (27/10): pedido de uma loja × data coberta por lote que ainda espera as lojas
+  // (dentro do prazo) não sai — inclusive pedido sem lote (centralizado) da mesma entrega, que
+  // ao ser liberado fecharia a entrega para as lojas que faltam (aceite D14).
+  // Por código do pedido: o id do planejamento (legacy) difere do id da tabela.
+  const waitingOrderCodes = new Set<string>();
+  try {
+    const overview = await getOrderBatchOverview(tenantId, supabase, { includeMissing: false });
+    for (const group of overview.groups) {
+      if (group.state === "aguardando_lojas") for (const item of group.orders) waitingOrderCodes.add(item.orderCode);
+    }
+  } catch (overviewError) {
+    console.warn("[autoReleaseEligibleOrders] falha ao ler lotes; segue sem a trava de prazo", overviewError);
+  }
+
   for (const order of planning.orders) {
     const id = order.id;
     const code = order.code;
@@ -1003,6 +1017,10 @@ export async function autoReleaseEligibleOrders(
     }
     if (!order.availableForRelease) {
       result.skipped.push({ orderId: id, orderCode: code, reason: "not_releasable" });
+      continue;
+    }
+    if (waitingOrderCodes.has(code)) {
+      result.skipped.push({ orderId: id, orderCode: code, reason: "lote_aguardando_lojas" });
       continue;
     }
 

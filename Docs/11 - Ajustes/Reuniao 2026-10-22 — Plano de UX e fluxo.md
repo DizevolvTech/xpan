@@ -114,3 +114,10 @@ Montado em 24/10 (Lucas: "sim"):
 - Causa: são da linha Panetones, com produtos POR BATIDA. O "Avançar" da fila só contava produtos que avançam por etapa; produto por batida só avançava abrindo a OP e concluindo a batida — sem pista na fila.
 - Feito (no código): "Avançar" aparece também em OP com produtos por batida; ao clicar, pede confirmação e registra a próxima batida de cada produto (a última batida conclui o produto, como dentro da OP; dá para desfazer na OP). Vale para a fila do gestor e do chão; a seleção em lote também passa a aceitar essas OPs.
 - Conferido local contra o banco de teste: OP-260928-012 mostrou "Avançar", avançou para Aguardando expedição; a faixa 26/10 continuou. OP-260924-004 já estava concluída no banco de teste (Aguardando expedição) quando conferimos.
+
+### Correções pós-aceite (27/10, D11–D14)
+- Auto-liberar não solta pedido de loja × data coberta por lote que ainda espera as lojas, nem pedido sem lote (centralizado) da mesma entrega — liberar um deles fechava a entrega para as lojas que faltam.
+- "Pedido centralizado" e "Importar Excel" abriam "Pedido não encontrado" (a janela de detalhe capturava "centralizado" como código); agora abrem a página.
+- Celular (390 px): coluna Ações e botão da faixa de lote não ficam fixos por cima do pedido e do prazo.
+- "Já existe lote para todas essas datas e lojas" aparece como aviso, não como erro.
+- Botão "Avançar" da fila de OPs mostra o texto em todas as larguras.
