@@ -128,9 +128,10 @@ export default function OrdensProducaoPage() {
     isLoading: isPlanningLoading,
     updateProductionItemStatus,
     advanceProductionItems,
+    completeProductionBatch,
   } = useFactoryPlanningSnapshot(anchorDate);
   // Reunião 22/10 (bloco 4): avançar etapa direto da fila, uma ou várias OPs.
-  const queueAdvance = useOpQueueAdvance(advanceProductionItems);
+  const queueAdvance = useOpQueueAdvance(advanceProductionItems, completeProductionBatch);
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],

@@ -195,7 +195,7 @@ export default function OrdensProducaoPage() {
   const opTrash = useOpTrashActions(anchorDate, refreshPlanning);
   const batchActions = useGestorBatchActions(completeProductionBatch, undoProductionBatch, setWorkflowError);
   // Reunião 22/10 (bloco 4): avançar etapa direto da fila, uma ou várias OPs.
-  const queueAdvance = useOpQueueAdvance(advanceProductionItems);
+  const queueAdvance = useOpQueueAdvance(advanceProductionItems, completeProductionBatch);
   const tryFutureDateOverride = useFutureDateOverride();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),

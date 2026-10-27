@@ -108,3 +108,9 @@ Montado em 24/10 (Lucas: "sim"):
 - Pedido: pedidos de várias lojas do mesmo lote apareciam um por linha, cada um com "Liberar para produção", mesmo com o prazo das lojas aberto.
 - Feito (no código): na lista "Pedidos Auditáveis", os pedidos do mesmo lote ficam juntos sob uma faixa "Lote · entrega dd/mm" (lojas que pediram, prazo, quem falta) com o botão "Liberar lote (N)"; na linha do pedido de lote o botão vira "No lote". Enquanto as lojas ainda podem pedir, a faixa mostra "Aguardando prazo" (desabilitado) e o cartão do topo também fica desabilitado.
 - Decisão do Hefesto: dentro do prazo o lote não é liberado nem com "liberar mesmo assim" (o servidor recusa, tanto o lote quanto um pedido do lote sozinho) — segue a frase do Lucas "a opção de liberar não deveria estar disponível". Libera quando todas as lojas pediram ou o prazo acabou. Pedido fora de lote continua com "Liberar" na linha.
+
+## Quadro #5 (Lucas, 27/10) — OPs antigas sem "Avançar" na fila
+- Pedido: OP-260924-004 e OP-260928-012 (Em espera, atrasadas) sem o botão "Avançar" na Fila de OPs.
+- Causa: são da linha Panetones, com produtos POR BATIDA. O "Avançar" da fila só contava produtos que avançam por etapa; produto por batida só avançava abrindo a OP e concluindo a batida — sem pista na fila.
+- Feito (no código): "Avançar" aparece também em OP com produtos por batida; ao clicar, pede confirmação e registra a próxima batida de cada produto (a última batida conclui o produto, como dentro da OP; dá para desfazer na OP). Vale para a fila do gestor e do chão; a seleção em lote também passa a aceitar essas OPs.
+- Conferido local contra o banco de teste: OP-260928-012 mostrou "Avançar", avançou para Aguardando expedição; a faixa 26/10 continuou. OP-260924-004 já estava concluída no banco de teste (Aguardando expedição) quando conferimos.

@@ -272,3 +272,23 @@ export function advanceableItemsOf(op: {
       return next ? [{ productionItemKey: item.productionItemKey, status: next }] : [];
     });
 }
+
+/**
+ * Quadro #5 (Lucas, 27/10): produtos POR BATIDA pendentes de uma OP. A fila de OPs não
+ * mostrava "Avançar" em OP só com produtos batidos (ex.: Panetones), e o gestor não achava
+ * como seguir. Agora "Avançar" na fila registra a próxima batida de cada um deles.
+ */
+export function pendingBatchItemsOf(op: {
+  items: ReadonlyArray<
+    AdvanceCandidate & { productionItemKey: string; batchCount?: number | null; batchesDone?: number | null }
+  >;
+}): Array<{ productionItemKey: string; batchCount: number }> {
+  return op.items
+    .filter((item) => item.status !== "concluido" && isBatchedProductionItem(item))
+    .flatMap((item) => {
+      const batchCount = Math.max(1, Number(item.batchCount) || 1);
+      return (Number(item.batchesDone) || 0) < batchCount
+        ? [{ productionItemKey: item.productionItemKey, batchCount }]
+        : [];
+    });
+}

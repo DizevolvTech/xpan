@@ -7,7 +7,14 @@ import { useConfirm } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import type { ProductionItemStatus, ProductionOrderRow } from "@/lib/factory-planning/types";
-import { advanceableItemsOf } from "@/lib/production-workflow";
+import { advanceableItemsOf, pendingBatchItemsOf } from "@/lib/production-workflow";
+
+/** OP tem algo para avançar pela fila: etapa (status) ou próxima batida. */
+export function canAdvanceFromQueue(op: ProductionOrderRow) {
+  return advanceableItemsOf(op).length > 0 || pendingBatchItemsOf(op).length > 0;
+}
+
+type CompleteBatchFn = (key: string, batchCount: number, options?: { force?: boolean }) => Promise<void>;
 
 type AdvanceFn = (
   items: Array<{ productionItemKey: string; status: ProductionItemStatus }>,
@@ -19,7 +26,7 @@ type AdvanceFn = (
  * (reunião 22/10, bloco 4: "mudar o status direto da fila, sem entrar produto a produto").
  * Cada produto não batido da OP vai para a próxima etapa dele; batidos seguem pelas batidas.
  */
-export function useOpQueueAdvance(advanceProductionItems: AdvanceFn) {
+export function useOpQueueAdvance(advanceProductionItems: AdvanceFn, completeProductionBatch?: CompleteBatchFn) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -35,12 +42,39 @@ export function useOpQueueAdvance(advanceProductionItems: AdvanceFn) {
   const advance = useCallback(
     async (ops: ProductionOrderRow[], label: string) => {
       const items = ops.flatMap(advanceableItemsOf);
-      if (items.length === 0) {
-        toast.info("Nada a avançar por etapa: produtos por batida avançam pelas batidas, dentro da OP.");
+      const batchItems = completeProductionBatch ? ops.flatMap(pendingBatchItemsOf) : [];
+      if (items.length === 0 && batchItems.length === 0) {
+        toast.info("Nada a avançar nesta OP.");
         return;
+      }
+      if (batchItems.length > 0) {
+        const go = await confirm({
+          title: "Concluir a próxima batida?",
+          description: `${batchItems.length} produto(s) por batida: registra a próxima batida de cada um (a última batida conclui o produto). Dá para desfazer dentro da OP.`,
+          tone: "default",
+          confirmLabel: "Concluir batida",
+          cancelLabel: "Cancelar",
+        });
+        if (!go) return;
       }
       setBusy(true);
       try {
+        let batchesDone = 0;
+        const batchFailures: string[] = [];
+        for (const batch of batchItems) {
+          try {
+            await completeProductionBatch!(batch.productionItemKey, batch.batchCount);
+            batchesDone += 1;
+          } catch (error) {
+            batchFailures.push(error instanceof Error ? error.message : "Falha ao concluir a batida.");
+          }
+        }
+        if (batchesDone > 0) toast.success(`${batchesDone} batida(s) concluída(s) — ${label}.`);
+        if (batchFailures.length > 0) toast.error(`${batchFailures.length} batida(s) não registradas: ${batchFailures[0]}`);
+        if (items.length === 0) {
+          setSelectedIds([]);
+          return;
+        }
         let result = await advanceProductionItems(items);
         if (result.blockedCount > 0 && result.forceable) {
           const go = await confirm({
@@ -66,7 +100,7 @@ export function useOpQueueAdvance(advanceProductionItems: AdvanceFn) {
         setBusy(false);
       }
     },
-    [advanceProductionItems, confirm, toast],
+    [advanceProductionItems, completeProductionBatch, confirm, toast],
   );
 
   return useMemo(
@@ -79,7 +113,7 @@ export type OpQueueAdvanceControl = ReturnType<typeof useOpQueueAdvance>;
 
 /** Caixa de seleção da linha (não abre a OP ao clicar). */
 export function OpQueueSelectCell({ control, op }: { control: OpQueueAdvanceControl; op: ProductionOrderRow }) {
-  const canAdvance = advanceableItemsOf(op).length > 0;
+  const canAdvance = canAdvanceFromQueue(op);
   return (
     <label
       className="flex size-9 cursor-pointer items-center justify-center"
@@ -101,8 +135,7 @@ export function OpQueueSelectCell({ control, op }: { control: OpQueueAdvanceCont
 
 /** Botão "Avançar" da própria linha. */
 export function OpQueueAdvanceButton({ control, op }: { control: OpQueueAdvanceControl; op: ProductionOrderRow }) {
-  const canAdvance = advanceableItemsOf(op).length > 0;
-  if (!canAdvance) return null;
+  if (!canAdvanceFromQueue(op)) return null;
   return (
     <Button
       type="button"
@@ -115,7 +148,11 @@ export function OpQueueAdvanceButton({ control, op }: { control: OpQueueAdvanceC
         event.stopPropagation();
         void control.advance([op], op.code);
       }}
-      title="Avança cada produto desta OP para a próxima etapa"
+      title={
+        pendingBatchItemsOf(op).length > 0
+          ? "Avança a OP: próxima etapa ou próxima batida de cada produto"
+          : "Avança cada produto desta OP para a próxima etapa"
+      }
       aria-label={`Avançar etapa da ${op.code}`}
     >
       <FastForward className="size-3.5" aria-hidden />
