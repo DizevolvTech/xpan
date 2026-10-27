@@ -89,15 +89,6 @@ export interface FactoryMetricsResult {
   alerts: FactoryAlert[];
 }
 
-const STAGE_LABELS: Record<string, string> = {
-  nao_iniciado: "Não iniciado",
-  em_preparacao: "Em preparação",
-  em_producao: "Em produção",
-  em_forno: "No forno",
-  embalando: "Embalando",
-  concluido: "Concluído",
-};
-
 // referenceDate (YYYY-MM-DD) → dia da semana sem fuso (meio-dia UTC evita slip).
 const WEEKDAY_BY_INDEX: ProductionWeekDay[] = [
   "domingo",
@@ -503,14 +494,9 @@ export async function computeFactoryMetrics(
   // pela tarefa 2.6-F de gatilhos automáticos).
   // -------------------------------------------------------------------------
   const alerts = computeFactoryAlerts({
-    scheduledKg: scheduledKgTotal,
-    producedKg,
-    leadTimePerStage: perStage,
-    averageTotalMinutes,
     otif: { deliveredOnTime, deliveredLate, otifPercent },
     deliveryFailuresTotal: attempts.length,
     storesWithoutOrder,
-    stageLabels: STAGE_LABELS,
   });
 
   return {

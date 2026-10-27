@@ -86,3 +86,8 @@ Montado em 24/10 (Lucas: "sim"):
 - Mix de produtos: esboço prometido pelo Lucas (segue adiado no snapshot).
 - Cronograma Blumenau D-4 já ajustado pelo Daniel; D-3 é o prazo final.
 - A confirmar: admin Márcio (Casa Express) não vê Pedidos.
+
+## Quadro #1 (Lucas, 27/10) — tirar métricas de produção da Visão Geral
+- Pedido: "essas métricas de produção não são necessárias, precisamos primeiro fazer o básico operacional rodar".
+- Feito (no teste): sai o alerta "Produção abaixo do planejado" e os cards "Tempo médio de produção" e "Produção por etapa". Ficam "Entregas no prazo", "Lojas sem pedido no prazo" e os alertas de entrega.
+- Decisão do Hefesto (Lucas: "siga sua recomendação e registre"): saíram também os alertas da mesma família — "Produção acima do planejado" e "Atraso na etapa" — inclusive da rotina que abre ocorrência automática. Voltam quando o assunto for capacidade/velocidade (histórico no Git, `factory-alerts.ts`).

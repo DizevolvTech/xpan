@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, Boxes, TrendingUp } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoHint } from "@/components/shared/info-hint";
@@ -67,22 +67,6 @@ type FetchState =
   | { kind: "ready"; metrics: FactoryMetricsResult }
   | { kind: "error"; message: string };
 
-const STAGE_LABELS: Record<string, string> = {
-  nao_iniciado: "Não iniciado",
-  em_preparacao: "Em preparação",
-  em_producao: "Em produção",
-  em_forno: "No forno",
-  embalando: "Embalando",
-  concluido: "Concluído",
-};
-
-function formatMinutes(minutes: number): string {
-  if (minutes < 60) return `${Math.round(minutes)} min`;
-  const hours = Math.floor(minutes / 60);
-  const rest = Math.round(minutes - hours * 60);
-  return rest > 0 ? `${hours}h${String(rest).padStart(2, "0")}` : `${hours}h`;
-}
-
 interface FactoryMetricsCardProps {
   referenceDate: string;
   windowDays?: number;
@@ -132,7 +116,7 @@ export function FactoryMetricsCard({
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <CardTitle>Métricas operacionais</CardTitle>
-            <InfoHint content="Tempo médio de produção vem dos eventos de cada ordem. Entregas no prazo comparam o que foi entregue na data combinada. Produção por etapa conta os itens que passaram em cada fase no período." />
+            <InfoHint content="Entregas no prazo comparam o que foi entregue na data combinada no período." />
           </div>
           {state.kind === "ready" ? (
             <span className="text-xs text-muted-foreground">
@@ -155,14 +139,10 @@ export function FactoryMetricsCard({
 }
 
 function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
-  const { leadTime, throughput, otif } = metrics;
-  const totalThroughput = throughput.perStage.reduce((sum, row) => sum + row.itemsCount, 0);
-  const concluidoThroughput =
-    throughput.perStage.find((row) => row.stage === "concluido") ?? null;
+  const { otif } = metrics;
   // Sem amostras → tom NEUTRO. Evita pintar de vermelho um KPI que só está sem
   // dados (ex.: entregas "—" sem entregas no período não é "ruim", é ausência de dado).
   const hasOtif = otif.deliveredOnTime + otif.deliveredLate > 0;
-  const leadTimeTone = leadTime.samples > 0 ? "info" : "neutral";
   const otifTone = !hasOtif
     ? "neutral"
     : otif.otifPercent >= 95
@@ -173,58 +153,6 @@ function MetricsContent({ metrics }: { metrics: FactoryMetricsResult }) {
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <MetricTile
-        icon={Activity}
-        title="Tempo médio de produção"
-        value={leadTime.samples > 0 ? formatMinutes(leadTime.averageTotalMinutes) : "—"}
-        helper={leadTime.samples > 0 ? `Baseado em ${leadTime.samples} ordem(ns)` : "Sem dados no período"}
-        tone={leadTimeTone}
-      >
-        {leadTime.perStage.length > 0 ? (
-          <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-            {leadTime.perStage.map((row) => (
-              <li key={row.stage} className="flex justify-between gap-2">
-                <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
-                <span className="font-medium text-foreground/80">{formatMinutes(row.averageMinutes)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </MetricTile>
-
-      <MetricTile
-        icon={Boxes}
-        title="Produção por etapa"
-        value={
-          concluidoThroughput
-            ? `${concluidoThroughput.perDay}/dia`
-            : totalThroughput > 0
-              ? `${totalThroughput} mov.`
-              : "—"
-        }
-        helper={
-          concluidoThroughput
-            ? `${concluidoThroughput.itemsCount} concluído(s) no período`
-            : totalThroughput > 0
-              ? "Itens movimentados por etapa"
-              : "Sem movimentações no período"
-        }
-        tone={totalThroughput > 0 ? "info" : "neutral"}
-      >
-        {throughput.perStage.length > 0 ? (
-          <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-            {throughput.perStage.map((row) => (
-              <li key={row.stage} className="flex justify-between gap-2">
-                <span>{STAGE_LABELS[row.stage] ?? row.stage}</span>
-                <span className="font-medium text-foreground/80">
-                  {row.itemsCount} · {row.perDay}/dia
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </MetricTile>
-
       <MetricTile
         icon={TrendingUp}
         title="Entregas no prazo"
