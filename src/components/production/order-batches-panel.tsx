@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarPlus, ListTree, Loader2, PackageCheck } from "lucide-react";
 
-import { useConfirm } from "@/components/shared/confirm-dialog";
-import { useToast } from "@/components/shared/toast";
+import { batchReleaseBlockedReason, useBatchRelease } from "@/components/production/use-batch-release";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { PlannedOrderItem } from "@/lib/factory-planning/types";
@@ -33,21 +32,18 @@ export function OrderBatchesPanel({
   reloadKey,
   onChanged,
   onOpenBatchForDate,
-  onWaitingOrderCodesChange,
+  onGroupsChange,
 }: {
   orderItems: PlannedOrderItem[];
   reloadKey: number;
   onChanged: () => Promise<void> | void;
   onOpenBatchForDate: (deliveryDate: string, storeIds: string[]) => void;
-  /** Códigos dos pedidos de lote que ainda esperam as lojas (não entram no Auto-liberar). */
-  onWaitingOrderCodesChange?: (codes: Set<string>) => void;
+  /** Quadro #4 (27/10): grupos por data, para a lista de Pedidos agrupar e liberar por lote. */
+  onGroupsChange?: (groups: BatchGroupView[]) => void;
 }) {
   const [overview, setOverview] = useState<OrderBatchOverview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [sumGroup, setSumGroup] = useState<BatchGroupView | null>(null);
-  const toast = useToast();
-  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     try {
@@ -56,17 +52,11 @@ export function OrderBatchesPanel({
       if (!response.ok || !data) throw new Error(data?.message ?? "Falha ao carregar os lotes.");
       setOverview(data);
       setLoadError(null);
-      onWaitingOrderCodesChange?.(
-        new Set(
-          data.groups
-            .filter((group) => group.state === "aguardando_lojas")
-            .flatMap((group) => group.orders.filter((order) => !order.released).map((order) => order.orderCode)),
-        ),
-      );
+      onGroupsChange?.(data.groups);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Falha ao carregar os lotes.");
     }
-  }, [onWaitingOrderCodesChange]);
+  }, [onGroupsChange]);
 
   useEffect(() => {
     // Busca assíncrona: o setState acontece depois da resposta, não no efeito.
@@ -79,60 +69,11 @@ export function OrderBatchesPanel({
     [overview],
   );
 
-  async function releaseGroup(group: BatchGroupView) {
-    const key = group.deliveryDate;
-    let force = false;
-    if (group.state === "aguardando_lojas") {
-      const go = await confirm({
-        title: `Liberar a entrega de ${br(group.deliveryDate)} sem todas as lojas?`,
-        description: `Ainda faltam ${group.missingStoreNames.length} loja(s) e o prazo não acabou: ${group.missingStoreNames.join(", ")}. Depois de liberar, elas não conseguem mais pedir para esta entrega.`,
-        confirmLabel: "Liberar mesmo assim",
-        cancelLabel: "Esperar as lojas",
-      });
-      if (!go) return;
-      force = true;
-    } else {
-      const go = await confirm({
-        title: `Liberar a entrega de ${br(group.deliveryDate)} para a produção?`,
-        description: `${group.pendingOrderIds.length} pedido(s) vão para a produção de uma vez.${
-          group.missingStoreNames.length > 0
-            ? ` O prazo acabou sem pedido de: ${group.missingStoreNames.join(", ")}.`
-            : " Todas as lojas pediram."
-        }`,
-        tone: "default",
-        confirmLabel: "Liberar lote",
-        cancelLabel: "Voltar",
-      });
-      if (!go) return;
-    }
-    setBusyKey(key);
-    try {
-      const response = await fetch("/api/order-batches/release", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deliveryDate: group.deliveryDate, force }),
-      });
-      const result = (await response.json().catch(() => null)) as
-        | { released?: string[]; failed?: Array<{ orderCode: string; message: string }>; message?: string }
-        | null;
-      if (!response.ok) throw new Error(result?.message ?? "Falha ao liberar o lote.");
-      const released = result?.released?.length ?? 0;
-      const failed = result?.failed ?? [];
-      if (failed.length > 0) {
-        toast.warning(
-          `${released} pedido(s) liberado(s); ${failed.length} não: ${failed.map((item) => `${item.orderCode} (${item.message})`).join("; ")}`,
-        );
-      } else {
-        toast.success(`Entrega de ${br(group.deliveryDate)}: ${released} pedido(s) liberado(s) para a produção.`);
-      }
-      await onChanged();
-      await load();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Falha ao liberar o lote.");
-    } finally {
-      setBusyKey(null);
-    }
-  }
+  const { releaseGroup, busyDate } = useBatchRelease(async () => {
+    await onChanged();
+    await load();
+  });
+
 
   const sumRows = useMemo(() => {
     if (!sumGroup) return [];
@@ -251,11 +192,11 @@ export function OrderBatchesPanel({
                           type="button"
                           size="xs"
                           variant={ready ? "default" : "outline"}
-                          disabled={busyKey !== null || group.pendingOrderIds.length === 0}
+                          disabled={busyDate !== null || batchReleaseBlockedReason(group) !== null}
                           onClick={() => void releaseGroup(group)}
-                          title={group.pendingOrderIds.length === 0 ? "Nenhum pedido para liberar ainda" : undefined}
+                          title={batchReleaseBlockedReason(group) ?? undefined}
                         >
-                          {busyKey === key ? (
+                          {busyDate === key ? (
                             <Loader2 className="size-3.5 animate-spin" aria-hidden />
                           ) : (
                             <PackageCheck className="size-3.5" aria-hidden />

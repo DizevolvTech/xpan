@@ -41,10 +41,11 @@ export async function POST(request: Request) {
     if (!group) {
       return NextResponse.json({ message: "Lote não encontrado ou já liberado." }, { status: 404 });
     }
-    if (group.state === "aguardando_lojas" && body?.force !== true) {
+    // Quadro #4 (Lucas, 27/10): dentro do prazo das lojas o lote não é liberado (sem "forçar").
+    if (group.state === "aguardando_lojas") {
       return NextResponse.json(
         {
-          message: `Faltam ${group.missingStoreIds.length} loja(s) e o prazo ainda não acabou.`,
+          message: `As lojas ainda podem pedir até ${group.deadline.dateKey.split("-").reverse().slice(0, 2).join("/")} às ${group.deadline.time} (faltam ${group.missingStoreIds.length} loja(s)).`,
           reason: "batch_stores_pending",
           missingStoreNames: group.missingStoreNames,
         },
@@ -58,9 +59,8 @@ export async function POST(request: Request) {
       try {
         await releaseOrder(order.orderId, authorization.user.id, supabase, {
           tenantId,
-          // Lote completo/prazo encerrado: o aviso de lojas pendentes não se aplica; com
-          // `force` o gestor já confirmou liberar sem as lojas que faltam.
-          force: body?.force === true,
+          // Lote completo ou prazo encerrado (aguardando_lojas foi recusado acima).
+          force: false,
           referenceDate: overview.now.dateKey,
         });
         released.push(order.orderCode);

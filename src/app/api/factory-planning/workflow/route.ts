@@ -4,6 +4,7 @@ import type { ProductionItemStatus } from "@/lib/order-planning";
 import { authorizeApiRequest } from "@/lib/api-auth";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { getOrderBatchOverview } from "@/lib/supabase-data/order-batch-overview";
 import { OrderReleaseValidationError } from "@/lib/supabase-data/release-validation";
 import { FutureWorkflowDateError, canOverrideFutureWorkflowDate } from "@/lib/workflow-date-guard";
 import {
@@ -97,6 +98,31 @@ export async function PATCH(request: Request) {
         authorization.effectiveTenantId,
         createSupabaseAdminClient(),
       );
+      // Quadro #4 (27/10): pedido de lote ainda no prazo das lojas não sai sozinho — o lote é
+      // liberado inteiro (Pedidos > Liberar lote) quando todas pedirem ou o prazo acabar.
+      const batchOverview = await getOrderBatchOverview(authorization.effectiveTenantId as string, supabase, {
+        includeMissing: false,
+      });
+      // O id da lista pode ser o uuid ou o legacy_id do pedido.
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.orderId);
+      const orderLookup = await supabase
+        .from("store_orders")
+        .select("id")
+        .eq(isUuid ? "id" : "legacy_id", body.orderId)
+        .maybeSingle();
+      const storeOrderId = (orderLookup.data as { id?: string } | null)?.id ?? body.orderId;
+      const waitingGroup = batchOverview.groups.find(
+        (group) => group.state === "aguardando_lojas" && group.orderIds.includes(storeOrderId),
+      );
+      if (waitingGroup) {
+        return NextResponse.json(
+          {
+            message: `Este pedido é do lote da entrega ${waitingGroup.deliveryDate.split("-").reverse().slice(0, 2).join("/")}: as lojas ainda podem pedir até ${waitingGroup.deadline.dateKey.split("-").reverse().slice(0, 2).join("/")} às ${waitingGroup.deadline.time}. Libere o lote inteiro depois do prazo.`,
+            reason: "batch_stores_pending",
+          },
+          { status: 409 },
+        );
+      }
       await releaseOrder(body.orderId, authorization.user.id, supabase, {
         tenantId: authorization.effectiveTenantId,
         force: body.force === true,

@@ -30,6 +30,10 @@ import { InfoHint } from "@/components/shared/info-hint";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { OrderBatchesPanel } from "@/components/production/order-batches-panel";
+import { BatchBandRow } from "@/components/production/order-batch-band-row";
+import { useBatchRelease } from "@/components/production/use-batch-release";
+import { clusterRowsByGroup } from "@/lib/cluster-rows-by-group";
+import type { BatchGroupView } from "@/lib/supabase-data/order-batch-overview";
 import { summarizeOrderProductionDays, type OrderProductionDays } from "@/lib/order-production-days";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
@@ -121,7 +125,23 @@ export default function PedidosFabricaPage() {
   const [isOpenOrdersDialogOpen, setIsOpenOrdersDialogOpen] = useState(false);
   const [batchesReloadKey, setBatchesReloadKey] = useState(0);
   // Pedidos de lote ainda esperando lojas dentro do prazo (vem do painel de lotes).
-  const [waitingBatchOrderCodes, setWaitingBatchOrderCodes] = useState<Set<string>>(() => new Set());
+  // Quadro #4 (27/10): grupos de lote por data (do painel) para agrupar e liberar por lote na lista.
+  const [batchGroups, setBatchGroups] = useState<BatchGroupView[]>([]);
+  // Chave = código do pedido (PD-…): o id da lista vem do planejamento e o do lote, da tabela.
+  const batchGroupByOrderCode = useMemo(() => {
+    const map = new Map<string, BatchGroupView>();
+    for (const group of batchGroups) for (const order of group.orders) map.set(order.orderCode, group);
+    return map;
+  }, [batchGroups]);
+  const waitingBatchOrderCodes = useMemo(
+    () =>
+      new Set(
+        batchGroups
+          .filter((group) => group.state === "aguardando_lojas")
+          .flatMap((group) => group.orders.filter((order) => !order.released).map((order) => order.orderCode)),
+      ),
+    [batchGroups],
+  );
   // A10: modo padrão "semana" (deriva os dias do cronograma); "manual" mantém a
   // abertura de UMA data de entrega específica (fluxo anterior).
   const [openMode, setOpenMode] = useState<"week" | "manual">("week");
@@ -198,8 +218,12 @@ export default function PedidosFabricaPage() {
     });
   }, [deliveryFilter, productionFilter, searchTerm, matchesStatusFilter, storeFilter, summaryRows]);
   const sortedOrders = useMemo(
-    () => sortItemsByTemporalValue(filteredOrders, sortOrder, ["orderedAtKey", "deliveryDate", "orderedAt"]),
-    [filteredOrders, sortOrder],
+    () =>
+      clusterRowsByGroup(
+        sortItemsByTemporalValue(filteredOrders, sortOrder, ["orderedAtKey", "deliveryDate", "orderedAt"]),
+        (order) => batchGroupByOrderCode.get(order.code)?.deliveryDate ?? null,
+      ),
+    [batchGroupByOrderCode, filteredOrders, sortOrder],
   );
 
   const pagination = useMemo(() => paginateArray(sortedOrders, page, pageSize), [page, pageSize, sortedOrders]);
@@ -330,6 +354,11 @@ export default function PedidosFabricaPage() {
       void cancelOrder(order.id);
     }
   }
+
+  const { releaseGroup: releaseBatchGroup, busyDate: releasingBatchDate } = useBatchRelease(async () => {
+    await refresh();
+    setBatchesReloadKey((value) => value + 1);
+  });
 
   async function handleReleaseOrder(order: OrderSummaryRow) {
     await performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast);
@@ -608,7 +637,7 @@ export default function PedidosFabricaPage() {
         <OrderBatchesPanel
           orderItems={planningData.orderItems}
           reloadKey={batchesReloadKey}
-          onWaitingOrderCodesChange={setWaitingBatchOrderCodes}
+          onGroupsChange={setBatchGroups}
           onChanged={async () => {
             await refresh();
           }}
@@ -728,8 +757,12 @@ export default function PedidosFabricaPage() {
                     </td>
                   </tr>
                 ) : null}
-                {pagination.items.map((order) => {
+                {pagination.items.map((order, rowIndex) => {
                   const items = orderItemsByOrderId.get(order.id) ?? [];
+                  const batchGroup = batchGroupByOrderCode.get(order.code) ?? null;
+                  const previousGroup =
+                    rowIndex > 0 ? batchGroupByOrderCode.get(pagination.items[rowIndex - 1].code) ?? null : null;
+                  const showBatchBand = batchGroup !== null && batchGroup.deliveryDate !== previousGroup?.deliveryDate;
                   const aggregatedItems = aggregateOrderItems(items);
                   const isExpanded = expandedOrderIds.includes(order.id);
                   // Status visível = status derivado da produção mesclado com a
@@ -737,7 +770,14 @@ export default function PedidosFabricaPage() {
                   const visibleStatus = order.visibleStatus;
                   return (
                     <Fragment key={order.id}>
-                      <tr className="hover:bg-panel/30 [&>td]:align-middle">
+                      {showBatchBand && batchGroup ? (
+                        <BatchBandRow
+                          group={batchGroup}
+                          busy={releasingBatchDate === batchGroup.deliveryDate}
+                          onRelease={() => void releaseBatchGroup(batchGroup)}
+                        />
+                      ) : null}
+                      <tr className={`hover:bg-panel/30 [&>td]:align-middle ${batchGroup ? "[&>td:first-child]:border-l-2 [&>td:first-child]:border-l-info/50" : ""}`}>
                         <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">
                           <button
                             type="button"
@@ -776,27 +816,36 @@ export default function PedidosFabricaPage() {
                             >
                               Folha Loja
                             </Button>
+                            {batchGroup && !order.releasedToProduction && order.status !== "cancelado" ? (
+                              <span
+                                className="inline-flex h-7 items-center rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground"
+                                title="Pedido de lote: libere o lote inteiro na faixa do lote acima"
+                              >
+                                No lote
+                              </span>
+                            ) : (
                             <Button
-                              type="button"
-                              size="xs"
-                              // Não desabilitamos mais por availableForRelease: o servidor é a
-                              // fonte da verdade e o gestor decide se quer forçar a liberação.
-                              // EXCEÇÃO: pedido VAZIO (0 itens) não é liberável — aguarda a loja
-                              // preencher (o backend também rejeita).
-                              disabled={
-                                order.releasedToProduction ||
-                                order.status === "cancelado" ||
-                                items.length === 0
-                              }
-                              title={
-                                items.length === 0
-                                  ? "Pedido sem itens — aguardando a loja preencher"
-                                  : undefined
-                              }
-                              onClick={() => void handleReleaseOrder(order)}
-                            >
-                              {order.releasedToProduction ? "Liberado" : "Liberar"}
-                            </Button>
+                                type="button"
+                                size="xs"
+                                // Não desabilitamos mais por availableForRelease: o servidor é a
+                                // fonte da verdade e o gestor decide se quer forçar a liberação.
+                                // EXCEÇÃO: pedido VAZIO (0 itens) não é liberável — aguarda a loja
+                                // preencher (o backend também rejeita).
+                                disabled={
+                                  order.releasedToProduction ||
+                                  order.status === "cancelado" ||
+                                  items.length === 0
+                                }
+                                title={
+                                  items.length === 0
+                                    ? "Pedido sem itens — aguardando a loja preencher"
+                                    : undefined
+                                }
+                                onClick={() => void handleReleaseOrder(order)}
+                              >
+                                {order.releasedToProduction ? "Liberado" : "Liberar"}
+                              </Button>
+                            )}
                             {order.status === "cancelado" ? (
                               <Button type="button" variant="outline" size="xs" onClick={() => handleReopenOrder(order)}>
                                 Reabrir

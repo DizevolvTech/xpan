@@ -103,3 +103,8 @@ Montado em 24/10 (Lucas: "sim"):
 - Feito (no código): abrir lote (data ou semana) pula loja × data que outro lote já cobre — aberto ou já liberado; se não sobra nada, avisa "Já existe lote para todas essas datas e lojas". O painel mostra um cartão por data de entrega, juntando os lotes que cobrem a data; "Liberar lote" vai pela data.
 - Dados do teste: duplicados removidos (cada loja × data ficou no lote que tem o pedido; sem pedido, no lote mais antigo); antes, cópia em `hefesto_backup._bak_order_batches_20261027` no banco de teste. Só lotes abertos foram mexidos.
 - Produção: conferir duplicados antes de publicar o pacote (mesma limpeza, com cópia antes).
+
+## Quadro #4 (Lucas, 27/10) — liberar por lote na lista, nada de liberar dentro do prazo
+- Pedido: pedidos de várias lojas do mesmo lote apareciam um por linha, cada um com "Liberar para produção", mesmo com o prazo das lojas aberto.
+- Feito (no código): na lista "Pedidos Auditáveis", os pedidos do mesmo lote ficam juntos sob uma faixa "Lote · entrega dd/mm" (lojas que pediram, prazo, quem falta) com o botão "Liberar lote (N)"; na linha do pedido de lote o botão vira "No lote". Enquanto as lojas ainda podem pedir, a faixa mostra "Aguardando prazo" (desabilitado) e o cartão do topo também fica desabilitado.
+- Decisão do Hefesto: dentro do prazo o lote não é liberado nem com "liberar mesmo assim" (o servidor recusa, tanto o lote quanto um pedido do lote sozinho) — segue a frase do Lucas "a opção de liberar não deveria estar disponível". Libera quando todas as lojas pediram ou o prazo acabou. Pedido fora de lote continua com "Liberar" na linha.
