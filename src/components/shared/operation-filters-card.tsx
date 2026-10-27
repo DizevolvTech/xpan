@@ -40,6 +40,8 @@ interface OperationFiltersCardProps {
   onClear: () => void;
   clearLabel?: string;
   className?: string;
+  /** Quadro #2 (27/10): uma linha só, campos baixos, sem título e rodapé. */
+  compact?: boolean;
 }
 
 export function OperationFiltersCard({
@@ -55,6 +57,7 @@ export function OperationFiltersCard({
   onClear,
   clearLabel = "Limpar filtros",
   className,
+  compact = false,
 }: OperationFiltersCardProps) {
   const gridClass =
     fields.length >= 4
@@ -64,6 +67,50 @@ export function OperationFiltersCard({
         : fields.length === 2
           ? "xl:grid-cols-4"
           : "xl:grid-cols-3";
+
+  if (compact) {
+    return (
+      <div
+        className={cn("flex flex-wrap items-end gap-2 rounded-lg border border-border/70 bg-panel/55 px-2 py-1.5", className)}
+        aria-label={title}
+        role="search"
+      >
+        <label className="min-w-[12rem] flex-[2] space-y-0.5">
+          <span className="text-[10.5px] font-medium text-muted-foreground">{searchLabel}</span>
+          <span className="relative block">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchValue}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder={searchPlaceholder}
+              className="h-8 bg-background/80 pl-7 text-sm"
+            />
+          </span>
+        </label>
+        {fields.map((field) => (
+          <div key={field.key} className="min-w-[8.5rem] flex-1 space-y-0.5">
+            <p className="text-[10.5px] font-medium text-muted-foreground">{field.label}</p>
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger size="sm" className="h-8 w-full bg-background/80 text-sm" aria-label={field.label}>
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {field.options.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+        <Button type="button" variant="outline" size="xs" className="h-8" onClick={onClear} disabled={activeFiltersCount === 0}>
+          {activeFiltersCount > 0 ? `${clearLabel} (${activeFiltersCount})` : clearLabel}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("rounded-xl border border-border/70 bg-panel/55 p-3 sm:p-4", className)}>

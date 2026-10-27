@@ -19,6 +19,7 @@ export function PageLayout({
   breadcrumbs,
   className,
   contentClassName,
+  compact,
 }: PageLayoutProps) {
   return (
     <PageContainer className={className}>
@@ -33,11 +34,12 @@ export function PageLayout({
           badge={badge}
           actions={actions}
           breadcrumbs={breadcrumbs}
+          compact={compact}
         />
       </motion.div>
 
       <motion.div
-        className={contentClassName ?? "mt-6 space-y-6"}
+        className={contentClassName ?? (compact ? "mt-2 space-y-2.5" : "mt-6 space-y-6")}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, delay: 0.08, ease: "easeOut" }}

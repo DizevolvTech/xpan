@@ -91,3 +91,8 @@ Montado em 24/10 (Lucas: "sim"):
 - Pedido: "essas métricas de produção não são necessárias, precisamos primeiro fazer o básico operacional rodar".
 - Feito (no teste): sai o alerta "Produção abaixo do planejado" e os cards "Tempo médio de produção" e "Produção por etapa". Ficam "Entregas no prazo", "Lojas sem pedido no prazo" e os alertas de entrega.
 - Decisão do Hefesto (Lucas: "siga sua recomendação e registre"): saíram também os alertas da mesma família — "Produção acima do planejado" e "Atraso na etapa" — inclusive da rotina que abre ocorrência automática. Voltam quando o assunto for capacidade/velocidade (histórico no Git, `factory-alerts.ts`).
+
+## Quadro #2 (Lucas, 27/10) — Pedidos compacto, como planilha
+- Pedido: "trabalhar essas listas como uma tabela de excel ... margens estreitas; o cabeçalho mata 25% da área útil".
+- Feito (no código): cabeçalho da página numa linha (caminho, título e botões juntos, sem selo); janela, Abrir lote, Auto-liberar e os números (no período, liberados, em produção, prontos) numa faixa só — os 3 cartões grandes de números saíram; avisos "Lote não aberto" numa faixa só com um botão por data; lotes viraram tabela compacta (uma linha por entrega, até ~4 à vista, o resto rola dentro da caixa); filtros numa linha; linhas de pedido com 37 px (antes ~65 px), entrega + D+N + "Produz" na mesma linha e ações em botões pequenos ("Liberar" no lugar de "Liberar para produção"). Medido a 1280×800: lista de pedidos começa em 501 px, sem rolagem lateral.
+- Decisão do Hefesto: o cabeçalho compacto (`PageLayout compact`) foi aplicado só em Pedidos; as outras telas seguem iguais até aprovação.

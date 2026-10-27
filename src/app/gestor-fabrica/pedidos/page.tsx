@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Fragment, useMemo, useState } from "react";
-import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ListChecks, ShoppingCart, Truck, Zap } from "lucide-react";
+import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ShoppingCart, Truck, Zap } from "lucide-react";
 
 import {
   Dialog,
@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/select";
 import { FactoryFlow } from "@/components/shared/factory-flow";
 import { InfoHint } from "@/components/shared/info-hint";
-import { KPICard } from "@/components/shared/kpi-card";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { OrderBatchesPanel } from "@/components/production/order-batches-panel";
@@ -479,18 +478,21 @@ export default function PedidosFabricaPage() {
         { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
         { label: "Pedidos" },
       ]}
+      compact
+      actions={
+        <>
+          <Button asChild size="xs"><Link href="/gestor-fabrica/pedidos/centralizado">Pedido centralizado</Link></Button>
+          <Button asChild size="xs" variant="outline"><Link href="/gestor-fabrica/pedidos/centralizado#order-excel">Importar Excel</Link></Button>
+        </>
+      }
     >
       {/* Action bar — escopo em pílula popover (alinhado ao dashboard). */}
-      <div className="flex flex-wrap gap-2">
-        <Button asChild><Link href="/gestor-fabrica/pedidos/centralizado">Pedido centralizado</Link></Button>
-        <Button asChild variant="outline"><Link href="/gestor-fabrica/pedidos/centralizado#order-excel">Importar pedidos Excel</Link></Button>
-      </div>
-      <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-[var(--shadow-soft)] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-2.5 py-1 text-xs font-medium text-foreground shadow-[var(--shadow-soft)] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label="Ajustar janela operacional"
             >
               <CalendarRange className="size-3.5 text-muted-foreground" aria-hidden />
@@ -554,14 +556,14 @@ export default function PedidosFabricaPage() {
           </PopoverContent>
         </Popover>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* XPAN-Lote: a fábrica abre um LOTE (janela) e as lojas montam os pedidos dentro
               dele (só com a flag ligada). */}
           {factoryOpensOrders ? (
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="xs"
               onClick={() => setIsOpenOrdersDialogOpen(true)}
             >
               <CalendarPlus className="size-4" />
@@ -573,7 +575,7 @@ export default function PedidosFabricaPage() {
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            size="xs"
             onClick={() => void handleAutoReleaseEligible()}
             disabled={isAutoReleasing}
           >
@@ -588,6 +590,14 @@ export default function PedidosFabricaPage() {
             <span aria-hidden className="text-muted-foreground/40">·</span>
             <span>
               <span className="font-medium text-foreground/80">{showLoading ? "…" : kpis.liberados}</span> liberados
+            </span>
+            <span aria-hidden className="text-muted-foreground/40">·</span>
+            <span>
+              <span className="font-medium text-foreground/80">{showLoading ? "…" : kpis.emProducao}</span> em produção
+            </span>
+            <span aria-hidden className="text-muted-foreground/40">·</span>
+            <span>
+              <span className="font-medium text-foreground/80">{showLoading ? "…" : kpis.aguardandoExpedicao}</span> prontos p/ expedição
             </span>
           </div>
         </div>
@@ -611,19 +621,12 @@ export default function PedidosFabricaPage() {
         />
       ) : null}
 
-      {/* KPIs reduzidos 4 → 3 (cortado "Pedidos" — redundante com 'X de Y' abaixo). */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <KPICard title="Liberados" value={showLoading ? "…" : kpis.liberados} icon={ListChecks} tone="info" compactValue />
-        <KPICard title="Em Produção" value={showLoading ? "…" : kpis.emProducao} icon={Factory} tone="warning" compactValue />
-        <KPICard title="Prontos p/ Expedição" value={showLoading ? "…" : kpis.aguardandoExpedicao} icon={Truck} tone="success" compactValue />
-      </div>
-
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b border-border/60">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
+      <Card className="gap-0 overflow-hidden py-0">
+        <CardHeader className="border-b border-border/60 px-3 py-1.5 [.border-b]:pb-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-baseline gap-x-2">
               <div className="flex items-center gap-1.5">
-                <CardTitle>Pedidos Auditáveis</CardTitle>
+                <CardTitle className="text-sm">Pedidos Auditáveis</CardTitle>
                 <InfoHint
                   size="sm"
                   content={
@@ -644,13 +647,14 @@ export default function PedidosFabricaPage() {
                 {showLoading ? "Carregando pedidos…" : `${filteredOrders.length} de ${summaryRows.length} pedidos visíveis`}
               </p>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={toggleExpandAll}>
+            <Button type="button" variant="outline" size="xs" onClick={toggleExpandAll}>
               {allExpanded ? "Recolher todos" : "Expandir resumos"}
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-2 px-3 py-2">
           <OperationFiltersCard
+            compact
             title="Filtros dos Pedidos"
             summary={showLoading ? "Carregando…" : `${filteredOrders.length} de ${summaryRows.length} pedidos visíveis`}
             helperText="Filtre por pedido, loja, data de entrega ou status."
@@ -705,15 +709,15 @@ export default function PedidosFabricaPage() {
 
           <StatusFilterBar control={statusFilter} options={ORDER_STATUS_FILTER_OPTIONS} onChange={() => setPage(1)} />
 
-          <div className="overflow-x-auto rounded-xl border border-border/80">
-            <table className="w-full min-w-[720px] border-collapse">
+          <div className="overflow-x-auto rounded-lg border border-border/80">
+            <table className="w-full min-w-[640px] border-collapse">
               <thead className="bg-panel">
                 <tr>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Pedido</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Loja</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Entrega / produção</th>
-                  <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
-                  <th className="sticky right-0 z-[1] w-px whitespace-nowrap bg-panel px-4 py-3 text-right text-xs font-semibold text-muted-foreground shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">Ações</th>
+                  <th className="whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-semibold text-muted-foreground">Pedido</th>
+                  <th className="whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-semibold text-muted-foreground">Loja</th>
+                  <th className="whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-semibold text-muted-foreground">Entrega / produção</th>
+                  <th className="whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-semibold text-muted-foreground">Status</th>
+                  <th className="sticky right-0 z-[1] w-px whitespace-nowrap bg-panel px-2 py-1.5 text-right text-[11px] font-semibold text-muted-foreground shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -733,48 +737,48 @@ export default function PedidosFabricaPage() {
                   const visibleStatus = order.visibleStatus;
                   return (
                     <Fragment key={order.id}>
-                      <tr className="hover:bg-panel/30">
-                        <td className="min-w-[170px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
+                      <tr className="hover:bg-panel/30 [&>td]:align-middle">
+                        <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">
                           <button
                             type="button"
-                            className="inline-flex items-start gap-2 text-left font-medium text-foreground"
+                            className="inline-flex items-center gap-1 text-left font-medium text-foreground"
                             onClick={() => toggleExpand(order.id)}
                           >
-                            {isExpanded ? <ArrowDown className="size-4" /> : <ArrowRight className="size-4" />}
+                            {isExpanded ? <ArrowDown className="size-3.5" /> : <ArrowRight className="size-3.5" />}
                             <span className="whitespace-nowrap font-mono">{order.code}</span>
                           </button>
                         </td>
-                        <td className="min-w-[150px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">{order.storeName}</td>
-                        <td className="min-w-[130px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <span className="inline-flex whitespace-nowrap rounded-md bg-warning/25 px-2 py-1 text-xs font-semibold text-warning-foreground">
-                            {order.deliveryDateLabel}
+                        <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">{order.storeName}</td>
+                        <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">
+                          <span className="flex items-center gap-x-1.5 whitespace-nowrap">
+                            <span className="rounded bg-warning/25 px-1.5 py-px text-xs font-semibold text-warning-foreground">
+                              {order.deliveryDateLabel}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">{order.dPlusLabel}</span>
+                            {order.productionDays.label ? (
+                              <span className="text-[11px] font-medium text-foreground/80">· {order.productionDays.label}</span>
+                            ) : null}
                           </span>
-                          <p className="mt-1 text-[11px] text-muted-foreground">{order.dPlusLabel}</p>
-                          {order.productionDays.label ? (
-                            <p className="mt-0.5 whitespace-nowrap text-[11px] font-medium text-foreground/80">
-                              {order.productionDays.label}
-                            </p>
-                          ) : null}
                         </td>
-                        <td className="min-w-[140px] align-top border-t border-border/70 bg-card px-4 py-3 text-sm">
+                        <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">
                           <StatusBadge status={visibleStatus} />
                         </td>
-                        <td className="sticky right-0 z-[1] min-w-[260px] align-top border-t border-border/70 bg-card px-4 py-3 text-right shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
-                          <div className="flex flex-wrap items-center justify-end gap-1.5">
-                            <Button asChild type="button" variant="outline" size="sm">
+                        <td className="sticky right-0 z-[1] whitespace-nowrap border-t border-border/70 bg-card px-2 py-1 text-right shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button asChild type="button" variant="outline" size="xs">
                               <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>Detalhe</Link>
                             </Button>
                             <Button
                               type="button"
                               variant="outline"
-                              size="sm"
+                              size="xs"
                               onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${anchorDate}`)}
                             >
                               Folha Loja
                             </Button>
                             <Button
                               type="button"
-                              size="sm"
+                              size="xs"
                               // Não desabilitamos mais por availableForRelease: o servidor é a
                               // fonte da verdade e o gestor decide se quer forçar a liberação.
                               // EXCEÇÃO: pedido VAZIO (0 itens) não é liberável — aguarda a loja
@@ -791,17 +795,17 @@ export default function PedidosFabricaPage() {
                               }
                               onClick={() => void handleReleaseOrder(order)}
                             >
-                              {order.releasedToProduction ? "Liberado" : "Liberar para produção"}
+                              {order.releasedToProduction ? "Liberado" : "Liberar"}
                             </Button>
                             {order.status === "cancelado" ? (
-                              <Button type="button" variant="outline" size="sm" onClick={() => handleReopenOrder(order)}>
+                              <Button type="button" variant="outline" size="xs" onClick={() => handleReopenOrder(order)}>
                                 Reabrir
                               </Button>
                             ) : visibleStatus === "entregue" ? null : (
                               <Button
                                 type="button"
                                 variant="outline"
-                                size="sm"
+                                size="xs"
                                 disabled={order.releasedToProduction}
                                 onClick={() => handleCancelOrder(order)}
                               >

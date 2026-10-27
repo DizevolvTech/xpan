@@ -13,6 +13,8 @@ export interface PageHeroProps {
   actions?: React.ReactNode;
   breadcrumbs?: { label: string; href?: string }[];
   className?: string;
+  /** Quadro #2 (27/10): cabeçalho de uma linha (sem selo, título menor, ações ao lado). */
+  compact?: boolean;
 }
 
 export function PageHero({
@@ -22,7 +24,37 @@ export function PageHero({
   actions,
   breadcrumbs,
   className,
+  compact = false,
 }: PageHeroProps) {
+  if (compact) {
+    return (
+      <section className={cn("relative px-1", className)}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 max-lg:min-h-11 max-lg:pl-14">
+          {breadcrumbs && breadcrumbs.length > 1 ? (
+            <nav className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              {breadcrumbs.slice(0, -1).map((crumb, index) => (
+                <span key={`${crumb.label}-${index}`} className="inline-flex items-center gap-1">
+                  {crumb.href ? (
+                    <Link href={crumb.href} className="transition hover:text-foreground">
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span>{crumb.label}</span>
+                  )}
+                  <ChevronRight className="size-3" />
+                </span>
+              ))}
+            </nav>
+          ) : null}
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-lg font-bold leading-tight text-foreground">{title}</h1>
+            {description && <InfoHint content={description} size="sm" />}
+          </div>
+          {actions && <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">{actions}</div>}
+        </div>
+      </section>
+    );
+  }
   return (
     <section
       className={cn(

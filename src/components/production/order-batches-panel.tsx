@@ -149,100 +149,126 @@ export function OrderBatchesPanel({
   }
 
   return (
-    <section aria-label="Lotes de pedidos" className="space-y-2">
+    <section aria-label="Lotes de pedidos" className="space-y-1.5">
       {loadError ? <p className="text-xs text-destructive">{loadError}</p> : null}
 
-      {(overview?.missing ?? []).map((item) => (
+      {(overview?.missing ?? []).length > 0 ? (
         <div
-          key={item.deliveryDate}
           role="alert"
-          className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/50 bg-warning/10 px-3 py-2 text-sm"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warning/50 bg-warning/10 px-2 py-1 text-xs"
         >
-          <AlertTriangle className="size-4 shrink-0 text-warning-foreground" aria-hidden />
-          <span className="min-w-0 flex-1">
-            <strong>Lote não aberto:</strong> pedido para entrega em {br(item.deliveryDate)} — o prazo das lojas é{" "}
-            {br(item.deadline.dateKey)} às {item.deadline.time} (faltam {Math.max(1, Math.round(item.hoursLeft))} h).
-            {" "}
-            {item.storeNames.length} loja(s) no cronograma.
-          </span>
-          <Button type="button" size="sm" onClick={() => onOpenBatchForDate(item.deliveryDate, item.storeIds)}>
-            <CalendarPlus className="size-4" aria-hidden />
-            Abrir lote
-          </Button>
+          <AlertTriangle className="size-3.5 shrink-0 text-warning-foreground" aria-hidden />
+          <strong>Lote não aberto:</strong>
+          {(overview?.missing ?? []).map((item) => (
+            <span
+              key={item.deliveryDate}
+              className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-card px-1.5 py-0.5"
+              title={`Prazo das lojas ${br(item.deadline.dateKey)} às ${item.deadline.time} · ${item.storeNames.length} loja(s) no cronograma`}
+            >
+              entrega {br(item.deliveryDate)}
+              <span className="text-muted-foreground">
+                (prazo {br(item.deadline.dateKey)} {item.deadline.time}, faltam {Math.max(1, Math.round(item.hoursLeft))} h)
+              </span>
+              <Button type="button" size="xs" className="h-6" onClick={() => onOpenBatchForDate(item.deliveryDate, item.storeIds)}>
+                <CalendarPlus className="size-3.5" aria-hidden />
+                Abrir lote
+              </Button>
+            </span>
+          ))}
         </div>
-      ))}
+      ) : null}
 
       {visibleGroups.length === 0 ? (
-        <p className="rounded-xl border border-border/70 bg-panel/40 px-3 py-2 text-xs text-muted-foreground">
+        <p className="rounded-lg border border-border/70 bg-panel/40 px-2 py-1 text-xs text-muted-foreground">
           Nenhum lote aberto esperando liberação.
         </p>
       ) : (
-        <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
-          {visibleGroups.map((group) => {
-            const key = `${group.batchId}|${group.deliveryDate}`;
-            const ready = group.state === "pronto_para_liberar";
-            return (
-              <article
-                key={key}
-                className={`rounded-xl border px-3 py-2.5 text-sm ${ready ? "border-success/50 bg-success/5" : "border-border/70 bg-card"}`}
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="font-semibold">Pedido para entrega em {br(group.deliveryDate)}</h3>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ready ? "bg-success/15 text-success-foreground" : "bg-info/10 text-info"}`}
+        // Quadro #2 (27/10): lotes numa tabela compacta (uma linha por entrega), como planilha.
+        // Até ~4 entregas à vista; o resto rola dentro da caixa (não empurra a lista de pedidos).
+        <div className="max-h-[10.5rem] overflow-auto rounded-lg border border-border/80">
+          <table className="w-full min-w-[640px] border-collapse text-xs">
+            <thead className="sticky top-0 z-[1] bg-panel text-left text-[11px] text-muted-foreground">
+              <tr className="[&>th]:whitespace-nowrap [&>th]:px-2 [&>th]:py-1 [&>th]:font-semibold">
+                <th>Lote · entrega</th>
+                <th>Lojas que pediram</th>
+                <th>Prazo das lojas</th>
+                <th className="w-full">Faltam</th>
+                <th className="text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleGroups.map((group) => {
+                const key = `${group.batchId}|${group.deliveryDate}`;
+                const ready = group.state === "pronto_para_liberar";
+                return (
+                  <tr
+                    key={key}
+                    className={`border-t border-border/70 [&>td]:px-2 [&>td]:py-1 [&>td]:align-middle ${ready ? "bg-success/5" : "bg-card"}`}
                   >
-                    {STATE_LABEL[group.state]}
-                  </span>
-                </div>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-panel" aria-hidden>
-                    <div className="h-full rounded-full bg-info" style={{ width: `${group.percent}%` }} />
-                  </div>
-                  <span className="whitespace-nowrap text-xs font-semibold tabular-nums">
-                    {group.orderedStores}/{group.totalStores} lojas ({group.percent}%)
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Prazo das lojas: {br(group.deadline.dateKey)} às {group.deadline.time}
-                  {group.deadlinePassed ? " · encerrado" : ""}
-                  {group.releasedOrders > 0 ? ` · ${group.releasedOrders} já liberado(s)` : ""}
-                </p>
-                {group.missingStoreNames.length > 0 ? (
-                  <p className="mt-0.5 text-xs text-muted-foreground" title={group.missingStoreNames.join(", ")}>
-                    {group.deadlinePassed ? "Não pediram" : "Faltam"}: {group.missingStoreNames.slice(0, 4).join(", ")}
-                    {group.missingStoreNames.length > 4 ? ` e mais ${group.missingStoreNames.length - 4}` : ""}
-                  </p>
-                ) : null}
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={group.orders.length === 0}
-                    onClick={() => setSumGroup(group)}
-                  >
-                    <ListTree className="size-4" aria-hidden />
-                    Soma por produto
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={ready ? "default" : "outline"}
-                    disabled={busyKey !== null || group.pendingOrderIds.length === 0}
-                    onClick={() => void releaseGroup(group)}
-                    title={group.pendingOrderIds.length === 0 ? "Nenhum pedido para liberar ainda" : undefined}
-                  >
-                    {busyKey === key ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                    ) : (
-                      <PackageCheck className="size-4" aria-hidden />
-                    )}
-                    Liberar lote ({group.pendingOrderIds.length})
-                  </Button>
-                </div>
-              </article>
-            );
-          })}
+                    <td className="whitespace-nowrap">
+                      <span className="font-semibold">Entrega {br(group.deliveryDate)}</span>{" "}
+                      <span
+                        className={`ml-1 rounded-full px-1.5 py-px text-[10.5px] font-semibold ${ready ? "bg-success/15 text-success-foreground" : "bg-info/10 text-info"}`}
+                      >
+                        {STATE_LABEL[group.state]}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-1.5 w-16 overflow-hidden rounded-full bg-panel" aria-hidden>
+                          <span className="block h-full rounded-full bg-info" style={{ width: `${group.percent}%` }} />
+                        </span>
+                        <span className="font-semibold tabular-nums">
+                          {group.orderedStores}/{group.totalStores} ({group.percent}%)
+                        </span>
+                      </span>
+                      {group.releasedOrders > 0 ? (
+                        <span className="ml-1 text-muted-foreground">· {group.releasedOrders} liberado(s)</span>
+                      ) : null}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {br(group.deadline.dateKey)} às {group.deadline.time}
+                      {group.deadlinePassed ? <span className="text-muted-foreground"> · encerrado</span> : null}
+                    </td>
+                    <td className="max-w-0 truncate text-muted-foreground" title={group.missingStoreNames.join(", ")}>
+                      {group.missingStoreNames.length > 0
+                        ? `${group.deadlinePassed ? "Não pediram" : "Faltam"} ${group.missingStoreNames.length}: ${group.missingStoreNames.join(", ")}`
+                        : "Todas pediram"}
+                    </td>
+                    <td className="whitespace-nowrap text-right">
+                      <span className="inline-flex gap-1">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          disabled={group.orders.length === 0}
+                          onClick={() => setSumGroup(group)}
+                        >
+                          <ListTree className="size-3.5" aria-hidden />
+                          Soma por produto
+                        </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant={ready ? "default" : "outline"}
+                          disabled={busyKey !== null || group.pendingOrderIds.length === 0}
+                          onClick={() => void releaseGroup(group)}
+                          title={group.pendingOrderIds.length === 0 ? "Nenhum pedido para liberar ainda" : undefined}
+                        >
+                          {busyKey === key ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                          ) : (
+                            <PackageCheck className="size-3.5" aria-hidden />
+                          )}
+                          Liberar lote ({group.pendingOrderIds.length})
+                        </Button>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
