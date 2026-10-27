@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   buildBatchGroups,
+  excludeCoveredSlots,
+  planDuplicateSlotCleanup,
   findMissingBatchDates,
   hoursUntilDeadline,
   isBatchFinished,
@@ -107,4 +109,55 @@ test("entrega liberada sem todas as lojas antes do prazo fecha (cartão sai)", (
   const groups = buildBatchGroups([batch], [order({ storeId: "a", released: true })], settings, before);
   assert.equal(groups[0].state, "liberado");
   assert.equal(isBatchFinished(groups, "b1"), true);
+});
+
+test("quadro #3: duas aberturas para a mesma entrega viram um cartão só", () => {
+  const now = { dateKey: "2026-10-25", time: "10:00" };
+  const manual = { id: "manual", slots: [{ storeId: "a", deliveryDate: "2026-10-30" }, { storeId: "b", deliveryDate: "2026-10-30" }] };
+  const week = {
+    id: "semana",
+    slots: [
+      { storeId: "a", deliveryDate: "2026-10-30" },
+      { storeId: "c", deliveryDate: "2026-10-30" },
+      { storeId: "a", deliveryDate: "2026-10-31" },
+    ],
+  };
+  const groups = buildBatchGroups(
+    [manual, week],
+    [order({ storeId: "a", batchId: "semana" }), order({ storeId: "b", batchId: "manual" })],
+    settings,
+    now,
+  );
+  assert.deepEqual(groups.map((group) => group.deliveryDate), ["2026-10-30", "2026-10-31"]);
+  assert.equal(groups[0].totalStores, 3);
+  assert.equal(groups[0].orderedStores, 2);
+  assert.deepEqual(groups[0].batchIds, ["manual", "semana"]);
+  assert.deepEqual(groups[0].missingStoreIds, ["c"]);
+});
+
+test("quadro #3: abrir lote não repete loja × data que outro lote já cobre", () => {
+  const result = excludeCoveredSlots(
+    [
+      { storeId: "a", deliveryDate: "2026-10-30" },
+      { storeId: "b", deliveryDate: "2026-10-30" },
+      { storeId: "a", deliveryDate: "2026-10-31" },
+    ],
+    [{ slots: [{ storeId: "a", deliveryDate: "2026-10-30" }] }],
+  );
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(result.slots.map((slot) => `${slot.storeId}|${slot.deliveryDate}`), ["b|2026-10-30", "a|2026-10-31"]);
+});
+
+test("quadro #3: limpeza mantém o slot no lote que tem o pedido, senão no mais antigo", () => {
+  const changes = planDuplicateSlotCleanup(
+    [
+      { id: "antigo", openedAt: "2026-10-20T10:00:00Z", slots: [{ storeId: "a", deliveryDate: "2026-10-30" }, { storeId: "b", deliveryDate: "2026-10-30" }] },
+      { id: "novo", openedAt: "2026-10-21T10:00:00Z", slots: [{ storeId: "a", deliveryDate: "2026-10-30" }, { storeId: "b", deliveryDate: "2026-10-30" }, { storeId: "a", deliveryDate: "2026-10-31" }] },
+    ],
+    [{ batchId: "novo", storeId: "a", deliveryDate: "2026-10-30" }],
+  );
+  assert.deepEqual(changes, [
+    { batchId: "antigo", slots: [{ storeId: "b", deliveryDate: "2026-10-30" }] },
+    { batchId: "novo", slots: [{ storeId: "a", deliveryDate: "2026-10-30" }, { storeId: "a", deliveryDate: "2026-10-31" }] },
+  ]);
 });

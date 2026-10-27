@@ -80,7 +80,7 @@ export function OrderBatchesPanel({
   );
 
   async function releaseGroup(group: BatchGroupView) {
-    const key = `${group.batchId}|${group.deliveryDate}`;
+    const key = group.deliveryDate;
     let force = false;
     if (group.state === "aguardando_lojas") {
       const go = await confirm({
@@ -110,7 +110,7 @@ export function OrderBatchesPanel({
       const response = await fetch("/api/order-batches/release", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchId: group.batchId, deliveryDate: group.deliveryDate, force }),
+        body: JSON.stringify({ deliveryDate: group.deliveryDate, force }),
       });
       const result = (await response.json().catch(() => null)) as
         | { released?: string[]; failed?: Array<{ orderCode: string; message: string }>; message?: string }
@@ -198,7 +198,7 @@ export function OrderBatchesPanel({
             </thead>
             <tbody>
               {visibleGroups.map((group) => {
-                const key = `${group.batchId}|${group.deliveryDate}`;
+                const key = group.deliveryDate;
                 const ready = group.state === "pronto_para_liberar";
                 return (
                   <tr

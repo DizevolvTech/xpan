@@ -96,3 +96,10 @@ Montado em 24/10 (Lucas: "sim"):
 - Pedido: "trabalhar essas listas como uma tabela de excel ... margens estreitas; o cabeçalho mata 25% da área útil".
 - Feito (no código): cabeçalho da página numa linha (caminho, título e botões juntos, sem selo); janela, Abrir lote, Auto-liberar e os números (no período, liberados, em produção, prontos) numa faixa só — os 3 cartões grandes de números saíram; avisos "Lote não aberto" numa faixa só com um botão por data; lotes viraram tabela compacta (uma linha por entrega, até ~4 à vista, o resto rola dentro da caixa); filtros numa linha; linhas de pedido com 37 px (antes ~65 px), entrega + D+N + "Produz" na mesma linha e ações em botões pequenos ("Liberar" no lugar de "Liberar para produção"). Medido a 1280×800: lista de pedidos começa em 501 px, sem rolagem lateral.
 - Decisão do Hefesto: o cabeçalho compacto (`PageLayout compact`) foi aplicado só em Pedidos; as outras telas seguem iguais até aprovação.
+
+## Quadro #3 (Lucas, 27/10) — lotes duplicados
+- Pedido: abrindo o lote de uma data pelo aviso e depois "a semana pelo cronograma", o sistema gerou lotes duplicados (cartões 28/10 e 31/10 repetidos).
+- Causa: abrir lote não olhava os lotes já existentes; o modo semana recriava loja × data já cobertas, e o painel mostrava um cartão por lote × data.
+- Feito (no código): abrir lote (data ou semana) pula loja × data que outro lote já cobre — aberto ou já liberado; se não sobra nada, avisa "Já existe lote para todas essas datas e lojas". O painel mostra um cartão por data de entrega, juntando os lotes que cobrem a data; "Liberar lote" vai pela data.
+- Dados do teste: duplicados removidos (cada loja × data ficou no lote que tem o pedido; sem pedido, no lote mais antigo); antes, cópia em `hefesto_backup._bak_order_batches_20261027` no banco de teste. Só lotes abertos foram mexidos.
+- Produção: conferir duplicados antes de publicar o pacote (mesma limpeza, com cópia antes).

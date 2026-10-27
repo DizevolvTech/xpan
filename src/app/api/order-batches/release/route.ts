@@ -27,17 +27,17 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as
     | { batchId?: unknown; deliveryDate?: unknown; force?: unknown }
     | null;
-  const batchId = typeof body?.batchId === "string" ? body.batchId : "";
+  // Quadro #3 (27/10): um cartão por data de entrega — a data identifica o lote a liberar.
   const deliveryDate = typeof body?.deliveryDate === "string" ? body.deliveryDate : "";
-  if (!batchId || !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
-    return NextResponse.json({ message: "Informe o lote e a data de entrega." }, { status: 400 });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
+    return NextResponse.json({ message: "Informe a data de entrega do lote." }, { status: 400 });
   }
 
   const tenantId = authorization.effectiveTenantId as string;
   const supabase = createTenantScopedSupabaseClient(tenantId, createSupabaseAdminClient());
   try {
     const overview = await getOrderBatchOverview(tenantId, supabase, { includeMissing: false });
-    const group = overview.groups.find((item) => item.batchId === batchId && item.deliveryDate === deliveryDate);
+    const group = overview.groups.find((item) => item.deliveryDate === deliveryDate);
     if (!group) {
       return NextResponse.json({ message: "Lote não encontrado ou já liberado." }, { status: 404 });
     }

@@ -124,32 +124,20 @@ export async function getOrderBatchOverview(
     cancelled: row.management_status === "cancelado",
   }));
 
-  const groups: BatchGroupView[] = buildBatchGroups(openBatches, orders, settings, now).map((group) => {
-    const slotStores = new Set(
-      openBatches
-        .find((batch) => batch.id === group.batchId)
-        ?.slots.filter((slot) => slot.deliveryDate === group.deliveryDate)
-        .map((slot) => slot.storeId) ?? [],
-    );
-    return {
-      ...group,
-      missingStoreNames: group.missingStoreIds.map((id) => nameByLegacy.get(id) ?? id),
-      orders: orders
-        .filter(
-          (order) =>
-            !order.cancelled &&
-            order.deliveryDate === group.deliveryDate &&
-            slotStores.has(order.storeId) &&
-            (order.batchId === null || order.batchId === group.batchId),
-        )
-        .map((order) => ({
-          orderId: order.orderId,
-          orderCode: order.orderCode,
-          storeName: nameByLegacy.get(order.storeId) ?? order.storeId,
-          released: order.released,
-        })),
-    };
-  });
+  const orderById = new Map(orders.map((order) => [order.orderId, order]));
+  const groups: BatchGroupView[] = buildBatchGroups(openBatches, orders, settings, now).map((group) => ({
+    ...group,
+    missingStoreNames: group.missingStoreIds.map((id) => nameByLegacy.get(id) ?? id),
+    orders: group.orderIds
+      .map((orderId) => orderById.get(orderId))
+      .filter((order): order is (typeof orders)[number] => Boolean(order))
+      .map((order) => ({
+        orderId: order.orderId,
+        orderCode: order.orderCode,
+        storeName: nameByLegacy.get(order.storeId) ?? order.storeId,
+        released: order.released,
+      })),
+  }));
 
   let missing: MissingBatchDateView[] = [];
   if (options.includeMissing !== false && snapshot.schedules.some((schedule) => schedule.status === "ativo")) {
@@ -196,7 +184,7 @@ export async function closeFinishedBatches(
   groups: ReadonlyArray<BatchGroup>,
   supabase: SupabaseDataClient,
 ): Promise<string[]> {
-  const batchIds = Array.from(new Set(groups.map((group) => group.batchId))).filter((id) =>
+  const batchIds = Array.from(new Set(groups.flatMap((group) => group.batchIds))).filter((id) =>
     isBatchFinished(groups, id),
   );
   if (batchIds.length === 0) return [];

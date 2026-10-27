@@ -11,6 +11,7 @@ import {
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { planWeeklyStoreOrderReleases } from "@/lib/store-order-weekly-release-plan";
 import { batchCoversSlot, deriveBatchSlots, type OrderBatchSlot } from "@/lib/order-batch-plan";
+import { excludeCoveredSlots } from "@/lib/order-batch-progress";
 
 export interface OpenOrderBatchInput {
   /** 'week' deriva os slots do cronograma; 'manual' usa uma data de entrega única. */
@@ -126,6 +127,23 @@ export async function openOrderBatch(
       );
     }
   }
+
+  // Quadro #3 (27/10): não abre de novo loja × data que outro lote já cobre (aberto ou já
+  // liberado). Abrir "a semana" depois de abrir uma data avulsa duplicava os cartões.
+  const existingResult = await supabase.from("order_batches").select("slots").limit(500);
+  const existingRows = assertSupabaseResult(existingResult, "Failed to load existing order batches") as Array<{
+    slots: OrderBatchSlot[] | null;
+  }>;
+  const dedup = excludeCoveredSlots(
+    slots,
+    existingRows.map((row) => ({ slots: Array.isArray(row.slots) ? row.slots : [] })),
+  );
+  if (dedup.slots.length === 0) {
+    throw new Error(
+      "Já existe lote para todas essas datas e lojas. Os pedidos dessas entregas aparecem no lote que já está aberto.",
+    );
+  }
+  slots = dedup.slots;
 
   const openedByProfileDatabaseId = await resolveProfileDatabaseId(supabase, input.openedByProfileId ?? null, {
     tenantId: input.tenantId,

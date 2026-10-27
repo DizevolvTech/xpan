@@ -67,7 +67,10 @@ export interface BatchOrderInput {
 export type BatchGroupState = "aguardando_lojas" | "pronto_para_liberar" | "liberado";
 
 export interface BatchGroup {
+  /** Primeiro lote que cobre a data (identificador estável do cartão). */
   batchId: string;
+  /** Todos os lotes que cobrem esta data de entrega (quadro #3: um cartão por data). */
+  batchIds: string[];
   deliveryDate: string;
   deadline: OrderDeadline;
   deadlinePassed: boolean;
@@ -76,14 +79,17 @@ export interface BatchGroup {
   percent: number;
   missingStoreIds: string[];
   releasedOrders: number;
-  /** Pedidos ativos do lote nesta data que ainda não foram para a produção. */
+  /** Pedidos ativos desta data que ainda não foram para a produção. */
   pendingOrderIds: string[];
+  /** Pedidos ativos desta data (dos lotes que a cobrem). */
+  orderIds: string[];
   state: BatchGroupState;
 }
 
 /**
- * Um grupo por (lote × data de entrega). Pedido conta para o lote quando é da mesma loja e
- * data de um slot do lote (e, se tiver `batchId`, do mesmo lote).
+ * Um grupo por DATA DE ENTREGA (quadro #3, 27/10): se mais de um lote cobre a mesma data
+ * (lote manual + lote da semana), as lojas se juntam num cartão só. Pedido conta quando é de
+ * uma loja/data coberta e é de um desses lotes (ou sem lote).
  */
 export function buildBatchGroups(
   batches: ReadonlyArray<BatchInput>,
@@ -92,57 +98,99 @@ export function buildBatchGroups(
   now: OperationalNow,
 ): BatchGroup[] {
   const activeOrders = orders.filter((order) => !order.cancelled);
-  const groups: BatchGroup[] = [];
+  const byDate = new Map<string, { storeIds: Set<string>; batchIds: string[] }>();
   for (const batch of batches) {
-    const byDate = new Map<string, Set<string>>();
     for (const slot of batch.slots) {
-      if (!byDate.has(slot.deliveryDate)) byDate.set(slot.deliveryDate, new Set());
-      byDate.get(slot.deliveryDate)!.add(slot.storeId);
-    }
-    for (const [deliveryDate, storeIds] of byDate) {
-      const slotKeys = new Set([...storeIds].map((storeId) => batchSlotKey(storeId, deliveryDate)));
-      const groupOrders = activeOrders.filter(
-        (order) =>
-          slotKeys.has(batchSlotKey(order.storeId, order.deliveryDate)) &&
-          (order.batchId === null || order.batchId === batch.id),
-      );
-      const orderedStores = new Set(groupOrders.map((order) => order.storeId));
-      const deadline = slotOrderDeadline(deliveryDate, settings.leadDays, settings.cutoffTime);
-      const deadlinePassed = isDeadlinePassed(deadline, now);
-      const missingStoreIds = [...storeIds].filter((storeId) => !orderedStores.has(storeId)).sort();
-      const pendingOrderIds = groupOrders.filter((order) => !order.released).map((order) => order.orderId);
-      const releasedOrders = groupOrders.filter((order) => order.released).length;
-      // Liberado o que tinha, a entrega fecha: pedido novo para uma entrega já liberada é
-      // recusado (createStoreOrder), então quem faltou não pede mais e o cartão sai.
-      const complete = missingStoreIds.length === 0 || deadlinePassed || (releasedOrders > 0 && pendingOrderIds.length === 0);
-      const state: BatchGroupState =
-        complete && pendingOrderIds.length === 0
-          ? "liberado"
-          : complete
-            ? "pronto_para_liberar"
-            : "aguardando_lojas";
-      groups.push({
-        batchId: batch.id,
-        deliveryDate,
-        deadline,
-        deadlinePassed,
-        totalStores: storeIds.size,
-        orderedStores: orderedStores.size,
-        percent: storeIds.size === 0 ? 0 : Math.round((orderedStores.size / storeIds.size) * 100),
-        missingStoreIds,
-        releasedOrders,
-        pendingOrderIds,
-        state,
-      });
+      const entry = byDate.get(slot.deliveryDate) ?? { storeIds: new Set<string>(), batchIds: [] };
+      entry.storeIds.add(slot.storeId);
+      if (!entry.batchIds.includes(batch.id)) entry.batchIds.push(batch.id);
+      byDate.set(slot.deliveryDate, entry);
     }
   }
-  return groups.sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate) || a.batchId.localeCompare(b.batchId));
+  const groups: BatchGroup[] = [];
+  for (const [deliveryDate, { storeIds, batchIds }] of byDate) {
+    const slotKeys = new Set([...storeIds].map((storeId) => batchSlotKey(storeId, deliveryDate)));
+    const groupOrders = activeOrders.filter(
+      (order) =>
+        slotKeys.has(batchSlotKey(order.storeId, order.deliveryDate)) &&
+        (order.batchId === null || batchIds.includes(order.batchId)),
+    );
+    const orderedStores = new Set(groupOrders.map((order) => order.storeId));
+    const deadline = slotOrderDeadline(deliveryDate, settings.leadDays, settings.cutoffTime);
+    const deadlinePassed = isDeadlinePassed(deadline, now);
+    const missingStoreIds = [...storeIds].filter((storeId) => !orderedStores.has(storeId)).sort();
+    const pendingOrderIds = groupOrders.filter((order) => !order.released).map((order) => order.orderId);
+    const releasedOrders = groupOrders.filter((order) => order.released).length;
+    // Liberado o que tinha, a entrega fecha: pedido novo para uma entrega já liberada é
+    // recusado (createStoreOrder), então quem faltou não pede mais e o cartão sai.
+    const complete =
+      missingStoreIds.length === 0 || deadlinePassed || (releasedOrders > 0 && pendingOrderIds.length === 0);
+    const state: BatchGroupState =
+      complete && pendingOrderIds.length === 0 ? "liberado" : complete ? "pronto_para_liberar" : "aguardando_lojas";
+    groups.push({
+      batchId: batchIds[0],
+      batchIds,
+      deliveryDate,
+      deadline,
+      deadlinePassed,
+      totalStores: storeIds.size,
+      orderedStores: orderedStores.size,
+      percent: storeIds.size === 0 ? 0 : Math.round((orderedStores.size / storeIds.size) * 100),
+      missingStoreIds,
+      releasedOrders,
+      pendingOrderIds,
+      orderIds: groupOrders.map((order) => order.orderId),
+      state,
+    });
+  }
+  return groups.sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate));
 }
 
 /** Lote pode ser fechado (sai da tela) quando todas as datas dele estão liberadas. */
 export function isBatchFinished(groups: ReadonlyArray<BatchGroup>, batchId: string): boolean {
-  const own = groups.filter((group) => group.batchId === batchId);
+  const own = groups.filter((group) => group.batchIds.includes(batchId));
   return own.length > 0 && own.every((group) => group.state === "liberado");
+}
+
+/**
+ * Quadro #3 (27/10): ao abrir um lote novo, tira os slots (loja × data) que outro lote já
+ * cobre — aberto ou fechado (já liberado). Evita dois cartões/lotes para a mesma entrega.
+ */
+export function excludeCoveredSlots(
+  slots: ReadonlyArray<OrderBatchSlot>,
+  existing: ReadonlyArray<{ slots: ReadonlyArray<OrderBatchSlot> }>,
+): { slots: OrderBatchSlot[]; skipped: number } {
+  const covered = new Set(existing.flatMap((batch) => batch.slots.map((slot) => batchSlotKey(slot.storeId, slot.deliveryDate))));
+  const kept = slots.filter((slot) => !covered.has(batchSlotKey(slot.storeId, slot.deliveryDate)));
+  return { slots: kept, skipped: slots.length - kept.length };
+}
+
+/**
+ * Limpeza dos lotes já duplicados: cada (loja × data) fica num lote só — o que tem pedido
+ * daquela loja/data; sem pedido, o lote mais antigo. Devolve os slots novos de cada lote que
+ * mudou (lote que ficar vazio deve ser fechado).
+ */
+export function planDuplicateSlotCleanup(
+  batches: ReadonlyArray<{ id: string; openedAt: string; slots: ReadonlyArray<OrderBatchSlot> }>,
+  orders: ReadonlyArray<{ batchId: string | null; storeId: string; deliveryDate: string }>,
+): Array<{ batchId: string; slots: OrderBatchSlot[] }> {
+  const ordered = [...batches].sort((a, b) => a.openedAt.localeCompare(b.openedAt));
+  const owner = new Map<string, string>();
+  for (const order of orders) {
+    if (order.batchId) owner.set(batchSlotKey(order.storeId, order.deliveryDate), order.batchId);
+  }
+  for (const batch of ordered) {
+    for (const slot of batch.slots) {
+      const key = batchSlotKey(slot.storeId, slot.deliveryDate);
+      if (!owner.has(key)) owner.set(key, batch.id);
+    }
+  }
+  const changes: Array<{ batchId: string; slots: OrderBatchSlot[] }> = [];
+  for (const batch of ordered) {
+    const kept = batch.slots.filter((slot) => owner.get(batchSlotKey(slot.storeId, slot.deliveryDate)) === batch.id);
+    if (kept.length !== batch.slots.length) changes.push({ batchId: batch.id, slots: kept });
+  }
+  return changes;
 }
 
 export interface MissingBatchDate {
