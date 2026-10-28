@@ -144,3 +144,14 @@ Montado em 24/10 (Lucas: "sim"):
 - Decisão: aplicar em todas as telas (o pedido cita Expedição como exemplo; o problema é o mesmo componente).
 - Ajuste (28/10): no computador o cabeçalho virou UMA linha — caminho (sem repetir a tela atual, que já é o título), selo, título e ajuda, com as ações à direita. Expedição local 1280×800: cards de indicadores em y≈141 px (antes ≈180+). No celular continua em linhas curtas, à direita do botão de menu.
 - D16 (aceite): Detalhe do pedido no celular tinha rolagem lateral — botões do topo agora quebram linha e a janela do detalhe não alarga com a tabela de itens (coluna `minmax(0,1fr)` no `RouteModal`).
+
+## Quadro #8 — Lentidão da produção depois do Supabase Pro (28/10)
+
+- Plano Pro ativo na organização, mas o projeto `casaexpress` seguia sem compute (Nano, sem reinício desde 22/04).
+- Com autorização do Lucas (quadro-8-2), aplicado compute **Micro** (`ci_micro`, ~US$ 10/mês, coberto pelo crédito do Pro) às 13:51 UTC; banco reiniciou às 13:52:44 UTC (shared_buffers 256 MB).
+- Conta de medição criada em produção: `hefesto-medicao@dizevolv.com`, gestor de fábrica do Grupo Chama (uso só para leitura). Senha no 1Password, cofre "Hefesto - Clientes", etiqueta xpan.
+- Medição (navegador, 1280 px, tempo até o último dado chegar; runner fora do Brasil):
+  - Visão Geral: antes 6,8–7,8 s (metrics/planning 3–6 s cada, em paralelo) → depois 1,5–2,7 s.
+  - Pedidos: 1,6–1,7 s → 1,4–1,6 s. Ordens de Produção: 1,7–3,1 s → 1,5 s. Expedição: 1,5–1,7 s → 1,6 s. Ocorrências: 1,4 s → 1,3 s.
+  - Consulta trivial ao banco x30: 23/10 0,20–5,13 s; 28/10 (Micro) mediana 0,43 s, máx 1,48 s.
+- O que ainda pesa (~1,3–1,6 s por tela): cada tela chama 2–6 APIs de 0,4–0,9 s (factory-planning e master-data ~0,7 s), com checagem de sessão/perfil em toda chamada. A Visão Geral de produção ainda chama as métricas (removidas no cartão #1, que só sobe com o pacote aprovado).
