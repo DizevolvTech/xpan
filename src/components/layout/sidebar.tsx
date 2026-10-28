@@ -45,7 +45,10 @@ import {
 } from "@/lib/permission-modules";
 import { cn } from "@/lib/utils";
 
-const iconByKey: Record<PermissionIconKey, React.ComponentType<{ className?: string }>> = {
+const iconByKey: Record<
+  PermissionIconKey,
+  React.ComponentType<{ className?: string }>
+> = {
   "alert-circle": AlertCircle,
   "clipboard-list": ClipboardList,
   factory: Factory,
@@ -66,7 +69,10 @@ interface SidebarProps {
   className?: string;
 }
 
-function isNavigationItemActive(pathname: string, item: NavigationItemDefinition) {
+function isNavigationItemActive(
+  pathname: string,
+  item: NavigationItemDefinition,
+) {
   const moduleDefinition = getPermissionModule(item.id as PermissionModuleId);
 
   if (!moduleDefinition) {
@@ -76,9 +82,14 @@ function isNavigationItemActive(pathname: string, item: NavigationItemDefinition
   return matchesPermissionModulePath(pathname, moduleDefinition);
 }
 
-function getActiveItemId(pathname: string, sections: NavigationSectionDefinition[]) {
+function getActiveItemId(
+  pathname: string,
+  sections: NavigationSectionDefinition[],
+) {
   const allItems = sections.flatMap((section) => section.items);
-  const matches = allItems.filter((item) => isNavigationItemActive(pathname, item));
+  const matches = allItems.filter((item) =>
+    isNavigationItemActive(pathname, item),
+  );
 
   if (matches.length === 0) {
     return null;
@@ -109,7 +120,8 @@ function SidebarNav({
     (total, section) => total + section.items.length,
     0,
   );
-  const profileGroupMeta = permissionGroupMeta[navigationContext.currentUser.baseRole];
+  const profileGroupMeta =
+    permissionGroupMeta[navigationContext.currentUser.baseRole];
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -190,7 +202,9 @@ function SidebarNav({
             className={cn(
               "space-y-0.5",
               sectionIndex > 0 &&
-                (collapsed ? "mt-1.5" : "mt-2 border-t border-sidebar-border/[var(--opacity-strong)] pt-2"),
+                (collapsed
+                  ? "mt-1.5"
+                  : "mt-2 border-t border-sidebar-border/[var(--opacity-strong)] pt-2"),
             )}
           >
             {!collapsed && (
@@ -220,7 +234,8 @@ function SidebarNav({
                   <Icon
                     className={cn(
                       "size-4 shrink-0 transition-transform duration-300 ease-out group-hover:scale-105",
-                      active && "drop-shadow-[0_0_8px_color-mix(in_oklch,var(--accent)_40%,transparent)]",
+                      active &&
+                        "drop-shadow-[0_0_8px_color-mix(in_oklch,var(--accent)_40%,transparent)]",
                     )}
                   />
                   {!collapsed && <span>{item.label}</span>}
@@ -239,37 +254,42 @@ function SidebarNav({
               {navigationContext.currentUser.name}
             </p>
             <p className="truncate text-[11px] leading-tight text-muted-foreground">
-              {profileGroupMeta.badge} · {navigationContext.currentUser.baseRoleLabel} · {visibleModuleCount} módulo
+              {profileGroupMeta.badge} ·{" "}
+              {navigationContext.currentUser.baseRoleLabel} ·{" "}
+              {visibleModuleCount} módulo
               {visibleModuleCount === 1 ? "" : "s"}
             </p>
           </div>
 
-          <Link
-            href={navigationContext.currentUser.profilePath}
-            onClick={onNavigate}
-            className={cn(
-              navItemBaseClass,
-              "mt-1.5 border border-sidebar-border/[var(--opacity-strong)]",
-              activeProfile
-                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[var(--shadow-soft)]"
-                : "text-sidebar-foreground/90 hover:bg-sidebar-accent/85 hover:text-sidebar-accent-foreground",
-            )}
-          >
-            <UserRound className="size-4 shrink-0" />
-            <span>Meu Perfil</span>
-          </Link>
+          {/* Meu Perfil e Sair na mesma linha: o rodapé cabe em 1280×800 mesmo com a faixa de TESTE. */}
+          <div className="mt-1.5 flex items-center gap-1">
+            <Link
+              href={navigationContext.currentUser.profilePath}
+              onClick={onNavigate}
+              className={cn(
+                navItemBaseClass,
+                "min-w-0 flex-1 border border-sidebar-border/[var(--opacity-strong)]",
+                activeProfile
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[var(--shadow-soft)]"
+                  : "text-sidebar-foreground/90 hover:bg-sidebar-accent/85 hover:text-sidebar-accent-foreground",
+              )}
+            >
+              <UserRound className="size-4 shrink-0" />
+              <span>Meu Perfil</span>
+            </Link>
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="mt-0.5 h-11 w-full justify-start px-2.5 text-muted-foreground hover:text-foreground lg:h-7"
-          >
-            <LogOut className="size-4" />
-            {loggingOut ? "Saindo..." : "Sair"}
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="h-11 shrink-0 justify-start px-2.5 text-muted-foreground hover:text-foreground lg:h-8"
+            >
+              <LogOut className="size-4" />
+              {loggingOut ? "Saindo..." : "Sair"}
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="border-sidebar-border/[var(--opacity-prominent)] border-t p-3">
@@ -279,7 +299,8 @@ function SidebarNav({
               onClick={onNavigate}
               className={cn(
                 "inline-flex w-full items-center justify-center rounded-lg p-2 text-muted-foreground transition hover:text-foreground",
-                activeProfile && "bg-sidebar-primary text-sidebar-primary-foreground",
+                activeProfile &&
+                  "bg-sidebar-primary text-sidebar-primary-foreground",
               )}
               aria-label="Meu perfil"
               title="Meu Perfil"
@@ -334,10 +355,22 @@ function writeSidebarCollapsed(value: boolean) {
   window.dispatchEvent(new Event(SIDEBAR_COLLAPSED_EVENT));
 }
 
-export function Sidebar({ navigationContext, mobileOpen, onMobileClose, className }: SidebarProps) {
+export function Sidebar({
+  navigationContext,
+  mobileOpen,
+  onMobileClose,
+  className,
+}: SidebarProps) {
   // Reunião 22/10 (bloco 3): menu recolhido fica lembrado, para a tela ganhar largura.
-  const collapsed = useSyncExternalStore(subscribeSidebarCollapsed, readSidebarCollapsed, () => false);
-  const toggleCollapsed = useCallback(() => writeSidebarCollapsed(!collapsed), [collapsed]);
+  const collapsed = useSyncExternalStore(
+    subscribeSidebarCollapsed,
+    readSidebarCollapsed,
+    () => false,
+  );
+  const toggleCollapsed = useCallback(
+    () => writeSidebarCollapsed(!collapsed),
+    [collapsed],
+  );
 
   const desktopSidebar = useMemo(
     () => (
@@ -356,10 +389,17 @@ export function Sidebar({ navigationContext, mobileOpen, onMobileClose, classNam
             onClick={toggleCollapsed}
             aria-label={collapsed ? "Expandir navegação" : "Recolher navegação"}
           >
-            {collapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+            {collapsed ? (
+              <ChevronRight className="size-4" />
+            ) : (
+              <ChevronLeft className="size-4" />
+            )}
           </Button>
         </div>
-        <SidebarNav navigationContext={navigationContext} collapsed={collapsed} />
+        <SidebarNav
+          navigationContext={navigationContext}
+          collapsed={collapsed}
+        />
       </aside>
     ),
     [className, collapsed, navigationContext, toggleCollapsed],
@@ -375,10 +415,15 @@ export function Sidebar({ navigationContext, mobileOpen, onMobileClose, classNam
           }
         }}
       >
-        <SheetContent side="left" className={cn("w-[90%] p-0 sm:max-w-sm", className)}>
+        <SheetContent
+          side="left"
+          className={cn("w-[90%] p-0 sm:max-w-sm", className)}
+        >
           <SheetHeader className="sr-only">
             <SheetTitle>Navegação</SheetTitle>
-            <SheetDescription>Selecione um módulo disponível para o seu usuário.</SheetDescription>
+            <SheetDescription>
+              Selecione um módulo disponível para o seu usuário.
+            </SheetDescription>
           </SheetHeader>
           {/* UX-0010: alvo de fechar touch ≥44px — só mobile (Sheet só existe <lg) */}
           <SheetClose
@@ -387,7 +432,11 @@ export function Sidebar({ navigationContext, mobileOpen, onMobileClose, classNam
           >
             <X className="size-5" />
           </SheetClose>
-          <SidebarNav navigationContext={navigationContext} collapsed={false} onNavigate={onMobileClose} />
+          <SidebarNav
+            navigationContext={navigationContext}
+            collapsed={false}
+            onNavigate={onMobileClose}
+          />
         </SheetContent>
       </Sheet>
     );
