@@ -376,7 +376,7 @@ export function Sidebar({
     () => (
       <aside
         className={cn(
-          "border-sidebar-border/[var(--opacity-prominent)] bg-sidebar text-sidebar-foreground sticky top-0 hidden h-screen flex-col border-r transition-[width] duration-300 ease-out lg:flex",
+          "border-sidebar-border/[var(--opacity-prominent)] bg-sidebar text-sidebar-foreground sticky top-[var(--test-banner-h,0px)] hidden h-[calc(100dvh-var(--test-banner-h,0px))] flex-col border-r transition-[width] duration-300 ease-out lg:flex",
           collapsed ? "w-20" : "w-64",
           className,
         )}

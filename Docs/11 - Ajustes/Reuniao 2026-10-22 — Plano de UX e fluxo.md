@@ -160,3 +160,4 @@ Montado em 24/10 (Lucas: "sim"):
 - Print do Lucas mostrou o menu lateral espaçoso. Mesma regra do cartão (linhas próximas, margens pequenas) levada ao menu: bloco do logo e do cliente mais baixos, itens com 32 px no computador (antes ~40), separação entre grupos menor e rodapé do perfil em duas linhas ("nome" e "selo · perfil-base · N módulos").
 - No celular os itens mantêm 44 px de altura para toque.
 - Em 1280×800 o menu do gestor inteiro (12 itens) e o rodapé cabem sem rolar.
+- Rodapé: "Meu Perfil" e "Sair" na mesma linha. No sistema de teste o menu descontava a faixa amarela de TESTE (24 px) e o "Sair" ficava 24 px abaixo da tela; agora o menu começa abaixo da faixa e tem a altura da tela menos a faixa.
