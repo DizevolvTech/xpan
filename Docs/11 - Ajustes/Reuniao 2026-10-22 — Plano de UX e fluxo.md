@@ -155,3 +155,8 @@ Montado em 24/10 (Lucas: "sim"):
   - Pedidos: 1,6–1,7 s → 1,4–1,6 s. Ordens de Produção: 1,7–3,1 s → 1,5 s. Expedição: 1,5–1,7 s → 1,6 s. Ocorrências: 1,4 s → 1,3 s.
   - Consulta trivial ao banco x30: 23/10 0,20–5,13 s; 28/10 (Micro) mediana 0,43 s, máx 1,48 s.
 - O que ainda pesa (~1,3–1,6 s por tela): cada tela chama 2–6 APIs de 0,4–0,9 s (factory-planning e master-data ~0,7 s), com checagem de sessão/perfil em toda chamada. A Visão Geral de produção ainda chama as métricas (removidas no cartão #1, que só sobe com o pacote aprovado).
+
+### Quadro #7 — Menu lateral compacto (28/10, quadro-7-2)
+- Print do Lucas mostrou o menu lateral espaçoso. Mesma regra do cartão (linhas próximas, margens pequenas) levada ao menu: bloco do logo e do cliente mais baixos, itens com 32 px no computador (antes ~40), separação entre grupos menor e rodapé do perfil em duas linhas ("nome" e "selo · perfil-base · N módulos").
+- No celular os itens mantêm 44 px de altura para toque.
+- Em 1280×800 o menu do gestor inteiro (12 itens) e o rodapé cabem sem rolar.

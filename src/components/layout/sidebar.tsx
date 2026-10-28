@@ -104,7 +104,7 @@ function SidebarNav({
   const activeItemId = getActiveItemId(pathname, navigationContext.sections);
   const activeProfile = pathname === navigationContext.currentUser.profilePath;
   const navItemBaseClass =
-    "group relative flex min-h-11 lg:min-h-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color,transform,box-shadow] duration-300 ease-out";
+    "group relative flex min-h-11 lg:min-h-0 items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm lg:py-1.5 font-medium transition-[background-color,color,transform,box-shadow] duration-300 ease-out";
   const visibleModuleCount = navigationContext.sections.reduce(
     (total, section) => total + section.items.length,
     0,
@@ -124,18 +124,18 @@ function SidebarNav({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-sidebar-border/[var(--opacity-prominent)] border-b px-4 py-4">
+      <div className="border-sidebar-border/[var(--opacity-prominent)] border-b px-3 py-2">
         <Link
           href={navigationContext.landingPath}
           className={cn(
-            "block rounded-xl border border-sidebar-border/[var(--opacity-strong)] bg-sidebar-accent/45 px-3.5 py-3 transition-[border-color,background-color] duration-300 ease-out hover:border-sidebar-border hover:bg-sidebar-accent/[var(--opacity-strong)]",
+            "block rounded-xl border border-sidebar-border/[var(--opacity-strong)] bg-sidebar-accent/45 px-2.5 py-1.5 transition-[border-color,background-color] duration-300 ease-out hover:border-sidebar-border hover:bg-sidebar-accent/[var(--opacity-strong)]",
             collapsed && "flex items-center justify-center px-0",
           )}
           onClick={onNavigate}
         >
           {!collapsed ? (
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl p-1.5">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg p-1">
                 <Image
                   src={brand.logoPath}
                   alt={brand.name}
@@ -163,16 +163,16 @@ function SidebarNav({
       </div>
 
       {!collapsed && navigationContext.selectedTenant ? (
-        <div className="border-b border-sidebar-border/[var(--opacity-prominent)] px-4 py-3">
-          <div className="flex items-center gap-2.5">
+        <div className="border-b border-sidebar-border/[var(--opacity-prominent)] px-3 py-1.5">
+          <div className="flex items-center gap-2">
             {navigationContext.selectedTenant.logoUrl ? (
               <img
                 src={navigationContext.selectedTenant.logoUrl}
                 alt={navigationContext.selectedTenant.name}
-                className="h-8 w-8 rounded-lg object-contain"
+                className="h-6 w-6 rounded-md object-contain"
               />
             ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-accent/[var(--opacity-strong)] text-xs font-bold text-foreground/[var(--opacity-strong)]">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-sidebar-accent/[var(--opacity-strong)] text-xs font-bold text-foreground/[var(--opacity-strong)]">
                 {navigationContext.selectedTenant.name.charAt(0).toUpperCase()}
               </div>
             )}
@@ -183,18 +183,18 @@ function SidebarNav({
         </div>
       ) : null}
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
         {navigationContext.sections.map((section, sectionIndex) => (
           <div
             key={`${section.group}-${sectionIndex}`}
             className={cn(
-              "space-y-1",
+              "space-y-0.5",
               sectionIndex > 0 &&
-                (collapsed ? "mt-2" : "mt-3 border-t border-sidebar-border/[var(--opacity-strong)] pt-3"),
+                (collapsed ? "mt-1.5" : "mt-2 border-t border-sidebar-border/[var(--opacity-strong)] pt-2"),
             )}
           >
             {!collapsed && (
-              <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              <p className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 {section.label}
               </p>
             )}
@@ -232,19 +232,15 @@ function SidebarNav({
       </nav>
 
       {!collapsed ? (
-        <div className="border-sidebar-border/[var(--opacity-prominent)] border-t p-4">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              {profileGroupMeta.badge}
-            </p>
-            <p className="text-sm font-medium text-sidebar-foreground">
+        <div className="border-sidebar-border/[var(--opacity-prominent)] border-t px-3 py-2">
+          {/* Quadro #7 (28/10): rodapé enxuto, estilo ERP — perfil em duas linhas curtas. */}
+          <div className="space-y-0.5 px-1">
+            <p className="truncate text-sm font-medium leading-tight text-sidebar-foreground">
               {navigationContext.currentUser.name}
             </p>
-            <p className="text-xs text-muted-foreground">
-              Perfil-base: {navigationContext.currentUser.baseRoleLabel}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {visibleModuleCount} módulo{visibleModuleCount === 1 ? "" : "s"} visíveis
+            <p className="truncate text-[11px] leading-tight text-muted-foreground">
+              {profileGroupMeta.badge} · {navigationContext.currentUser.baseRoleLabel} · {visibleModuleCount} módulo
+              {visibleModuleCount === 1 ? "" : "s"}
             </p>
           </div>
 
@@ -253,7 +249,7 @@ function SidebarNav({
             onClick={onNavigate}
             className={cn(
               navItemBaseClass,
-              "mt-3 border border-sidebar-border/[var(--opacity-strong)]",
+              "mt-1.5 border border-sidebar-border/[var(--opacity-strong)]",
               activeProfile
                 ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-[var(--shadow-soft)]"
                 : "text-sidebar-foreground/90 hover:bg-sidebar-accent/85 hover:text-sidebar-accent-foreground",
@@ -269,7 +265,7 @@ function SidebarNav({
             size="sm"
             onClick={handleLogout}
             disabled={loggingOut}
-            className="mt-2 h-11 w-full justify-start text-muted-foreground hover:text-foreground lg:h-8"
+            className="mt-0.5 h-11 w-full justify-start px-2.5 text-muted-foreground hover:text-foreground lg:h-7"
           >
             <LogOut className="size-4" />
             {loggingOut ? "Saindo..." : "Sair"}
