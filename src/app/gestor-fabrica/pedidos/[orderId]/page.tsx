@@ -21,6 +21,8 @@ import { formatKgValue } from "@/lib/utils";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { performReleaseOrderWithConfirm } from "@/lib/release-order-with-confirm";
+import { useWaitingBatchOrders } from "@/components/production/use-waiting-batch-orders";
+import { waitingBatchOrderHint } from "@/lib/waiting-batch-orders";
 
 function openPrintPage(pathname: string) {
   window.open(pathname, "_blank", "noopener,noreferrer");
@@ -51,6 +53,9 @@ export default function PedidoDetailsPage() {
 
   const aggregatedOrderItems = useMemo(() => aggregateOrderItems(orderItems), [orderItems]);
   const canCancelOrder = Boolean(order && !order.releasedToProduction && order.status !== "cancelado");
+  // Quadro #4 (Lucas, 28/10): pedido de lote no prazo das lojas fica sem "Liberar", igual a Pedidos.
+  const waitingBatchOrders = useWaitingBatchOrders(planningData);
+  const waitingBatch = order && !order.releasedToProduction ? waitingBatchOrders.get(order.code) ?? null : null;
 
   const flowSteps = [
     {
@@ -194,11 +199,19 @@ export default function PedidoDetailsPage() {
               className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
               // Servidor é a fonte da verdade — em caso de bloqueio, o gestor
               // recebe o motivo e a opção de forçar via diálogo.
-              disabled={order.releasedToProduction || order.status === "cancelado"}
+              disabled={order.releasedToProduction || order.status === "cancelado" || waitingBatch !== null}
+              title={waitingBatch ? waitingBatchOrderHint(waitingBatch) : undefined}
               onClick={() => void performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast)}
             >
-              {order.releasedToProduction ? "Pedido liberado" : "Liberar para produção"}
+              {order.releasedToProduction
+                ? "Pedido liberado"
+                : waitingBatch
+                  ? "Aguardando prazo do lote"
+                  : "Liberar para produção"}
             </Button>
+            {waitingBatch ? (
+              <p className="text-xs leading-snug text-muted-foreground">{waitingBatchOrderHint(waitingBatch)}</p>
+            ) : null}
           </div>
           <div className="space-y-2 sm:col-span-2 lg:col-span-2 xl:col-span-2">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Gestão do pedido</p>

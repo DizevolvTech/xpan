@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Factory,
   FileSearch,
+  Hourglass,
   ListChecks,
   Loader2,
   Play,
@@ -25,6 +26,7 @@ import { KanbanCardMotion } from "@/components/shared/kanban-card-motion";
 import { OperationalSequenceCard } from "@/components/shared/operational-sequence-card";
 import { PageLayout } from "@/components/shared/page-layout";
 import { useToast } from "@/components/shared/toast";
+import { useWaitingBatchOrders } from "@/components/production/use-waiting-batch-orders";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -64,6 +66,7 @@ import {
   isOrderAwaitingAcceptance,
 } from "@/lib/factory-kanban";
 import { formatKgLabel } from "@/lib/utils";
+import { waitingBatchOrderHint } from "@/lib/waiting-batch-orders";
 import { normalizeProductCodeSource, productCodeSourceLabels } from "@/lib/product-identity";
 import { normalizeWeightDisplayUnit, weightDisplayUnitLabels } from "@/lib/weight-display";
 
@@ -132,6 +135,8 @@ export default function GestorFabricaPage() {
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
   );
+  // Quadro #4 (Lucas, 28/10): pedido de lote no prazo das lojas fica sem "Liberar", igual a Pedidos.
+  const waitingBatchOrders = useWaitingBatchOrders(planningSnapshot);
   const deliveryExecution = useDeliveryExecution();
   const prefersReducedMotion = useReducedMotion();
 
@@ -576,11 +581,12 @@ export default function GestorFabricaPage() {
       return { all: [] as PlannedOrderRow[], today: [] as PlannedOrderRow[] };
     }
     const all = openColumn.items.filter(
-      (order) => order.availableForRelease && !order.releasedToProduction,
+      (order) =>
+        order.availableForRelease && !order.releasedToProduction && !waitingBatchOrders.has(order.code),
     );
     const today = all.filter((order) => order.deliveryDate === anchorDate);
     return { all, today };
-  }, [anchorDate, kanbanColumns]);
+  }, [anchorDate, kanbanColumns, waitingBatchOrders]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -1177,10 +1183,14 @@ export default function GestorFabricaPage() {
                   <AnimatePresence initial={false} mode="popLayout">
                     {column.items.map((order) => {
                     const isPending = pendingOrderIds.has(order.id);
+                    const waitingBatch = isOpenColumn && !order.releasedToProduction
+                      ? waitingBatchOrders.get(order.code) ?? null
+                      : null;
                     const canRelease =
                       isOpenColumn &&
                       order.availableForRelease &&
-                      !order.releasedToProduction;
+                      !order.releasedToProduction &&
+                      waitingBatch === null;
                     const isRowBusy = isPending || batchProgress !== null;
                     return (
                       <KanbanCardMotion
@@ -1207,7 +1217,16 @@ export default function GestorFabricaPage() {
                             {order.deliveryDateLabel}
                           </span>
                         </Link>
-                        {canRelease ? (
+                        {waitingBatch ? (
+                          <span
+                            className="me-1 inline-flex h-9 shrink-0 items-center gap-1 px-1.5 text-[11px] font-medium text-muted-foreground"
+                            title={waitingBatchOrderHint(waitingBatch)}
+                            aria-label={waitingBatchOrderHint(waitingBatch)}
+                          >
+                            <Hourglass className="size-3.5" aria-hidden />
+                            No prazo
+                          </span>
+                        ) : canRelease ? (
                           <Button
                             type="button"
                             size="sm"

@@ -127,3 +127,10 @@ Montado em 24/10 (Lucas: "sim"):
 - Achado do agente revisor: depois de "Liberar lote", a faixa do lote sumia da lista de Pedidos (o lote era fechado e o painel só lia lotes abertos), e as linhas ficavam soltas.
 - Correção: o painel lê os lotes abertos e, dos fechados, as datas de entrega dos últimos 7 dias (`batchesForOverview`). A faixa passa a "Lote liberado" e continua agrupando os pedidos. O cartão do topo continua saindo (o painel só mostra lotes não liberados).
 - Dados de teste criados no sistema de teste para o aceite (PD-261027-0101 a 0114, nota "Dado de teste (Hefesto, aceite quadros 27/10)"); ajustes de lote com cópia em `hefesto_backup._bak_order_batches_20261027c`.
+
+### Quadro #4 — Liberar na Visão Geral e no Detalhe (Lucas, 28/10)
+
+- Pedido: "faz igual à tela de Pedidos: pedido de lote no prazo fica sem Liberar na Visão Geral e no detalhe do pedido."
+- Visão Geral, coluna Aberto: pedido de lote no prazo mostra "No prazo" (dica com a entrega e o prazo das lojas) no lugar de "Liberar"; "Liberar tudo do dia" e "Liberar todos em espera" não contam nem liberam esses pedidos.
+- Detalhe do pedido: botão desabilitado "Aguardando prazo do lote", com o prazo escrito abaixo.
+- O servidor continua recusando (409) — a tela só deixa de oferecer a ação. Código: `src/lib/waiting-batch-orders.ts`, `src/components/production/use-waiting-batch-orders.ts`.
