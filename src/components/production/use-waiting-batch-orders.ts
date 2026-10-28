@@ -14,15 +14,21 @@ const EMPTY = new Map<string, WaitingBatchOrder>();
  */
 export function useWaitingBatchOrders(reloadKey: unknown = null) {
   const [waiting, setWaiting] = useState<Map<string, WaitingBatchOrder>>(EMPTY);
+  // Até a primeira leitura terminar não se sabe quem está no prazo: as telas não oferecem
+  // "Liberar" nesse intervalo (D16: o botão aparecia habilitado por um instante).
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const response = await fetch("/api/order-batches/overview", { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json().catch(() => null)) as OrderBatchOverview | null;
-      if (data?.groups) setWaiting(waitingBatchOrdersByCode(data.groups));
+      if (response.ok) {
+        const data = (await response.json().catch(() => null)) as OrderBatchOverview | null;
+        if (data?.groups) setWaiting(waitingBatchOrdersByCode(data.groups));
+      }
     } catch {
-      // mantém o último estado
+      // mantém o último estado; o servidor continua recusando a liberação no prazo (409)
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -32,5 +38,5 @@ export function useWaitingBatchOrders(reloadKey: unknown = null) {
     return () => window.clearTimeout(timer);
   }, [load, reloadKey]);
 
-  return waiting;
+  return { waiting, loaded };
 }

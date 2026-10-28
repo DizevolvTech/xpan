@@ -136,7 +136,7 @@ export default function GestorFabricaPage() {
     [planningSnapshot, scope],
   );
   // Quadro #4 (Lucas, 28/10): pedido de lote no prazo das lojas fica sem "Liberar", igual a Pedidos.
-  const waitingBatchOrders = useWaitingBatchOrders(planningSnapshot);
+  const { waiting: waitingBatchOrders, loaded: waitingBatchLoaded } = useWaitingBatchOrders(planningSnapshot);
   const deliveryExecution = useDeliveryExecution();
   const prefersReducedMotion = useReducedMotion();
 
@@ -582,11 +582,14 @@ export default function GestorFabricaPage() {
     }
     const all = openColumn.items.filter(
       (order) =>
-        order.availableForRelease && !order.releasedToProduction && !waitingBatchOrders.has(order.code),
+        waitingBatchLoaded &&
+        order.availableForRelease &&
+        !order.releasedToProduction &&
+        !waitingBatchOrders.has(order.code),
     );
     const today = all.filter((order) => order.deliveryDate === anchorDate);
     return { all, today };
-  }, [anchorDate, kanbanColumns, waitingBatchOrders]);
+  }, [anchorDate, kanbanColumns, waitingBatchLoaded, waitingBatchOrders]);
 
   const settingsSummary = useMemo(() => {
     const leadDaysLabel = Number.isFinite(expeditionLeadDaysValue)
@@ -1190,6 +1193,7 @@ export default function GestorFabricaPage() {
                       isOpenColumn &&
                       order.availableForRelease &&
                       !order.releasedToProduction &&
+                      waitingBatchLoaded &&
                       waitingBatch === null;
                     const isRowBusy = isPending || batchProgress !== null;
                     return (
@@ -1202,19 +1206,20 @@ export default function GestorFabricaPage() {
                         <Link
                           // Reunião 22/10 (bloco 4): clicar no item abre o próprio pedido.
                           href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}
-                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="flex min-w-0 flex-1 items-center rounded-md px-2 py-1.5 leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           aria-label={`Abrir pedido ${order.code} de ${order.storeName}`}
+                          title={`${order.code} · ${order.storeName} · ${order.deliveryDateLabel}`}
                         >
+                          {/* D16 (28/10): em coluna estreita a data ia ocupar o lugar do código e da loja;
+                              agora código em cima e "loja · data" embaixo, sem coluna fixa ao lado. */}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-mono text-xs font-semibold text-foreground">
                               {order.code}
                             </span>
                             <span className="block truncate text-[11px] text-muted-foreground">
                               {order.storeName}
+                              <span className="tabular-nums"> · {order.deliveryDateLabel.slice(0, 5)}</span>
                             </span>
-                          </span>
-                          <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
-                            {order.deliveryDateLabel}
                           </span>
                         </Link>
                         {waitingBatch ? (

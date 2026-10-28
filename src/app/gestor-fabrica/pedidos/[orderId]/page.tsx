@@ -54,7 +54,7 @@ export default function PedidoDetailsPage() {
   const aggregatedOrderItems = useMemo(() => aggregateOrderItems(orderItems), [orderItems]);
   const canCancelOrder = Boolean(order && !order.releasedToProduction && order.status !== "cancelado");
   // Quadro #4 (Lucas, 28/10): pedido de lote no prazo das lojas fica sem "Liberar", igual a Pedidos.
-  const waitingBatchOrders = useWaitingBatchOrders(planningData);
+  const { waiting: waitingBatchOrders, loaded: waitingBatchLoaded } = useWaitingBatchOrders(planningData);
   const waitingBatch = order && !order.releasedToProduction ? waitingBatchOrders.get(order.code) ?? null : null;
 
   const flowSteps = [
@@ -199,7 +199,9 @@ export default function PedidoDetailsPage() {
               className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
               // Servidor é a fonte da verdade — em caso de bloqueio, o gestor
               // recebe o motivo e a opção de forçar via diálogo.
-              disabled={order.releasedToProduction || order.status === "cancelado" || waitingBatch !== null}
+              disabled={
+                order.releasedToProduction || order.status === "cancelado" || waitingBatch !== null || !waitingBatchLoaded
+              }
               title={waitingBatch ? waitingBatchOrderHint(waitingBatch) : undefined}
               onClick={() => void performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast)}
             >

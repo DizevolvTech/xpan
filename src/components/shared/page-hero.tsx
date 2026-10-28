@@ -50,7 +50,10 @@ export function PageHero({
             <h1 className="text-lg font-bold leading-tight text-foreground">{title}</h1>
             {description && <InfoHint content={description} size="sm" />}
           </div>
-          {actions && <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">{actions}</div>}
+          {/* No celular as ações descem para uma linha própria (D17: cobriam o título em Pedidos). */}
+          {actions && (
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:w-auto sm:flex-1 sm:justify-end">{actions}</div>
+          )}
         </div>
       </section>
     );
