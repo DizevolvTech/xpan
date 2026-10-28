@@ -134,3 +134,11 @@ Montado em 24/10 (Lucas: "sim"):
 - Visão Geral, coluna Aberto: pedido de lote no prazo mostra "No prazo" (dica com a entrega e o prazo das lojas) no lugar de "Liberar"; "Liberar tudo do dia" e "Liberar todos em espera" não contam nem liberam esses pedidos.
 - Detalhe do pedido: botão desabilitado "Aguardando prazo do lote", com o prazo escrito abaixo.
 - O servidor continua recusando (409) — a tela só deixa de oferecer a ação. Código: `src/lib/waiting-batch-orders.ts`, `src/components/production/use-waiting-batch-orders.ts`.
+
+### Quadro #7 — Cabeçalho mais baixo em todas as telas (Lucas, 27/10)
+
+- Pedido do cliente: "ERPs costumam ter linhas próximas, margens pequenas… ali está bem difícil de trabalhar". Corrigir primeiro no teste.
+- Feito no cabeçalho padrão (vale para todas as telas que usam `PageLayout`): margem de cima da página menor (`py-3`), caminho (breadcrumb) numa linha fina, selo + título + ajuda na mesma linha (título menor, selo menor e sem animação), ações ao lado; espaço entre cabeçalho e conteúdo de 24 px para 8 px e entre blocos de 24 px para 12 px.
+- Barra "Janela" com contagens: espaçamento menor em Expedição, Visão Geral, Ordens de Produção, Consumo de Insumos e Sobras (mesmo padrão).
+- Medido no local (1528×800, Expedição): cards de indicadores começam ~40 px mais acima; cabeçalho ~60 px de altura (antes ~140 px).
+- Decisão: aplicar em todas as telas (o pedido cita Expedição como exemplo; o problema é o mesmo componente).

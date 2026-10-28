@@ -56,15 +56,12 @@ export function PageHero({
     );
   }
   return (
-    <section
-      className={cn(
-        "relative px-1 pb-1 pt-0.5 sm:px-1",
-        className,
-      )}
-    >
+    // Quadro #7 (27/10): cabeçalho enxuto, estilo ERP — caminho numa linha fina e, abaixo,
+    // selo + título + ajuda na mesma linha, com as ações ao lado.
+    <section className={cn("relative px-1", className)}>
       {/* Abaixo de lg o botão de menu fica fixo no canto: o caminho começa à direita dele. */}
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="relative mb-4 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground max-lg:min-h-11 max-lg:pl-14">
+        <nav className="relative mb-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground max-lg:min-h-11 max-lg:pl-14">
           {breadcrumbs.map((crumb, index) => (
             <span key={`${crumb.label}-${index}`} className="inline-flex items-center gap-1.5">
               {index > 0 && <ChevronRight className="size-3" />}
@@ -80,22 +77,19 @@ export function PageHero({
         </nav>
       )}
 
-      <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 sm:min-w-[18rem] sm:flex-1">
+      <div className="relative flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 sm:min-w-[18rem] sm:flex-1">
           {badge && (
-            <span className="inline-flex items-center gap-2 rounded-full border border-accent/[var(--opacity-border)] bg-accent/[var(--opacity-faint)] px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-accent-foreground backdrop-blur-sm">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
-                <span className="relative inline-flex size-2 rounded-full bg-accent" />
-              </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/[var(--opacity-border)] bg-accent/[var(--opacity-faint)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-foreground">
+              <span className="inline-flex size-1.5 rounded-full bg-accent" />
               {badge}
             </span>
           )}
-          <div className="mt-3 flex items-center gap-2.5">
-            <h1 className="text-balance text-[1.5rem] font-bold leading-[1.12] text-foreground sm:text-[1.75rem] lg:text-[1.9rem]">
+          <div className="flex items-center gap-2">
+            <h1 className="text-balance text-xl font-bold leading-tight text-foreground lg:text-[1.4rem]">
               {title}
             </h1>
-            {description && <InfoHint content={description} size="md" />}
+            {description && <InfoHint content={description} size="sm" />}
           </div>
         </div>
 

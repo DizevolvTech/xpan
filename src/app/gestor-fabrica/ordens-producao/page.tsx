@@ -787,7 +787,7 @@ export default function OrdensProducaoPage() {
       }
     >
       {/* Action bar — escopo em pílula popover (alinhado ao dashboard). */}
-      <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 border-b border-border/60 pb-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <Popover open={isScopeOpen} onOpenChange={setIsScopeOpen}>
           <PopoverTrigger asChild>
             <button

@@ -137,7 +137,7 @@ export default function ConsumoIngredientesPage() {
       ]}
     >
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2 border-b border-border/60 pb-2 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="window-days" className="text-xs text-muted-foreground">
               Janela do período
