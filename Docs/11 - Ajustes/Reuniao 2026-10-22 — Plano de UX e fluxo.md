@@ -142,3 +142,5 @@ Montado em 24/10 (Lucas: "sim"):
 - Barra "Janela" com contagens: espaçamento menor em Expedição, Visão Geral, Ordens de Produção, Consumo de Insumos e Sobras (mesmo padrão).
 - Medido no local (1528×800, Expedição): cards de indicadores começam ~40 px mais acima; cabeçalho ~60 px de altura (antes ~140 px).
 - Decisão: aplicar em todas as telas (o pedido cita Expedição como exemplo; o problema é o mesmo componente).
+- Ajuste (28/10): no computador o cabeçalho virou UMA linha — caminho (sem repetir a tela atual, que já é o título), selo, título e ajuda, com as ações à direita. Expedição local 1280×800: cards de indicadores em y≈141 px (antes ≈180+). No celular continua em linhas curtas, à direita do botão de menu.
+- D16 (aceite): Detalhe do pedido no celular tinha rolagem lateral — botões do topo agora quebram linha e a janela do detalhe não alarga com a tabela de itens (coluna `minmax(0,1fr)` no `RouteModal`).

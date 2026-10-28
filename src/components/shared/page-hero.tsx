@@ -56,29 +56,34 @@ export function PageHero({
     );
   }
   return (
-    // Quadro #7 (27/10): cabeçalho enxuto, estilo ERP — caminho numa linha fina e, abaixo,
-    // selo + título + ajuda na mesma linha, com as ações ao lado.
+    // Quadro #7 (27/10): cabeçalho enxuto, estilo ERP — no computador, caminho, selo, título e
+    // ajuda numa linha só, com as ações ao lado; no celular quebra em linhas curtas.
     <section className={cn("relative px-1", className)}>
-      {/* Abaixo de lg o botão de menu fica fixo no canto: o caminho começa à direita dele. */}
-      {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="relative mb-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground max-lg:min-h-11 max-lg:pl-14">
-          {breadcrumbs.map((crumb, index) => (
-            <span key={`${crumb.label}-${index}`} className="inline-flex items-center gap-1.5">
-              {index > 0 && <ChevronRight className="size-3" />}
-              {crumb.href ? (
-                <Link href={crumb.href} className="transition hover:text-foreground">
-                  {crumb.label}
-                </Link>
-              ) : (
-                <span>{crumb.label}</span>
+      <div className="relative flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 lg:flex-1">
+          {/* Abaixo de lg o botão de menu fica fixo no canto: o caminho começa à direita dele. */}
+          {/* O último item do caminho é a própria tela (= título): mostra só os anteriores. */}
+          {breadcrumbs && breadcrumbs.length > 0 && (
+            <nav
+              className={cn(
+                "flex w-full flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground max-lg:min-h-11 max-lg:pl-14 lg:w-auto",
+                breadcrumbs.length === 1 && "lg:hidden",
               )}
-            </span>
-          ))}
-        </nav>
-      )}
-
-      <div className="relative flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 sm:min-w-[18rem] sm:flex-1">
+            >
+              {breadcrumbs.slice(0, -1).map((crumb, index) => (
+                <span key={`${crumb.label}-${index}`} className="inline-flex items-center gap-1.5">
+                  {crumb.href ? (
+                    <Link href={crumb.href} className="transition hover:text-foreground">
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span>{crumb.label}</span>
+                  )}
+                  <ChevronRight className="size-3" />
+                </span>
+              ))}
+            </nav>
+          )}
           {badge && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/[var(--opacity-border)] bg-accent/[var(--opacity-faint)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-accent-foreground">
               <span className="inline-flex size-1.5 rounded-full bg-accent" />
@@ -94,7 +99,7 @@ export function PageHero({
         </div>
 
         {/* Reunião 22/10 (bloco 3): ações quebram linha em vez de espremer o título. */}
-        {actions && <div className="flex min-w-0 flex-wrap items-center gap-2 sm:max-w-[65%] sm:justify-end">{actions}</div>}
+        {actions && <div className="flex min-w-0 flex-wrap items-center gap-2 lg:max-w-[65%] lg:justify-end">{actions}</div>}
       </div>
     </section>
   );
