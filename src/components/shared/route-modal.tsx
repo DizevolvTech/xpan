@@ -15,7 +15,8 @@ export function RouteModal({ title, children }: { title: string; children: React
   const router = useRouter();
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : router.back())}>
-      <DialogContent size="full" className="p-4 sm:p-6">
+      {/* Coluna única minmax(0,1fr): tabela larga rola dentro da sua caixa e não alarga a janela (D16, 390 px). */}
+      <DialogContent size="full" className="grid-cols-[minmax(0,1fr)] p-4 sm:p-6">
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <DialogDescription className="sr-only">{title}</DialogDescription>
         {children}
