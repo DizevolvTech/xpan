@@ -161,3 +161,9 @@ Montado em 24/10 (Lucas: "sim"):
 - No celular os itens mantêm 44 px de altura para toque.
 - Em 1280×800 o menu do gestor inteiro (12 itens) e o rodapé cabem sem rolar.
 - Rodapé: "Meu Perfil" e "Sair" na mesma linha. No sistema de teste o menu descontava a faixa amarela de TESTE (24 px) e o "Sair" ficava 24 px abaixo da tela; agora o menu começa abaixo da faixa e tem a altura da tela menos a faixa.
+
+## Quadro #10 — Ajustes do teste publicados na produção (28/10)
+- Código: develop 4879506 (mesmo pacote do preview) publicado em xpan.dizevolv.com, deploy 4fe7d359-c4b8-4dd8-919f-4a75a4211071 (antes afdb25c6, 28cc9bf). Secrets (6) e crons (0 * * * *, 0 21 * * *) preservados; vars APP_URL, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_PROJECT_REF; placement aws:sa-east-1.
+- Banco de produção: aplicadas 20261024200000_production_order_trash e 20261024210000_release_snapshot_production_date (aditivas; registradas em supabase_migrations). Antes, comparação do catálogo teste × produção: só essas duas diferenças.
+- Lotes duplicados (cartão #3) na produção: 6 loja×data em dois lotes (Grupo Chama 25–30/09; Ecossistema 27/10). Mantido no lote que tem o pedido; sem pedido, no mais antigo. Cópia antes em `hefesto_backup._bak_order_batches_20261028` (8 lotes). Depois: 0 duplicados.
+- Rollback: `hefesto_owner_cloudflare rollback` (volta ao deploy afdb25c6); as migrations são aditivas e não quebram o código antigo.
