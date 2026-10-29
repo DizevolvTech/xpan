@@ -65,6 +65,11 @@ export default function PedidoDetailsPage() {
         deliveryExecutionState.resolveExecution(order.id, isOrderReadyForDeliveryExecution(order.status)).status,
       )
     : null;
+  // Quando a entrega já avançou (em rota, entregue), os itens seguem o pedido; antes disso
+  // cada item mostra o próprio andamento da produção.
+  const deliveryOverridesItems = Boolean(order && visibleStatus && visibleStatus !== order.status);
+  const itemVisibleStatus = (status: typeof orderItems[number]["status"]) =>
+    deliveryOverridesItems && visibleStatus ? visibleStatus : status;
   const canCancelOrder = Boolean(order && !order.releasedToProduction && order.status !== "cancelado");
   // Quadro #4 (Lucas, 28/10): pedido de lote no prazo das lojas fica sem "Liberar", igual a Pedidos.
   const { waiting: waitingBatchOrders, loaded: waitingBatchLoaded } = useWaitingBatchOrders(planningData);
@@ -347,7 +352,7 @@ export default function PedidoDetailsPage() {
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.scheduleName}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <StatusBadge status={item.status} />
+                          <StatusBadge status={itemVisibleStatus(item.status)} />
                         </td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.opCode ?? "-"}</td>
                       </tr>
@@ -395,7 +400,7 @@ export default function PedidoDetailsPage() {
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <StatusBadge status={item.status} />
+                          <StatusBadge status={itemVisibleStatus(item.status)} />
                         </td>
                       </tr>
                     ))}
