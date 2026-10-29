@@ -843,7 +843,7 @@ export function PedidosFabricaPageClient() {
                           </span>
                         </td>
                         <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">
-                          <StatusBadge status={visibleStatus} />
+                          {deliveryExecutionState.isHydrated ? <StatusBadge status={visibleStatus} /> : <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />}
                         </td>
                         <td className="whitespace-nowrap border-t border-border/70 bg-card px-2 py-1 text-right sm:sticky sm:right-0 sm:z-[1] shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
                           <div className="flex items-center justify-end gap-1">
@@ -1038,7 +1038,7 @@ export function PedidosFabricaPageClient() {
               <div>
                 <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
                 <div className="mt-1">
-                  <StatusBadge status={selectedModalOrder.visibleStatus} />
+                  {deliveryExecutionState.isHydrated ? <StatusBadge status={selectedModalOrder.visibleStatus} /> : <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />}
                 </div>
               </div>
             </div>

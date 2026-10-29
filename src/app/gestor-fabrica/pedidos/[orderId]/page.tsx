@@ -57,7 +57,9 @@ export default function PedidoDetailsPage() {
   // Quadro #42 (29/10): mesmo status da lista de Pedidos — produção mesclada com a execução
   // de entrega. Sem isso o pedido já entregue aparecia "Aguardando expedição" no detalhe.
   const deliveryExecutionState = useDeliveryExecution();
-  const visibleStatus = order
+  // Até a situação da entrega carregar, não mostrar o status só da produção (piscava
+  // "Em produção" antes de virar "Entregue").
+  const visibleStatus = order && deliveryExecutionState.isHydrated
     ? getExpeditionVisibleStatus(
         order.status,
         deliveryExecutionState.resolveExecution(order.id, isOrderReadyForDeliveryExecution(order.status)).status,
@@ -200,7 +202,11 @@ export default function PedidoDetailsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
             <div className="mt-1">
-              <StatusBadge status={visibleStatus ?? order.status} />
+              {visibleStatus ? (
+                <StatusBadge status={visibleStatus} />
+              ) : (
+                <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />
+              )}
             </div>
           </div>
           <div className="space-y-2 sm:col-span-2 lg:col-span-1 xl:col-span-1">
