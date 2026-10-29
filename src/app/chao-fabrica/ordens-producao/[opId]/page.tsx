@@ -34,7 +34,7 @@ import {
   getProductionStatusLabel,
   isBatchedProductionItem,
 } from "@/lib/production-workflow";
-import { formatBatchSizesPhrase } from "@/lib/production-batches";
+import { formatBatchSizesPhrase, describeBelowMinimumPerBatch } from "@/lib/production-batches";
 import { formatKgValue } from "@/lib/utils";
 import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 import { appendWeightUnitParam, useWeightDisplayUnit } from "@/lib/use-weight-display-unit";
@@ -75,9 +75,10 @@ type ConclusionTarget = {
  * capacidade cheia × nº de batidas. Serve só para PRÉ-PREENCHER o campo — o
  * número que vale é o que o operador confirma.
  */
-function estimateProducedQuantity(batchSizes: number[]) {
+function estimateProducedQuantity(batchSizes: number[], exactBatchSizes = false) {
   const planned = batchSizes.reduce((sum, size) => sum + size, 0);
-  if (batchSizes.length <= 1) {
+  // Cartão #42: com mínimo por batida as batidas já somam o pedido (12 = 8 + 4).
+  if (batchSizes.length <= 1 || exactBatchSizes) {
     return Math.round(planned * 1000) / 1000;
   }
   return Math.round((batchSizes[0] ?? 0) * batchSizes.length * 1000) / 1000;
@@ -294,7 +295,7 @@ export default function OrdemProducaoDetailsPage() {
    */
   function openConclusionDialog(item: ProductionOrderItem, mode: "status" | "batch") {
     setWorkflowError(null);
-    const estimated = estimateProducedQuantity(item.batchSizes);
+    const estimated = estimateProducedQuantity(item.batchSizes, (item.minPerBatch ?? 0) > 0);
     setConclusionQuantity(formatQuantityInput(estimated));
     setConclusionTarget({
       productionItemKey: item.productionItemKey,
@@ -556,6 +557,14 @@ export default function OrdemProducaoDetailsPage() {
                           title={`Demanda (${formatKgValue(item.totalKg)} kg) abaixo do lote mínimo do produto (${formatKgValue(item.minimumProductionKg)} kg). É só um AVISO — não trava a OP.`}
                         >
                           Abaixo do mínimo
+                        </span>
+                      ) : null}
+                      {item.belowMinimumPerBatch ? (
+                        <span
+                          className="ms-2 inline-flex items-center rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[0.06em] text-warning-foreground"
+                          title={describeBelowMinimumPerBatch(item)}
+                        >
+                          Abaixo do mínimo por batida
                         </span>
                       ) : null}
                       {isBatchedProductionItem(item) ? (

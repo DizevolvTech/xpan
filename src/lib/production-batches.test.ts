@@ -439,3 +439,75 @@ test("unidade escrita 'KG' ou com espaço também é peso", () => {
   const input = { totalKg: 10.4, capacityPerBatch: 4, salesToKgFactor: 1, salesUnit: " KG " };
   assert.deepEqual(planBatches(input).batchSizes, [4, 4, 2.4]);
 });
+
+// Cartão #42 — mínimo e máximo por batida (exemplos do cliente: bolo mín. 4, máx. 9).
+const CLIENT_CASES: Array<[number, number[]]> = [
+  [10, [6, 4]],
+  [11, [7, 4]],
+  [12, [8, 4]],
+  [15, [9, 6]],
+  [18, [9, 9]],
+  [19, [9, 6, 4]],
+  [20, [9, 7, 4]],
+  [21, [9, 8, 4]],
+  [22, [9, 9, 4]],
+  [23, [9, 9, 5]],
+  [28, [9, 9, 6, 4]],
+];
+
+for (const [total, expected] of CLIENT_CASES) {
+  test(`planBatches mín. 4 / máx. 9 — ${total} un = ${expected.join(" + ")}`, () => {
+    const plan = planBatches({ totalKg: total, capacityPerBatch: 9, salesToKgFactor: 1, salesUnit: "Un", minPerBatch: 4 });
+    assert.deepEqual(plan.batchSizes, expected);
+    assert.equal(plan.batchCount, expected.length);
+    assert.equal(plan.belowMinimumPerBatch, false);
+  });
+}
+
+test("planBatches mín./máx. — soma igual ao pedido, batidas no intervalo e mínimo de batidas (1 a 200 un)", () => {
+  for (let total = 4; total <= 200; total += 1) {
+    const plan = planBatches({ totalKg: total, capacityPerBatch: 9, salesToKgFactor: 1, salesUnit: "Un", minPerBatch: 4 });
+    assert.equal(plan.batchSizes.reduce((a, b) => a + b, 0), total, `soma ${total}`);
+    assert.equal(plan.batchCount, Math.ceil(total / 9), `nº de batidas ${total}`);
+    for (const size of plan.batchSizes) {
+      assert.ok(size >= 4 && size <= 9, `${total}: batida ${size} fora de 4..9`);
+    }
+    const sorted = [...plan.batchSizes].sort((a, b) => b - a);
+    assert.deepEqual(plan.batchSizes, sorted, `maiores primeiro ${total}`);
+  }
+});
+
+test("planBatches mín./máx. — pedido abaixo do mínimo: 1 batida com o total e aviso", () => {
+  const plan = planBatches({ totalKg: 3, capacityPerBatch: 9, salesToKgFactor: 1, salesUnit: "Un", minPerBatch: 4 });
+  assert.deepEqual(plan.batchSizes, [3]);
+  assert.equal(plan.belowMinimumPerBatch, true);
+});
+
+test("planBatches mín./máx. — sem mínimo cadastrado mantém a regra antiga (12 = 9 + 3)", () => {
+  const plan = planBatches({ totalKg: 12, capacityPerBatch: 9, salesToKgFactor: 1, salesUnit: "Un" });
+  assert.deepEqual(plan.batchSizes, [9, 3]);
+  assert.equal(plan.belowMinimumPerBatch, false);
+});
+
+test("planBatches mín./máx. — sem divisão possível (mín. 4 / máx. 5, 6 un): regra antiga e aviso", () => {
+  const plan = planBatches({ totalKg: 6, capacityPerBatch: 5, salesToKgFactor: 1, salesUnit: "Un", minPerBatch: 4 });
+  assert.deepEqual(plan.batchSizes, [5, 1]);
+  assert.equal(plan.belowMinimumPerBatch, true);
+});
+
+test("planBatches mín./máx. — produto em Kg (mín. 4 kg / máx. 9 kg, 12,5 kg)", () => {
+  const plan = planBatches({ totalKg: 12.5, capacityPerBatch: 9, salesToKgFactor: 1, salesUnit: "Kg", minPerBatch: 4 });
+  assert.deepEqual(plan.batchSizes, [8.5, 4]);
+});
+
+test("computePreWeighBatchSplit mín./máx. — 28 un = 2 cheias de 9 + parcial 6 + parcial 4", () => {
+  const split = computePreWeighBatchSplit({ totalKg: 28 * 0.5, capacityPerBatch: 9, salesToKgFactor: 0.5, salesUnit: "Un", minPerBatch: 4 });
+  assert.equal(split.fullBatchCount, 2);
+  assert.equal(split.fullBatchUnits, 9);
+  assert.deepEqual(split.partials, [{ units: 6, kg: 3, count: 1 }, { units: 4, kg: 2, count: 1 }]);
+  assert.equal(formatBatchSplitPhrase(split), "2 cheias de 9 Un + 1 parcial de 6 Un + 1 parcial de 4 Un");
+});
+
+test("formatBatchSizesPhrase — várias parciais iguais (9 + 4 + 4)", () => {
+  assert.equal(formatBatchSizesPhrase([9, 4, 4], "Un"), "1 cheia de 9 Un + 2 parciais de 4 Un");
+});

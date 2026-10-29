@@ -110,6 +110,8 @@ type BatchDemandRow = {
   // AJ-0006.1: lote mínimo da fábrica + flag de demanda consolidada (todas as lojas) abaixo dele.
   minimumProductionKg: number;
   belowMinimum: boolean;
+  /** Cartão #42: alguma OP do produto/dia ficou abaixo do mínimo por batida. */
+  belowMinimumPerBatch: boolean;
   opsCount: number;
   ordersCount: number;
   progress: number;
@@ -397,6 +399,8 @@ export default function OrdensProducaoPage() {
 
         if (existing) {
           existing.row.totalKg = Number((existing.row.totalKg + item.totalKg).toFixed(2));
+          existing.row.belowMinimumPerBatch =
+            existing.row.belowMinimumPerBatch || Boolean(item.belowMinimumPerBatch);
           existing.opIds.add(op.id);
           orderCodesForProduct.forEach((code) => existing.orderCodes.add(code));
           existing.progressSum += item.progress;
@@ -420,6 +424,7 @@ export default function OrdensProducaoPage() {
             totalKg: Number(item.totalKg.toFixed(2)),
             minimumProductionKg: item.minimumProductionKg,
             belowMinimum: false,
+            belowMinimumPerBatch: Boolean(item.belowMinimumPerBatch),
             opsCount: opIds.size,
             ordersCount: orderCodes.size,
             progress: item.progress,
@@ -681,6 +686,17 @@ export default function OrdensProducaoPage() {
                 Editar produto
               </Button>
             </div>
+          ) : null}
+          {item.belowMinimumPerBatch ? (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 text-[11px] font-medium text-warning">
+              <AlertTriangle className="size-3" aria-hidden />
+              Abaixo do mínimo por batida
+              <InfoHint
+                size="xs"
+                tone="warning"
+                content="A quantidade deste produto no dia não chega ao mínimo por batida do cadastro (ou a última batida ficou abaixo dele). A OP sai com a quantidade exata do pedido — é só um aviso."
+              />
+            </span>
           ) : null}
         </div>
       ),

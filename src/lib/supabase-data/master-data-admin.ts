@@ -1054,6 +1054,11 @@ function normalizeProductPayload(input: ProductInput) {
     minimum_production_kg: input.minimumProductionKg,
     economic_production_kg: input.economicProductionKg,
     capacity_per_batch: input.capacityPerBatch ?? null,
+    // Cartão #42: 0/negativo/NaN = sem mínimo (a coluna tem CHECK > 0).
+    min_per_batch:
+      typeof input.minPerBatch === "number" && Number.isFinite(input.minPerBatch) && input.minPerBatch > 0
+        ? input.minPerBatch
+        : null,
     max_batch_weight_kg: input.maxBatchWeightKg ?? null,
     economic_batch_unit: input.economicBatchUnit ?? null,
     // XPAN-8: limite físico do ingrediente principal por batida (kg). null = manual.

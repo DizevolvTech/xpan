@@ -42,6 +42,11 @@ export type PrintIngredientRow = {
   batchQuantity?: number;
   /** Quantidade para a parcial/extra (só quando há parcial). */
   partialQuantity?: number;
+  /**
+   * Cartão #42: quantidade de CADA parcial, na ordem de `batchSplit.partials` (com mínimo por
+   * batida pode haver mais de uma, ex.: 9 + 9 + 6 + 4). `partialQuantity` = a primeira.
+   */
+  partialQuantities?: number[];
   notes?: string;
   /**
    * Onde a linha da receita é impressa. Ausente = padrão (produção + pré-pesagem), como sempre
@@ -175,6 +180,7 @@ function batchSplitForKg(
     capacityPerBatch: product?.capacityPerBatch ?? null,
     salesToKgFactor: salesFactorOf(product),
     salesUnit: unitLabel,
+    minPerBatch: product?.minPerBatch ?? null,
   });
 }
 
@@ -368,6 +374,18 @@ function withFrozenRecipe(
   return frozenRecipe ? { ...product, recipe: frozenRecipe } : product;
 }
 
+/** Kg da cheia e de cada parcial, para escalar a receita por batida (cartão #42). */
+function batchKgsOf(split: PreWeighBatchSplit) {
+  if (!split.batched) {
+    return undefined;
+  }
+  return {
+    fullBatchKg: split.fullBatchKg,
+    partialKg: split.partialKg,
+    partialKgs: split.partials.map((partial) => partial.kg),
+  };
+}
+
 function buildScaledRecipeRowsForProduct(
   baseProduct: ProductionProduct | undefined,
   outputKg: number,
@@ -375,7 +393,7 @@ function buildScaledRecipeRowsForProduct(
     products: ProductionProduct[];
     ingredients: ProductionIngredient[];
   },
-  batchKgs?: { fullBatchKg?: number; partialKg?: number },
+  batchKgs?: { fullBatchKg?: number; partialKg?: number; partialKgs?: number[] },
   frozenRecipe?: ProductionProduct["recipe"] | null,
 ) {
   if (!baseProduct) {
@@ -407,6 +425,9 @@ function buildScaledRecipeRowsForProduct(
       batchKgs?.partialKg != null && batchKgs.partialKg > 0
         ? scaleRecipeQuantity(batchKgs.partialKg, product, source.ingredients, source.products, recipeItem.quantity)
         : undefined;
+    const partialQuantities = batchKgs?.partialKgs?.map((kg) =>
+      scaleRecipeQuantity(kg, product, source.ingredients, source.products, recipeItem.quantity),
+    );
 
     return {
       key: `${product.id}-${recipeItem.id}-${outputKg}`,
@@ -425,6 +446,7 @@ function buildScaledRecipeRowsForProduct(
       estimatedQuantity,
       batchQuantity,
       partialQuantity,
+      ...(partialQuantities && partialQuantities.length > 0 ? { partialQuantities } : {}),
       notes: buildRowNotes(recipeItem, ingredient, sourceProduct),
       // Só entra no documento quando a linha foi configurada: quem não mexeu continua com a
       // MESMA linha de sempre (o padrão é aplicado por `printsOn` quando o campo não existe).
@@ -556,7 +578,7 @@ function collectIngredientProductSections(
           entry.product,
           entry.requiredKg,
           source,
-          split.batched ? { fullBatchKg: split.fullBatchKg, partialKg: split.partialKg } : undefined,
+          batchKgsOf(split),
         ),
       };
     })
@@ -591,6 +613,7 @@ export function buildPreWeighingDocument(
       capacityPerBatch: product?.capacityPerBatch ?? null,
       salesToKgFactor: salesFactorOf(product),
       salesUnit: item.batchUnitLabel,
+      minPerBatch: product?.minPerBatch ?? null,
     });
     const outputKg = item.totalKg;
     const requestedSummary = buildRequestedSummary(op, item.productId);
@@ -617,7 +640,7 @@ export function buildPreWeighingDocument(
       product,
       outputKg,
       source,
-      split.batched ? { fullBatchKg: split.fullBatchKg, partialKg: split.partialKg } : undefined,
+      batchKgsOf(split),
     ).forEach((row, index) => {
       const recipeItem = product.recipe[index];
       const ingredient = recipeItem?.sourceType === "ingrediente" ? ingredientsById.get(recipeItem.sourceId) : undefined;
@@ -854,7 +877,7 @@ export function buildProductionSheetDocument(
         product,
         item.totalKg,
         source,
-        split.batched ? { fullBatchKg: split.fullBatchKg, partialKg: split.partialKg } : undefined,
+        batchKgsOf(split),
       )
         .filter((row) => printsOn(row, "producao"))
         .map<ProductionSheetRow>((row) => ({

@@ -8,6 +8,11 @@ export interface BatchPlan {
   batchSizes: number[];
   /** Rótulo da unidade de venda (ex.: "Un", "Kg"). */
   unitLabel: string;
+  /**
+   * Cartão #42: há mínimo por batida e ele não foi atingido — o total é menor que o mínimo
+   * (aviso na OP) ou não existe divisão com todas as batidas dentro do intervalo.
+   */
+  belowMinimumPerBatch: boolean;
 }
 
 export interface PlanBatchesInput {
@@ -15,6 +20,8 @@ export interface PlanBatchesInput {
   capacityPerBatch: number | null;
   salesToKgFactor: number;
   salesUnit: string;
+  /** Mínimo por batida na unidade de venda (cartão #42). Vazio/0 = sem mínimo (regra antiga). */
+  minPerBatch?: number | null;
 }
 
 /**
@@ -50,7 +57,35 @@ function resolveBatchQuantities(input: PlanBatchesInput) {
       );
     }
   }
-  return { factor, scale, total, cap };
+  let min = 0;
+  const rawMin = input.minPerBatch;
+  if (cap != null && rawMin != null && Number.isFinite(rawMin) && rawMin > 0) {
+    min = Math.min(cap, continuous ? Math.round(rawMin * scale) : Math.ceil(rawMin));
+  }
+  return { factor, scale, total, cap, min };
+}
+
+/**
+ * Cartão #42 — divide `total` em batidas entre `min` e `cap` (inteiros já escalados):
+ * - menor número de batidas possível (ceil(total / cap));
+ * - batidas maiores primeiro, guardando o mínimo para cada batida que ainda falta;
+ * - soma sempre igual ao total. Ex.: mín. 4 / máx. 9 → 12 = 8 + 4; 28 = 9 + 9 + 6 + 4.
+ * Sem mínimo (ou sem divisão possível dentro do intervalo) cai na regra antiga: enche até o
+ * máximo e a última leva a sobra.
+ */
+export function distributeBatchSizes(total: number, cap: number, min = 0) {
+  const batchCount = Math.max(1, Math.ceil(total / cap));
+  const feasible = min > 0 && total >= min && batchCount * min <= total;
+  const sizes: number[] = [];
+  let remaining = total;
+  for (let i = 0; i < batchCount; i += 1) {
+    const reserve = feasible ? min * (batchCount - i - 1) : 0;
+    const size = Math.min(cap, remaining - reserve);
+    sizes.push(size);
+    remaining -= size;
+  }
+  const belowMinimumPerBatch = min > 0 && sizes.some((size) => size < min);
+  return { sizes, belowMinimumPerBatch };
 }
 
 /**
@@ -61,21 +96,19 @@ function resolveBatchQuantities(input: PlanBatchesInput) {
  */
 export function planBatches(input: PlanBatchesInput): BatchPlan {
   const { salesUnit } = input;
-  const { scale, total, cap } = resolveBatchQuantities(input);
+  const { scale, total, cap, min } = resolveBatchQuantities(input);
 
   if (cap == null) {
-    return { batchCount: 1, batchSizes: [total / scale], unitLabel: salesUnit };
+    return { batchCount: 1, batchSizes: [total / scale], unitLabel: salesUnit, belowMinimumPerBatch: false };
   }
 
-  const batchCount = Math.max(1, Math.ceil(total / cap));
-  const batchSizes: number[] = [];
-  let remaining = total;
-  for (let i = 0; i < batchCount; i += 1) {
-    const size = Math.min(cap, remaining);
-    batchSizes.push(size / scale);
-    remaining -= size;
-  }
-  return { batchCount, batchSizes, unitLabel: salesUnit };
+  const { sizes, belowMinimumPerBatch } = distributeBatchSizes(total, cap, min);
+  return {
+    batchCount: sizes.length,
+    batchSizes: sizes.map((size) => size / scale),
+    unitLabel: salesUnit,
+    belowMinimumPerBatch,
+  };
 }
 
 export interface PreWeighBatchSplit {
@@ -91,6 +124,11 @@ export interface PreWeighBatchSplit {
   partialUnits: number;
   /** kg de saída da parcial. */
   partialKg: number;
+  /**
+   * Todas as batidas menores que a cheia, da maior para a menor (cartão #42: com mínimo por
+   * batida pode haver mais de uma, ex.: 9 + 9 + 6 + 4). `partialUnits`/`partialKg` = a primeira.
+   */
+  partials: { units: number; kg: number; count: number }[];
   /** total em unidades de venda. */
   totalUnits: number;
   unitLabel: string;
@@ -102,22 +140,33 @@ export interface PreWeighBatchSplit {
  */
 export function computePreWeighBatchSplit(input: PlanBatchesInput): PreWeighBatchSplit {
   const { totalKg, salesUnit } = input;
-  const { factor, scale, total, cap } = resolveBatchQuantities(input);
+  const { factor, scale, total, cap, min } = resolveBatchQuantities(input);
   const totalUnits = total / scale;
   if (cap == null) {
-    return { batched: false, fullBatchCount: 0, fullBatchUnits: 0, fullBatchKg: 0, partialUnits: totalUnits, partialKg: totalKg, totalUnits, unitLabel: salesUnit };
+    return { batched: false, fullBatchCount: 0, fullBatchUnits: 0, fullBatchKg: 0, partialUnits: totalUnits, partialKg: totalKg, partials: [], totalUnits, unitLabel: salesUnit };
   }
-  const fullBatchCount = Math.floor(total / cap);
-  const partial = total - fullBatchCount * cap;
+  const { sizes } = distributeBatchSizes(total, cap, min);
+  const fullBatchCount = sizes.filter((size) => size === cap).length;
+  const partialGroups = new Map<number, number>();
+  for (const size of sizes) {
+    if (size !== cap && size > 0) {
+      partialGroups.set(size, (partialGroups.get(size) ?? 0) + 1);
+    }
+  }
+  const toKg = (units: number) => Number((units * factor).toFixed(3));
+  const partials = Array.from(partialGroups.entries())
+    .sort((a, b) => b[0] - a[0])
+    .map(([size, count]) => ({ units: size / scale, kg: toKg(size / scale), count }));
   const fullBatchUnits = cap / scale;
-  const partialUnits = partial / scale;
+  const partialUnits = partials[0]?.units ?? 0;
   return {
     batched: true,
     fullBatchCount,
     fullBatchUnits,
-    fullBatchKg: Number((fullBatchUnits * factor).toFixed(3)),
+    fullBatchKg: toKg(fullBatchUnits),
     partialUnits,
-    partialKg: Number((partialUnits * factor).toFixed(3)),
+    partialKg: partials[0]?.kg ?? 0,
+    partials,
     totalUnits,
     unitLabel: salesUnit,
   };
@@ -159,8 +208,12 @@ export function formatBatchSplitPhrase(
     const word = split.fullBatchCount === 1 ? "cheia" : "cheias";
     parts.push(`${split.fullBatchCount} ${word} de ${amount(split.fullBatchUnits, split.fullBatchKg)}`);
   }
-  if (split.partialUnits > 0) {
-    parts.push(`1 parcial de ${amount(split.partialUnits, split.partialKg)}`);
+  const partials = split.partials ?? (split.partialUnits > 0
+    ? [{ units: split.partialUnits, kg: split.partialKg, count: 1 }]
+    : []);
+  for (const partial of partials) {
+    const word = partial.count === 1 ? "parcial" : "parciais";
+    parts.push(`${partial.count} ${word} de ${amount(partial.units, partial.kg)}`);
   }
   return parts.join(" + ");
 }
@@ -181,14 +234,23 @@ export function formatBatchSizesPhrase(
   }
   const cap = Math.max(...batchSizes);
   const fullCount = batchSizes.filter((size) => size === cap).length;
-  const partial = batchSizes.find((size) => size < cap) ?? 0;
+  const partialGroups = new Map<number, number>();
+  for (const size of batchSizes) {
+    if (size < cap && size > 0) {
+      partialGroups.set(size, (partialGroups.get(size) ?? 0) + 1);
+    }
+  }
+  const partials = Array.from(partialGroups.entries())
+    .sort((a, b) => b[0] - a[0])
+    .map(([units, count]) => ({ units, kg: units, count }));
   return formatBatchSplitPhrase({
     batched: true,
     fullBatchCount: fullCount,
     fullBatchUnits: cap,
     fullBatchKg: cap,
-    partialUnits: partial,
-    partialKg: partial,
+    partialUnits: partials[0]?.units ?? 0,
+    partialKg: partials[0]?.units ?? 0,
+    partials,
     totalUnits: batchSizes.reduce((sum, size) => sum + size, 0),
     unitLabel,
   }, "units", weight);
@@ -345,4 +407,52 @@ export function deriveCapacityFromProductRecipe(input: {
     recipeYieldUnits,
     mainIngredientLimitKg,
   });
+}
+
+/**
+ * Colunas de parcial das folhas (pré-pesagem/produção). Uma parcial só = "Parcial", como
+ * sempre; com mínimo por batida (cartão #42) cada tamanho ganha a sua coluna:
+ * "Parcial 6 Un", "Parcial 4 Un ×2".
+ */
+export function listPartialColumns(split: PreWeighBatchSplit | null | undefined) {
+  if (!split?.batched) {
+    return [] as { index: number; label: string }[];
+  }
+  const partials = split.partials ?? (split.partialUnits > 0
+    ? [{ units: split.partialUnits, kg: split.partialKg, count: 1 }]
+    : []);
+  if (partials.length === 1 && partials[0].count === 1) {
+    return [{ index: 0, label: "Parcial" }];
+  }
+  return partials.map((partial, index) => ({
+    index,
+    label: `Parcial ${formatBatchAmount(partial.units)} ${split.unitLabel}${partial.count > 1 ? ` ×${partial.count}` : ""}`,
+  }));
+}
+
+/** Quantidade de uma linha da receita na parcial `index` (cartão #42). */
+export function partialQuantityAt(
+  row: { partialQuantity?: number; partialQuantities?: number[] },
+  index: number,
+) {
+  return row.partialQuantities?.[index] ?? (index === 0 ? row.partialQuantity : undefined);
+}
+
+/**
+ * Texto do aviso "abaixo do mínimo por batida" (cartão #42). Só aviso: a OP não trava e sai
+ * com a quantidade exata do pedido.
+ */
+export function describeBelowMinimumPerBatch(item: {
+  batchSizes: number[];
+  batchUnitLabel: string;
+  minPerBatch?: number | null;
+  capacityPerBatch?: number | null;
+}) {
+  const unit = item.batchUnitLabel;
+  const total = Math.round(item.batchSizes.reduce((sum, size) => sum + size, 0) * 1000) / 1000;
+  const min = item.minPerBatch ?? 0;
+  if (total < min) {
+    return `Pedido de ${formatBatchAmount(total)} ${unit} abaixo do mínimo por batida (${formatBatchAmount(min)} ${unit}). Sai em 1 batida com o total. É só um aviso — não trava a OP.`;
+  }
+  return `${formatBatchAmount(total)} ${unit} não fecha em batidas entre o mínimo (${formatBatchAmount(min)} ${unit}) e o máximo (${formatBatchAmount(item.capacityPerBatch ?? 0)} ${unit}); a última batida ficou abaixo do mínimo. É só um aviso — não trava a OP.`;
 }

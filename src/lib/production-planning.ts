@@ -547,6 +547,11 @@ export interface ProductionProduct {
   isMpiIngredient: boolean;
   /** Capacidade por batida na unidade de venda. null = sem batida (1 corrida). */
   capacityPerBatch: number | null;
+  /**
+   * Cartão #42: mínimo por batida na unidade de venda. null/undefined = sem mínimo (enche
+   * até a capacidade e a última batida leva a sobra). Opcional para as fixtures existentes.
+   */
+  minPerBatch?: number | null;
   /** Unidade do lote econômico (forma/maceira/pacote/unidade/kg). null = não definido. */
   economicBatchUnit: EconomicBatchUnit | null;
   /** XPAN-8: limite físico (kg) do ingrediente principal por batida (ex.: kg de trigo

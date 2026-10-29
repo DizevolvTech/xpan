@@ -737,6 +737,7 @@ function buildPlannedItems(
           releasedToProduction: false,
           productionStarted: false,
           capacityPerBatch: product.capacityPerBatch,
+          minPerBatch: product.minPerBatch ?? null,
           salesToKgFactor: productSalesToKgFactor(product),
           salesUnit: product.salesUnit,
           batchesDone: 0,
@@ -862,6 +863,7 @@ export function buildScheduleSkeletonItems(
           releasedToProduction: false,
           productionStarted: false,
           capacityPerBatch: product.capacityPerBatch,
+          minPerBatch: product.minPerBatch ?? null,
           salesToKgFactor: productSalesToKgFactor(product),
           salesUnit: product.salesUnit,
           batchesDone: 0,
@@ -1028,6 +1030,7 @@ export function buildProductionOrdersFromPlannedItems(
           batchUnitLabel: item.salesUnit,
           batchesDone: item.batchesDone,
           capacityPerBatch: item.capacityPerBatch,
+          minPerBatch: item.minPerBatch ?? null,
           salesToKgFactor: item.salesToKgFactor,
         });
       }
@@ -1094,6 +1097,7 @@ export function buildProductionOrdersFromPlannedItems(
           capacityPerBatch: opItem.capacityPerBatch,
           salesToKgFactor: opItem.salesToKgFactor,
           salesUnit: opItem.batchUnitLabel,
+          minPerBatch: opItem.minPerBatch ?? null,
         });
         const isBatched = opItem.capacityPerBatch != null && opItem.capacityPerBatch > 0;
         const batchesDone = Math.min(opItem.batchesDone, plan.batchCount);
@@ -1109,6 +1113,8 @@ export function buildProductionOrdersFromPlannedItems(
             | "pedido"
             | "cronograma",
           belowMinimum: opItem.minimumProductionKg > 0 && opItem.totalKg < opItem.minimumProductionKg,
+          // Cartão #42: aviso próprio quando o total não chega ao mínimo por batida.
+          belowMinimumPerBatch: plan.belowMinimumPerBatch,
           batchCount: plan.batchCount,
           batchSizes: plan.batchSizes,
           batchUnitLabel: plan.unitLabel,

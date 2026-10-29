@@ -227,3 +227,10 @@ test("recordProductionLeftover — erro real continua estourando", async () => {
     /Failed to record production leftover: boom/,
   );
 });
+
+test("calculateProductionLeftover — cartão #42: com mínimo por batida (8 + 4) a estimativa é o planejado", () => {
+  const result = calculateProductionLeftover({ batchSizes: [8, 4], exactBatchSizes: true });
+  assert.equal(result.plannedQuantity, 12);
+  assert.equal(result.producedQuantity, 12);
+  assert.equal(result.leftoverQuantity, 0);
+});

@@ -34,9 +34,12 @@ export function buildThermalTickets(document: ProductionSheetDocument, opCode = 
   return sections.flatMap((section, sectionIndex) => {
     const split: PreWeighBatchSplit | null = section.batchSplit;
     const batches = split?.batched
-      ? [...Array.from({ length: split.fullBatchCount }, () => ({ quantity: split.fullBatchUnits, complementary: false })),
-          ...(split.partialUnits > 0 ? [{ quantity: split.partialUnits, complementary: true }] : [])]
-      : [{ quantity: section.quantity, complementary: false }];
+      ? [...Array.from({ length: split.fullBatchCount }, () => ({ quantity: split.fullBatchUnits, complementary: false, partialIndex: -1 })),
+          // Cartão #42: com mínimo por batida pode haver várias parciais (9 + 9 + 6 + 4).
+          ...(split.partials ?? []).flatMap((partial, partialIndex) =>
+            Array.from({ length: partial.count }, () => ({ quantity: partial.units, complementary: true, partialIndex })),
+          )]
+      : [{ quantity: section.quantity, complementary: false, partialIndex: -1 }];
     return batches.map((batch, index) => ({
       key: `${sectionIndex + 1}-B${String(index + 1).padStart(2, "0")}`,
       /** Código do QR/barras. */
@@ -56,7 +59,9 @@ export function buildThermalTickets(document: ProductionSheetDocument, opCode = 
       items: section.items.map((row): PrintIngredientRow => ({
         ...row,
         estimatedQuantity: split?.batched
-          ? (batch.complementary ? row.partialQuantity : row.batchQuantity)
+          ? (batch.complementary
+              ? row.partialQuantities?.[batch.partialIndex] ?? row.partialQuantity
+              : row.batchQuantity)
             ?? row.estimatedQuantity * batch.quantity / split.totalUnits
           : row.estimatedQuantity,
       })),

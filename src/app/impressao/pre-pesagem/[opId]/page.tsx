@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { PrintDocument } from "@/components/printing/print-document";
 import type { PrintIngredientRow } from "@/lib/printing-documents";
 import { groupPrintRowsByStage } from "@/lib/printing-documents";
-import type { PreWeighBatchSplit } from "@/lib/production-batches";
+import { listPartialColumns, partialQuantityAt, type PreWeighBatchSplit } from "@/lib/production-batches";
 import { formatBatchSplitPhrase } from "@/lib/production-batches";
 import type { RecipeStageConfigEntry } from "@/lib/production-planning";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
@@ -73,7 +73,8 @@ function RecipeTable({
 
   const isBatched = Boolean(batchSplit?.batched);
   const showBatchColumn = isBatched && (batchSplit?.fullBatchCount ?? 0) > 0;
-  const showPartialColumn = isBatched && (batchSplit?.partialUnits ?? 0) > 0;
+  // Cartão #42: com mínimo por batida pode haver mais de uma parcial (uma coluna por tamanho).
+  const partialColumns = listPartialColumns(batchSplit);
 
   if (!isBatched) {
     return (
@@ -117,11 +118,11 @@ function RecipeTable({
                 Batida ×{batchSplit?.fullBatchCount}
               </th>
             ) : null}
-            {showPartialColumn ? (
-              <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-                Parcial
+            {partialColumns.map((column) => (
+              <th key={column.label} className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+                {column.label}
               </th>
-            ) : null}
+            ))}
           </tr>
         </thead>
         <tbody>
@@ -133,11 +134,11 @@ function RecipeTable({
                   {formatWeightCell(row.batchQuantity, row.unit, weight)}
                 </td>
               ) : null}
-              {showPartialColumn ? (
-                <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                  {formatWeightCell(row.partialQuantity, row.unit, weight)}
+              {partialColumns.map((column) => (
+                <td key={column.label} className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
+                  {formatWeightCell(partialQuantityAt(row, column.index), row.unit, weight)}
                 </td>
-              ) : null}
+              ))}
             </tr>
           ))}
         </tbody>

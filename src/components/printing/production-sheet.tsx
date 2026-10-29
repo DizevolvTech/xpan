@@ -8,7 +8,7 @@ import type {
   ProductionSheetProductSection,
 } from "@/lib/printing-documents";
 import { groupPrintRowsByStage, sumStageQuantityPerUnitKg } from "@/lib/printing-documents";
-import { formatBatchSplitPhrase, type PreWeighBatchSplit } from "@/lib/production-batches";
+import { formatBatchSplitPhrase, listPartialColumns, partialQuantityAt, type PreWeighBatchSplit } from "@/lib/production-batches";
 import { defaultRecipeStage } from "@/lib/production-planning";
 import { formatLocaleNumber } from "@/lib/utils";
 import { formatDisplayQuantity, type WeightDisplayUnit } from "@/lib/weight-display";
@@ -75,8 +75,9 @@ function IngredientTable({
 
   const isBatched = Boolean(batchSplit?.batched);
   const showBatchColumn = isBatched && (batchSplit?.fullBatchCount ?? 0) > 0;
-  const showPartialColumn = isBatched && (batchSplit?.partialUnits ?? 0) > 0;
-  const colSpan = 4 + (showBatchColumn ? 1 : 0) + (showPartialColumn ? 1 : 0);
+  // Cartão #42: com mínimo por batida pode haver mais de uma parcial (uma coluna por tamanho).
+  const partialColumns = listPartialColumns(batchSplit);
+  const colSpan = 4 + (showBatchColumn ? 1 : 0) + partialColumns.length;
 
   return (
     <table className="w-full border-collapse border border-stone-300">
@@ -93,11 +94,11 @@ function IngredientTable({
               Batida ×{batchSplit?.fullBatchCount}
             </th>
           ) : null}
-          {showPartialColumn ? (
-            <th className="w-28 border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-              Parcial
+          {partialColumns.map((column) => (
+            <th key={column.label} className="w-28 border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
+              {column.label}
             </th>
-          ) : null}
+          ))}
           <th className="w-28 border-r border-stone-400 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
             {unitColumnLabel}
           </th>
@@ -119,7 +120,7 @@ function IngredientTable({
                     Insumos {group.label.toLocaleLowerCase("pt-BR")}:
                   </td>
                   {showBatchColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
-                  {showPartialColumn ? <td className="border-t-2 border-stone-400 px-3 py-1.5" /> : null}
+                  {partialColumns.map((column) => <td key={column.label} className="border-t-2 border-stone-400 px-3 py-1.5" />)}
                   <td className="border-t-2 border-stone-400 px-3 py-1.5 text-sm font-semibold text-stone-900">
                     {unitColumnLabel && subtotalPerUnit != null ? formatKgCell(subtotalPerUnit, weight) : null}
                   </td>
@@ -159,11 +160,11 @@ function IngredientTable({
                       {formatQuantityCell(row.batchQuantity, row.unit, weight)}
                     </td>
                   ) : null}
-                  {showPartialColumn ? (
-                    <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
-                      {formatQuantityCell(row.partialQuantity, row.unit, weight)}
+                  {partialColumns.map((column) => (
+                    <td key={column.label} className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
+                      {formatQuantityCell(partialQuantityAt(row, column.index), row.unit, weight)}
                     </td>
-                  ) : null}
+                  ))}
                   <td className="border-t border-stone-200 px-3 py-2 align-top text-sm font-semibold text-stone-900">
                     {formatQuantityCell(row.quantityPerUnit, row.unit, weight)}
                   </td>

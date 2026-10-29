@@ -101,6 +101,11 @@ export interface ProductionLeftoverCalculationInput {
   batchSizes: number[];
   /** Quantidade informada pelo operador na conclusão. Ausente = usar a estimativa. */
   reportedProducedQuantity?: number | null;
+  /**
+   * Cartão #42: produto com mínimo por batida. As batidas já foram dimensionadas para somar
+   * exatamente o pedido (12 = 8 + 4), então a estimativa é o planejado, não "cheia × nº".
+   */
+  exactBatchSizes?: boolean;
 }
 
 export interface ProductionLeftoverCalculation {
@@ -131,7 +136,9 @@ export function calculateProductionLeftover(
   const plannedQuantity = roundQuantity(batchSizes.reduce((sum, size) => sum + size, 0));
   const fullBatchSize = batchSizes[0] ?? 0;
   const estimatedQuantity =
-    batchSizes.length > 1 ? roundQuantity(fullBatchSize * batchSizes.length) : plannedQuantity;
+    batchSizes.length > 1 && !input.exactBatchSizes
+      ? roundQuantity(fullBatchSize * batchSizes.length)
+      : plannedQuantity;
 
   const reportedQuantity = normalizeReportedQuantity(input.reportedProducedQuantity);
   const producedQuantity = reportedQuantity ?? estimatedQuantity;

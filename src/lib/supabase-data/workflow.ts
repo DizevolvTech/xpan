@@ -265,6 +265,7 @@ async function appendOrderEventsForProductionItem(
         const leftover = calculateProductionLeftover({
           batchSizes: opItem.batchSizes,
           reportedProducedQuantity,
+          exactBatchSizes: (opItem.minPerBatch ?? 0) > 0,
         });
         await recordProductionLeftover(
           {

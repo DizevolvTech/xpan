@@ -24,6 +24,7 @@ const split: PreWeighBatchSplit = {
   fullBatchKg: 6,
   partialUnits: 1.5,
   partialKg: 1.5,
+  partials: [{ units: 1.5, kg: 1.5, count: 1 }],
   totalUnits: 13.5,
   unitLabel: "Kg",
 };
@@ -108,7 +109,7 @@ test("frase de batidas converte só o que é peso: Kg vira g, Un não", () => {
   assert.equal(formatBatchSplitPhrase(split, "kg"), "2 cheias de 6 kg + 1 parcial de 1,5 kg");
   assert.equal(formatBatchSplitPhrase(split, "kg", "g"), "2 cheias de 6.000 g + 1 parcial de 1.500 g");
 
-  const counted: PreWeighBatchSplit = { ...split, unitLabel: "Un", fullBatchUnits: 100, partialUnits: 50, totalUnits: 250 };
+  const counted: PreWeighBatchSplit = { ...split, unitLabel: "Un", fullBatchUnits: 100, partialUnits: 50, partials: [{ units: 50, kg: 1.5, count: 1 }], totalUnits: 250 };
   assert.equal(formatBatchSplitPhrase(counted, "units", "g"), "2 cheias de 100 Un + 1 parcial de 50 Un");
   assert.equal(formatBatchSplitPhrase(counted, "kg", "g"), "2 cheias de 6.000 g + 1 parcial de 1.500 g");
 });

@@ -117,6 +117,8 @@ export interface PlannedOrderItem {
   productionStarted: boolean;
   // Batidas: capacidade + fator/unidade p/ derivar o plano após consolidar o totalKg.
   capacityPerBatch: number | null;
+  /** Cartão #42: mínimo por batida (unidade de venda). Ausente/null = sem mínimo. */
+  minPerBatch?: number | null;
   salesToKgFactor: number;
   salesUnit: OrderUnit;
   batchesDone: number;
@@ -181,6 +183,10 @@ export interface ProductionOrderItem {
   // Chão; null/0 = não batido, status pelos botões de avançar/voltar). O motor
   // sempre propaga este campo do item de planejamento (ver engine buildProductionOrders).
   capacityPerBatch: number | null;
+  /** Cartão #42: mínimo por batida usado no plano (unidade de venda). Ausente/null = sem mínimo. */
+  minPerBatch?: number | null;
+  /** Cartão #42: o total ficou abaixo do mínimo por batida (ou não coube no intervalo). */
+  belowMinimumPerBatch?: boolean;
   preparationStages: ProductPreparationStageKey[];
   sourceItemsCount: number;
   /**

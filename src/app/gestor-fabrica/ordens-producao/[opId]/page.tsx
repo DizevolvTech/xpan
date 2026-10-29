@@ -23,7 +23,7 @@ import {
   getPreviousProductionItemStatus,
   getProductionStatusLabel,
 } from "@/lib/production-workflow";
-import { formatBatchSizesPhrase } from "@/lib/production-batches";
+import { formatBatchSizesPhrase, describeBelowMinimumPerBatch } from "@/lib/production-batches";
 import { formatKgValue } from "@/lib/utils";
 import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 import { appendWeightUnitParam, useWeightDisplayUnit } from "@/lib/use-weight-display-unit";
@@ -309,6 +309,14 @@ export default function OrdemProducaoDetailsPage() {
                           title={`Demanda (${formatKgValue(item.totalKg)} kg) abaixo do lote mínimo do produto (${formatKgValue(item.minimumProductionKg)} kg). É só um AVISO — não trava a OP. Ajuste o mínimo na aba Receita do produto.`}
                         >
                           Abaixo do mínimo
+                        </span>
+                      ) : null}
+                      {item.belowMinimumPerBatch ? (
+                        <span
+                          className="ms-2 inline-flex items-center rounded-full bg-warning/[var(--opacity-subtle)] px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[0.06em] text-warning-foreground"
+                          title={describeBelowMinimumPerBatch(item)}
+                        >
+                          Abaixo do mínimo por batida
                         </span>
                       ) : null}
                       {item.batchCount > 1 ? (
