@@ -467,9 +467,10 @@ export function ProductFormDialog({
     if (!Number.isFinite(totalKg) || totalKg <= 0) return null;
     const salesToKgFactor =
       salesUnit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
-    return planBatches({ totalKg, capacityPerBatch: capacity, salesToKgFactor, salesUnit });
+    return planBatches({ totalKg, capacityPerBatch: capacity, salesToKgFactor, salesUnit, minPerBatch: formState.minPerBatch });
   }, [
     formState.capacityPerBatch,
+    formState.minPerBatch,
     formState.economicProductionKg,
     formState.unitProfiles.sales.weightKg,
     salesUnit,
