@@ -369,11 +369,14 @@ export function PedidosFabricaPageClient() {
     });
 
     if (!confirmed) return;
+    // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
+    if (factoryOpensOrders) setBatchesRefreshing(true);
     try {
       await cancelOrder(order.id);
       reloadBatchesAfterOrderChange();
       toast.success(`Pedido ${order.code} cancelado.`);
     } catch (error) {
+      setBatchesRefreshing(false);
       toast.error(error instanceof Error ? error.message : `Não foi possível cancelar o pedido ${order.code}.`);
     }
   }
@@ -520,11 +523,14 @@ export function PedidosFabricaPageClient() {
     });
 
     if (!confirmed) return;
+    // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
+    if (factoryOpensOrders) setBatchesRefreshing(true);
     try {
       await reopenOrder(order.id);
       reloadBatchesAfterOrderChange();
       toast.success(`Pedido ${order.code} reaberto.`);
     } catch (error) {
+      setBatchesRefreshing(false);
       toast.error(error instanceof Error ? error.message : `Não foi possível reabrir o pedido ${order.code}.`);
     }
   }
