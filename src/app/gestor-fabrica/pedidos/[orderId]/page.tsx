@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { getExpeditionVisibleStatus, isOrderReadyForDeliveryExecution } from "@/lib/delivery-workflow";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { ArrowLeft, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
@@ -52,6 +54,15 @@ export default function PedidoDetailsPage() {
   );
 
   const aggregatedOrderItems = useMemo(() => aggregateOrderItems(orderItems), [orderItems]);
+  // Quadro #42 (29/10): mesmo status da lista de Pedidos — produção mesclada com a execução
+  // de entrega. Sem isso o pedido já entregue aparecia "Aguardando expedição" no detalhe.
+  const deliveryExecutionState = useDeliveryExecution();
+  const visibleStatus = order
+    ? getExpeditionVisibleStatus(
+        order.status,
+        deliveryExecutionState.resolveExecution(order.id, isOrderReadyForDeliveryExecution(order.status)).status,
+      )
+    : null;
   const canCancelOrder = Boolean(order && !order.releasedToProduction && order.status !== "cancelado");
   // Quadro #4 (Lucas, 28/10): pedido de lote no prazo das lojas fica sem "Liberar", igual a Pedidos.
   const { waiting: waitingBatchOrders, loaded: waitingBatchLoaded } = useWaitingBatchOrders(planningData);
@@ -189,7 +200,7 @@ export default function PedidoDetailsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
             <div className="mt-1">
-              <StatusBadge status={order.status} />
+              <StatusBadge status={visibleStatus ?? order.status} />
             </div>
           </div>
           <div className="space-y-2 sm:col-span-2 lg:col-span-1 xl:col-span-1">
@@ -308,7 +319,7 @@ export default function PedidoDetailsPage() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)">Início da venda</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
@@ -362,7 +373,7 @@ export default function PedidoDetailsPage() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)">Início da venda</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
                     </tr>
                   </thead>

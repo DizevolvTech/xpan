@@ -1038,7 +1038,7 @@ export function PedidosFabricaPageClient() {
               <div>
                 <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
                 <div className="mt-1">
-                  <StatusBadge status={selectedModalOrder.status} />
+                  <StatusBadge status={selectedModalOrder.visibleStatus} />
                 </div>
               </div>
             </div>
@@ -1062,7 +1062,7 @@ export function PedidosFabricaPageClient() {
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
-                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)">Início da venda</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OP</th>
                       </tr>
                     </thead>
@@ -1118,7 +1118,7 @@ export function PedidosFabricaPageClient() {
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
-                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Venda</th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)">Início da venda</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Status</th>
                       </tr>
                     </thead>
