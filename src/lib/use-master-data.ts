@@ -41,6 +41,11 @@ function isMasterDataCacheFresh(entry: MasterDataCacheEntry) {
   return Date.now() - entry.fetchedAt < MASTER_DATA_CLIENT_CACHE_TTL_MS;
 }
 
+/** Cartão #18: dados que vieram junto com o HTML da página; a tela não busca de novo. */
+export function seedMasterDataSnapshot(data: MasterDataSnapshot) {
+  masterDataCache.set(getMasterDataCacheKey(), { data, fetchedAt: Date.now() });
+}
+
 async function fetchMasterDataSnapshot(forceRefresh: boolean) {
   const cacheKey = getMasterDataCacheKey();
   const cachedEntry = getMasterDataCacheEntry(cacheKey);

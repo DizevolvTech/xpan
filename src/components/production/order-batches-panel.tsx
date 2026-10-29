@@ -10,6 +10,7 @@ import type { PlannedOrderItem } from "@/lib/factory-planning/types";
 import { sumOrderItemsByProduct } from "@/lib/order-product-sum";
 import type { BatchGroupView, OrderBatchOverview } from "@/lib/supabase-data/order-batch-overview";
 import { formatKgValue } from "@/lib/utils";
+import { takeSeededOrderBatchesOverview } from "@/components/production/order-batches-overview-seed";
 
 function br(dateKey: string) {
   const [year, month, day] = dateKey.split("-");
@@ -47,9 +48,12 @@ export function OrderBatchesPanel({
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch("/api/order-batches/overview", { cache: "no-store" });
-      const data = (await response.json().catch(() => null)) as (OrderBatchOverview & { message?: string }) | null;
-      if (!response.ok || !data) throw new Error(data?.message ?? "Falha ao carregar os lotes.");
+      const seeded = takeSeededOrderBatchesOverview();
+      const response = seeded ? null : await fetch("/api/order-batches/overview", { cache: "no-store" });
+      const data =
+        seeded ??
+        ((await response?.json().catch(() => null)) as (OrderBatchOverview & { message?: string }) | null);
+      if ((response && !response.ok) || !data) throw new Error(data?.message ?? "Falha ao carregar os lotes.");
       setOverview(data);
       setLoadError(null);
       onGroupsChange?.(data.groups);

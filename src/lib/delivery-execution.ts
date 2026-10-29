@@ -40,7 +40,7 @@ export type DeliveryExecutionEntry = {
   pendingReleasedAt: string | null;
 };
 
-type DeliveryExecutionState = Record<string, DeliveryExecutionEntry>;
+export type DeliveryExecutionState = Record<string, DeliveryExecutionEntry>;
 type DeliveryExecutionCacheEntry = {
   data: DeliveryExecutionState;
   fetchedAt: number;
@@ -110,6 +110,11 @@ function setDeliveryExecutionCache(data: DeliveryExecutionState, cacheKey = getD
     data,
     fetchedAt: Date.now(),
   });
+}
+
+/** Cartão #18: dados que vieram junto com o HTML da página; a tela não busca de novo. */
+export function seedDeliveryExecutionState(data: DeliveryExecutionState) {
+  setDeliveryExecutionCache(data);
 }
 
 async function fetchDeliveryExecutionState(forceRefresh: boolean) {

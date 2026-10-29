@@ -121,6 +121,11 @@ async function fetchFactoryPlanningSnapshot(referenceDate: string, forceRefresh:
   return request;
 }
 
+/** Cartão #18: dados que vieram junto com o HTML da página; a tela não busca de novo. */
+export function seedFactoryPlanningSnapshot(referenceDate: string, data: FactoryPlanningData) {
+  factoryPlanningCache.set(buildFactoryPlanningCacheKey(referenceDate), { data, fetchedAt: Date.now() });
+}
+
 export function useFactoryPlanningSnapshot(referenceDate: string) {
   const cacheKey = buildFactoryPlanningCacheKey(referenceDate);
   const cachedEntry = getFactoryPlanningCacheEntry(cacheKey);

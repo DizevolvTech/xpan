@@ -19,6 +19,11 @@ const ENDPOINT = "/api/me/list-filters";
 // Uma leitura por carregamento do app, compartilhada entre as listas (sem N chamadas).
 let savedFiltersRequest: Promise<SavedListFilters | null> | null = null;
 
+/** Cartão #18: filtros salvos que vieram junto com o HTML da página. */
+export function seedSavedListFilters(saved: SavedListFilters) {
+  if (!savedFiltersRequest) savedFiltersRequest = Promise.resolve(saved);
+}
+
 function loadSavedFilters(): Promise<SavedListFilters | null> {
   if (!savedFiltersRequest) {
     savedFiltersRequest = fetch(ENDPOINT, { credentials: "same-origin", cache: "no-store" })
