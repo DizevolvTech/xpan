@@ -1152,7 +1152,7 @@ export default function GestorFabricaPage() {
                           type="button"
                           variant="secondary"
                           size="sm"
-                          className="min-h-11 w-full justify-start gap-2"
+                          className="h-auto min-h-11 w-full justify-start gap-2 whitespace-normal text-left"
                           disabled={
                             allReleasable.length === 0 || batchProgress !== null
                           }
@@ -1162,7 +1162,7 @@ export default function GestorFabricaPage() {
                         >
                           <Play className="size-3.5" aria-hidden />
                           Liberar todos em espera
-                          <span className="ms-auto tabular-nums opacity-80">
+                          <span className="ms-auto shrink-0 tabular-nums opacity-80">
                             ({allReleasable.length})
                           </span>
                         </Button>

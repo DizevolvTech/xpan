@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BatchPhraseLines } from "@/components/production/batch-phrase-lines";
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { ArrowLeft, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
@@ -321,8 +322,11 @@ export default function OrdemProducaoDetailsPage() {
                       ) : null}
                       {item.batchCount > 1 ? (
                         <p className="text-sm text-muted-foreground tabular-nums">
-                          {item.batchesDone}/{item.batchCount} batidas ·{" "}
-                          {formatBatchSizesPhrase(item.batchSizes, item.batchUnitLabel, weightUnit)}
+                          <BatchPhraseLines
+                            done={item.batchesDone}
+                            count={item.batchCount}
+                            phrase={formatBatchSizesPhrase(item.batchSizes, item.batchUnitLabel, weightUnit)}
+                          />
                         </p>
                       ) : item.batchUnitLabel !== "Kg" && item.batchUnitLabel !== "L" ? (
                         <p className="text-sm text-muted-foreground tabular-nums">

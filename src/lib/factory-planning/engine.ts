@@ -609,10 +609,15 @@ function getAverageProgress(items: Array<{ workflowProgress: number }>) {
   return Number((items.reduce((sum, item) => sum + item.workflowProgress, 0) / items.length).toFixed(1));
 }
 
+// Cartão #4 (29/10): a data do pedido é a mais tardia entre as dos ITENS. A janela
+// calculada pela hora do pedido só vale quando não há item; usá-la como piso empurrava
+// o pedido centralizado de entrega 29/10, criado em 28/10, para 30/10 (janela D+2) e o
+// tirava do lote da data gravada.
 function getLatestDate(items: Array<{ deliveryDate: string }>, fallbackDate: string) {
+  if (items.length === 0) return fallbackDate;
   return items.reduce(
     (latest, item) => (compareDateKeys(item.deliveryDate, latest) > 0 ? item.deliveryDate : latest),
-    fallbackDate,
+    items[0].deliveryDate,
   );
 }
 

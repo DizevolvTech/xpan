@@ -417,7 +417,11 @@ export function Sidebar({
       >
         <SheetContent
           side="left"
-          className={cn("w-[90%] p-0 sm:max-w-sm", className)}
+          className={cn(
+            // Abaixo da faixa "Sistema de TESTE" (z-60) para não cobrir o logo no celular.
+            "top-[var(--test-banner-h,0px)] h-[calc(100dvh-var(--test-banner-h,0px))] w-[90%] p-0 sm:max-w-sm",
+            className,
+          )}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Navegação</SheetTitle>

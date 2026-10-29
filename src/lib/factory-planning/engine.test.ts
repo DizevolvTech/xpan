@@ -2509,3 +2509,33 @@ test("Reunião 22/10 (bloco 8): pedido liberado mantém a data de produção con
   assert.equal(frozen?.canPlan, true);
   assert.equal(frozen?.productionItemKey, "2026-04-29|line-bolo|bolo4");
 });
+
+test("Cartão #4: pedido centralizado com entrega antes da janela mostra a data gravada, não a janela", () => {
+  // Pedido feito quarta 29/04 com janela D+2 (sexta 01/05), mas a fábrica gravou
+  // entrega quinta 30/04 (quarta + 1). O card e o lote usam 30/04; antes a janela
+  // servia de piso e o pedido aparecia como 01/05, fora do lote da data gravada.
+  const bolo4 = buildBoloProduct({ id: "bolo4", code: "BL-004", productionDays: ["quarta"], expeditionLeadDays: 1 });
+  const planning = buildFactoryPlanningData("2026-04-29", {
+    stores: [boloStore],
+    storeOrders: [
+      {
+        id: "order-bolo-c",
+        code: "PD-BOLO-C",
+        storeId: "store-bolo",
+        orderedAt: "2026-04-29T09:00:00",
+        deliveryDate: "2026-04-30",
+        committedDeliveryDate: "2026-04-30",
+        items: [{ id: "item-1", productId: "bolo4", quantity: 10, unit: "Un" }],
+      },
+    ],
+    settings,
+    sectors: boloSectors,
+    lines: boloLines,
+    products: [bolo4],
+    schedules: buildBoloSchedule([{ id: "sch-bolo4", productId: "bolo4", productionDays: ["quarta"] }]),
+  });
+
+  assert.equal(planning.orderItems[0]?.deliveryDate, "2026-04-30");
+  assert.equal(planning.orders[0]?.deliveryDate, "2026-04-30");
+  assert.equal(planning.orders[0]?.deliveryDateLabel, "30/04/2026");
+});
