@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ShoppingCart, Truck, Zap } from "lucide-react";
 
 import {
@@ -131,6 +131,20 @@ export function PedidosFabricaPageClient() {
   // Pedidos de lote ainda esperando lojas dentro do prazo (vem do painel de lotes).
   // Quadro #4 (27/10): grupos de lote por data (do painel) para agrupar e liberar por lote na lista.
   const [batchGroups, setBatchGroups] = useState<BatchGroupView[]>([]);
+  // Cartão #20 (aceite D29): depois de cancelar/reabrir, os cartões de lote são relidos;
+  // até chegarem, nenhum pedido mostra "Liberar" habilitado (o pedido pode ser de lote).
+  const [batchesRefreshing, setBatchesRefreshing] = useState(false);
+  const handleBatchGroupsChange = useCallback((groups: BatchGroupView[]) => {
+    setBatchGroups(groups);
+    setBatchesRefreshing(false);
+  }, []);
+  const reloadBatchesAfterOrderChange = useCallback(() => {
+    setBatchesReloadKey((value) => value + 1);
+    if (!factoryOpensOrders) return; // sem painel de lotes, nada a esperar
+    setBatchesRefreshing(true);
+    // Se a releitura falhar, não deixa o "Liberar" travado (o servidor recusa no prazo).
+    window.setTimeout(() => setBatchesRefreshing(false), 5000);
+  }, [factoryOpensOrders]);
   // Chave = código do pedido (PD-…): o id da lista vem do planejamento e o do lote, da tabela.
   const batchGroupByOrderCode = useMemo(() => {
     const map = new Map<string, BatchGroupView>();
@@ -357,6 +371,7 @@ export function PedidosFabricaPageClient() {
     if (!confirmed) return;
     try {
       await cancelOrder(order.id);
+      reloadBatchesAfterOrderChange();
       toast.success(`Pedido ${order.code} cancelado.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Não foi possível cancelar o pedido ${order.code}.`);
@@ -507,6 +522,7 @@ export function PedidosFabricaPageClient() {
     if (!confirmed) return;
     try {
       await reopenOrder(order.id);
+      reloadBatchesAfterOrderChange();
       toast.success(`Pedido ${order.code} reaberto.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Não foi possível reabrir o pedido ${order.code}.`);
@@ -657,7 +673,7 @@ export function PedidosFabricaPageClient() {
         <OrderBatchesPanel
           orderItems={planningData.orderItems}
           reloadKey={batchesReloadKey}
-          onGroupsChange={setBatchGroups}
+          onGroupsChange={handleBatchGroupsChange}
           onChanged={async () => {
             await refresh();
           }}
@@ -843,7 +859,7 @@ export function PedidosFabricaPageClient() {
                               >
                                 No lote
                               </span>
-                            ) : (
+                            ) : order.status === "cancelado" ? null : (
                             <Button
                                 type="button"
                                 size="xs" className={ROW_ACTION_TOUCH}
@@ -853,7 +869,7 @@ export function PedidosFabricaPageClient() {
                                 // preencher (o backend também rejeita).
                                 disabled={
                                   order.releasedToProduction ||
-                                  order.status === "cancelado" ||
+                                  batchesRefreshing ||
                                   items.length === 0
                                 }
                                 title={
