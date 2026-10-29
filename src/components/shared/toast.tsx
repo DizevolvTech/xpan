@@ -81,9 +81,10 @@ function ToastViewport({
       data-slot="toast-viewport"
       className={cn(
         // Mobile: rodapé full-width (alcance do polegar, não cobre o header da loja).
-        // ≥640px: canto inferior-direito. z-50 = patamar do DialogOverlay; renderizado
-        // por último no provider → empilha sobre modais (sítios 16/17 disparam de Dialog).
-        "fixed inset-x-0 bottom-0 z-50 flex max-h-screen w-full flex-col-reverse gap-rhythm-2xs p-rhythm-sm outline-none sm:right-0 sm:left-auto sm:max-w-[420px]",
+        // ≥640px: canto inferior-direito. z-[100] fica acima do DialogOverlay (z-50):
+        // o portal do Dialog entra no body depois do viewport, então z-50 empatado
+        // escondia avisos disparados com o diálogo aberto (D24, lote duplicado).
+        "fixed inset-x-0 bottom-0 z-[100] flex max-h-screen w-full flex-col-reverse gap-rhythm-2xs p-rhythm-sm outline-none sm:right-0 sm:left-auto sm:max-w-[420px]",
         className,
       )}
       {...props}
