@@ -1142,7 +1142,7 @@ export function PedidosFabricaPageClient() {
                             {formatDateKeyBr(item.saleDate)}
                           </td>
                           <td className="min-w-[180px] border-t border-border/70 bg-card px-3 py-3 text-sm">
-                            <StatusBadge status={selectedModalOrder && selectedModalOrder.visibleStatus !== selectedModalOrder.status ? selectedModalOrder.visibleStatus : item.status} />
+                            {deliveryExecutionState.isHydrated ? <StatusBadge status={selectedModalOrder && selectedModalOrder.visibleStatus !== selectedModalOrder.status ? selectedModalOrder.visibleStatus : item.status} /> : <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />}
                           </td>
                         </tr>
                       ))}

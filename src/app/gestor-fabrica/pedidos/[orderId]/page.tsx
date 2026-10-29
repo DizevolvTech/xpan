@@ -352,7 +352,11 @@ export default function PedidoDetailsPage() {
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.scheduleName}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <StatusBadge status={itemVisibleStatus(item.status)} />
+                          {visibleStatus ? (
+                            <StatusBadge status={itemVisibleStatus(item.status)} />
+                          ) : (
+                            <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />
+                          )}
                         </td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.opCode ?? "-"}</td>
                       </tr>
@@ -400,7 +404,11 @@ export default function PedidoDetailsPage() {
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
                         <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
-                          <StatusBadge status={itemVisibleStatus(item.status)} />
+                          {visibleStatus ? (
+                            <StatusBadge status={itemVisibleStatus(item.status)} />
+                          ) : (
+                            <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />
+                          )}
                         </td>
                       </tr>
                     ))}
