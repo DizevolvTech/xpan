@@ -66,6 +66,10 @@ import { performReleaseOrderWithConfirm } from "@/lib/release-order-with-confirm
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { isFactoryOpensOrdersEnabled } from "@/lib/feature-flags";
 
+// Cartão #19: no celular as ações da linha ficam com 44 px de altura (fáceis de tocar);
+// no computador seguem compactas (estilo ERP, cartão #7).
+const ROW_ACTION_TOUCH = "max-sm:h-11 max-sm:px-3";
+
 function summaryRowsLengthIsZero(data: { orders: unknown[] }) {
   return data.orders.length === 0;
 }
@@ -813,20 +817,20 @@ export function PedidosFabricaPageClient() {
                         </td>
                         <td className="whitespace-nowrap border-t border-border/70 bg-card px-2 py-1 text-right sm:sticky sm:right-0 sm:z-[1] shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
                           <div className="flex items-center justify-end gap-1">
-                            <Button asChild type="button" variant="outline" size="xs">
+                            <Button asChild type="button" variant="outline" size="xs" className={ROW_ACTION_TOUCH}>
                               <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>Detalhe</Link>
                             </Button>
                             <Button
                               type="button"
                               variant="outline"
-                              size="xs"
+                              size="xs" className={ROW_ACTION_TOUCH}
                               onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${anchorDate}`)}
                             >
                               Folha Loja
                             </Button>
                             {batchGroup && !order.releasedToProduction && order.status !== "cancelado" ? (
                               <span
-                                className="inline-flex h-7 items-center rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground"
+                                className="inline-flex h-7 items-center max-sm:h-11 rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground"
                                 title="Pedido de lote: libere o lote inteiro na faixa do lote acima"
                               >
                                 No lote
@@ -834,7 +838,7 @@ export function PedidosFabricaPageClient() {
                             ) : (
                             <Button
                                 type="button"
-                                size="xs"
+                                size="xs" className={ROW_ACTION_TOUCH}
                                 // Não desabilitamos mais por availableForRelease: o servidor é a
                                 // fonte da verdade e o gestor decide se quer forçar a liberação.
                                 // EXCEÇÃO: pedido VAZIO (0 itens) não é liberável — aguarda a loja
@@ -855,14 +859,14 @@ export function PedidosFabricaPageClient() {
                               </Button>
                             )}
                             {order.status === "cancelado" ? (
-                              <Button type="button" variant="outline" size="xs" onClick={() => handleReopenOrder(order)}>
+                              <Button type="button" variant="outline" size="xs" className={ROW_ACTION_TOUCH} onClick={() => handleReopenOrder(order)}>
                                 Reabrir
                               </Button>
                             ) : visibleStatus === "entregue" ? null : (
                               <Button
                                 type="button"
                                 variant="outline"
-                                size="xs"
+                                size="xs" className={ROW_ACTION_TOUCH}
                                 disabled={order.releasedToProduction}
                                 onClick={() => handleCancelOrder(order)}
                               >
@@ -1175,7 +1179,7 @@ export function PedidosFabricaPageClient() {
                 <Label>Lojas *</Label>
                 <button
                   type="button"
-                  className="text-xs font-medium text-info hover:text-info/80"
+                  className="-my-2 inline-flex min-h-11 items-center px-2 text-xs font-medium text-info hover:text-info/80 sm:min-h-8"
                   onClick={() => {
                     const active = masterData.stores.filter((store) => store.status === "ativo");
                     setOpenStoreIds(

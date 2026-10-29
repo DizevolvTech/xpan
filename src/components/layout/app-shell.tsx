@@ -53,12 +53,14 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
         className="lg:hidden"
       />
 
-      <div className="min-w-0">
+      <div className="relative min-w-0">
+        {/* Cartão #19: o botão fica no topo da página (no espaço reservado pelo cabeçalho)
+            e sobe junto ao rolar, em vez de flutuar por cima do conteúdo e da busca. */}
         <Button
           type="button"
           variant="outline"
           size="icon-lg"
-          className="fixed top-[calc(1rem+var(--test-banner-h,0px))] left-4 z-30 lg:hidden"
+          className="absolute top-4 left-4 z-30 lg:hidden"
           onClick={() => setMobileOpen(true)}
           aria-label="Abrir navegação"
         >
