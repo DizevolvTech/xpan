@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { buildClientTenantCacheKey } from "@/lib/client-access-context";
-import type { FactoryPlanningData, ProductionItemStatus } from "@/lib/order-planning";
+import type { FactoryPlanningData, OrderStatus, ProductionItemStatus } from "@/lib/order-planning";
 
 const emptyPlanningData: FactoryPlanningData = {
   referenceDate: "",
@@ -92,7 +92,7 @@ function isFactoryPlanningCacheFresh(entry: FactoryPlanningCacheEntry) {
   return Date.now() - entry.fetchedAt < FACTORY_PLANNING_CLIENT_CACHE_TTL_MS;
 }
 
-async function fetchFactoryPlanningSnapshot(referenceDate: string, forceRefresh: boolean) {
+async function fetchFactoryPlanningSnapshot(referenceDate: string, forceRefresh: boolean, bypassServerCache = false) {
   const cacheKey = buildFactoryPlanningCacheKey(referenceDate);
   const cachedEntry = getFactoryPlanningCacheEntry(cacheKey);
 
@@ -105,7 +105,11 @@ async function fetchFactoryPlanningSnapshot(referenceDate: string, forceRefresh:
     return inflightRequest;
   }
 
-  const request = readJson<FactoryPlanningData>(`/api/factory-planning?referenceDate=${referenceDate}`)
+  // Depois de uma mudança, `fresh=1` pula o cache curto do servidor: outra instância do
+  // Worker pode ainda ter o retrato anterior e devolver o status antigo (cartão #20).
+  const request = readJson<FactoryPlanningData>(
+    `/api/factory-planning?referenceDate=${referenceDate}${bypassServerCache ? "&fresh=1" : ""}`,
+  )
     .then((data) => {
       factoryPlanningCache.set(cacheKey, {
         data,
@@ -138,13 +142,13 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
   const [isLoading, setIsLoading] = useState(!cachedEntry);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async (forceRefresh = true) => {
+  const refresh = useCallback(async (forceRefresh = true, bypassServerCache = false) => {
     const previousCacheEntry = getFactoryPlanningCacheEntry(cacheKey);
     setIsLoading(forceRefresh || !previousCacheEntry);
     setError(null);
 
     try {
-      const data = await fetchFactoryPlanningSnapshot(referenceDate, forceRefresh);
+      const data = await fetchFactoryPlanningSnapshot(referenceDate, forceRefresh, bypassServerCache);
       setPlanningData(data);
       return data;
     } catch (fetchError) {
@@ -184,34 +188,42 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     [refresh, referenceDate],
   );
 
-  const cancelOrder = useCallback(
-    async (orderId: string) => {
-      await readJson("/api/factory-planning/workflow", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "cancel-order",
-          orderId,
-        }),
-      });
-      await refresh();
+  // Cartão #20: cancelar/reabrir muda a linha na hora (status otimista) e só depois
+  // confirma no servidor; se o servidor recusar, a linha volta ao que era e o erro sobe
+  // para a tela avisar. A releitura em seguida traz o estado oficial.
+  const changeOrderManagement = useCallback(
+    async (orderId: string, action: "cancel-order" | "reopen-order") => {
+      const before = planningData;
+      const optimisticStatus: OrderStatus = action === "cancel-order" ? "cancelado" : "em_espera";
+      setPlanningData((current) => ({
+        ...current,
+        orderItems: current.orderItems.map((item) =>
+          item.orderId === orderId ? { ...item, status: optimisticStatus } : item,
+        ),
+      }));
+      try {
+        await readJson("/api/factory-planning/workflow", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, orderId }),
+        });
+      } catch (mutationError) {
+        setPlanningData(before);
+        throw mutationError;
+      }
+      void refresh(true, true).catch(() => undefined);
     },
-    [refresh],
+    [planningData, refresh],
+  );
+
+  const cancelOrder = useCallback(
+    (orderId: string) => changeOrderManagement(orderId, "cancel-order"),
+    [changeOrderManagement],
   );
 
   const reopenOrder = useCallback(
-    async (orderId: string) => {
-      await readJson("/api/factory-planning/workflow", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "reopen-order",
-          orderId,
-        }),
-      });
-      await refresh();
-    },
-    [refresh],
+    (orderId: string) => changeOrderManagement(orderId, "reopen-order"),
+    [changeOrderManagement],
   );
 
   const updateProductionItemStatus = useCallback(

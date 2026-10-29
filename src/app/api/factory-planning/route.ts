@@ -5,6 +5,7 @@ import { getFactoryPlanningSnapshot } from "@/lib/supabase-data/planning-snapsho
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 import { getTodayDateKey } from "@/lib/order-planning";
+import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 
 function getReferenceDate(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -28,6 +29,11 @@ export async function GET(request: Request) {
       authorization.effectiveTenantId,
       createSupabaseAdminClient(),
     );
+    // Cartão #20: `fresh=1` (releitura logo depois de uma mudança) não usa o retrato
+    // de até 10 s guardado nesta instância.
+    if (new URL(request.url).searchParams.get("fresh") === "1") {
+      invalidatePlanningCaches(authorization.effectiveTenantId);
+    }
     const planning = await getFactoryPlanningSnapshot(getReferenceDate(request), {
       supabase,
       includeProfileNames: false,

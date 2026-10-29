@@ -354,8 +354,12 @@ export function PedidosFabricaPageClient() {
       cancelLabel: "Voltar",
     });
 
-    if (confirmed) {
-      void cancelOrder(order.id);
+    if (!confirmed) return;
+    try {
+      await cancelOrder(order.id);
+      toast.success(`Pedido ${order.code} cancelado.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Não foi possível cancelar o pedido ${order.code}.`);
     }
   }
 
@@ -500,8 +504,12 @@ export function PedidosFabricaPageClient() {
       cancelLabel: "Voltar",
     });
 
-    if (confirmed) {
-      void reopenOrder(order.id);
+    if (!confirmed) return;
+    try {
+      await reopenOrder(order.id);
+      toast.success(`Pedido ${order.code} reaberto.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Não foi possível reabrir o pedido ${order.code}.`);
     }
   }
 

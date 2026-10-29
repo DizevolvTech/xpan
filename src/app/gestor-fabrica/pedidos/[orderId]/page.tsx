@@ -231,7 +231,12 @@ export default function PedidoDetailsPage() {
                       cancelLabel: "Voltar",
                     })
                   ) {
-                    void reopenOrder(order.id);
+                    try {
+                      await reopenOrder(order.id);
+                      toast.success(`Pedido ${order.code} reaberto.`);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível concluir. Tente de novo.");
+                    }
                   }
                 }}
               >
@@ -253,7 +258,12 @@ export default function PedidoDetailsPage() {
                       cancelLabel: "Voltar",
                     })
                   ) {
-                    void cancelOrder(order.id);
+                    try {
+                      await cancelOrder(order.id);
+                      toast.success(`Pedido ${order.code} cancelado.`);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível concluir. Tente de novo.");
+                    }
                   }
                 }}
               >
