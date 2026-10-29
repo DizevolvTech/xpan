@@ -195,8 +195,12 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     async (orderId: string, action: "cancel-order" | "reopen-order") => {
       const before = planningData;
       const optimisticStatus: OrderStatus = action === "cancel-order" ? "cancelado" : "em_espera";
+      // A lista de Pedidos lê `orders`; outras telas leem `orderItems`: muda os dois.
       setPlanningData((current) => ({
         ...current,
+        orders: current.orders.map((order) =>
+          order.id === orderId ? { ...order, status: optimisticStatus } : order,
+        ),
         orderItems: current.orderItems.map((item) =>
           item.orderId === orderId ? { ...item, status: optimisticStatus } : item,
         ),
