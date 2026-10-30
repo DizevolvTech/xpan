@@ -909,7 +909,9 @@ export function PedidosFabricaPageClient() {
                       {isExpanded ? (
                         <tr key={`${order.id}-expanded`}>
                           <td colSpan={8} className="border-t border-border/70 bg-panel/10 px-4 py-4">
-                            <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 xl:grid-cols-[1.4fr_0.9fr]">
+                            {/* Quadro #42 (30/10): no celular a tabela é mais larga que a tela; o resumo fica preso
+                                à esquerda e com a largura da tela, sem botões passando da borda. */}
+                            <div className="sticky left-0 grid max-w-[calc(100vw-5rem)] gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 md:max-w-none xl:grid-cols-[1.4fr_0.9fr]">
                               <div className="space-y-3">
                                 <div className="flex items-center gap-1.5">
                                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
