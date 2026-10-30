@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BackToListLink } from "@/components/shared/back-to-list-link";
 import { BatchPhraseLines } from "@/components/production/batch-phrase-lines";
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -224,10 +225,10 @@ export default function OrdemProducaoDetailsPage() {
         ]}
         actions={
           <Button asChild type="button" variant="outline">
-            <Link href="/chao-fabrica/ordens-producao">
+            <BackToListLink href="/chao-fabrica/ordens-producao">
               <ArrowLeft className="size-4" />
               Voltar para OPs
-            </Link>
+            </BackToListLink>
           </Button>
         }
       >
@@ -420,10 +421,10 @@ export default function OrdemProducaoDetailsPage() {
             <Printer className="size-4" />Produção 80 mm
           </Button>
           <Button asChild type="button" variant="outline">
-            <Link href="/chao-fabrica/ordens-producao">
+            <BackToListLink href="/chao-fabrica/ordens-producao">
               <ArrowLeft className="size-4" />
               Voltar para OPs
-            </Link>
+            </BackToListLink>
           </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/chao-fabrica/expedicao">

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { InfoHint } from "@/components/shared/info-hint";
+import { BackToListLink } from "@/components/shared/back-to-list-link";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getExpeditionVisibleStatus, isOrderReadyForDeliveryExecution } from "@/lib/delivery-workflow";
 import { useParams } from "next/navigation";
@@ -115,10 +117,10 @@ export default function PedidoDetailsPage() {
         ]}
         actions={
           <Button asChild type="button" variant="outline">
-            <Link href="/gestor-fabrica/pedidos">
+            <BackToListLink href="/gestor-fabrica/pedidos">
               <ArrowLeft className="size-4" />
               Voltar para pedidos
-            </Link>
+            </BackToListLink>
           </Button>
         }
       >
@@ -154,10 +156,10 @@ export default function PedidoDetailsPage() {
             Folha da Loja
           </Button>
           <Button asChild type="button" variant="outline">
-            <Link href="/gestor-fabrica/pedidos">
+            <BackToListLink href="/gestor-fabrica/pedidos">
               <ArrowLeft className="size-4" />
               Voltar para pedidos
-            </Link>
+            </BackToListLink>
           </Button>
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-fabrica/ordens-producao">
@@ -295,10 +297,21 @@ export default function PedidoDetailsPage() {
           </div>
           <div className="sm:col-span-2 lg:col-span-3 xl:col-span-7">
             <div className="rounded-md border border-border/70 bg-panel/40 px-3 py-2 text-sm text-muted-foreground">
+              {deliveryOverridesItems && visibleStatus ? (
+                <>
+                  Progresso: <strong>100%</strong>.{" "}
+                  {visibleStatus === "entregue"
+                    ? "Pedido entregue à loja; o fluxo deste pedido terminou."
+                    : "Pedido já saiu para entrega; a produção dele terminou."}
+                </>
+              ) : (
+                <>
               Progresso derivado: <strong>{order.workflowProgress.toFixed(1)}%</strong>.{" "}
               {order.status === "cancelado"
                 ? "Pedido cancelado pela fábrica e fora do fluxo operacional até reabertura."
                 : "O pedido só sobe para expedição quando todos os produtos da OP concluírem."}
+                </>
+              )}
             </div>
           </div>
         </CardContent>
@@ -330,7 +343,7 @@ export default function PedidoDetailsPage() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)">Início da venda</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
@@ -388,7 +401,7 @@ export default function PedidoDetailsPage() {
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)">Início da venda</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
                     </tr>
                   </thead>
@@ -489,7 +502,7 @@ export default function PedidoDetailsPage() {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso da OP</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Ação</th>
                       </tr>
                     </thead>
@@ -500,7 +513,12 @@ export default function PedidoDetailsPage() {
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.productionDateLabel}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.scheduleName}</td>
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(op.totalKg)}</td>
-                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.progress.toFixed(1)}%</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                            {op.progress.toFixed(1)}%
+                            {op.ordersCount > 1 ? (
+                              <span className="block text-xs text-muted-foreground">OP com {op.ordersCount} pedidos</span>
+                            ) : null}
+                          </td>
                           <td className="border-t border-border/70 bg-card px-4 py-3">
                             <Button asChild type="button" size="sm" variant="ghost">
                               <Link href={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}>Abrir</Link>

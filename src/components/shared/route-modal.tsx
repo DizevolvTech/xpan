@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
@@ -11,6 +11,13 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
  * voltam intactos ao fechar. Fechar = voltar no histórico. O endereço direto da rota
  * (QR Code, link salvo, F5) continua abrindo a página inteira.
  */
+const RouteModalContext = createContext(false);
+
+/** true quando a página está aberta como janela sobre a lista (rota interceptada). */
+export function useInRouteModal() {
+  return useContext(RouteModalContext);
+}
+
 export function RouteModal({ title, children }: { title: string; children: ReactNode }) {
   const router = useRouter();
   return (
@@ -19,7 +26,7 @@ export function RouteModal({ title, children }: { title: string; children: React
       <DialogContent size="full" className="grid-cols-[minmax(0,1fr)] p-4 sm:p-6">
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <DialogDescription className="sr-only">{title}</DialogDescription>
-        {children}
+        <RouteModalContext.Provider value>{children}</RouteModalContext.Provider>
       </DialogContent>
     </Dialog>
   );

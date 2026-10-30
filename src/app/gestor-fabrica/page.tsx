@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   CalendarRange,
@@ -1297,6 +1298,11 @@ export default function GestorFabricaPage() {
                               <span className="shrink-0 rounded-full bg-info px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-info-foreground">
                                 Próxima
                               </span>
+                            ) : null}
+                            {/* Quadro #42 (29/10): a coluna reúne OPs liberadas; mostrar a situação real
+                                da OP (igual à lista de OPs) quando ela ainda não começou. */}
+                            {op.status !== "em_producao" ? (
+                              <StatusBadge status={op.status} className="shrink-0 px-1.5 py-0 text-[9px]" />
                             ) : null}
                           </div>
                           <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
