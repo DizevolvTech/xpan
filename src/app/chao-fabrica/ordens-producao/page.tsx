@@ -414,6 +414,8 @@ export default function OrdensProducaoPage() {
     {
       key: "status",
       header: "Status",
+      // Quadro #42 (30/10): selo inteiro, sem cortar "EM PRODUÇÃO" sob a coluna fixa de Ações.
+      className: "whitespace-nowrap pr-4",
       render: (item: OpQueueRow) => <StatusBadge status={item.status} />,
     },
     {

@@ -1008,7 +1008,7 @@ export function PedidosFabricaPageClient() {
           }
         }}
       >
-        <DialogContent size="3xl" className="space-y-4">
+        <DialogContent size="3xl" className="grid-cols-[minmax(0,1fr)] space-y-4">
           <DialogHeader>
             <DialogTitle>
               {detailModal?.view === "aggregated" ? "Itens consolidados" : "Itens originais"}
@@ -1062,7 +1062,7 @@ export function PedidosFabricaPageClient() {
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
-                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" className="relative after:absolute after:-inset-[14px] after:content-['']" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">OP</th>
                       </tr>
                     </thead>
@@ -1118,7 +1118,7 @@ export function PedidosFabricaPageClient() {
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Produção</th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Recebimento</th>
-                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
+                        <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" className="relative after:absolute after:-inset-[14px] after:content-['']" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
                         <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Status</th>
                       </tr>
                     </thead>

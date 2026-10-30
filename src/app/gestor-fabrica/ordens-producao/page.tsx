@@ -598,6 +598,8 @@ export default function OrdensProducaoPage() {
     {
       key: "status",
       header: "Status",
+      // Quadro #42 (30/10): selo inteiro, sem cortar "EM PRODUÇÃO" sob a coluna fixa de Ações.
+      className: "whitespace-nowrap pr-4",
       render: (item: OpQueueRow) =>
         isSkeletonOp(item) ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/[var(--opacity-strong)] px-2.5 py-[3px] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-secondary-foreground ring-1 ring-inset ring-border">
