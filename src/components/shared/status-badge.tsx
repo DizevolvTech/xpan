@@ -247,6 +247,9 @@ const fallbackTone: StatusTone = {
   dot: "bg-muted-foreground/[var(--opacity-strong)]",
 };
 
+/** Selo compacto para filas densas (Fila de OPs): menos espaçamento e quebra de linha permitida. */
+export const QUEUE_STATUS_BADGE = "px-1.5 tracking-[0.02em] leading-tight whitespace-normal";
+
 interface StatusBadgeProps {
   status: StatusType;
   className?: string;

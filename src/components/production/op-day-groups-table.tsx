@@ -73,7 +73,7 @@ export function OpDayGroupsTable<T extends { id: string }>({
               <th
                 key={column.key}
                 className={cn(
-                  "px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground",
+                  "px-[5px] py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground",
                   column.className,
                   // Reunião 22/10 (bloco 3): Ações sempre à vista, presa à direita.
                   index === columns.length - 1 && STICKY_LAST,
@@ -117,7 +117,7 @@ export function OpDayGroupsTable<T extends { id: string }>({
                     <td
                       key={column.key}
                       className={cn(
-                        "px-2 py-1 align-middle",
+                        "px-[5px] py-1 align-middle",
                         column.className,
                         index === columns.length - 1 && cn(STICKY_LAST, "bg-card"),
                       )}

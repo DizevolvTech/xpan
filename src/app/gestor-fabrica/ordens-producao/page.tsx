@@ -21,7 +21,7 @@ import { OperationFiltersCard } from "@/components/shared/operation-filters-card
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
-import { StatusBadge } from "@/components/shared/status-badge";
+import { QUEUE_STATUS_BADGE, StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -598,8 +598,9 @@ export default function OrdensProducaoPage() {
     {
       key: "status",
       header: "Status",
-      // Quadro #42 (30/10): selo inteiro, sem cortar "EM PRODUÇÃO" sob a coluna fixa de Ações.
-      className: "whitespace-nowrap pr-4",
+      // Quadro #42 (30/10): selo compacto (quebra em 2 linhas se faltar espaço) para a fila
+      // caber em 1280 px sem a coluna fixa de Ações cobrir o status.
+      className: "w-[7rem]",
       render: (item: OpQueueRow) =>
         isSkeletonOp(item) ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary/[var(--opacity-strong)] px-2.5 py-[3px] text-[10.5px] font-semibold uppercase tracking-[0.08em] text-secondary-foreground ring-1 ring-inset ring-border">
@@ -607,7 +608,7 @@ export default function OrdensProducaoPage() {
             Sem pedido
           </span>
         ) : (
-          <StatusBadge status={item.status} />
+          <StatusBadge status={item.status} className={QUEUE_STATUS_BADGE} />
         ),
     },
     {
