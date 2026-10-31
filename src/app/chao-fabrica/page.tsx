@@ -600,7 +600,7 @@ export default function ChaoFabricaPage() {
                         >
                           {column.totalCount}
                         </span>
-                        <span className="truncate text-sm font-semibold text-foreground">
+                        <span className="break-words text-sm font-semibold leading-tight text-foreground">
                           {column.title}
                         </span>
                       </span>
@@ -809,7 +809,7 @@ function ChaoOpCard({
         ) : null}
       </Link>
 
-      <p className="truncate text-lg font-semibold leading-tight text-foreground">
+      <p className="break-words text-lg font-semibold leading-tight text-foreground">
         {op.lineName}
         {op.sectorName ? (
           <span className="ml-1.5 text-base font-normal text-muted-foreground">— {op.sectorName}</span>
@@ -869,11 +869,11 @@ function ChaoOpCard({
           size="lg"
           onClick={() => onAdvance(op)}
           disabled={isAdvancing}
-          className="mt-1 w-full"
+          className="mt-1 h-auto min-h-11 w-full whitespace-normal py-2 text-center"
           aria-label={nextStepLabel ? `Avançar toda a OP — ${nextStepLabel}` : "Avançar toda a OP"}
         >
           <ArrowRight className="size-4 shrink-0" aria-hidden />
-          <span className="truncate">
+          <span>
             {nextStepLabel ? `Avançar OP: ${nextStepLabel}` : "Avançar OP"}
           </span>
         </Button>

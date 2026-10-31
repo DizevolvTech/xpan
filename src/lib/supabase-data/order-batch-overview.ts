@@ -42,6 +42,8 @@ export interface OrderBatchOverview {
   settings: { leadDays: number; cutoffTime: string };
   groups: BatchGroupView[];
   missing: MissingBatchDateView[];
+  /** Pedidos cancelados que pertencem a um lote aberto: ao reabrir, voltam para o lote. */
+  cancelledBatchOrderCodes?: string[];
 }
 
 interface BatchRow {
@@ -177,7 +179,11 @@ export async function getOrderBatchOverview(
     }
   }
 
-  return { now, settings, groups, missing };
+  const cancelledBatchOrderCodes = orders
+    .filter((order) => order.cancelled && order.batchId !== null)
+    .map((order) => order.orderCode);
+
+  return { now, settings, groups, missing, cancelledBatchOrderCodes };
 }
 
 /** Fecha (status 'fechado') os lotes cujas datas já foram todas liberadas: saem do painel. */

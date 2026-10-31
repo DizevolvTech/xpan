@@ -11,7 +11,11 @@ import { sumOrderItemsByProduct } from "@/lib/order-product-sum";
 import type { BatchGroupView, OrderBatchOverview } from "@/lib/supabase-data/order-batch-overview";
 import { formatKgValue } from "@/lib/utils";
 import { InfoHint } from "@/components/shared/info-hint";
-import { takeSeededOrderBatchesOverview } from "@/components/production/order-batches-overview-seed";
+import {
+  fetchOrderBatchesOverview,
+  seedOrderBatchesOverview,
+  takeSeededOrderBatchesOverview,
+} from "@/components/production/order-batches-overview-seed";
 
 function br(dateKey: string) {
   const [year, month, day] = dateKey.split("-");
@@ -42,7 +46,7 @@ export function OrderBatchesPanel({
   onChanged: () => Promise<void> | void;
   onOpenBatchForDate: (deliveryDate: string, storeIds: string[]) => void;
   /** Quadro #4 (27/10): grupos por data, para a lista de Pedidos agrupar e liberar por lote. */
-  onGroupsChange?: (groups: BatchGroupView[]) => void;
+  onGroupsChange?: (groups: BatchGroupView[], overview: OrderBatchOverview) => void;
   /** Busca da tela de Pedidos: o painel de lotes filtra junto com a lista (quadro #10). */
   searchTerm?: string;
 }) {
@@ -60,7 +64,7 @@ export function OrderBatchesPanel({
       if ((response && !response.ok) || !data) throw new Error(data?.message ?? "Falha ao carregar os lotes.");
       setOverview(data);
       setLoadError(null);
-      onGroupsChange?.(data.groups);
+      onGroupsChange?.(data.groups, data);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Falha ao carregar os lotes.");
     }
@@ -95,8 +99,12 @@ export function OrderBatchesPanel({
   );
 
   // Quadro #20 (31/10): lista e lotes são relidos juntos (antes o lote esperava a lista).
+  // Quadro #20 (31/10): lista e lotes mudam na mesma atualização: os lotes são lidos junto
+  // com a lista e só aplicados quando a lista também chegou.
   const { releaseGroup, busyDate } = useBatchRelease(async () => {
-    await Promise.all([onChanged(), load()]);
+    const [, overviewData] = await Promise.all([onChanged(), fetchOrderBatchesOverview()]);
+    if (overviewData) seedOrderBatchesOverview(overviewData);
+    await load();
   });
 
 

@@ -30,10 +30,14 @@ import { InfoHint } from "@/components/shared/info-hint";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
 import { useListStatusFilter } from "@/lib/use-list-status-filter";
 import { OrderBatchesPanel } from "@/components/production/order-batches-panel";
+import {
+  fetchOrderBatchesOverview,
+  seedOrderBatchesOverview,
+} from "@/components/production/order-batches-overview-seed";
 import { BatchBandRow } from "@/components/production/order-batch-band-row";
 import { useBatchRelease } from "@/components/production/use-batch-release";
 import { clusterRowsByGroup } from "@/lib/cluster-rows-by-group";
-import type { BatchGroupView } from "@/lib/supabase-data/order-batch-overview";
+import type { BatchGroupView, OrderBatchOverview } from "@/lib/supabase-data/order-batch-overview";
 import { summarizeOrderProductionDays, type OrderProductionDays } from "@/lib/order-production-days";
 import { OperationFiltersCard } from "@/components/shared/operation-filters-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
@@ -95,6 +99,12 @@ const ORDER_STATUS_FILTER_OPTIONS = [
 ];
 const ORDER_FINAL_STATUSES = ["entregue", "cancelado"] as const;
 
+
+function brDayMonth(dateKey: string) {
+  const [year, month, day] = dateKey.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : dateKey;
+}
+
 export function PedidosFabricaPageClient() {
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const searchParams = useSearchParams();
@@ -135,8 +145,10 @@ export function PedidosFabricaPageClient() {
   // até chegarem, nenhum pedido mostra "Liberar" habilitado (o pedido pode ser de lote).
   // Quadro #20 (31/10): só o pedido que mudou espera os lotes; os outros não piscam.
   const [batchesRefreshingOrderId, setBatchesRefreshingOrderId] = useState<string | null>(null);
-  const handleBatchGroupsChange = useCallback((groups: BatchGroupView[]) => {
+  const [cancelledBatchOrderCodes, setCancelledBatchOrderCodes] = useState<ReadonlySet<string>>(() => new Set());
+  const handleBatchGroupsChange = useCallback((groups: BatchGroupView[], overview: OrderBatchOverview) => {
     setBatchGroups(groups);
+    setCancelledBatchOrderCodes(new Set(overview.cancelledBatchOrderCodes ?? []));
     setBatchesRefreshingOrderId(null);
   }, []);
   const reloadBatchesAfterOrderChange = useCallback(() => {
@@ -226,7 +238,10 @@ export function PedidosFabricaPageClient() {
       const matchesSearch =
         normalizedTerm.length === 0 ||
         item.code.toLowerCase().includes(normalizedTerm) ||
-        item.storeName.toLowerCase().includes(normalizedTerm);
+        item.storeName.toLowerCase().includes(normalizedTerm) ||
+        // Quadro #10 (31/10): a busca por data ("31/10") acha os pedidos da entrega, como o lote.
+        brDayMonth(item.deliveryDate).includes(normalizedTerm) ||
+        item.deliveryDate.includes(normalizedTerm);
       const matchesStatus = matchesStatusFilter(item.visibleStatus);
       const matchesStore = storeFilter === "all" || item.storeName === storeFilter;
       const matchesDelivery = deliveryFilter === "all" || item.deliveryDate === deliveryFilter;
@@ -370,7 +385,6 @@ export function PedidosFabricaPageClient() {
 
     if (!confirmed) return;
     // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
-    if (factoryOpensOrders) setBatchesRefreshingOrderId(order.id);
     try {
       await cancelOrder(order.id);
       reloadBatchesAfterOrderChange();
@@ -382,8 +396,11 @@ export function PedidosFabricaPageClient() {
   }
 
   const { releaseGroup: releaseBatchGroup, busyDate: releasingBatchDate } = useBatchRelease(async () => {
+    // Lista e lotes na mesma atualização (quadro #20): lê os dois juntos e aplica os lotes
+    // quando a lista também chegou.
+    const [, overviewData] = await Promise.all([refresh(), fetchOrderBatchesOverview()]);
+    if (overviewData) seedOrderBatchesOverview(overviewData);
     setBatchesReloadKey((value) => value + 1);
-    await refresh();
   });
 
   async function handleReleaseOrder(order: OrderSummaryRow) {
@@ -524,7 +541,9 @@ export function PedidosFabricaPageClient() {
 
     if (!confirmed) return;
     // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
-    if (factoryOpensOrders) setBatchesRefreshingOrderId(order.id);
+    // Quadro #20 (31/10): só espera os lotes o pedido que pertence a um lote (ele volta
+    // para o lote ao reabrir); pedido avulso fica com "Liberar" habilitado na hora.
+    if (factoryOpensOrders && cancelledBatchOrderCodes.has(order.code)) setBatchesRefreshingOrderId(order.id);
     try {
       await reopenOrder(order.id);
       reloadBatchesAfterOrderChange();

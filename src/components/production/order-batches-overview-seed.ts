@@ -19,3 +19,14 @@ export function takeSeededOrderBatchesOverview(): (OrderBatchOverview & { messag
   seeded = null;
   return current && Date.now() - current.at < SEED_TTL_MS ? current.data : null;
 }
+
+/** Lê a visão dos lotes sem aplicar na tela (quem chama decide quando aplicar). */
+export async function fetchOrderBatchesOverview(): Promise<OrderBatchOverview | null> {
+  try {
+    const response = await fetch("/api/order-batches/overview", { cache: "no-store" });
+    if (!response.ok) return null;
+    return (await response.json()) as OrderBatchOverview;
+  } catch {
+    return null;
+  }
+}
