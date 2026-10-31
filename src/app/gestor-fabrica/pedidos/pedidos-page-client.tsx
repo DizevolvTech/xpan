@@ -133,17 +133,17 @@ export function PedidosFabricaPageClient() {
   const [batchGroups, setBatchGroups] = useState<BatchGroupView[]>([]);
   // Cartão #20 (aceite D29): depois de cancelar/reabrir, os cartões de lote são relidos;
   // até chegarem, nenhum pedido mostra "Liberar" habilitado (o pedido pode ser de lote).
-  const [batchesRefreshing, setBatchesRefreshing] = useState(false);
+  // Quadro #20 (31/10): só o pedido que mudou espera os lotes; os outros não piscam.
+  const [batchesRefreshingOrderId, setBatchesRefreshingOrderId] = useState<string | null>(null);
   const handleBatchGroupsChange = useCallback((groups: BatchGroupView[]) => {
     setBatchGroups(groups);
-    setBatchesRefreshing(false);
+    setBatchesRefreshingOrderId(null);
   }, []);
   const reloadBatchesAfterOrderChange = useCallback(() => {
     setBatchesReloadKey((value) => value + 1);
     if (!factoryOpensOrders) return; // sem painel de lotes, nada a esperar
-    setBatchesRefreshing(true);
     // Se a releitura falhar, não deixa o "Liberar" travado (o servidor recusa no prazo).
-    window.setTimeout(() => setBatchesRefreshing(false), 5000);
+    window.setTimeout(() => setBatchesRefreshingOrderId(null), 5000);
   }, [factoryOpensOrders]);
   // Chave = código do pedido (PD-…): o id da lista vem do planejamento e o do lote, da tabela.
   const batchGroupByOrderCode = useMemo(() => {
@@ -370,20 +370,20 @@ export function PedidosFabricaPageClient() {
 
     if (!confirmed) return;
     // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
-    if (factoryOpensOrders) setBatchesRefreshing(true);
+    if (factoryOpensOrders) setBatchesRefreshingOrderId(order.id);
     try {
       await cancelOrder(order.id);
       reloadBatchesAfterOrderChange();
       toast.success(`Pedido ${order.code} cancelado.`);
     } catch (error) {
-      setBatchesRefreshing(false);
+      setBatchesRefreshingOrderId(null);
       toast.error(error instanceof Error ? error.message : `Não foi possível cancelar o pedido ${order.code}.`);
     }
   }
 
   const { releaseGroup: releaseBatchGroup, busyDate: releasingBatchDate } = useBatchRelease(async () => {
-    await refresh();
     setBatchesReloadKey((value) => value + 1);
+    await refresh();
   });
 
   async function handleReleaseOrder(order: OrderSummaryRow) {
@@ -524,13 +524,13 @@ export function PedidosFabricaPageClient() {
 
     if (!confirmed) return;
     // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
-    if (factoryOpensOrders) setBatchesRefreshing(true);
+    if (factoryOpensOrders) setBatchesRefreshingOrderId(order.id);
     try {
       await reopenOrder(order.id);
       reloadBatchesAfterOrderChange();
       toast.success(`Pedido ${order.code} reaberto.`);
     } catch (error) {
-      setBatchesRefreshing(false);
+      setBatchesRefreshingOrderId(null);
       toast.error(error instanceof Error ? error.message : `Não foi possível reabrir o pedido ${order.code}.`);
     }
   }
@@ -680,6 +680,7 @@ export function PedidosFabricaPageClient() {
           orderItems={planningData.orderItems}
           reloadKey={batchesReloadKey}
           onGroupsChange={handleBatchGroupsChange}
+          searchTerm={searchTerm}
           onChanged={async () => {
             await refresh();
           }}
@@ -875,7 +876,7 @@ export function PedidosFabricaPageClient() {
                                 // preencher (o backend também rejeita).
                                 disabled={
                                   order.releasedToProduction ||
-                                  batchesRefreshing ||
+                                  batchesRefreshingOrderId === order.id ||
                                   items.length === 0
                                 }
                                 title={

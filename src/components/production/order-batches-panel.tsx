@@ -10,6 +10,7 @@ import type { PlannedOrderItem } from "@/lib/factory-planning/types";
 import { sumOrderItemsByProduct } from "@/lib/order-product-sum";
 import type { BatchGroupView, OrderBatchOverview } from "@/lib/supabase-data/order-batch-overview";
 import { formatKgValue } from "@/lib/utils";
+import { InfoHint } from "@/components/shared/info-hint";
 import { takeSeededOrderBatchesOverview } from "@/components/production/order-batches-overview-seed";
 
 function br(dateKey: string) {
@@ -34,6 +35,7 @@ export function OrderBatchesPanel({
   onChanged,
   onOpenBatchForDate,
   onGroupsChange,
+  searchTerm = "",
 }: {
   orderItems: PlannedOrderItem[];
   reloadKey: number;
@@ -41,6 +43,8 @@ export function OrderBatchesPanel({
   onOpenBatchForDate: (deliveryDate: string, storeIds: string[]) => void;
   /** Quadro #4 (27/10): grupos por data, para a lista de Pedidos agrupar e liberar por lote. */
   onGroupsChange?: (groups: BatchGroupView[]) => void;
+  /** Busca da tela de Pedidos: o painel de lotes filtra junto com a lista (quadro #10). */
+  searchTerm?: string;
 }) {
   const [overview, setOverview] = useState<OrderBatchOverview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -68,14 +72,31 @@ export function OrderBatchesPanel({
     return () => window.clearTimeout(timer);
   }, [load, reloadKey]);
 
-  const visibleGroups = useMemo(
+  const openGroups = useMemo(
     () => (overview?.groups ?? []).filter((group) => group.state !== "liberado"),
     [overview],
   );
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const visibleGroups = useMemo(
+    () =>
+      normalizedSearch.length === 0
+        ? openGroups
+        : openGroups.filter(
+            (group) =>
+              `entrega ${br(group.deliveryDate)}`.includes(normalizedSearch) ||
+              group.orders.some(
+                (order) =>
+                  order.orderCode.toLowerCase().includes(normalizedSearch) ||
+                  order.storeName.toLowerCase().includes(normalizedSearch),
+              ) ||
+              group.missingStoreNames.some((name) => name.toLowerCase().includes(normalizedSearch)),
+          ),
+    [normalizedSearch, openGroups],
+  );
 
+  // Quadro #20 (31/10): lista e lotes são relidos juntos (antes o lote esperava a lista).
   const { releaseGroup, busyDate } = useBatchRelease(async () => {
-    await onChanged();
-    await load();
+    await Promise.all([onChanged(), load()]);
   });
 
 
@@ -125,7 +146,9 @@ export function OrderBatchesPanel({
 
       {visibleGroups.length === 0 ? (
         <p className="rounded-lg border border-border/70 bg-panel/40 px-2 py-1 text-xs text-muted-foreground">
-          Nenhum lote aberto esperando liberação.
+          {normalizedSearch.length > 0 && openGroups.length > 0
+            ? "Nenhum lote aberto para esta busca."
+            : "Nenhum lote aberto esperando liberação."}
         </p>
       ) : (
         // Quadro #2 (27/10): lotes numa tabela compacta (uma linha por entrega), como planilha.
@@ -175,10 +198,21 @@ export function OrderBatchesPanel({
                       {br(group.deadline.dateKey)} às {group.deadline.time}
                       {group.deadlinePassed ? <span className="text-muted-foreground"> · encerrado</span> : null}
                     </td>
-                    <td className="max-w-0 truncate text-muted-foreground" title={group.missingStoreNames.join(", ")}>
-                      {group.missingStoreNames.length > 0
-                        ? `${group.deadlinePassed ? "Não pediram" : "Faltam"} ${group.missingStoreNames.length}: ${group.missingStoreNames.join(", ")}`
-                        : "Todas pediram"}
+                    <td className="whitespace-nowrap text-muted-foreground">
+                      {group.missingStoreNames.length > 0 ? (
+                        // Quadro #10 (31/10): a lista de lojas cortava com reticências; agora o
+                        // número fica à vista e os nomes abrem inteiros no "?".
+                        <span className="inline-flex items-center gap-1">
+                          {`${group.deadlinePassed ? "Não pediram" : "Faltam"} ${group.missingStoreNames.length} loja(s)`}
+                          <InfoHint
+                            label={`Lojas que ${group.deadlinePassed ? "não pediram" : "faltam pedir"} na entrega ${br(group.deliveryDate)}`}
+                            content={group.missingStoreNames.join(", ")}
+                            className="relative after:absolute after:-inset-[14px] after:content-['']"
+                          />
+                        </span>
+                      ) : (
+                        "Todas pediram"
+                      )}
                     </td>
                     <td className="whitespace-nowrap text-right">
                       <span className="inline-flex gap-1">

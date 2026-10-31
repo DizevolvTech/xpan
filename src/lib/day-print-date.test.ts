@@ -11,3 +11,10 @@ test("impressão do dia: filtro, hoje, próximo dia com OP, senão o último", (
   assert.equal(resolveDayPrintDate(["2026-09-26", "2026-09-28"], "2026-10-24", "all"), "2026-09-28");
   assert.equal(resolveDayPrintDate([], "2026-10-24", "all"), "2026-10-24");
 });
+
+test("impressão do dia: sem OP futura, prefere o último dia com OP ainda a produzir", () => {
+  const dates = ["2026-09-28", "2026-09-29"];
+  assert.equal(resolveDayPrintDate(dates, "2026-10-31", "all", ["2026-09-28"]), "2026-09-28");
+  assert.equal(resolveDayPrintDate(dates, "2026-10-31", "all", []), "2026-09-29");
+  assert.equal(resolveDayPrintDate([...dates, "2026-11-02"], "2026-10-31", "all", ["2026-09-28"]), "2026-11-02");
+});

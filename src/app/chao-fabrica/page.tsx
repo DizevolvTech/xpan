@@ -855,10 +855,10 @@ function ChaoOpCard({
           em etapas diferentes, o rótulo cai para "Avançar etapa" (o diálogo resolve
           item a item). */}
       {hasPendingItems && advanceMode === "batches" ? (
-        <Button asChild size="lg" className="mt-1 w-full">
+        <Button asChild size="lg" className="mt-1 h-auto min-h-11 w-full whitespace-normal py-2 text-center">
           <Link href={opDetailHref} aria-label={`Abrir OP ${op.code} para avançar as batidas`}>
             <ArrowRight className="size-4 shrink-0" aria-hidden />
-            <span className="truncate">Abrir OP: avançar pelas batidas</span>
+            <span>Abrir OP: avançar pelas batidas</span>
           </Link>
         </Button>
       ) : hasPendingItems ? (

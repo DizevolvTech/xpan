@@ -61,17 +61,18 @@ export async function getOrderBatchOverview(
   options: { includeMissing?: boolean; now?: OperationalNow } = {},
 ): Promise<OrderBatchOverview> {
   const now = options.now ?? getOperationalNow();
-  const snapshot = await getMasterDataSnapshot({ supabase, includeProfileNames: false, tenantId });
+  // Quadro #2/#20 (31/10): as três leituras independentes vão juntas (eram em fila e
+  // somavam ~0,3 s no carregamento de Pedidos).
+  const [snapshot, batchesResult, storesResult] = await Promise.all([
+    getMasterDataSnapshot({ supabase, includeProfileNames: false, tenantId }),
+    supabase.from("order_batches").select("id, slots, status, opened_at").order("opened_at", { ascending: false }).limit(200),
+    supabase.from("stores").select("id, legacy_id, name"),
+  ]);
   const settings = {
     leadDays: Number(snapshot.operationalSettings.expeditionLeadDays) || 0,
     cutoffTime: snapshot.operationalSettings.orderCutoffTime || "18:00",
   };
 
-  const batchesResult = await supabase
-    .from("order_batches")
-    .select("id, slots, status, opened_at")
-    .order("opened_at", { ascending: false })
-    .limit(200);
   const batchRows = (assertSupabaseResult(batchesResult, "Failed to load order batches") as BatchRow[]).map((row) => ({
     id: row.id,
     status: row.status,
@@ -80,7 +81,6 @@ export async function getOrderBatchOverview(
   const openBatches = batchesForOverview(batchRows, now.dateKey);
 
   const deliveryDates = Array.from(new Set(openBatches.flatMap((batch) => batch.slots.map((slot) => slot.deliveryDate))));
-  const storesResult = await supabase.from("stores").select("id, legacy_id, name");
   const storeRows = assertSupabaseResult(storesResult, "Failed to load stores") as Array<{
     id: string;
     legacy_id: string | null;

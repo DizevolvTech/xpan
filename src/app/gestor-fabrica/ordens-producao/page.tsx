@@ -223,7 +223,14 @@ export default function OrdensProducaoPage() {
     const datesWithOps = Array.from(new Set(demandOps.map((op) => op.productionDate))).sort((a, b) =>
       a.localeCompare(b),
     );
-    const printDate = resolveDayPrintDate(datesWithOps, anchorDate, productionDateFilter);
+    const pendingDates = Array.from(
+      new Set(
+        demandOps
+          .filter((op) => op.status === "em_espera" || op.status === "em_producao")
+          .map((op) => op.productionDate),
+      ),
+    );
+    const printDate = resolveDayPrintDate(datesWithOps, anchorDate, productionDateFilter, pendingDates);
     const dayOps = demandOps.filter((op) => op.productionDate === printDate);
     return {
       printDate,

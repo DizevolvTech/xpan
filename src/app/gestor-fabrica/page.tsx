@@ -1200,24 +1200,26 @@ export default function GestorFabricaPage() {
                     return (
                       <KanbanCardMotion
                         key={order.id}
-                        className={`group/order flex items-center gap-2 rounded-md transition-colors hover:bg-muted/60 focus-within:bg-muted/60 ${
+                        className={`group/order flex flex-wrap items-center justify-end gap-x-2 rounded-md transition-colors hover:bg-muted/60 focus-within:bg-muted/60 ${
                           isPending ? "opacity-60" : ""
                         }`}
                       >
                         <Link
                           // Reunião 22/10 (bloco 4): clicar no item abre o próprio pedido.
                           href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}
-                          className="flex min-w-0 flex-1 items-center rounded-md px-2 py-1.5 leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="flex min-w-[8rem] flex-1 items-center rounded-md px-2 py-1.5 leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           aria-label={`Abrir pedido ${order.code} de ${order.storeName}`}
                           title={`${order.code} · ${order.storeName} · ${order.deliveryDateLabel}`}
                         >
                           {/* D16 (28/10): em coluna estreita a data ia ocupar o lugar do código e da loja;
                               agora código em cima e "loja · data" embaixo, sem coluna fixa ao lado. */}
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate font-mono text-xs font-semibold text-foreground">
+                            {/* Quadro #1/#10 (31/10): código e loja inteiros; se não couber com o
+                                botão ao lado, o botão desce para a linha de baixo (flex-wrap). */}
+                            <span className="block whitespace-nowrap font-mono text-xs font-semibold text-foreground">
                               {order.code}
                             </span>
-                            <span className="block truncate text-[11px] text-muted-foreground">
+                            <span className="block break-words text-[11px] text-muted-foreground">
                               {order.storeName}
                               <span className="tabular-nums"> · {order.deliveryDateLabel.slice(0, 5)}</span>
                             </span>

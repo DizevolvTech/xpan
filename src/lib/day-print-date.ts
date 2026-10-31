@@ -7,9 +7,15 @@ export function resolveDayPrintDate(
   datesWithOps: readonly string[],
   anchorDate: string,
   productionDateFilter: string,
+  pendingDates: readonly string[] = [],
 ): string {
   if (productionDateFilter !== "all") return productionDateFilter;
   const sorted = [...datesWithOps].sort((a, b) => a.localeCompare(b));
   if (sorted.includes(anchorDate)) return anchorDate;
-  return sorted.find((date) => date > anchorDate) ?? sorted[sorted.length - 1] ?? anchorDate;
+  const next = sorted.find((date) => date > anchorDate);
+  if (next) return next;
+  // Quadro #10 (31/10): sem OP de hoje em diante, vale o último dia com OP ainda a produzir
+  // (em espera ou em produção); antes caía num dia antigo só com OPs já entregues.
+  const pending = [...pendingDates].sort((a, b) => a.localeCompare(b));
+  return pending[pending.length - 1] ?? sorted[sorted.length - 1] ?? anchorDate;
 }
