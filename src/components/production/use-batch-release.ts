@@ -61,6 +61,9 @@ export function useBatchRelease(onReleased: () => Promise<void> | void) {
       if (!response.ok) throw new Error(result?.message ?? "Falha ao liberar o lote.");
       const released = result?.released?.length ?? 0;
       const failed = result?.failed ?? [];
+      // Quadro #20 (31/10): o aviso só aparece quando a tela já mostra o lote liberado
+      // (antes saía ~1 s antes de a lista e o painel mudarem).
+      await onReleased();
       if (failed.length > 0) {
         toast.warning(
           `${released} pedido(s) liberado(s); ${failed.length} não: ${failed.map((item) => `${item.orderCode} (${item.message})`).join("; ")}`,
@@ -68,7 +71,6 @@ export function useBatchRelease(onReleased: () => Promise<void> | void) {
       } else {
         toast.success(`Entrega de ${brDate(group.deliveryDate)}: ${released} pedido(s) liberado(s) para a produção.`);
       }
-      await onReleased();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Falha ao liberar o lote.");
     } finally {
