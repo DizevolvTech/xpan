@@ -40,6 +40,7 @@ export function OrderBatchesPanel({
   onOpenBatchForDate,
   onGroupsChange,
   searchTerm = "",
+  onOrdersReleased,
 }: {
   orderItems: PlannedOrderItem[];
   reloadKey: number;
@@ -49,6 +50,8 @@ export function OrderBatchesPanel({
   onGroupsChange?: (groups: BatchGroupView[], overview: OrderBatchOverview) => void;
   /** Busca da tela de Pedidos: o painel de lotes filtra junto com a lista (quadro #10). */
   searchTerm?: string;
+  /** Pedidos liberados por um lote: a lista marca como liberados na hora (quadro #20). */
+  onOrdersReleased?: (orderCodes: string[]) => void;
 }) {
   const [overview, setOverview] = useState<OrderBatchOverview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -76,6 +79,18 @@ export function OrderBatchesPanel({
     return () => window.clearTimeout(timer);
   }, [load, reloadKey]);
 
+  const applyReleasedGroup = useCallback(
+    (deliveryDate: string, releasedOrderCodes: string[]) => {
+      if (overview) {
+        const next = { ...overview, groups: overview.groups.filter((group) => group.deliveryDate !== deliveryDate) };
+        setOverview(next);
+        onGroupsChange?.(next.groups, next);
+      }
+      onOrdersReleased?.(releasedOrderCodes);
+    },
+    [onGroupsChange, onOrdersReleased, overview],
+  );
+
   const openGroups = useMemo(
     () => (overview?.groups ?? []).filter((group) => group.state !== "liberado"),
     [overview],
@@ -101,10 +116,14 @@ export function OrderBatchesPanel({
   // Quadro #20 (31/10): lista e lotes são relidos juntos (antes o lote esperava a lista).
   // Quadro #20 (31/10): lista e lotes mudam na mesma atualização: os lotes são lidos junto
   // com a lista e só aplicados quando a lista também chegou.
-  const { releaseGroup, busyDate } = useBatchRelease(async () => {
-    const [, overviewData] = await Promise.all([onChanged(), fetchOrderBatchesOverview()]);
-    if (overviewData) seedOrderBatchesOverview(overviewData);
-    await load();
+  const { releaseGroup, busyDate } = useBatchRelease(async ({ group, releasedOrderCodes }) => {
+    // O lote sai do painel assim que o servidor confirma; lista e lotes são relidos depois.
+    applyReleasedGroup(group.deliveryDate, releasedOrderCodes);
+    // Com onOrdersReleased a lista já se relê sozinha; sem ele, relê pelo onChanged.
+    void Promise.all([onOrdersReleased ? undefined : onChanged(), fetchOrderBatchesOverview()]).then(([, overviewData]) => {
+      if (overviewData) seedOrderBatchesOverview(overviewData);
+      void load();
+    });
   });
 
 

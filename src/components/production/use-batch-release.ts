@@ -25,7 +25,9 @@ export function batchReleaseBlockedReason(group: Pick<BatchGroupView, "state" | 
  * faixas de lote da lista de Pedidos. Quadro #4 (Lucas, 27/10): dentro do prazo das lojas o
  * lote não é liberado (sem "liberar mesmo assim"); libera completo ou com o prazo encerrado.
  */
-export function useBatchRelease(onReleased: () => Promise<void> | void) {
+export function useBatchRelease(
+  onReleased: (result: { group: BatchGroupView; releasedOrderCodes: string[] }) => Promise<void> | void,
+) {
   const [busyDate, setBusyDate] = useState<string | null>(null);
   const confirm = useConfirm();
   const toast = useToast();
@@ -63,7 +65,7 @@ export function useBatchRelease(onReleased: () => Promise<void> | void) {
       const failed = result?.failed ?? [];
       // Quadro #20 (31/10): o aviso só aparece quando a tela já mostra o lote liberado
       // (antes saía ~1 s antes de a lista e o painel mudarem).
-      await onReleased();
+      await onReleased({ group, releasedOrderCodes: result?.released ?? [] });
       if (failed.length > 0) {
         toast.warning(
           `${released} pedido(s) liberado(s); ${failed.length} não: ${failed.map((item) => `${item.orderCode} (${item.message})`).join("; ")}`,

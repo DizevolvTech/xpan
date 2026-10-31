@@ -220,6 +220,28 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     [planningData, refresh],
   );
 
+  // Quadro #20 (31/10): depois que o servidor confirma a liberação de um lote, os pedidos
+  // aparecem como liberados na hora; a releitura em seguida traz OPs e status oficiais.
+  const markOrdersReleased = useCallback(
+    (orderCodes: readonly string[]) => {
+      if (orderCodes.length === 0) return;
+      const codes = new Set(orderCodes);
+      setPlanningData((current) => ({
+        ...current,
+        orders: current.orders.map((order) =>
+          codes.has(order.code)
+            ? { ...order, releasedToProduction: true, availableForRelease: false, status: "agendado" as OrderStatus }
+            : order,
+        ),
+        orderItems: current.orderItems.map((item) =>
+          codes.has(item.orderCode) ? { ...item, releasedToProduction: true, availableForRelease: false } : item,
+        ),
+      }));
+      void refresh(true, true).catch(() => undefined);
+    },
+    [refresh],
+  );
+
   const cancelOrder = useCallback(
     (orderId: string) => changeOrderManagement(orderId, "cancel-order"),
     [changeOrderManagement],
@@ -318,6 +340,7 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
       error,
       refresh,
       releaseOrder,
+      markOrdersReleased,
       cancelOrder,
       reopenOrder,
       updateProductionItemStatus,
@@ -331,6 +354,7 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
       completeProductionBatch,
       error,
       isLoading,
+      markOrdersReleased,
       planningData,
       refresh,
       releaseOrder,

@@ -186,6 +186,7 @@ export function PedidosFabricaPageClient() {
     planningData: planningSnapshot,
     isLoading: isPlanningLoading,
     releaseOrder,
+    markOrdersReleased,
     cancelOrder,
     reopenOrder,
     refresh,
@@ -395,13 +396,18 @@ export function PedidosFabricaPageClient() {
     }
   }
 
-  const { releaseGroup: releaseBatchGroup, busyDate: releasingBatchDate } = useBatchRelease(async () => {
-    // Lista e lotes na mesma atualização (quadro #20): lê os dois juntos e aplica os lotes
-    // quando a lista também chegou.
-    const [, overviewData] = await Promise.all([refresh(), fetchOrderBatchesOverview()]);
-    if (overviewData) seedOrderBatchesOverview(overviewData);
-    setBatchesReloadKey((value) => value + 1);
-  });
+  const { releaseGroup: releaseBatchGroup, busyDate: releasingBatchDate } = useBatchRelease(
+    async ({ group, releasedOrderCodes }) => {
+      // Quadro #20: lote e pedidos mudam juntos assim que o servidor confirma; a lista
+      // oficial (OPs, status) e os lotes chegam logo depois.
+      setBatchGroups((current) => current.filter((item) => item.deliveryDate !== group.deliveryDate));
+      markOrdersReleased(releasedOrderCodes);
+      void fetchOrderBatchesOverview().then((overviewData) => {
+        if (overviewData) seedOrderBatchesOverview(overviewData);
+        setBatchesReloadKey((value) => value + 1);
+      });
+    },
+  );
 
   async function handleReleaseOrder(order: OrderSummaryRow) {
     await performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast);
@@ -700,6 +706,7 @@ export function PedidosFabricaPageClient() {
           reloadKey={batchesReloadKey}
           onGroupsChange={handleBatchGroupsChange}
           searchTerm={searchTerm}
+          onOrdersReleased={markOrdersReleased}
           onChanged={async () => {
             await refresh();
           }}
