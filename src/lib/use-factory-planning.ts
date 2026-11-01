@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildClientTenantCacheKey } from "@/lib/client-access-context";
 import type { FactoryPlanningData, OrderStatus, ProductionItemStatus } from "@/lib/order-planning";
@@ -142,13 +142,18 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
   const [isLoading, setIsLoading] = useState(!cachedEntry);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshSeqRef = useRef(0);
   const refresh = useCallback(async (forceRefresh = true, bypassServerCache = false) => {
     const previousCacheEntry = getFactoryPlanningCacheEntry(cacheKey);
+    // Quadro #18 (01/11): leituras podem voltar fora de ordem (a do cancelar chegava depois
+    // da do reabrir e a linha voltava a "Cancelado" por ~3 s). Só a leitura mais nova vale.
+    const requestId = ++refreshSeqRef.current;
     setIsLoading(forceRefresh || !previousCacheEntry);
     setError(null);
 
     try {
       const data = await fetchFactoryPlanningSnapshot(referenceDate, forceRefresh, bypassServerCache);
+      if (requestId !== refreshSeqRef.current) return data;
       setPlanningData(data);
       return data;
     } catch (fetchError) {
@@ -195,6 +200,8 @@ export function useFactoryPlanningSnapshot(referenceDate: string) {
     async (orderId: string, action: "cancel-order" | "reopen-order") => {
       const before = planningData;
       const optimisticStatus: OrderStatus = action === "cancel-order" ? "cancelado" : "em_espera";
+      // Leitura em andamento de antes desta ação não sobrescreve a mudança na tela.
+      refreshSeqRef.current += 1;
       // A lista de Pedidos lê `orders`; outras telas leem `orderItems`: muda os dois.
       setPlanningData((current) => ({
         ...current,
