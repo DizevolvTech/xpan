@@ -885,7 +885,9 @@ export function PedidosFabricaPageClient() {
                             >
                               Folha Loja
                             </Button>
-                            {batchGroup && !order.releasedToProduction && order.status !== "cancelado" ? (
+                            {/* Quadro #18 (01/11): pedido de lote reaberto mostra "No lote" na hora,
+                                sem "Liberar" cinza enquanto os lotes são relidos. */}
+                            {(batchGroup || batchesRefreshingOrderId === order.id) && !order.releasedToProduction && order.status !== "cancelado" ? (
                               <span
                                 className="inline-flex h-7 items-center max-sm:h-11 rounded-md border border-dashed border-border px-2 text-[11px] text-muted-foreground"
                                 title="Pedido de lote: libere o lote inteiro na faixa do lote acima"
