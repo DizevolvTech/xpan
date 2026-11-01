@@ -958,12 +958,12 @@ export function PedidosFabricaPageClient() {
                               <Button type="button" variant="outline" size="xs" className={ROW_ACTION_TOUCH} onClick={() => handleReopenOrder(order)}>
                                 Reabrir
                               </Button>
-                            ) : visibleStatus === "entregue" ? null : (
+                            ) : visibleStatus === "entregue" || order.releasedToProduction ? null : (
+                              // Quadro #42 (01/11): pedido liberado não oferece "Cancelar" (igual ao detalhe).
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="xs" className={ROW_ACTION_TOUCH}
-                                disabled={order.releasedToProduction}
                                 onClick={() => handleCancelOrder(order)}
                               >
                                 Cancelar

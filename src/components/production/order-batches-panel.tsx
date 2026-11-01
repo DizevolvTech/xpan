@@ -199,7 +199,7 @@ export function OrderBatchesPanel({
                 return (
                   <tr
                     key={key}
-                    className={`border-t border-border/70 [&>td]:px-2 [&>td]:py-1 [&>td]:align-middle ${ready ? "bg-success/5" : "bg-card"}`}
+                    className={`border-t border-border/70 [&>td]:px-2 [&>td]:py-1 max-sm:[&>td]:py-[9px] [&>td]:align-middle ${ready ? "bg-success/5" : "bg-card"}`}
                   >
                     <td className="whitespace-nowrap">
                       <span className="font-semibold">Entrega {br(group.deliveryDate)}</span>{" "}
@@ -235,6 +235,8 @@ export function OrderBatchesPanel({
                           <InfoHint
                             label={`Lojas que ${group.deadlinePassed ? "não pediram" : "faltam pedir"} na entrega ${br(group.deliveryDate)}`}
                             content={group.missingStoreNames.join(", ")}
+                            // Quadro #42 (01/11): no celular cada linha tem ~46 px, então a área de toque
+                            // de 44 px do "?" não invade a linha vizinha nem o cabeçalho.
                             className="relative after:absolute after:-inset-[14px] after:content-['']"
                           />
                         </span>
