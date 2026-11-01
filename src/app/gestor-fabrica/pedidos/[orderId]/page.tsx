@@ -263,12 +263,14 @@ export default function PedidoDetailsPage() {
               >
                 Reabrir pedido
               </Button>
+            ) : !canCancelOrder ? (
+              // Quadro #42 (01/11): pedido já liberado (ou entregue) não oferece "Cancelar".
+              <p className="text-sm text-muted-foreground">Pedido liberado para a produção: não pode ser cancelado.</p>
             ) : (
               <Button
                 type="button"
                 variant="outline"
                 className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
-                disabled={!canCancelOrder}
                 onClick={async () => {
                   if (
                     await confirm({

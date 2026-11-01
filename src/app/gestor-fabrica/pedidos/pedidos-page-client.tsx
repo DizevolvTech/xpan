@@ -912,7 +912,7 @@ export function PedidosFabricaPageClient() {
                         <td className="whitespace-nowrap border-t border-border/70 bg-card px-2 py-1 text-right sm:sticky sm:right-0 sm:z-[1] shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
                           <div className="flex items-center justify-end gap-1">
                             <Button asChild type="button" variant="outline" size="xs" className={ROW_ACTION_TOUCH}>
-                              <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>Detalhe</Link>
+                              <Link href={`/gestor-fabrica/pedidos/${order.id}`}>Detalhe</Link>
                             </Button>
                             <Button
                               type="button"
@@ -1021,7 +1021,7 @@ export function PedidosFabricaPageClient() {
                                   <span className="text-xs text-muted-foreground">{items.length}</span>
                                 </Button>
                                 <Button asChild type="button" variant="default" className="justify-between sm:col-span-2 xl:col-span-1">
-                                  <Link href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}>
+                                  <Link href={`/gestor-fabrica/pedidos/${order.id}`}>
                                     <span>Auditar pedido completo</span>
                                     <ArrowRight className="size-4" />
                                   </Link>

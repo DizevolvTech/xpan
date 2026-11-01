@@ -430,7 +430,7 @@ export default function OrdemProducaoDetailsPage() {
                       {planningData.orders.some((order) => order.id === item.orderId) ? (
                         <Link
                           className="text-primary underline underline-offset-4"
-                          href={`/gestor-fabrica/pedidos/${encodeURIComponent(item.orderId)}?ref=${anchorDate}`}
+                          href={`/gestor-fabrica/pedidos/${encodeURIComponent(item.orderId)}`}
                         >
                           {item.orderCode}
                         </Link>

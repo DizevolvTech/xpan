@@ -1206,7 +1206,7 @@ export default function GestorFabricaPage() {
                       >
                         <Link
                           // Reunião 22/10 (bloco 4): clicar no item abre o próprio pedido.
-                          href={`/gestor-fabrica/pedidos/${order.id}?ref=${anchorDate}`}
+                          href={`/gestor-fabrica/pedidos/${order.id}`}
                           className="flex min-w-[8rem] flex-1 items-center rounded-md px-2 py-1.5 leading-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           aria-label={`Abrir pedido ${order.code} de ${order.storeName}`}
                           title={`${order.code} · ${order.storeName} · ${order.deliveryDateLabel}`}
@@ -1368,7 +1368,7 @@ export default function GestorFabricaPage() {
                                   ).map(([orderId, code]) => (
                                     <li key={orderId}>
                                       <Link
-                                        href={`/gestor-fabrica/pedidos/${orderId}?ref=${anchorDate}`}
+                                        href={`/gestor-fabrica/pedidos/${orderId}`}
                                         className="block break-all rounded px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                       >
                                         {code}
