@@ -10,7 +10,6 @@ import { useMemo } from "react";
 import { ArrowLeft, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
 
 import { FactoryFlow } from "@/components/shared/factory-flow";
-import { OperationalDateScopeCard } from "@/components/shared/operational-date-scope-card";
 import { PaginatedSection } from "@/components/shared/paginated-section";
 import { PageLayout } from "@/components/shared/page-layout";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -37,7 +36,10 @@ export default function PedidoDetailsPage() {
   const orderId = typeof params.orderId === "string" ? params.orderId : "";
   const confirm = useConfirm();
   const toast = useToast();
-  const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
+  // Quadro #42 (01/11): o detalhe abre o pedido pelo identificador; o recorte de datas da
+  // operação não filtra nada aqui, então o cartão "Janela do pedido" saiu (confundia com
+  // "Somente <dia>" em pedido de outro mês). A data de referência segue para os dados.
+  const { anchorDate } = useOperationalDateScope();
   const { planningData, isLoading, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
 
   const order = useMemo(
@@ -170,16 +172,6 @@ export default function PedidoDetailsPage() {
         </div>
       }
     >
-      <OperationalDateScopeCard
-        scope={scope}
-        summary={summary}
-        setMode={setMode}
-        setDate={setDate}
-        setStartDate={setStartDate}
-        setEndDate={setEndDate}
-        title="Janela do pedido"
-        description="O pedido continua aberto pelo identificador, mas o contexto temporal do fluxo segue o recorte global da operação."
-      />
 
       <Card>
         <CardHeader>
@@ -218,13 +210,17 @@ export default function PedidoDetailsPage() {
           </div>
           <div className="space-y-2 sm:col-span-2 lg:col-span-1 xl:col-span-1">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Liberação</p>
+            {/* Quadro #18 (01/11): pedido cancelado não mostra "Liberar"; só "Reabrir" ao lado. */}
+            {order.status === "cancelado" ? (
+              <p className="text-sm text-muted-foreground">Pedido cancelado: reabra para liberar.</p>
+            ) : (
             <Button
               type="button"
               className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
               // Servidor é a fonte da verdade — em caso de bloqueio, o gestor
               // recebe o motivo e a opção de forçar via diálogo.
               disabled={
-                order.releasedToProduction || order.status === "cancelado" || waitingBatch !== null || !waitingBatchLoaded
+                order.releasedToProduction || waitingBatch !== null || !waitingBatchLoaded
               }
               title={waitingBatch ? waitingBatchOrderHint(waitingBatch) : undefined}
               onClick={() => void performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast)}
@@ -235,6 +231,7 @@ export default function PedidoDetailsPage() {
                   ? "Aguardando prazo do lote"
                   : "Liberar para produção"}
             </Button>
+            )}
             {waitingBatch ? (
               <p className="text-xs leading-snug text-muted-foreground">{waitingBatchOrderHint(waitingBatch)}</p>
             ) : null}
@@ -516,7 +513,7 @@ export default function PedidoDetailsPage() {
                           <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
                             {op.progress.toFixed(1)}%
                             {op.ordersCount > 1 ? (
-                              <span className="block text-xs text-muted-foreground">OP com {op.ordersCount} pedidos</span>
+                              <span className="block text-xs text-muted-foreground">OP compartilhada com {op.ordersCount} pedidos: o progresso é da OP inteira</span>
                             ) : null}
                           </td>
                           <td className="border-t border-border/70 bg-card px-4 py-3">

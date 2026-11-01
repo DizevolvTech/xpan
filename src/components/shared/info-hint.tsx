@@ -62,7 +62,8 @@ export function InfoHint({
           type="button"
           aria-label={label}
           className={cn(
-            "inline-flex shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            // Quadro #42 (01/11): o ícone é pequeno, mas a área de toque tem ~40 px no celular.
+            "relative inline-flex shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 after:absolute after:-inset-3 after:content-[''] sm:after:-inset-1.5",
             sizes.button,
             toneClassNames[tone],
             className,

@@ -188,7 +188,7 @@ function SidebarNav({
                 {navigationContext.selectedTenant.name.charAt(0).toUpperCase()}
               </div>
             )}
-            <p className="min-w-0 truncate text-sm font-medium text-foreground/85">
+            <p className="min-w-0 break-words text-sm font-medium leading-tight text-foreground/85">
               {navigationContext.selectedTenant.name}
             </p>
           </div>
@@ -250,10 +250,10 @@ function SidebarNav({
         <div className="border-sidebar-border/[var(--opacity-prominent)] border-t px-3 py-2">
           {/* Quadro #7 (28/10): rodapé enxuto, estilo ERP — perfil em duas linhas curtas. */}
           <div className="space-y-0.5 px-1">
-            <p className="truncate text-sm font-medium leading-tight text-sidebar-foreground">
+            <p className="break-words text-sm font-medium leading-tight text-sidebar-foreground">
               {navigationContext.currentUser.name}
             </p>
-            <p className="truncate text-[11px] leading-tight text-muted-foreground">
+            <p className="break-words text-[11px] leading-tight text-muted-foreground">
               {profileGroupMeta.badge} ·{" "}
               {navigationContext.currentUser.baseRoleLabel} ·{" "}
               {visibleModuleCount} módulo

@@ -1307,7 +1307,7 @@ export default function GestorFabricaPage() {
                               <StatusBadge status={op.status} className="shrink-0 px-1.5 py-0 text-[9px]" />
                             ) : null}
                           </div>
-                          <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                          <span className="mt-0.5 block break-words text-[10px] leading-tight text-muted-foreground">
                             {op.lineName} · {op.sectorName}
                           </span>
                           <div className="mt-1.5 flex items-center gap-2">
@@ -1369,7 +1369,7 @@ export default function GestorFabricaPage() {
                                     <li key={orderId}>
                                       <Link
                                         href={`/gestor-fabrica/pedidos/${orderId}?ref=${anchorDate}`}
-                                        className="block truncate rounded px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        className="block break-all rounded px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                       >
                                         {code}
                                       </Link>
@@ -1480,7 +1480,7 @@ export default function GestorFabricaPage() {
                       key={line.lineId}
                       className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-xs"
                     >
-                      <span className="truncate font-medium text-foreground">
+                      <span className="break-words font-medium leading-tight text-foreground">
                         {line.lineName}
                       </span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
