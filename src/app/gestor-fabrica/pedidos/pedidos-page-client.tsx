@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ShoppingCart, Truck, Zap } from "lucide-react";
 
 import {
@@ -146,16 +146,28 @@ export function PedidosFabricaPageClient() {
   // Quadro #20 (31/10): só o pedido que mudou espera os lotes; os outros não piscam.
   const [batchesRefreshingOrderId, setBatchesRefreshingOrderId] = useState<string | null>(null);
   const [cancelledBatchOrderCodes, setCancelledBatchOrderCodes] = useState<ReadonlySet<string>>(() => new Set());
+  // Código do pedido de lote que acabou de ser reaberto: uma leitura de lotes que ainda o
+  // traz como cancelado é anterior à reabertura e não encerra a espera (quadro #18, 01/11:
+  // o "Liberar" aparecia habilitado ~1 s entre duas leituras).
+  const reopeningBatchOrderCodeRef = useRef<string | null>(null);
   const handleBatchGroupsChange = useCallback((groups: BatchGroupView[], overview: OrderBatchOverview) => {
+    const cancelledCodes = overview.cancelledBatchOrderCodes ?? [];
+    const reopeningCode = reopeningBatchOrderCodeRef.current;
+    const stale = reopeningCode !== null && cancelledCodes.includes(reopeningCode);
+    if (stale) return;
+    reopeningBatchOrderCodeRef.current = null;
     setBatchGroups(groups);
-    setCancelledBatchOrderCodes(new Set(overview.cancelledBatchOrderCodes ?? []));
+    setCancelledBatchOrderCodes(new Set(cancelledCodes));
     setBatchesRefreshingOrderId(null);
   }, []);
   const reloadBatchesAfterOrderChange = useCallback(() => {
     setBatchesReloadKey((value) => value + 1);
     if (!factoryOpensOrders) return; // sem painel de lotes, nada a esperar
     // Se a releitura falhar, não deixa o "Liberar" travado (o servidor recusa no prazo).
-    window.setTimeout(() => setBatchesRefreshingOrderId(null), 5000);
+    window.setTimeout(() => {
+      reopeningBatchOrderCodeRef.current = null;
+      setBatchesRefreshingOrderId(null);
+    }, 5000);
   }, [factoryOpensOrders]);
   // Chave = código do pedido (PD-…): o id da lista vem do planejamento e o do lote, da tabela.
   const batchGroupByOrderCode = useMemo(() => {
@@ -549,12 +561,16 @@ export function PedidosFabricaPageClient() {
     // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
     // Quadro #20 (31/10): só espera os lotes o pedido que pertence a um lote (ele volta
     // para o lote ao reabrir); pedido avulso fica com "Liberar" habilitado na hora.
-    if (factoryOpensOrders && cancelledBatchOrderCodes.has(order.code)) setBatchesRefreshingOrderId(order.id);
+    if (factoryOpensOrders && cancelledBatchOrderCodes.has(order.code)) {
+      reopeningBatchOrderCodeRef.current = order.code;
+      setBatchesRefreshingOrderId(order.id);
+    }
     try {
       await reopenOrder(order.id);
       reloadBatchesAfterOrderChange();
       toast.success(`Pedido ${order.code} reaberto.`);
     } catch (error) {
+      reopeningBatchOrderCodeRef.current = null;
       setBatchesRefreshingOrderId(null);
       toast.error(error instanceof Error ? error.message : `Não foi possível reabrir o pedido ${order.code}.`);
     }
