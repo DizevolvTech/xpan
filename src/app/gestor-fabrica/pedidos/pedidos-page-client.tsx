@@ -578,6 +578,12 @@ export function PedidosFabricaPageClient() {
     // ainda aparece num lote (leitura de antes do cancelamento chegando depois).
     if (factoryOpensOrders && (cancelledBatchOrderCodes.has(order.code) || batchGroupByOrderCode.has(order.code))) {
       reopeningBatchOrderCodeRef.current = order.code;
+      // O temporizador de 5 s do cancelar anterior ainda pode estar contando: não deixa ele
+      // encerrar esta espera antes de os lotes chegarem.
+      if (refreshTimeoutRef.current !== null) {
+        window.clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
       setBatchesRefreshingOrderId(order.id);
     }
     try {
