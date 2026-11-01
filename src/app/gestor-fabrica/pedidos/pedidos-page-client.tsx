@@ -566,7 +566,9 @@ export function PedidosFabricaPageClient() {
     // Até os lotes serem relidos ninguém mostra "Liberar" habilitado (o pedido pode ser de lote).
     // Quadro #20 (31/10): só espera os lotes o pedido que pertence a um lote (ele volta
     // para o lote ao reabrir); pedido avulso fica com "Liberar" habilitado na hora.
-    if (factoryOpensOrders && cancelledBatchOrderCodes.has(order.code)) {
+    // O pedido é de lote se a última leitura o lista como cancelado de um lote ou se ele
+    // ainda aparece num lote (leitura de antes do cancelamento chegando depois).
+    if (factoryOpensOrders && (cancelledBatchOrderCodes.has(order.code) || batchGroupByOrderCode.has(order.code))) {
       reopeningBatchOrderCodeRef.current = order.code;
       setBatchesRefreshingOrderId(order.id);
     }
