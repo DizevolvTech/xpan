@@ -151,10 +151,15 @@ export function PedidosFabricaPageClient() {
   // o "Liberar" aparecia habilitado ~1 s entre duas leituras).
   const reopeningBatchOrderCodeRef = useRef<string | null>(null);
   const refreshTimeoutRef = useRef<number | null>(null);
-  const handleBatchGroupsChange = useCallback((groups: BatchGroupView[], overview: OrderBatchOverview) => {
+  // Respostas de lotes podem chegar fora de ordem (a do cancelar chega depois do reabrir).
+  // Enquanto um pedido de lote espera, só vale a leitura pedida depois da reabertura.
+  const reopenMinReloadKeyRef = useRef(0);
+  const handleBatchGroupsChange = useCallback((groups: BatchGroupView[], overview: OrderBatchOverview, requestKey: number | null) => {
     const cancelledCodes = overview.cancelledBatchOrderCodes ?? [];
     const reopeningCode = reopeningBatchOrderCodeRef.current;
-    const stale = reopeningCode !== null && cancelledCodes.includes(reopeningCode);
+    const stale =
+      reopeningCode !== null &&
+      (cancelledCodes.includes(reopeningCode) || requestKey === null || requestKey < reopenMinReloadKeyRef.current);
     if (stale) return;
     reopeningBatchOrderCodeRef.current = null;
     setBatchGroups(groups);
@@ -162,7 +167,10 @@ export function PedidosFabricaPageClient() {
     setBatchesRefreshingOrderId(null);
   }, []);
   const reloadBatchesAfterOrderChange = useCallback(() => {
-    setBatchesReloadKey((value) => value + 1);
+    setBatchesReloadKey((value) => {
+      if (reopeningBatchOrderCodeRef.current !== null) reopenMinReloadKeyRef.current = value + 1;
+      return value + 1;
+    });
     if (!factoryOpensOrders) return; // sem painel de lotes, nada a esperar
     // Se a releitura falhar, não deixa o "Liberar" travado (o servidor recusa no prazo).
     // Um temporizador por vez: o de uma ação anterior (ex.: o cancelar de 5 s atrás) não

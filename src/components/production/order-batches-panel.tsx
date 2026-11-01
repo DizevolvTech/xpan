@@ -47,7 +47,8 @@ export function OrderBatchesPanel({
   onChanged: () => Promise<void> | void;
   onOpenBatchForDate: (deliveryDate: string, storeIds: string[]) => void;
   /** Quadro #4 (27/10): grupos por data, para a lista de Pedidos agrupar e liberar por lote. */
-  onGroupsChange?: (groups: BatchGroupView[], overview: OrderBatchOverview) => void;
+  /** requestKey = reloadKey da leitura (null quando não veio de uma troca de reloadKey). */
+  onGroupsChange?: (groups: BatchGroupView[], overview: OrderBatchOverview, requestKey: number | null) => void;
   /** Busca da tela de Pedidos: o painel de lotes filtra junto com a lista (quadro #10). */
   searchTerm?: string;
   /** Pedidos liberados por um lote: a lista marca como liberados na hora (quadro #20). */
@@ -57,7 +58,7 @@ export function OrderBatchesPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sumGroup, setSumGroup] = useState<BatchGroupView | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (requestKey: number | null = null) => {
     try {
       const seeded = takeSeededOrderBatchesOverview();
       const response = seeded ? null : await fetch("/api/order-batches/overview", { cache: "no-store" });
@@ -67,7 +68,7 @@ export function OrderBatchesPanel({
       if ((response && !response.ok) || !data) throw new Error(data?.message ?? "Falha ao carregar os lotes.");
       setOverview(data);
       setLoadError(null);
-      onGroupsChange?.(data.groups, data);
+      onGroupsChange?.(data.groups, data, requestKey);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Falha ao carregar os lotes.");
     }
@@ -75,7 +76,7 @@ export function OrderBatchesPanel({
 
   useEffect(() => {
     // Busca assíncrona: o setState acontece depois da resposta, não no efeito.
-    const timer = window.setTimeout(() => void load(), 0);
+    const timer = window.setTimeout(() => void load(reloadKey), 0);
     return () => window.clearTimeout(timer);
   }, [load, reloadKey]);
 
@@ -84,7 +85,7 @@ export function OrderBatchesPanel({
       if (overview) {
         const next = { ...overview, groups: overview.groups.filter((group) => group.deliveryDate !== deliveryDate) };
         setOverview(next);
-        onGroupsChange?.(next.groups, next);
+        onGroupsChange?.(next.groups, next, null);
       }
       onOrdersReleased?.(releasedOrderCodes);
     },
