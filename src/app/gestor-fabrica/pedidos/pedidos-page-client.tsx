@@ -150,6 +150,7 @@ export function PedidosFabricaPageClient() {
   // traz como cancelado é anterior à reabertura e não encerra a espera (quadro #18, 01/11:
   // o "Liberar" aparecia habilitado ~1 s entre duas leituras).
   const reopeningBatchOrderCodeRef = useRef<string | null>(null);
+  const refreshTimeoutRef = useRef<number | null>(null);
   const handleBatchGroupsChange = useCallback((groups: BatchGroupView[], overview: OrderBatchOverview) => {
     const cancelledCodes = overview.cancelledBatchOrderCodes ?? [];
     const reopeningCode = reopeningBatchOrderCodeRef.current;
@@ -164,7 +165,11 @@ export function PedidosFabricaPageClient() {
     setBatchesReloadKey((value) => value + 1);
     if (!factoryOpensOrders) return; // sem painel de lotes, nada a esperar
     // Se a releitura falhar, não deixa o "Liberar" travado (o servidor recusa no prazo).
-    window.setTimeout(() => {
+    // Um temporizador por vez: o de uma ação anterior (ex.: o cancelar de 5 s atrás) não
+    // encerra a espera da ação atual (quadro #18, 01/11).
+    if (refreshTimeoutRef.current !== null) window.clearTimeout(refreshTimeoutRef.current);
+    refreshTimeoutRef.current = window.setTimeout(() => {
+      refreshTimeoutRef.current = null;
       reopeningBatchOrderCodeRef.current = null;
       setBatchesRefreshingOrderId(null);
     }, 5000);
