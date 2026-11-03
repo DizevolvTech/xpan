@@ -1217,7 +1217,7 @@ export function ProductFormDialog({
       >
         <DialogContent
           size="3xl"
-          className="flex max-h-[92vh] flex-col overflow-hidden rounded-[28px] bg-white p-0 sm:max-w-[1080px]"
+          className="flex max-h-[92vh] flex-col overflow-hidden rounded-[28px] bg-white p-0 sm:max-w-[1080px] xl:max-w-[1200px]"
         >
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <DialogHeader>
@@ -2068,13 +2068,13 @@ export function ProductFormDialog({
                       </p>
                     ) : (
                       <div className="overflow-x-auto rounded-xl border border-border/70">
-                        <table className="w-full min-w-[820px] border-collapse">
+                        <table className="w-full min-w-[640px] border-collapse lg:min-w-0">
                           <thead className="bg-card">
                             <tr>
                               <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Etapa</th>
                               <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Referência</th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Quantidade *</th>
-                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">Unidade</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Quantidade (obrigatório)">QTDE *</th>
+                              <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground" title="Unidade">UN</th>
                               <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">% total</th>
                               <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">Ações</th>
                             </tr>
@@ -2292,45 +2292,39 @@ export function ProductFormDialog({
                           </p>
                         ) : (
                           <div className="overflow-x-auto rounded-xl border border-border/70">
-                            <table className="w-full min-w-[1180px] border-collapse">
+                            <table className="w-full min-w-[880px] table-fixed border-collapse lg:min-w-0">
+                              {/* Quadro #172 (03/11): colunas com largura fixa e cabeçalhos curtos para a
+                                  composição caber na largura da janela, sem rolar para os lados. */}
+                              <colgroup>
+                                <col />
+                                <col className="w-[84px]" />
+                                <col className="w-[70px]" />
+                                <col className="w-[66px]" />
+                                <col className="w-[62px]" />
+                                <col className="w-[70px]" />
+                                <col className="w-[56px]" />
+                                <col className="w-[142px]" />
+                                <col className="w-[120px]" />
+                                <col className="w-[76px]" />
+                              </colgroup>
                               <thead className="bg-card">
-                                <tr>
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                                    Referência
-                                  </th>
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                                    Quantidade * · Manual
-                                  </th>
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                                    Unidade
-                                  </th>
-                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
-                                    % principal
-                                  </th>
-                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
-                                    % total
-                                  </th>
-                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
-                                    kg / 1 un · Calculado
-                                  </th>
-                                  <th className="px-3 py-2 text-center text-xs font-semibold text-muted-foreground">
-                                    Na batida?
-                                  </th>
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                                    Imprime em
-                                  </th>
-                                  <th className="px-3 py-2 text-left text-xs font-semibold text-muted-foreground">
-                                    Mover para outra etapa
-                                  </th>
-                                  <th className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground">
-                                    Ações
-                                  </th>
+                                <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:align-bottom [&>th]:text-xs [&>th]:font-semibold [&>th]:leading-tight [&>th]:text-muted-foreground">
+                                  <th className="text-left">Referência</th>
+                                  <th className="text-left" title="Quantidade (preenchimento manual, obrigatório)">QTDE *</th>
+                                  <th className="text-left" title="Unidade">UN</th>
+                                  <th className="text-right" title="Percentual sobre o insumo principal">% principal</th>
+                                  <th className="text-right" title="Percentual sobre o total da receita">% total</th>
+                                  <th className="text-right" title="kg por unidade (calculado pelo XPAN)">kg / 1 un</th>
+                                  <th className="text-center" title="Entra na batida (masseira)?">Na batida?</th>
+                                  <th className="text-left">Imprime em</th>
+                                  <th className="text-left" title="Mover para outra etapa">Etapa</th>
+                                  <th className="text-right">Ações</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {block.items.map((item, itemIndex) => (
                                   <tr key={item.id}>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-sm break-words">
                                       {relabelRecipeLineWithClientCode(
                                         item.label,
                                         item.sourceType === "ingrediente"
@@ -2338,12 +2332,13 @@ export function ProductFormDialog({
                                           : snapshot.products.find((entry) => entry.id === item.sourceId),
                                       )}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-sm">
                                       <Input
                                         type="number"
                                         min="0"
                                         step="0.001"
                                         aria-label={`Quantidade de ${item.label}`}
+                                        className="w-full px-2"
                                         value={item.quantity}
                                         onChange={(event) =>
                                           updateRecipeItem(item.id, {
@@ -2352,7 +2347,7 @@ export function ProductFormDialog({
                                         }
                                       />
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-sm">
                                       <Select
                                         value={item.unit}
                                         onValueChange={(value) =>
@@ -2361,7 +2356,7 @@ export function ProductFormDialog({
                                           })
                                         }
                                       >
-                                        <SelectTrigger aria-label={`Unidade de ${item.label}`}>
+                                        <SelectTrigger aria-label={`Unidade de ${item.label}`} className="w-full px-2">
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -2373,7 +2368,7 @@ export function ProductFormDialog({
                                         </SelectContent>
                                       </Select>
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right text-sm tabular-nums">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-sm tabular-nums">
                                       {recipeLineMetrics.get(item.id)?.overMain != null
                                         ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overMain, {
                                             minimumFractionDigits: 2,
@@ -2386,7 +2381,7 @@ export function ProductFormDialog({
                                         </p>
                                       ) : null}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right text-sm tabular-nums">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-sm tabular-nums">
                                       {recipeLineMetrics.get(item.id)?.overTotal != null
                                         ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overTotal, {
                                             minimumFractionDigits: 2,
@@ -2394,7 +2389,7 @@ export function ProductFormDialog({
                                           })}%`
                                         : "—"}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right text-sm tabular-nums">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-sm tabular-nums">
                                       {recipeLineMetrics.get(item.id)?.kgPerUnit != null
                                         ? formatLocaleNumber(recipeLineMetrics.get(item.id)?.kgPerUnit, {
                                             minimumFractionDigits: 6,
@@ -2402,7 +2397,7 @@ export function ProductFormDialog({
                                           })
                                         : "—"}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-center">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-center">
                                       <Checkbox
                                         checked={recipeItemCountsTowardMixer(item)}
                                         onCheckedChange={(checked) =>
@@ -2414,13 +2409,13 @@ export function ProductFormDialog({
                                         title="Desmarque para incorporação fora do mixer (óleo na mesa, chocolate no fim)"
                                       />
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-xs">
-                                      <fieldset className="grid min-w-36 gap-1.5">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-xs">
+                                      <fieldset className="grid gap-1 leading-tight">
                                         <legend className="sr-only">Onde {item.label} é impresso</legend>
                                         {recipePrintDestinations.map((destination) => {
                                           const current = resolveRecipePrintDestinations(item);
                                           return (
-                                            <label key={destination} className="flex items-center gap-2">
+                                            <label key={destination} className="flex items-start gap-1.5">
                                               <Checkbox
                                                 checked={current.includes(destination)}
                                                 disabled={isReadOnly}
@@ -2442,14 +2437,17 @@ export function ProductFormDialog({
                                         ) : null}
                                       </fieldset>
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-sm">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-sm">
                                       <Select
                                         value={item.stage ?? defaultRecipeStage}
                                         onValueChange={(value) =>
                                           changeRecipeItemStage(item.id, value as RecipeStage)
                                         }
                                       >
-                                        <SelectTrigger aria-label={`Etapa de ${item.label}`}>
+                                        <SelectTrigger
+                                          aria-label={`Etapa de ${item.label}`}
+                                          className="h-auto min-h-10 w-full whitespace-normal px-2 text-left text-xs leading-tight *:data-[slot=select-value]:line-clamp-none"
+                                        >
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
@@ -2461,8 +2459,8 @@ export function ProductFormDialog({
                                         </SelectContent>
                                       </Select>
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-3 py-3 text-right">
-                                      <div className="flex justify-end gap-1">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right">
+                                      <div className="ml-auto grid w-fit grid-cols-2 gap-1">
                                         <Button
                                           type="button"
                                           variant="ghost"
