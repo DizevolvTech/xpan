@@ -84,7 +84,7 @@ import {
   buildRestoreChangeDescription,
   findMissingRecipeSources,
 } from "@/lib/product-version-snapshot";
-import { calculateMixerCapacity, getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
+import { calculateMixerCapacity, calculateMixerKgPerUnit, deriveMinPerBatchFromKg, getProductRecipeTotalsFromData, getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
 import {
   applyLabTestToProduct,
   bakerPercentLegalHint,
@@ -500,6 +500,23 @@ export function ProductFormDialog({
       }),
     [formState.recipe, recipeFinalQuantityPrecise, formState.mainIngredientLimitKg, formState.maxBatchWeightKg, mixerCapacity.capacity],
   );
+  // Cartão #174: mínimo por batida em kg -> unidades inteiras pelo peso por unidade da batida.
+  const mixerKgPerUnit = useMemo(
+    () => calculateMixerKgPerUnit(formState, snapshot.ingredients, snapshot.products),
+    [formState, snapshot.ingredients, snapshot.products],
+  );
+  const derivedMinPerBatch = useMemo(
+    () => deriveMinPerBatchFromKg(formState.minPerBatchKg, mixerKgPerUnit),
+    [formState.minPerBatchKg, mixerKgPerUnit],
+  );
+  useEffect(() => {
+    if (formState.minPerBatchKg == null) {
+      return;
+    }
+    setFormState((current) =>
+      current.minPerBatch === derivedMinPerBatch ? current : { ...current, minPerBatch: derivedMinPerBatch },
+    );
+  }, [derivedMinPerBatch, formState.minPerBatchKg]);
   useEffect(() => {
     if (derivedBatchCapacity == null) {
       return;
@@ -2846,7 +2863,7 @@ export function ProductFormDialog({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Base mínima de produção (Kg)</Label>
+                    <Label>Produção mínima do dia (Kg)</Label>
                     <Input
                       type="number"
                       value={formState.minimumProductionKg}
@@ -2858,7 +2875,7 @@ export function ProductFormDialog({
                       }
                     />
                     <p className="text-xs text-muted-foreground">
-                      Só alerta na OP. Não trava e não define o tamanho da batida.
+                      Total mínimo que vale produzir deste produto num dia (antes “Base mínima de produção”). Se a OP do dia somar menos, ela mostra um aviso. Não trava e não muda o tamanho das batidas: para isso use o Mínimo por batida.
                     </p>
                   </div>
                   <div className="grid gap-2">
@@ -2895,25 +2912,45 @@ export function ProductFormDialog({
                     ) : null}
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="min-per-batch">Mínimo por batida ({salesUnitLabel})</Label>
+                    <Label htmlFor="min-per-batch-kg">Mínimo por batida (Kg)</Label>
                     <Input
-                      id="min-per-batch"
+                      id="min-per-batch-kg"
                       type="number"
                       min={0}
-                      step={salesUnit === "Kg" ? "0.001" : "1"}
+                      step="0.001"
                       placeholder="Vazio = sem mínimo"
-                      value={formState.minPerBatch ?? ""}
+                      value={formState.minPerBatchKg ?? ""}
                       onChange={(event) =>
                         setFormState((current) => ({
                           ...current,
-                          minPerBatch: event.target.value === "" ? null : Number(event.target.value),
+                          minPerBatchKg: event.target.value === "" ? null : Number(event.target.value),
+                          minPerBatch: event.target.value === "" ? null : current.minPerBatch,
                         }))
                       }
                     />
+                    <p className="text-sm" aria-live="polite" data-testid="min-per-batch-units">
+                      Mínimo por batida em unidades:{" "}
+                      <strong>
+                        {formState.minPerBatchKg != null
+                          ? derivedMinPerBatch != null
+                            ? `${formatLocaleNumber(derivedMinPerBatch)} ${salesUnitLabel} (${formatKgLabel(derivedMinPerBatch * mixerKgPerUnit, { minimumFractionDigits: 3, maximumFractionDigits: 3 })})`
+                            : "—"
+                          : formState.minPerBatch != null
+                            ? `${formatLocaleNumber(formState.minPerBatch)} ${salesUnitLabel}`
+                            : "sem mínimo"}
+                      </strong>
+                    </p>
                     <p className="text-xs text-muted-foreground">
+                      {formState.minPerBatchKg != null && derivedMinPerBatch == null
+                        ? mixerKgPerUnit > 0
+                          ? `Não cabe uma unidade inteira: cada unidade pesa ${formatKgLabel(mixerKgPerUnit, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} na batida.`
+                          : "Marque os insumos em “Na batida?” e confira o rendimento para calcular as unidades."
+                        : formState.minPerBatchKg == null && formState.minPerBatch != null
+                          ? "Mínimo informado antes em unidades. Informe em kg para o sistema calcular."
+                          : "Calculado como a capacidade máxima: kg ÷ peso por unidade na batida, sem fração."}
                       {minPerBatchExample
-                        ? `A OP divide entre o mínimo e a capacidade por batida, com o menor nº de batidas e as maiores primeiro. Ex.: ${formatLocaleNumber(minPerBatchExample.total)} ${salesUnitLabel} = ${minPerBatchExample.sizes.map((size) => formatLocaleNumber(size)).join(" + ")}.${minPerBatchExample.below ? " Atenção: com este mínimo e esta capacidade nem todo total fecha no intervalo." : ""}`
-                        : "Opcional. Com mínimo, a OP não deixa sobra pequena na última batida (ex.: mín. 4 e máx. 9: 12 = 8 + 4). Pedido menor que o mínimo gera aviso na OP."}
+                        ? ` A OP divide entre o mínimo e a capacidade por batida, com o menor nº de batidas e as maiores primeiro. Ex.: ${formatLocaleNumber(minPerBatchExample.total)} ${salesUnitLabel} = ${minPerBatchExample.sizes.map((size) => formatLocaleNumber(size)).join(" + ")}.${minPerBatchExample.below ? " Atenção: com este mínimo e esta capacidade nem todo total fecha no intervalo." : ""}`
+                        : ""}
                     </p>
                   </div>
                   <div className="grid gap-2 rounded-lg bg-panel/60 p-3" aria-live="polite">

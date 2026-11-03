@@ -47,7 +47,7 @@ import {
   buildProductVersionSnapshot,
   isProductVersionSnapshot,
 } from "@/lib/product-version-snapshot";
-import { calculateMixerCapacity } from "@/lib/production-data-utils";
+import { calculateMixerCapacity, calculateMixerKgPerUnit, deriveMinPerBatchFromKg } from "@/lib/production-data-utils";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { isWeightDisplayUnit, type WeightDisplayUnit } from "@/lib/weight-display";
 
@@ -117,11 +117,24 @@ type MutationOptions = {
 };
 
 async function withCalculatedBatchCapacity(input: ProductInput, supabase: SupabaseDataClient, tenantId?: string | null): Promise<ProductInput> {
-  if (input.maxBatchWeightKg == null) return input;
+  const hasMinKg = typeof input.minPerBatchKg === "number" && Number.isFinite(input.minPerBatchKg) && input.minPerBatchKg > 0;
+  if (input.maxBatchWeightKg == null && !hasMinKg) return input;
   const snapshot = await getMasterDataSnapshot({ supabase, tenantId, includeProfileNames: false, forceRefresh: true });
-  const result = calculateMixerCapacity({ ...input, id: "draft", code: input.code ?? "" }, snapshot.ingredients, snapshot.products);
-  if (result.capacity == null) throw new MasterDataValidationError("Limite máximo da batida inválido: informe a capacidade, insumos com peso e rendimento suficientes para pelo menos uma unidade inteira.");
-  return { ...input, capacityPerBatch: result.capacity };
+  const draft = { ...input, id: "draft", code: input.code ?? "" };
+  let next: ProductInput = input;
+  if (input.maxBatchWeightKg != null) {
+    const result = calculateMixerCapacity(draft, snapshot.ingredients, snapshot.products);
+    if (result.capacity == null) throw new MasterDataValidationError("Limite máximo da batida inválido: informe a capacidade, insumos com peso e rendimento suficientes para pelo menos uma unidade inteira.");
+    next = { ...next, capacityPerBatch: result.capacity };
+  }
+  if (hasMinKg) {
+    // Cartão #174: o mínimo em kg vira unidades inteiras pelo peso por unidade da batida.
+    const kgPerUnit = calculateMixerKgPerUnit(draft, snapshot.ingredients, snapshot.products);
+    const units = deriveMinPerBatchFromKg(input.minPerBatchKg, kgPerUnit);
+    if (units == null) throw new MasterDataValidationError("Mínimo por batida (Kg) inválido: o mínimo precisa caber pelo menos uma unidade inteira, com insumos marcados em Na batida e rendimento.");
+    next = { ...next, minPerBatch: units };
+  }
+  return next;
 }
 
 /**
@@ -1058,6 +1071,10 @@ function normalizeProductPayload(input: ProductInput) {
     min_per_batch:
       typeof input.minPerBatch === "number" && Number.isFinite(input.minPerBatch) && input.minPerBatch > 0
         ? input.minPerBatch
+        : null,
+    min_per_batch_kg:
+      typeof input.minPerBatchKg === "number" && Number.isFinite(input.minPerBatchKg) && input.minPerBatchKg > 0
+        ? input.minPerBatchKg
         : null,
     max_batch_weight_kg: input.maxBatchWeightKg ?? null,
     economic_batch_unit: input.economicBatchUnit ?? null,
@@ -2049,6 +2066,8 @@ export async function cloneProduct(
     // XPAN-8: preserva o limite do ingrediente principal ao copiar o produto.
     main_ingredient_limit_kg: (row as Record<string, unknown>).main_ingredient_limit_kg ?? null,
     max_batch_weight_kg: (row as Record<string, unknown>).max_batch_weight_kg ?? null,
+    min_per_batch: (row as Record<string, unknown>).min_per_batch ?? null,
+    min_per_batch_kg: (row as Record<string, unknown>).min_per_batch_kg ?? null,
     allows_storage: row.allows_storage,
     production_days: row.production_days,
     sale_lead_days: row.sale_lead_days,

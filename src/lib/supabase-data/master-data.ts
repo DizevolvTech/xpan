@@ -439,6 +439,10 @@ async function loadMasterDataSnapshot(
       (row as Record<string, unknown>).min_per_batch == null
         ? null
         : Number((row as Record<string, unknown>).min_per_batch),
+    minPerBatchKg:
+      (row as Record<string, unknown>).min_per_batch_kg == null
+        ? null
+        : Number((row as Record<string, unknown>).min_per_batch_kg),
     economicBatchUnit:
       (row.economic_batch_unit as ProductionProduct["economicBatchUnit"]) ?? null,
     // XPAN-8: limite físico (kg) do ingrediente principal por batida. null = manual.

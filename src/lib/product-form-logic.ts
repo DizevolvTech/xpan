@@ -189,6 +189,7 @@ export function buildProductFormState(
     isMpiIngredient: false,
     capacityPerBatch: null,
     minPerBatch: null,
+    minPerBatchKg: null,
     economicBatchUnit: null,
     mainIngredientLimitKg: null,
   };

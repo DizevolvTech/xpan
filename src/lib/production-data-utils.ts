@@ -464,6 +464,46 @@ export function getProductRecipeTotalsFromData(
   };
 }
 
+/**
+ * Peso por unidade da batida (kg): soma dos insumos marcados em "Na batida?" dividida pelo
+ * rendimento da receita. 0 quando não dá para calcular (insumo sem peso, sem rendimento).
+ */
+export function calculateMixerKgPerUnit(product: ProductionProduct, ingredients: ProductionIngredient[], products: ProductionProduct[]): number {
+  const { kgPerUnit, weightsOk } = mixerWeightPerUnit(product, ingredients, products);
+  return weightsOk && Number.isFinite(kgPerUnit) && kgPerUnit > 0 ? kgPerUnit : 0;
+}
+
+/**
+ * Cartão #174: mínimo por batida em kg -> unidades inteiras (fração descartada), a mesma conta
+ * da capacidade máxima. Ex.: 10 kg com 380,8 g/un -> 26. null quando não cabe uma unidade.
+ */
+export function deriveMinPerBatchFromKg(minKg: number | null | undefined, kgPerUnit: number): number | null {
+  if (typeof minKg !== "number" || !Number.isFinite(minKg) || minKg <= 0) return null;
+  if (!Number.isFinite(kgPerUnit) || kgPerUnit <= 0) return null;
+  let units = Math.floor(minKg / kgPerUnit + 1e-9);
+  if (units * kgPerUnit > minKg + 1e-9) units -= 1;
+  return units >= 1 ? units : null;
+}
+
+function mixerWeightPerUnit(product: ProductionProduct, ingredients: ProductionIngredient[], products: ProductionProduct[]) {
+  const ingredientMap = new Map(ingredients.map(item => [item.id, item]));
+  const productMap = new Map(products.map(item => [item.id, item]));
+  const selected = product.recipe.filter(recipeItemCountsTowardMixer);
+  const weights = selected.map(item => {
+    if (!isMassOrVolumeUnit(item.unit) && item.sourceType === "ingrediente") {
+      const ingredient = ingredientMap.get(item.sourceId);
+      if (!ingredient) return NaN;
+      const normalized = convertIngredientQuantityToConsumptionUnit(item, ingredient);
+      if (!isMassOrVolumeUnit(normalized.unit) && !(Number(ingredient.weightKg) > 0) && !(Number(ingredient.recipeYieldKg) > 0)) return NaN;
+    }
+    if (!isMassOrVolumeUnit(item.unit) && item.sourceType === "produto" && !productMap.has(item.sourceId)) return NaN;
+    return getRecipeReferenceWeightKgFromData(item, ingredientMap, productMap);
+  });
+  const mixerKg = weights.reduce((sum, kg) => sum + kg, 0);
+  const yieldUnits = getProductRecipeTotalsFromData(product, ingredients, products).finalFractionsQuantityPrecise;
+  return { kgPerUnit: mixerKg / yieldUnits, weightsOk: weights.length > 0 && weights.every(kg => Number.isFinite(kg) && kg > 0) };
+}
+
 /** XPAN-04: sum only the ingredients selected for the physical mixer load. */
 export function calculateMixerCapacity(product: ProductionProduct, ingredients: ProductionIngredient[], products: ProductionProduct[]) {
   const limit = product.maxBatchWeightKg;

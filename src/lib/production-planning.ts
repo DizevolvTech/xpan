@@ -552,6 +552,11 @@ export interface ProductionProduct {
    * até a capacidade e a última batida leva a sobra). Opcional para as fixtures existentes.
    */
   minPerBatch?: number | null;
+  /**
+   * Cartão #174: mínimo por batida em kg. Quando informado, `minPerBatch` é calculado dele
+   * (unidades inteiras pelo peso por unidade da batida). null/undefined = mínimo em unidades.
+   */
+  minPerBatchKg?: number | null;
   /** Unidade do lote econômico (forma/maceira/pacote/unidade/kg). null = não definido. */
   economicBatchUnit: EconomicBatchUnit | null;
   /** XPAN-8: limite físico (kg) do ingrediente principal por batida (ex.: kg de trigo
