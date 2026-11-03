@@ -2967,11 +2967,13 @@ export function ProductFormDialog({
                       }
                     />
                     <p className="text-sm" aria-live="polite" data-testid="min-per-batch-units">
-                      Mínimo por batida em unidades:{" "}
+                      {salesUnit === "Kg" || salesUnit === "L"
+                        ? `Mínimo por batida em ${salesUnitLabel} de produto pronto:`
+                        : "Mínimo por batida em unidades:"}{" "}
                       <strong>
                         {formState.minPerBatchKg != null
                           ? derivedMinPerBatch != null
-                            ? `${formatLocaleNumber(derivedMinPerBatch)} ${salesUnitLabel} (${formatKgLabel(derivedMinPerBatch * mixerKgPerUnit, { minimumFractionDigits: 3, maximumFractionDigits: 3 })})`
+                            ? `${formatLocaleNumber(derivedMinPerBatch)} ${salesUnitLabel} (${formatKgLabel(derivedMinPerBatch * mixerKgPerUnit, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} na batida)`
                             : "—"
                           : formState.minPerBatch != null
                             ? `${formatLocaleNumber(formState.minPerBatch)} ${salesUnitLabel}`
