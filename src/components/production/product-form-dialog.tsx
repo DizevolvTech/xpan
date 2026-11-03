@@ -2297,14 +2297,14 @@ export function ProductFormDialog({
                                   composição caber na largura da janela, sem rolar para os lados. */}
                               <colgroup>
                                 <col />
-                                <col className="w-[84px]" />
+                                <col className="w-[110px]" />
                                 <col className="w-[80px]" />
+                                <col className="w-[72px]" />
                                 <col className="w-[66px]" />
-                                <col className="w-[62px]" />
                                 <col className="w-[70px]" />
                                 <col className="w-[56px]" />
-                                <col className="w-[136px]" />
-                                <col className="w-[114px]" />
+                                <col className="w-[128px]" />
+                                <col className="w-[108px]" />
                                 <col className="w-[76px]" />
                               </colgroup>
                               <thead className="bg-card">
@@ -2368,7 +2368,7 @@ export function ProductFormDialog({
                                         </SelectContent>
                                       </Select>
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-sm tabular-nums">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-xs tabular-nums [overflow-wrap:anywhere]">
                                       {recipeLineMetrics.get(item.id)?.overMain != null
                                         ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overMain, {
                                             minimumFractionDigits: 2,
@@ -2381,7 +2381,7 @@ export function ProductFormDialog({
                                         </p>
                                       ) : null}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-sm tabular-nums">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-xs tabular-nums [overflow-wrap:anywhere]">
                                       {recipeLineMetrics.get(item.id)?.overTotal != null
                                         ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overTotal, {
                                             minimumFractionDigits: 2,
@@ -2389,7 +2389,7 @@ export function ProductFormDialog({
                                           })}%`
                                         : "—"}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-sm tabular-nums">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-xs tabular-nums [overflow-wrap:anywhere]">
                                       {recipeLineMetrics.get(item.id)?.kgPerUnit != null
                                         ? formatLocaleNumber(recipeLineMetrics.get(item.id)?.kgPerUnit, {
                                             minimumFractionDigits: 6,
