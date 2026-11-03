@@ -2118,7 +2118,8 @@ export function ProductFormDialog({
                                     min="0"
                                     step="0.001"
                                     aria-label={`Quantidade de ${item.label}`}
-                                    value={item.quantity}
+                                    value={item.quantity === 0 ? "" : item.quantity}
+                                        placeholder="0"
                                     onChange={(event) =>
                                       updateRecipeItem(item.id, { quantity: Number(event.target.value) })
                                     }
@@ -2299,12 +2300,12 @@ export function ProductFormDialog({
                                 <col />
                                 <col className="w-[110px]" />
                                 <col className="w-[80px]" />
+                                <col className="w-[84px]" />
                                 <col className="w-[72px]" />
-                                <col className="w-[66px]" />
                                 <col className="w-[70px]" />
                                 <col className="w-[56px]" />
-                                <col className="w-[128px]" />
-                                <col className="w-[108px]" />
+                                <col className="w-[122px]" />
+                                <col className="w-[100px]" />
                                 <col className="w-[76px]" />
                               </colgroup>
                               <thead className="bg-card">
@@ -2339,7 +2340,8 @@ export function ProductFormDialog({
                                         step="0.001"
                                         aria-label={`Quantidade de ${item.label}`}
                                         className="w-full px-2"
-                                        value={item.quantity}
+                                        value={item.quantity === 0 ? "" : item.quantity}
+                                        placeholder="0"
                                         onChange={(event) =>
                                           updateRecipeItem(item.id, {
                                             quantity: Number(event.target.value),
@@ -2368,7 +2370,7 @@ export function ProductFormDialog({
                                         </SelectContent>
                                       </Select>
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-xs tabular-nums [overflow-wrap:anywhere]">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-[11px] tabular-nums whitespace-nowrap">
                                       {recipeLineMetrics.get(item.id)?.overMain != null
                                         ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overMain, {
                                             minimumFractionDigits: 2,
@@ -2381,7 +2383,7 @@ export function ProductFormDialog({
                                         </p>
                                       ) : null}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-xs tabular-nums [overflow-wrap:anywhere]">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-[11px] tabular-nums whitespace-nowrap">
                                       {recipeLineMetrics.get(item.id)?.overTotal != null
                                         ? `${formatLocaleNumber(recipeLineMetrics.get(item.id)?.overTotal, {
                                             minimumFractionDigits: 2,
@@ -2389,7 +2391,7 @@ export function ProductFormDialog({
                                           })}%`
                                         : "—"}
                                     </td>
-                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-xs tabular-nums [overflow-wrap:anywhere]">
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-right text-[11px] tabular-nums whitespace-nowrap">
                                       {recipeLineMetrics.get(item.id)?.kgPerUnit != null
                                         ? formatLocaleNumber(recipeLineMetrics.get(item.id)?.kgPerUnit, {
                                             minimumFractionDigits: 6,
