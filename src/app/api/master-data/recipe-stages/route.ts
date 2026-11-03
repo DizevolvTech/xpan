@@ -159,7 +159,8 @@ export async function DELETE(request: Request) {
       .from("products")
       .select("id")
       .eq("tenant_id", tenantId)
-      .contains("recipe_stage_config", [{ stage: key }])
+      // jsonb: o filtro "contém" precisa do JSON como texto (array de objetos).
+      .filter("recipe_stage_config", "cs", JSON.stringify([{ stage: key }]))
       .limit(1),
   ]);
   if (itemsError || configError) return NextResponse.json({ message: "Falha ao conferir o uso da etapa." }, { status: 500 });
