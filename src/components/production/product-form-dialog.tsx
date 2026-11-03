@@ -2298,13 +2298,13 @@ export function ProductFormDialog({
                               <colgroup>
                                 <col />
                                 <col className="w-[84px]" />
-                                <col className="w-[70px]" />
+                                <col className="w-[80px]" />
                                 <col className="w-[66px]" />
                                 <col className="w-[62px]" />
                                 <col className="w-[70px]" />
                                 <col className="w-[56px]" />
-                                <col className="w-[142px]" />
-                                <col className="w-[120px]" />
+                                <col className="w-[136px]" />
+                                <col className="w-[114px]" />
                                 <col className="w-[76px]" />
                               </colgroup>
                               <thead className="bg-card">
@@ -2356,7 +2356,7 @@ export function ProductFormDialog({
                                           })
                                         }
                                       >
-                                        <SelectTrigger aria-label={`Unidade de ${item.label}`} className="w-full px-2">
+                                        <SelectTrigger aria-label={`Unidade de ${item.label}`} className="w-full gap-1 px-2">
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
