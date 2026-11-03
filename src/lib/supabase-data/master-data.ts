@@ -20,11 +20,14 @@ import type {
   ProductionLine,
   ProductionProduct,
   ProductionSector,
+  RecipeStageDefinition,
   StoreMasterData,
   WeeklyProductionSchedule,
   WeeklyScheduleItem,
 } from "@/lib/production-planning";
 import {
+  isBuiltinRecipeStage,
+  isRecipeStage,
   normalizeRecipeStage,
   normalizeRecipeStageConfig,
   normalizeSupplyClass,
@@ -55,6 +58,8 @@ export interface MasterDataSnapshot {
    * (personas não-loja). Ausente para tenants sem a migration de changelog.
    */
   productChangelogByProductId?: Record<string, ProductChangelogSummary>;
+  /** Cartão #173: etapas da ficha técnica cadastradas pela empresa (e padrão renomeadas). */
+  recipeStageDefinitions?: RecipeStageDefinition[];
 }
 
 type MasterDataSnapshotOptions = {
@@ -145,6 +150,7 @@ async function loadMasterDataSnapshot(
     schedulesResult,
     scheduleSnapshotsResult,
     productChangelogResult,
+    recipeStageDefinitionsResult,
   ] = await Promise.all([
     supabase
       .from("operational_settings")
@@ -196,7 +202,18 @@ async function loadMasterDataSnapshot(
           .order("product_id", { ascending: true })
           .order("version_number", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from("recipe_stage_definitions")
+      .select("id, key, label, base_stage, active, sort_order")
+      .eq("tenant_id", tenantId)
+      .order("sort_order", { ascending: true }),
   ]);
+  // Sem a migration do cartão #173 a tabela não existe: segue só com as etapas padrão.
+  const recipeStageDefinitions = mapRecipeStageDefinitionRows(
+    recipeStageDefinitionsResult.error ? [] : (recipeStageDefinitionsResult.data as unknown[] | null) ?? [],
+  );
+  // Os nomes são registrados só no navegador (use-master-data): no servidor o registro seria
+  // compartilhado entre empresas.
 
   const settingsRow = assertSupabaseResult(
     { data: operationalSettingsResult.data, error: operationalSettingsResult.error },
@@ -555,7 +572,26 @@ async function loadMasterDataSnapshot(
     products,
     schedules,
     ...(productChangelogByProductId ? { productChangelogByProductId } : {}),
+    recipeStageDefinitions,
   };
+}
+
+/** Cartão #173: linhas de `recipe_stage_definitions` -> etapas da empresa (descarta lixo). */
+export function mapRecipeStageDefinitionRows(rows: unknown[]): RecipeStageDefinition[] {
+  const definitions: RecipeStageDefinition[] = [];
+  for (const raw of rows) {
+    const row = raw as Record<string, unknown>;
+    if (!isRecipeStage(row.key) || !isBuiltinRecipeStage(row.base_stage)) continue;
+    definitions.push({
+      id: String(row.id),
+      key: row.key,
+      label: String(row.label ?? "").trim(),
+      baseStage: row.base_stage,
+      active: row.active !== false,
+      sortOrder: Number(row.sort_order ?? 0),
+    });
+  }
+  return definitions;
 }
 
 export async function getMasterDataSnapshot(

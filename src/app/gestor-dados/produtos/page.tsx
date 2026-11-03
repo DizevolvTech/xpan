@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Box, Clock3, Plus } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, Box, Clock3, ListOrdered, Plus } from "lucide-react";
 
 import { ProductFormDialog, type ProductDialogMode } from "@/components/production/product-form-dialog";
 import { DataTable } from "@/components/shared/data-table";
@@ -263,10 +264,18 @@ export default function ProdutosPage() {
         { label: "Produtos" },
       ]}
       actions={
-        <Button type="button" onClick={() => openProductDialog(null, "edit")}>
-          <Plus className="size-4" />
-          Novo Produto
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild type="button" variant="outline">
+            <Link href="/gestor-dados/produtos/etapas">
+              <ListOrdered className="size-4" />
+              Etapas da ficha técnica
+            </Link>
+          </Button>
+          <Button type="button" onClick={() => openProductDialog(null, "edit")}>
+            <Plus className="size-4" />
+            Novo Produto
+          </Button>
+        </div>
       }
     >
       <div className="grid gap-3 md:grid-cols-3">

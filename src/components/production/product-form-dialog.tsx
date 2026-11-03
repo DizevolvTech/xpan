@@ -37,8 +37,10 @@ import {
   hierarchyLabels,
   productionWeekDays,
   recipeItemCountsTowardMixer,
-  recipeStageLabels,
-  recipeStages,
+  getRecipeStageLabel,
+  listRecipeStageOptions,
+  normalizeRecipeStage,
+  registerRecipeStageDefinitions,
   packagingRecipePrintDestinations,
   recipePrintDestinationLabels,
   recipePrintDestinations,
@@ -56,6 +58,7 @@ import {
   type ProductionProduct,
   type RecipeIngredientReference,
   type RecipeStage,
+  type RecipeStageDefinition,
   type RecipeStageConfigEntry,
 } from "@/lib/production-planning";
 import {
@@ -456,6 +459,17 @@ export function ProductFormDialog({
     );
   }, [formState.recipe, labComputation, snapshot.ingredients, snapshot.products]);
 
+  // Cartão #174: mínimo por batida em kg -> unidades inteiras pelo peso por unidade da batida.
+  const mixerKgPerUnit = useMemo(
+    () => calculateMixerKgPerUnit(formState, snapshot.ingredients, snapshot.products),
+    [formState, snapshot.ingredients, snapshot.products],
+  );
+  const derivedMinPerBatch = useMemo(
+    () => deriveMinPerBatchFromKg(formState.minPerBatchKg, mixerKgPerUnit),
+    [formState.minPerBatchKg, mixerKgPerUnit],
+  );
+  // Com o mínimo em kg, as unidades saem dele; sem, vale o mínimo em unidades de antes.
+  const effectiveMinPerBatch = formState.minPerBatchKg != null ? derivedMinPerBatch : formState.minPerBatch ?? null;
   // 2.4-F: prévia de como o arredondamento por batida se comporta para a base
   // econômica informada. Reaproveita planBatches() (mesma matemática da OP).
   const salesUnit = formState.unitProfiles.sales.unit;
@@ -467,10 +481,10 @@ export function ProductFormDialog({
     if (!Number.isFinite(totalKg) || totalKg <= 0) return null;
     const salesToKgFactor =
       salesUnit === "Kg" ? 1 : formState.unitProfiles.sales.weightKg;
-    return planBatches({ totalKg, capacityPerBatch: capacity, salesToKgFactor, salesUnit, minPerBatch: formState.minPerBatch });
+    return planBatches({ totalKg, capacityPerBatch: capacity, salesToKgFactor, salesUnit, minPerBatch: effectiveMinPerBatch });
   }, [
     formState.capacityPerBatch,
-    formState.minPerBatch,
+    effectiveMinPerBatch,
     formState.economicProductionKg,
     formState.unitProfiles.sales.weightKg,
     salesUnit,
@@ -479,12 +493,12 @@ export function ProductFormDialog({
   // antiga deixaria a última batida abaixo do mínimo (mín. 4 / máx. 9 → 12 = 8 + 4).
   const minPerBatchExample = useMemo(() => {
     const capacity = formState.capacityPerBatch;
-    const min = formState.minPerBatch;
+    const min = effectiveMinPerBatch;
     if (!capacity || capacity <= 0 || !min || min <= 0) return null;
     const total = capacity + Math.max(1, min - 1);
     const plan = planBatches({ totalKg: total, capacityPerBatch: capacity, salesToKgFactor: 1, salesUnit, minPerBatch: min });
     return { total, sizes: plan.batchSizes, below: plan.belowMinimumPerBatch };
-  }, [formState.capacityPerBatch, formState.minPerBatch, salesUnit]);
+  }, [formState.capacityPerBatch, effectiveMinPerBatch, salesUnit]);
   // AJ-0004 / AJ-0004.1: quantidade final precisa (sem arredondamento de unidade
   // discreta), agora consumida da fonte única em `getProductRecipeTotalsFromData`
   // (`finalFractionsQuantityPrecise`) — mesmo valor que propaga a jusante.
@@ -500,23 +514,6 @@ export function ProductFormDialog({
       }),
     [formState.recipe, recipeFinalQuantityPrecise, formState.mainIngredientLimitKg, formState.maxBatchWeightKg, mixerCapacity.capacity],
   );
-  // Cartão #174: mínimo por batida em kg -> unidades inteiras pelo peso por unidade da batida.
-  const mixerKgPerUnit = useMemo(
-    () => calculateMixerKgPerUnit(formState, snapshot.ingredients, snapshot.products),
-    [formState, snapshot.ingredients, snapshot.products],
-  );
-  const derivedMinPerBatch = useMemo(
-    () => deriveMinPerBatchFromKg(formState.minPerBatchKg, mixerKgPerUnit),
-    [formState.minPerBatchKg, mixerKgPerUnit],
-  );
-  useEffect(() => {
-    if (formState.minPerBatchKg == null) {
-      return;
-    }
-    setFormState((current) =>
-      current.minPerBatch === derivedMinPerBatch ? current : { ...current, minPerBatch: derivedMinPerBatch },
-    );
-  }, [derivedMinPerBatch, formState.minPerBatchKg]);
   useEffect(() => {
     if (derivedBatchCapacity == null) {
       return;
@@ -582,9 +579,36 @@ export function ProductFormDialog({
       }),
     [formState.recipeStageConfig, formState.recipe, recipeListStageFilter, recipeListSortedByStage],
   );
+  // Cartão #173: etapas da empresa (padrão + cadastradas em Gestor de Dados > Etapas da ficha).
+  // O link "Cadastrar etapas" abre noutra aba; ao voltar para esta, a lista é relida.
+  const [liveStageDefinitions, setLiveStageDefinitions] = useState<RecipeStageDefinition[] | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    function reloadStages() {
+      void fetch("/api/master-data/recipe-stages")
+        .then((response) => (response.ok ? (response.json() as Promise<RecipeStageDefinition[]>) : null))
+        .then((definitions) => {
+          if (definitions) setLiveStageDefinitions(definitions);
+        })
+        .catch(() => undefined);
+    }
+    window.addEventListener("focus", reloadStages);
+    return () => window.removeEventListener("focus", reloadStages);
+  }, [open]);
+  const stageDefinitions = liveStageDefinitions ?? snapshot.recipeStageDefinitions;
+  const recipeStageOptions = useMemo(() => {
+    registerRecipeStageDefinitions(stageDefinitions);
+    const options = listRecipeStageOptions(stageDefinitions);
+    // Etapa já usada na receita continua como opção mesmo inativa no cadastro.
+    for (const item of formState.recipe) {
+      const stage = normalizeRecipeStage(item.stage);
+      if (!options.includes(stage)) options.push(stage);
+    }
+    return options;
+  }, [stageDefinitions, formState.recipe]);
   const addableRecipeStages = useMemo(
-    () => getAddableRecipeStages(formState.recipeStageConfig, formState.recipe),
-    [formState.recipeStageConfig, formState.recipe],
+    () => getAddableRecipeStages(formState.recipeStageConfig, formState.recipe, recipeStageOptions),
+    [formState.recipeStageConfig, formState.recipe, recipeStageOptions],
   );
 
   function focusFirstInvalidField(fields: ProductValidationField[]) {
@@ -986,6 +1010,8 @@ export function ProductFormDialog({
       }),
       isMpiIngredient: withLab.canBeIngredient,
       capacityPerBatch: derivedCapacity ?? withLab.capacityPerBatch,
+      // Cartão #174: mínimo em kg grava as unidades calculadas (o servidor confere de novo).
+      minPerBatch: withLab.minPerBatchKg != null ? derivedMinPerBatch : withLab.minPerBatch ?? null,
       economicProductionKg:
         derivedCapacity != null
           ? deriveEconomicProductionKg(derivedCapacity, salesWeight)
@@ -2061,7 +2087,7 @@ export function ProductFormDialog({
                             <SelectItem value="todas">Todas as etapas</SelectItem>
                             {recipeStageBlocks.map((block) => (
                               <SelectItem key={block.stage} value={block.stage}>
-                                {recipeStageLabels[block.stage]}
+                                {getRecipeStageLabel(block.stage)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -2112,9 +2138,9 @@ export function ProductFormDialog({
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        {recipeStages.map((entry) => (
+                                        {recipeStageOptions.map((entry) => (
                                           <SelectItem key={entry} value={entry}>
-                                            {recipeStageLabels[entry]}
+                                            {getRecipeStageLabel(entry)}
                                           </SelectItem>
                                         ))}
                                       </SelectContent>
@@ -2195,7 +2221,7 @@ export function ProductFormDialog({
                         {recipeStageBlocks.map((block, blockIndex) => (
                           <li key={block.stage} className="flex flex-col gap-0.5">
                             <span className="font-medium text-foreground">
-                              {blockIndex + 1}º · {recipeStageLabels[block.stage]}{" "}
+                              {blockIndex + 1}º · {getRecipeStageLabel(block.stage)}{" "}
                               <span className="font-normal text-muted-foreground">
                                 ({block.items.length} insumo(s))
                               </span>
@@ -2234,7 +2260,7 @@ export function ProductFormDialog({
                               {blockIndex + 1}º
                             </span>
                             <h4 className="text-sm font-semibold text-foreground">
-                              {recipeStageLabels[block.stage]}
+                              {getRecipeStageLabel(block.stage)}
                             </h4>
                             <span className="text-xs text-muted-foreground">
                               {block.items.length === 0
@@ -2250,7 +2276,7 @@ export function ProductFormDialog({
                               onClick={() => moveRecipeStageBlock(block.stage, "up")}
                               disabled={blockIndex === 0}
                               title="Mover este bloco para cima na sequência da ficha"
-                              aria-label={`Mover bloco ${recipeStageLabels[block.stage]} para cima`}
+                              aria-label={`Mover bloco ${getRecipeStageLabel(block.stage)} para cima`}
                             >
                               <ChevronUp className="size-4" />
                             </Button>
@@ -2261,7 +2287,7 @@ export function ProductFormDialog({
                               onClick={() => moveRecipeStageBlock(block.stage, "down")}
                               disabled={blockIndex === recipeStageBlocks.length - 1}
                               title="Mover este bloco para baixo na sequência da ficha"
-                              aria-label={`Mover bloco ${recipeStageLabels[block.stage]} para baixo`}
+                              aria-label={`Mover bloco ${getRecipeStageLabel(block.stage)} para baixo`}
                             >
                               <ChevronDown className="size-4" />
                             </Button>
@@ -2277,7 +2303,7 @@ export function ProductFormDialog({
                                   ? "Remova os insumos antes de excluir o bloco"
                                   : "Remover este bloco da ficha"
                               }
-                              aria-label={`Remover bloco ${recipeStageLabels[block.stage]}`}
+                              aria-label={`Remover bloco ${getRecipeStageLabel(block.stage)}`}
                             >
                               <Trash2 className="size-4" />
                             </Button>
@@ -2295,7 +2321,7 @@ export function ProductFormDialog({
                               updateRecipeStageInstructions(block.stage, event.target.value)
                             }
                             className="min-h-[72px]"
-                            placeholder={`Como executar ${recipeStageLabels[block.stage].toLowerCase()}: mistura, tempo, ponto...`}
+                            placeholder={`Como executar ${getRecipeStageLabel(block.stage).toLowerCase()}: mistura, tempo, ponto...`}
                           />
                           <p className="text-xs text-muted-foreground">
                             Instrução deste bloco — sai junto dos insumos dele na folha. A
@@ -2470,9 +2496,9 @@ export function ProductFormDialog({
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          {recipeStages.map((stage) => (
+                                          {recipeStageOptions.map((stage) => (
                                             <SelectItem key={stage} value={stage}>
-                                              {recipeStageLabels[stage]}
+                                              {getRecipeStageLabel(stage)}
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
@@ -2568,7 +2594,7 @@ export function ProductFormDialog({
                                 placeholder="Selecione a referência"
                                 searchPlaceholder="Buscar por nome, código XPAN ou código ERP..."
                                 emptyMessage="Nenhuma referência encontrada."
-                                title={`Adicionar em ${recipeStageLabels[block.stage]}`}
+                                title={`Adicionar em ${getRecipeStageLabel(block.stage)}`}
                                 description="Busque por nome, código XPAN ou código ERP do insumo ou produto MPI."
                               />
                               {(() => {
@@ -2588,7 +2614,7 @@ export function ProductFormDialog({
                             <Input
                               type="number"
                               step="0.001"
-                              aria-label={`Quantidade para ${recipeStageLabels[block.stage]}`}
+                              aria-label={`Quantidade para ${getRecipeStageLabel(block.stage)}`}
                               value={draft.quantity}
                               onChange={(event) =>
                                 updateRecipeDraft(block.stage, { quantity: event.target.value })
@@ -2605,7 +2631,7 @@ export function ProductFormDialog({
                                 })
                               }
                             >
-                              <SelectTrigger aria-label={`Unidade para ${recipeStageLabels[block.stage]}`}>
+                              <SelectTrigger aria-label={`Unidade para ${getRecipeStageLabel(block.stage)}`}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -2624,7 +2650,7 @@ export function ProductFormDialog({
                             type="button"
                             onClick={() => addRecipeItem(block.stage)}
                             disabled={!draft.sourceId || !draft.quantity}
-                            title={`Adicionar insumo em ${recipeStageLabels[block.stage]}`}
+                            title={`Adicionar insumo em ${getRecipeStageLabel(block.stage)}`}
                           >
                             <Plus className="size-4" />
                             Adicionar
@@ -2643,6 +2669,17 @@ export function ProductFormDialog({
                         O bloco novo entra no fim da sequência e pode ser movido. Bloco vazio pode ser
                         removido a qualquer momento.
                       </p>
+                      <p className="text-xs text-muted-foreground">
+                        Falta uma etapa?{" "}
+                        <a
+                          href="/gestor-dados/produtos/etapas"
+                          target="_blank"
+                          rel="noopener"
+                          className="font-medium text-primary underline underline-offset-2"
+                        >
+                          Cadastrar etapas da ficha técnica
+                        </a>
+                      </p>
                     </div>
                     <div className="w-full sm:w-72">
                       <Select
@@ -2655,7 +2692,7 @@ export function ProductFormDialog({
                         <SelectContent>
                           {addableRecipeStages.map((stage) => (
                             <SelectItem key={stage} value={stage}>
-                              {recipeStageLabels[stage]}
+                              {getRecipeStageLabel(stage)}
                             </SelectItem>
                           ))}
                         </SelectContent>

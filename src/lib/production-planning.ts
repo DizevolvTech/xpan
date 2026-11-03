@@ -119,7 +119,7 @@ export interface IngredientProfileMirror {
  * A ORDEM DESTE ENUM é a ordem canônica de exibição/pesagem — não existe coluna de ordem
  * separada; o `sort_order` da receita ordena DENTRO da etapa.
  */
-export type RecipeStage =
+export type BuiltinRecipeStage =
   | "esponja"
   | "massa"
   | "recheio"
@@ -128,7 +128,16 @@ export type RecipeStage =
   | "acabamento"
   | "montagem";
 
-export const recipeStages: RecipeStage[] = [
+/**
+ * Cartão #173: etapa cadastrada pela empresa (ex.: "Embalagem"). A chave guarda a etapa padrão
+ * que ela segue nos cálculos (`operacional__embalagem` = conta como Insumos operacionais), então
+ * massa, quebra, batida e impressão continuam puras, sem consultar o cadastro.
+ */
+export type CustomRecipeStage = `${BuiltinRecipeStage}__${string}`;
+
+export type RecipeStage = BuiltinRecipeStage | CustomRecipeStage;
+
+export const recipeStages: BuiltinRecipeStage[] = [
   "esponja",
   "massa",
   "recheio",
@@ -138,7 +147,7 @@ export const recipeStages: RecipeStage[] = [
   "montagem",
 ];
 
-export const recipeStageLabels: Record<RecipeStage, string> = {
+export const recipeStageLabels: Record<BuiltinRecipeStage, string> = {
   esponja: "Esponja / Pré-fermento",
   massa: "Massa",
   recheio: "Recheio",
@@ -148,16 +157,125 @@ export const recipeStageLabels: Record<RecipeStage, string> = {
   montagem: "Montagem",
 };
 
+/** Como cada etapa padrão entra nos cálculos — mostrado no cadastro de etapas. */
+export const recipeStageBehaviorDescriptions: Record<BuiltinRecipeStage, string> = {
+  esponja: "Entra na massa e na masseira, batida antes da massa.",
+  massa: "Entra na massa, na quebra e na masseira.",
+  recheio: "Entra no peso; preparo separado, fora da masseira da massa.",
+  cobertura: "Entra no peso; preparo separado, fora da masseira.",
+  operacional: "Fora da massa, da quebra e da masseira; conta no peso e na OP.",
+  acabamento: "Entra depois do forno, sem quebra.",
+  montagem: "Junção dos componentes prontos, fora da masseira.",
+};
+
+const customRecipeStagePattern = /^(esponja|massa|recheio|cobertura|operacional|acabamento|montagem)__[a-z0-9][a-z0-9_]{0,47}$/;
+
+export function isBuiltinRecipeStage(value: unknown): value is BuiltinRecipeStage {
+  return recipeStages.includes(value as BuiltinRecipeStage);
+}
+
+export function isCustomRecipeStage(value: unknown): value is CustomRecipeStage {
+  return typeof value === "string" && customRecipeStagePattern.test(value);
+}
+
+export function isRecipeStage(value: unknown): value is RecipeStage {
+  return isBuiltinRecipeStage(value) || isCustomRecipeStage(value);
+}
+
+/** Etapa padrão que a etapa segue nos cálculos (a própria, quando é padrão). */
+export function getRecipeStageBase(stage: RecipeStage | undefined): BuiltinRecipeStage {
+  const normalized = normalizeRecipeStage(stage);
+  return (isCustomRecipeStage(normalized) ? normalized.split("__")[0] : normalized) as BuiltinRecipeStage;
+}
+
+/** Chave de uma etapa nova a partir do nome: "Embalagem" + operacional -> operacional__embalagem. */
+export function buildCustomRecipeStageKey(base: BuiltinRecipeStage, name: string): CustomRecipeStage | null {
+  const slug = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48)
+    .replace(/_+$/g, "");
+  if (!slug || !isBuiltinRecipeStage(base)) return null;
+  const key = `${base}__${slug}` as CustomRecipeStage;
+  return isCustomRecipeStage(key) ? key : null;
+}
+
+/** Cadastro de etapas da empresa (tabela `recipe_stage_definitions`). */
+export interface RecipeStageDefinition {
+  id: string;
+  key: RecipeStage;
+  label: string;
+  baseStage: BuiltinRecipeStage;
+  active: boolean;
+  sortOrder: number;
+}
+
+const registeredStageLabels = new Map<string, string>();
+const registeredStageSort = new Map<string, number>();
+
+/**
+ * Registra os nomes das etapas da empresa (cadastro carregado no snapshot). Os cálculos não
+ * dependem disto — só o nome mostrado na tela e na impressão.
+ */
+export function registerRecipeStageDefinitions(definitions: RecipeStageDefinition[] | undefined) {
+  for (const definition of definitions ?? []) {
+    if (!isCustomRecipeStage(definition.key)) continue;
+    if (definition.label?.trim()) registeredStageLabels.set(definition.key, definition.label.trim());
+    registeredStageSort.set(definition.key, definition.sortOrder ?? 0);
+  }
+}
+
+function humanizeCustomStage(stage: CustomRecipeStage): string {
+  const slug = stage.split("__")[1] ?? "";
+  const text = slug.replace(/_/g, " ").trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : recipeStageLabels[getRecipeStageBase(stage)];
+}
+
+/** Nome da etapa para mostrar: padrão pelo nome fixo; cadastrada pelo nome do cadastro. */
+export function getRecipeStageLabel(stage: RecipeStage | undefined): string {
+  const normalized = normalizeRecipeStage(stage);
+  if (!isCustomRecipeStage(normalized)) return recipeStageLabels[normalized];
+  return registeredStageLabels.get(normalized) ?? humanizeCustomStage(normalized);
+}
+
+/**
+ * Opções de etapa da empresa: as padrão (com o nome do cadastro, se renomeadas) e as cadastradas,
+ * cada uma logo depois da etapa que segue. Inativas ficam de fora (o que já usa continua valendo).
+ */
+export function listRecipeStageOptions(definitions: RecipeStageDefinition[] | undefined): RecipeStage[] {
+  const defs = definitions ?? [];
+  const inactive = new Set(defs.filter((definition) => !definition.active).map((definition) => definition.key));
+  const custom = defs.filter((definition) => definition.active && isCustomRecipeStage(definition.key));
+  const options: RecipeStage[] = [];
+  for (const builtin of recipeStages) {
+    if (!inactive.has(builtin)) options.push(builtin);
+    custom
+      .filter((definition) => definition.baseStage === builtin)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label, "pt-BR"))
+      .forEach((definition) => options.push(definition.key));
+  }
+  return options;
+}
+
 /** Etapa das receitas legadas — é o default da coluna `stage` no banco. */
 export const defaultRecipeStage: RecipeStage = "massa";
 
 export function normalizeRecipeStage(value: unknown): RecipeStage {
-  return recipeStages.includes(value as RecipeStage) ? (value as RecipeStage) : defaultRecipeStage;
+  return isRecipeStage(value) ? value : defaultRecipeStage;
 }
 
-/** Posição na ordem canônica — usada para ordenar os grupos de etapa na impressão. */
+/**
+ * Posição na ordem canônica — usada para ordenar os grupos de etapa na impressão. Etapa
+ * cadastrada vem logo depois da etapa padrão que ela segue.
+ */
 export function getRecipeStageOrder(stage: RecipeStage | undefined) {
-  return recipeStages.indexOf(normalizeRecipeStage(stage));
+  const normalized = normalizeRecipeStage(stage);
+  const baseIndex = recipeStages.indexOf(getRecipeStageBase(normalized));
+  if (!isCustomRecipeStage(normalized)) return baseIndex;
+  return baseIndex + 0.5 + Math.min(0.49, (registeredStageSort.get(normalized) ?? 0) / 1000);
 }
 
 /**
@@ -181,7 +299,7 @@ export function hasStagedRecipe(recipe: { stage?: RecipeStage }[]) {
  * farinha da farofa de cobertura de uma cuca nunca encontra a farinha da massa. `montagem`
  * é a junção dos componentes já prontos, não uma mistura nova.
  */
-const recipeStageVessels: Record<RecipeStage, string> = {
+const recipeStageVessels: Record<BuiltinRecipeStage, string> = {
   esponja: "massa",
   massa: "massa",
   recheio: "recheio",
@@ -192,11 +310,15 @@ const recipeStageVessels: Record<RecipeStage, string> = {
 };
 
 export function getRecipeStageVessel(stage: RecipeStage | undefined): string {
-  return recipeStageVessels[normalizeRecipeStage(stage)];
+  const normalized = normalizeRecipeStage(stage);
+  const base = getRecipeStageBase(normalized);
+  // Etapa cadastrada é um preparo próprio, salvo quando segue a massa/esponja (mesma masseira).
+  if (isCustomRecipeStage(normalized) && base !== "massa" && base !== "esponja") return normalized;
+  return recipeStageVessels[base];
 }
 
 /** Etapas que acontecem fora da masseira (mesa, finalização, montagem, insumos operacionais). */
-export const nonMixerRecipeStages: RecipeStage[] = ["cobertura", "operacional", "acabamento", "montagem"];
+export const nonMixerRecipeStages: BuiltinRecipeStage[] = ["cobertura", "operacional", "acabamento", "montagem"];
 
 /**
  * Etapas que NÃO são massa (planilha do cliente, 09/10/2026): não entram na massa crua nem
@@ -209,21 +331,21 @@ export const nonMixerRecipeStages: RecipeStage[] = ["cobertura", "operacional", 
  *
  * Os dois continuam sendo pesados e proporcionados na OP como qualquer ingrediente.
  */
-export const nonDoughRecipeStages: RecipeStage[] = ["operacional", "acabamento"];
+export const nonDoughRecipeStages: BuiltinRecipeStage[] = ["operacional", "acabamento"];
 
 /** Etapas que somam ao peso final DEPOIS do forno, sem sofrer quebra. */
-export const postBakeRecipeStages: RecipeStage[] = ["acabamento"];
+export const postBakeRecipeStages: BuiltinRecipeStage[] = ["acabamento"];
 
 export function recipeStageCountsTowardDough(stage: RecipeStage | undefined): boolean {
-  return !nonDoughRecipeStages.includes(normalizeRecipeStage(stage));
+  return !nonDoughRecipeStages.includes(getRecipeStageBase(stage));
 }
 
 export function recipeStageAddsAfterBake(stage: RecipeStage | undefined): boolean {
-  return postBakeRecipeStages.includes(normalizeRecipeStage(stage));
+  return postBakeRecipeStages.includes(getRecipeStageBase(stage));
 }
 
 export function defaultCountsTowardMixer(stage: RecipeStage | undefined): boolean {
-  return !nonMixerRecipeStages.includes(normalizeRecipeStage(stage));
+  return !nonMixerRecipeStages.includes(getRecipeStageBase(stage));
 }
 
 export function recipeItemCountsTowardMixer(item: {
@@ -257,7 +379,7 @@ export function normalizeRecipeStageConfig(value: unknown): RecipeStageConfigEnt
       continue;
     }
     const candidate = (raw as { stage?: unknown }).stage;
-    if (!recipeStages.includes(candidate as RecipeStage)) {
+    if (!isRecipeStage(candidate)) {
       continue;
     }
     const stage = candidate as RecipeStage;
@@ -295,11 +417,10 @@ export function resolveRecipeStageOrder(
       ordered.push(entry.stage);
     }
   }
-  for (const stage of recipeStages) {
-    if (!ordered.includes(stage) && stagesInRecipe.has(stage)) {
-      ordered.push(stage);
-    }
-  }
+  const remaining = [...stagesInRecipe]
+    .filter((stage) => !ordered.includes(stage))
+    .sort((a, b) => getRecipeStageOrder(a) - getRecipeStageOrder(b));
+  ordered.push(...remaining);
   return ordered;
 }
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { buildClientTenantCacheKey } from "@/lib/client-access-context";
+import { registerRecipeStageDefinitions } from "@/lib/production-planning";
 import type { MasterDataSnapshot } from "@/lib/supabase-data/master-data";
 
 const emptySnapshot: MasterDataSnapshot = {
@@ -43,6 +44,7 @@ function isMasterDataCacheFresh(entry: MasterDataCacheEntry) {
 
 /** Cartão #18: dados que vieram junto com o HTML da página; a tela não busca de novo. */
 export function seedMasterDataSnapshot(data: MasterDataSnapshot) {
+  registerRecipeStageDefinitions(data.recipeStageDefinitions);
   masterDataCache.set(getMasterDataCacheKey(), { data, fetchedAt: Date.now() });
 }
 
@@ -66,6 +68,8 @@ async function fetchMasterDataSnapshot(forceRefresh: boolean) {
       }
 
       const data = (await response.json()) as MasterDataSnapshot;
+      // Cartão #173: nomes das etapas da empresa para telas e impressões.
+      registerRecipeStageDefinitions(data.recipeStageDefinitions);
       masterDataCache.set(cacheKey, {
         data,
         fetchedAt: Date.now(),

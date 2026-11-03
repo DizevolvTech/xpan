@@ -71,9 +71,10 @@ export function getRecipeStageBlocks<T extends RecipeStageEditorItem>(
 export function getAddableRecipeStages(
   config: RecipeStageConfigEntry[] | undefined,
   recipe: RecipeStageEditorItem[],
+  options: readonly RecipeStage[] = recipeStages,
 ): RecipeStage[] {
   const visible = new Set(getRecipeStageBlockOrder(config, recipe));
-  return recipeStages.filter((stage) => !visible.has(stage));
+  return options.filter((stage) => !visible.has(stage));
 }
 
 /**

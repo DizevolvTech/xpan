@@ -12,6 +12,7 @@ import {
   hasStagedRecipe,
   normalizeRecipeStage,
   recipePrintDestinationLabels,
+  getRecipeStageLabel,
   recipeStageLabels,
   recipeStages,
   resolveRecipePrintDestinations,
@@ -302,7 +303,7 @@ export function groupPrintRowsByStage<TRow extends { stage?: RecipeStage }>(
     return [
       {
         stage: defaultRecipeStage,
-        label: recipeStageLabels[defaultRecipeStage],
+        label: getRecipeStageLabel(defaultRecipeStage),
         showStageHeader: false,
         // Sem config o modo de preparo por etapa é vazio: nada muda para quem não configurou.
         instructions: getRecipeStageInstructions(stageConfig, defaultRecipeStage),
@@ -322,7 +323,7 @@ export function groupPrintRowsByStage<TRow extends { stage?: RecipeStage }>(
   // `resolveRecipeStageOrder` só devolve etapa que tem linha — a impressão não abre bloco vazio.
   return resolveRecipeStageOrder(stageConfig, rows).map((stage) => ({
     stage,
-    label: recipeStageLabels[stage],
+    label: getRecipeStageLabel(stage),
     showStageHeader: true,
     instructions: getRecipeStageInstructions(stageConfig, stage),
     rows: rowsByStage.get(stage) ?? [],
@@ -567,7 +568,7 @@ function collectIngredientProductSections(
         productName: entry.product.name,
         stage: entry.stage,
         // Receita legada (massa) não ganha rótulo: a impressão segue igual à de hoje.
-        stageLabel: entry.stage === defaultRecipeStage ? null : recipeStageLabels[entry.stage],
+        stageLabel: entry.stage === defaultRecipeStage ? null : getRecipeStageLabel(entry.stage),
         requiredQuantity: round3(entry.requiredQuantity),
         requiredUnit: entry.requiredUnit,
         requiredKg: round3(entry.requiredKg),
