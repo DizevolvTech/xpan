@@ -149,12 +149,13 @@ export async function DELETE(request: Request) {
   }
   const tenantId = authorization.effectiveTenantId!;
   const supabase = client(tenantId);
-  const [{ count: itemCount, error: itemsError }, { data: configured, error: configError }] = await Promise.all([
+  const [{ data: usedItems, error: itemsError }, { data: configured, error: configError }] = await Promise.all([
     supabase
       .from("product_recipe_items")
-      .select("id", { count: "exact", head: true })
+      .select("id")
       .eq("tenant_id", tenantId)
-      .eq("stage", key),
+      .eq("stage", key)
+      .limit(1),
     supabase
       .from("products")
       .select("id")
@@ -163,8 +164,14 @@ export async function DELETE(request: Request) {
       .filter("recipe_stage_config", "cs", JSON.stringify([{ stage: key }]))
       .limit(1),
   ]);
-  if (itemsError || configError) return NextResponse.json({ message: "Falha ao conferir o uso da etapa." }, { status: 500 });
-  if ((itemCount ?? 0) > 0 || (configured?.length ?? 0) > 0) {
+  if (itemsError || configError) {
+    console.error("recipe-stages DELETE: falha ao conferir o uso", itemsError ?? configError);
+    return NextResponse.json(
+      { message: "Falha ao conferir o uso da etapa.", detail: (itemsError ?? configError)?.message ?? null },
+      { status: 500 },
+    );
+  }
+  if ((usedItems?.length ?? 0) > 0 || (configured?.length ?? 0) > 0) {
     return NextResponse.json(
       { message: "A etapa está em uso em fichas técnicas. Desative-a para não aparecer mais como opção." },
       { status: 409 },
