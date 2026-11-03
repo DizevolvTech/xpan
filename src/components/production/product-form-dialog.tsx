@@ -585,13 +585,14 @@ export function ProductFormDialog({
   useEffect(() => {
     if (!open) return;
     function reloadStages() {
-      void fetch("/api/master-data/recipe-stages")
+      void fetch("/api/master-data/recipe-stages", { cache: "no-store" })
         .then((response) => (response.ok ? (response.json() as Promise<RecipeStageDefinition[]>) : null))
         .then((definitions) => {
           if (definitions) setLiveStageDefinitions(definitions);
         })
         .catch(() => undefined);
     }
+    reloadStages();
     window.addEventListener("focus", reloadStages);
     return () => window.removeEventListener("focus", reloadStages);
   }, [open]);

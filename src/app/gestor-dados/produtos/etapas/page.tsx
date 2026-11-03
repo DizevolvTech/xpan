@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
 import { PageLayout } from "@/components/shared/page-layout";
@@ -42,7 +42,37 @@ async function readError(response: Response, fallback: string) {
 }
 
 export default function EtapasFichaTecnicaPage() {
-  const { snapshot, isLoading, error, refresh } = useMasterDataSnapshot();
+  // Lida direto do banco (sem o cache dos dados mestres, que em outra instância do servidor
+  // pode ainda estar com a lista antiga): a lista muda na hora depois de cada ação.
+  const { snapshot, refresh: refreshMasterData } = useMasterDataSnapshot();
+  const [definitions, setDefinitions] = useState<RecipeStageDefinition[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const isLoading = definitions === null && !error;
+  const loadDefinitions = useCallback(async () => {
+    const response = await fetch("/api/master-data/recipe-stages", { cache: "no-store" });
+    if (!response.ok) throw new Error(await readError(response, "Falha ao carregar as etapas."));
+    const next = (await response.json()) as RecipeStageDefinition[];
+    setDefinitions(next);
+    setError(null);
+    return next;
+  }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/master-data/recipe-stages", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await readError(response, "Falha ao carregar as etapas."));
+        return (await response.json()) as RecipeStageDefinition[];
+      })
+      .then((next) => {
+        if (active) setDefinitions(next);
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(loadError instanceof Error ? loadError.message : "Falha ao carregar as etapas.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const toast = useToast();
   const confirm = useConfirm();
   const [newName, setNewName] = useState("");
@@ -51,8 +81,8 @@ export default function EtapasFichaTecnicaPage() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
 
   const rows = useMemo<StageRow[]>(() => {
-    const definitions: RecipeStageDefinition[] = snapshot.recipeStageDefinitions ?? [];
-    const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
+    const list0: RecipeStageDefinition[] = definitions ?? snapshot.recipeStageDefinitions ?? [];
+    const byKey = new Map(list0.map((definition) => [definition.key, definition]));
     const list: StageRow[] = [];
     for (const builtin of recipeStages) {
       list.push({
@@ -62,7 +92,7 @@ export default function EtapasFichaTecnicaPage() {
         active: byKey.get(builtin)?.active ?? true,
         custom: false,
       });
-      definitions
+      list0
         .filter((definition) => isCustomRecipeStage(definition.key) && definition.baseStage === builtin)
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .forEach((definition) =>
@@ -76,11 +106,12 @@ export default function EtapasFichaTecnicaPage() {
         );
     }
     return list;
-  }, [snapshot.recipeStageDefinitions]);
+  }, [definitions, snapshot.recipeStageDefinitions]);
 
   async function send(method: string, body?: unknown, query = "") {
     const response = await fetch(`/api/master-data/recipe-stages${query}`, {
       method,
+      cache: "no-store",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -91,8 +122,10 @@ export default function EtapasFichaTecnicaPage() {
     setBusyKey(key);
     try {
       await action();
-      await refresh(true);
+      await loadDefinitions();
       toast.success(success);
+      // Telas abertas com os dados mestres (cadastro de produto) releem em segundo plano.
+      void refreshMasterData(true).catch(() => undefined);
     } catch (actionError) {
       toast.error(actionError instanceof Error ? actionError.message : "Não foi possível salvar a etapa.");
     } finally {

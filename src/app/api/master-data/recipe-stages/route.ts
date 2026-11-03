@@ -48,7 +48,7 @@ export async function GET() {
     .eq("tenant_id", authorization.effectiveTenantId!)
     .order("sort_order", { ascending: true });
   if (error) return NextResponse.json({ message: "Falha ao listar as etapas." }, { status: 500 });
-  return NextResponse.json(mapRecipeStageDefinitionRows(data ?? []));
+  return NextResponse.json(mapRecipeStageDefinitionRows(data ?? []), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {
