@@ -189,9 +189,9 @@ export default function EtapasFichaTecnicaPage() {
         <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">{error}</div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-xl border border-border/80">
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-panel/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+      <div className="rounded-xl border border-border/80 sm:overflow-x-auto">
+        <table className="w-full border-collapse text-sm max-sm:block">
+          <thead className="bg-panel/60 text-left text-xs uppercase tracking-wide text-muted-foreground max-sm:hidden">
             <tr>
               <th className="px-3 py-2">Etapa</th>
               <th className="px-3 py-2">Entra nos cálculos como</th>
@@ -199,7 +199,7 @@ export default function EtapasFichaTecnicaPage() {
               <th className="px-3 py-2 text-right">Ações</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-sm:block">
             {isLoading && rows.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-3 py-4 text-muted-foreground">Carregando etapas...</td>
@@ -209,13 +209,13 @@ export default function EtapasFichaTecnicaPage() {
               const draft = drafts[row.key] ?? row.label;
               const busy = busyKey === row.key;
               return (
-                <tr key={row.key} className="border-t border-border/70 align-top" data-stage-key={row.key}>
+                <tr key={row.key} className="border-t border-border/70 align-top max-sm:block max-sm:space-y-2 max-sm:px-3 max-sm:py-3 max-sm:first:border-t-0 max-sm:[&>td]:block max-sm:[&>td]:p-0" data-stage-key={row.key}>
                   <td className="px-3 py-2">
                     {row.custom ? (
                       <div className="flex flex-wrap items-center gap-2">
                         <Input
                           aria-label={`Nome da etapa ${row.label}`}
-                          className="h-9 max-w-xs"
+                          className="h-9 w-full sm:max-w-xs"
                           value={draft}
                           maxLength={60}
                           onChange={(event) => setDrafts((current) => ({ ...current, [row.key]: event.target.value }))}
@@ -240,6 +240,7 @@ export default function EtapasFichaTecnicaPage() {
                     )}
                   </td>
                   <td className="px-3 py-2">
+                    <p className="text-xs text-muted-foreground sm:hidden">Entra nos cálculos como</p>
                     <p>{recipeStageLabels[row.baseStage]}</p>
                     <p className="text-xs text-muted-foreground">{recipeStageBehaviorDescriptions[row.baseStage]}</p>
                   </td>
@@ -251,10 +252,13 @@ export default function EtapasFichaTecnicaPage() {
                         aria-label={`Mostrar ${row.label} em Adicionar etapa`}
                         onCheckedChange={(checked) => handleToggle(row, checked === true)}
                       />
-                      <span>{row.active ? "Sim" : "Não"}</span>
+                      <span>
+                        <span className="sm:hidden">Aparece em “Adicionar etapa”: </span>
+                        {row.active ? "Sim" : "Não"}
+                      </span>
                     </label>
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2 text-right max-sm:text-left">
                     {row.custom ? (
                       <Button
                         type="button"
