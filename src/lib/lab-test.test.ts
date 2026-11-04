@@ -65,7 +65,6 @@ test("panetone: quebra, rendimento e unidade assada iguais à planilha", () => {
 
   assert.ok(result?.complete);
   assert.equal(result.rawDoughKg, 78.878);
-  assert.equal(result.usedRecipeSumAsRawDough, true);
   assert.equal(Number(result.breakKg.toFixed(3)), 5.353);
   assert.equal(Number(result.breakPercent.toFixed(2)), 6.79);
   assert.equal(Number(result.yieldPercent.toFixed(2)), 93.21);
@@ -91,23 +90,27 @@ test("pão de fubá 250g: unidade média ~277g; etiqueta 250g não é peso de pr
   assert.notEqual(round6(result.bakedUnitKg), 0.25);
 });
 
-test("sobra assada SOMA ao assado efetivo (números da planilha do cliente, vídeo 28/09)", () => {
+test("Quadro #231 panetone frutas: 3 lançamentos, o resto calculado", () => {
   const result = computeLabTest({
     recipeTotalKg: 77.61,
     labTest: {
       ...emptyLabTest(),
-      rawDoughKg: 77.61,
       bakedKg: 74.375,
       leftoverBakedKg: 0.136,
-      unitCount: 175.32,
+      unitCount: 175,
     },
   });
 
   assert.ok(result?.complete);
+  assert.equal(result.rawDoughKg, 77.61);
+  assert.equal(round6(result.bakedUnitKg), 0.425);
+  assert.equal(Number(result.bakedUnitGrams.toFixed(3)), 425);
   assert.equal(round6(result.effectiveBakedKg), 74.511);
+  assert.equal(Number(result.effectiveUnitCount.toFixed(2)), 175.32);
+  assert.equal(Number(result.breakPercent.toFixed(2)), 3.99);
   assert.equal(Number(result.yieldPercent.toFixed(2)), 96.01);
   assert.equal(Number(result.breakKg.toFixed(3)), 3.099);
-  assert.equal(Number(result.bakedUnitGrams.toFixed(3)), 425);
+  assert.equal(Number(result.rawUnitWeightKg.toFixed(4)), 0.4427);
 });
 
 test("sem sobra o resultado é o mesmo de antes (produtos já calibrados não mudam)", () => {
@@ -137,23 +140,6 @@ test("assado + sobra acima da massa crua deixa o teste incompleto", () => {
   });
 
   assert.equal(result?.complete, false);
-});
-
-test("massa crua medida na balança prevalece sobre a soma da receita", () => {
-  const result = computeLabTest({
-    recipeTotalKg: 80,
-    labTest: {
-      ...emptyLabTest(),
-      rawDoughKg: 78.878,
-      bakedKg: 73.525,
-      unitCount: 173,
-    },
-  });
-
-  assert.ok(result?.complete);
-  assert.equal(result.rawDoughKg, 78.878);
-  assert.equal(result.usedRecipeSumAsRawDough, false);
-  assert.equal(Number(result.breakPercent.toFixed(2)), 6.79);
 });
 
 test("teste incompleto (sem unidades) não deriva quebra", () => {
@@ -262,11 +248,26 @@ test("applyLabTestToProduct não mexe em venda/produção em Kg", () => {
 test("normalizeLabTest descarta lixo e preserva zeros como null de campo vazio inválido", () => {
   assert.equal(normalizeLabTest(null), null);
   assert.deepEqual(normalizeLabTest({ bakedKg: "41.611", unitCount: 150, leftoverBakedKg: -1 }), {
-    rawUnitWeightKg: null,
-    rawDoughKg: null,
     bakedKg: 41.611,
     leftoverBakedKg: null,
     unitCount: 150,
     labelWeightKg: null,
   });
+});
+
+test("Quadro #231: o peso da unidade assada de produção/venda vira 0,425 kg (kg assado ÷ unidades padrão)", () => {
+  const product = {
+    ...({} as ProductionProduct),
+    breakPercent: 0,
+    labTest: { ...emptyLabTest(), bakedKg: 74.375, leftoverBakedKg: 0.136, unitCount: 175 },
+    unitProfiles: {
+      sales: { unit: "Un", description: "", weightKg: 0.4 },
+      production: { unit: "Un", description: "", weightKg: 0.4 },
+      expedition: { unit: "Caixa", description: "", weightKg: 4 },
+    },
+  } as ProductionProduct;
+  const applied = applyLabTestToProduct(product, 77.61);
+  assert.equal(applied.unitProfiles.sales.weightKg, 0.425);
+  assert.equal(applied.unitProfiles.production.weightKg, 0.425);
+  assert.equal(Number(applied.breakPercent.toFixed(2)), 3.99);
 });

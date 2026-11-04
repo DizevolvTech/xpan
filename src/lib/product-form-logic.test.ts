@@ -102,8 +102,6 @@ test("produto novo nasce com teste de laboratório vazio (quebra não se digita)
   const formState = buildProductFormState(baseLines);
 
   assert.deepEqual(formState.labTest, {
-    rawUnitWeightKg: null,
-    rawDoughKg: null,
     bakedKg: null,
     leftoverBakedKg: null,
     unitCount: null,

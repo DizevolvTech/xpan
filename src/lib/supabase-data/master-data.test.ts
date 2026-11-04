@@ -182,8 +182,6 @@ test("recipe_stage_config vira recipeStageConfig preservando a ordem da ficha", 
 
 test("lab_test vira labTest no snapshot", async () => {
   const labTest = {
-    rawUnitWeightKg: null,
-    rawDoughKg: 78.878,
     bakedKg: 73.525,
     leftoverBakedKg: 0,
     unitCount: 173,

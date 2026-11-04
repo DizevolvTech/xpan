@@ -525,15 +525,11 @@ export interface RecipeIngredientReference {
  * deriva quebra, rendimento e kg da unidade assada. Ver `src/lib/lab-test.ts`.
  */
 export interface ProductLabTest {
-  /** Peso de um bloco/peça cru, em kg. Opcional. */
-  rawUnitWeightKg: number | null;
-  /** Massa crua medida na balança (kg). Null = usar a soma da receita. */
-  rawDoughKg: number | null;
-  /** Kg assados medidos. */
+  /** Kg assados das unidades padrão (lançado). */
   bakedKg: number | null;
-  /** Sobra assada (kg) que não virou unidade. */
+  /** Sobra assada (kg) que não virou unidade padrão (lançado). */
   leftoverBakedKg: number | null;
-  /** Nº de unidades apuradas no teste. Adriano: sempre lançar unidades. */
+  /** Nº de unidades padrão que saíram do forno (lançado). Sempre lançar unidades. */
   unitCount: number | null;
   /** Peso da etiqueta / Inmetro (kg). NÃO entra no motor nem na quebra. */
   labelWeightKg: number | null;

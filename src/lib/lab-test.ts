@@ -5,22 +5,23 @@ import type {
 } from "@/lib/production-planning";
 
 /**
- * Cálculos da ficha amarela (S1).
+ * Cálculos da ficha amarela (S1) — Quadro #231.
  *
- * O usuário NÃO digita quebra nem rendimento. Ele lança medições de laboratório;
- * o sistema deriva os parâmetros — iguais às planilhas (Pão de Fubá / OP Pães Chama / panetone)
- * e à notação de padaria:
+ * O usuário lança SÓ 3 valores: kg assados das unidades padrão, nº de unidades padrão e sobra
+ * assada (kg). A massa crua é a soma dos insumos que participam da cocção (Quadro #232) e todo o
+ * resto é calculado:
  *
- *   kg_assados_efetivos = kg_assados (unidades padrão) + sobra_assada
- *   quebra     = 1 − (kg_assados_efetivos / massa_crua)
- *   rendimento = kg_assados_efetivos / massa_crua
- *   unidade_assada = kg_assados_efetivos / unidades
+ *   unidade_assada      = kg_assados / unidades_padrão
+ *   assado_total        = kg_assados + sobra_assada
+ *   unidades_efetivas   = assado_total / unidade_assada
+ *   quebra              = (massa_crua − assado_total) / massa_crua
+ *   rendimento          = assado_total / massa_crua
+ *   unidade_crua        = massa_crua / unidades_efetivas   (uso interno na OP)
  *
- * A sobra assada SOMA: tudo o que a receita gerou cru precisa ser contado assado,
- * senão a quebra sai inflada (cliente, 07/10/2026: "tudo que a receita gerou crua
- * deve ser contabilizada assada para calcular o rendimento e quebra").
+ * A sobra assada SOMA ao total: tudo o que a receita gerou cru precisa ser contado assado,
+ * senão a quebra sai inflada (cliente, 07/10/2026).
  *
- * Baker's % = 100 × (ingrediente / principal `isMain`). True % = 100 × (ingrediente / total).
+  * Baker's % = 100 × (ingrediente / principal `isMain`). True % = 100 × (ingrediente / total).
  * O motor de OP usa kg unitário, nunca as porcentagens.
  */
 
@@ -30,8 +31,6 @@ export function round6(value: number) {
 
 export function emptyLabTest(): ProductLabTest {
   return {
-    rawUnitWeightKg: null,
-    rawDoughKg: null,
     bakedKg: null,
     leftoverBakedKg: null,
     unitCount: null,
@@ -67,8 +66,6 @@ export function normalizeLabTest(value: unknown): ProductLabTest | null {
   }
   const raw = value as Record<string, unknown>;
   return {
-    rawUnitWeightKg: optionalNonNegativeNumber(raw.rawUnitWeightKg),
-    rawDoughKg: optionalNonNegativeNumber(raw.rawDoughKg),
     bakedKg: optionalNonNegativeNumber(raw.bakedKg),
     leftoverBakedKg: optionalNonNegativeNumber(raw.leftoverBakedKg),
     unitCount: optionalNonNegativeNumber(raw.unitCount),
@@ -78,20 +75,27 @@ export function normalizeLabTest(value: unknown): ProductLabTest | null {
 
 export interface LabTestComputation {
   complete: boolean;
+  /** Massa crua = soma dos insumos que participam da cocção. */
   rawDoughKg: number;
-  usedRecipeSumAsRawDough: boolean;
   leftoverBakedKg: number;
+  /** Assado total = kg assados das unidades padrão + sobra assada. */
   effectiveBakedKg: number;
   breakKg: number;
   breakPercent: number;
   yieldPercent: number;
+  /** Nº de unidades padrão lançado no teste. */
   unitCount: number;
+  /** Unidades efetivas = assado total / peso da unidade assada (ex.: 175,32). */
+  effectiveUnitCount: number;
   bakedUnitKg: number;
   bakedUnitGrams: number;
+  /** Peso da unidade crua (kg) = massa crua / unidades efetivas. Uso interno na OP. */
+  rawUnitWeightKg: number;
   labelWeightKg: number | null;
 }
 
 export function computeLabTest(input: {
+  /** Soma dos insumos que participam da cocção (massa crua). */
   recipeTotalKg: number;
   labTest?: ProductLabTest | null;
 }): LabTestComputation | null {
@@ -100,11 +104,8 @@ export function computeLabTest(input: {
     return null;
   }
 
-  const recipeTotalKg =
+  const rawDoughKg =
     Number.isFinite(input.recipeTotalKg) && input.recipeTotalKg > 0 ? input.recipeTotalKg : 0;
-  const measuredRaw = lab.rawDoughKg != null && lab.rawDoughKg > 0 ? lab.rawDoughKg : null;
-  const rawDoughKg = measuredRaw ?? recipeTotalKg;
-  const usedRecipeSumAsRawDough = measuredRaw == null;
   const leftoverBakedKg = lab.leftoverBakedKg != null && lab.leftoverBakedKg > 0 ? lab.leftoverBakedKg : 0;
   const bakedKg = lab.bakedKg != null && lab.bakedKg > 0 ? lab.bakedKg : 0;
   const unitCount = lab.unitCount != null && lab.unitCount > 0 ? lab.unitCount : 0;
@@ -117,35 +118,38 @@ export function computeLabTest(input: {
     return {
       complete: false,
       rawDoughKg,
-      usedRecipeSumAsRawDough,
       leftoverBakedKg,
       effectiveBakedKg: Math.max(0, effectiveBakedKg),
       breakKg: 0,
       breakPercent: 0,
       yieldPercent: 0,
       unitCount,
+      effectiveUnitCount: 0,
       bakedUnitKg: 0,
       bakedUnitGrams: 0,
+      rawUnitWeightKg: 0,
       labelWeightKg: lab.labelWeightKg,
     };
   }
 
   const breakKg = rawDoughKg - effectiveBakedKg;
   const yieldRatio = effectiveBakedKg / rawDoughKg;
-  const bakedUnitKg = effectiveBakedKg / unitCount;
+  const bakedUnitKg = bakedKg / unitCount;
+  const effectiveUnitCount = effectiveBakedKg / bakedUnitKg;
 
   return {
     complete: true,
     rawDoughKg,
-    usedRecipeSumAsRawDough,
     leftoverBakedKg,
     effectiveBakedKg,
     breakKg,
     breakPercent: (1 - yieldRatio) * 100,
     yieldPercent: yieldRatio * 100,
     unitCount,
+    effectiveUnitCount,
     bakedUnitKg,
     bakedUnitGrams: bakedUnitKg * 1000,
+    rawUnitWeightKg: rawDoughKg / effectiveUnitCount,
     labelWeightKg: lab.labelWeightKg,
   };
 }

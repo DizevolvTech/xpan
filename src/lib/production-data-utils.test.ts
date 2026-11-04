@@ -589,8 +589,6 @@ test("S1: totais da receita usam assado efetivo e unidade assada do teste, não 
         },
       ],
       labTest: {
-        rawUnitWeightKg: null,
-        rawDoughKg: null,
         bakedKg: 41.611,
         leftoverBakedKg: null,
         unitCount: 150,
@@ -619,7 +617,7 @@ const operacional = { id: "o", sourceType: "ingrediente" as const, sourceId: "mi
 
 test("planilha: quebra ao assar usa só a massa — 7,07% (com operacional dentro seria 7,87%)", () => {
   const product: ProductionProduct = { ...baseProduct, recipe: sheetRecipe([operacional]),
-    labTest: { rawUnitWeightKg: null, rawDoughKg: null, bakedKg: 57.8, leftoverBakedKg: 0.315, unitCount: 136, labelWeightKg: null } };
+    labTest: { bakedKg: 57.8, leftoverBakedKg: 0.315, unitCount: 136, labelWeightKg: null } };
   const totals = getProductRecipeTotalsFromData(product, [], []);
   assert.equal(totals.totalIngredientsKg, 63.077);
   assert.equal(totals.doughKg, 62.533);
@@ -678,7 +676,7 @@ test("teste de laboratório compara o assado com a MASSA (sem operacional): assa
       { id: "m", sourceType: "ingrediente", sourceId: "missing", label: "Massa", quantity: 10, unit: "Kg", stage: "massa" },
       { ...operacional, quantity: 1 },
     ],
-    labTest: { rawUnitWeightKg: null, rawDoughKg: null, bakedKg: 10.5, leftoverBakedKg: null, unitCount: 10, labelWeightKg: null } };
+    labTest: { bakedKg: 10.5, leftoverBakedKg: null, unitCount: 10, labelWeightKg: null } };
   const totals = getProductRecipeTotalsFromData(product, [], []);
   assert.equal(totals.outputAfterBreakKg, 10); // teste rejeitado → massa × (1 − 0%)
   // OP: teste incompleto escala com 3 casas (completo usaria 6).
@@ -722,7 +720,7 @@ test("Quadro #232: insumo desmarcado em 'Participa da cocção' sai da massa cru
     { id: "c", sourceType: "ingrediente", sourceId: "c", label: "Ganache", quantity: 2, unit: "Kg", stage: "massa" },
     { id: "d", sourceType: "ingrediente", sourceId: "d", label: "Cobertura", quantity: 1, unit: "Kg", stage: "acabamento" },
   ];
-  const labTest = { rawUnitWeightKg: null, rawDoughKg: null, bakedKg: 14.25, leftoverBakedKg: null, unitCount: 57, labelWeightKg: null };
+  const labTest = { bakedKg: 14.25, leftoverBakedKg: null, unitCount: 57, labelWeightKg: null };
   const product: ProductionProduct = { ...baseProduct, breakPercent: 10, labTest, recipe };
 
   // Sem escolha gravada: padrão da etapa (massa participa; acabamento não) — número de sempre.

@@ -17,7 +17,6 @@ test("planilha Fubá 250g: lança medições e deriva quebra 7,53% / unidade 277
     recipeTotalKg: 45,
     labTest: {
       ...emptyLabTest(),
-      rawDoughKg: 45,
       bakedKg: 41.611,
       leftoverBakedKg: 0,
       unitCount: 150,

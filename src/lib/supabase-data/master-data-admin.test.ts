@@ -329,8 +329,6 @@ test("createProduct grava lab_test da ficha amarela", async () => {
     tables: { subcategories: [SUBCATEGORY_ROW], products: [] },
   });
   const labTest = {
-    rawUnitWeightKg: null,
-    rawDoughKg: 78.878,
     bakedKg: 73.525,
     leftoverBakedKg: 0,
     unitCount: 173,

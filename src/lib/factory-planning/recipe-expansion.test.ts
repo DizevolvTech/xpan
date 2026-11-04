@@ -119,8 +119,6 @@ void test("scaleRecipeQuantity com teste de laboratório usa 6 casas (unitário 
       },
     ],
     labTest: {
-      rawUnitWeightKg: null,
-      rawDoughKg: null,
       bakedKg: 10,
       leftoverBakedKg: null,
       unitCount: 150,
