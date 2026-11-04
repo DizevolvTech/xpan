@@ -107,10 +107,14 @@ export function buildBatchTickets(sections: BatchSectionInput[], opCode = ""): B
       recipeStageConfig: section.recipeStageConfig,
       items: section.items.map((row): PrintIngredientRow => ({
         ...row,
+        // Cada batida já sai arredondada como é impressa (3 casas): a soma do que o padeiro lê
+        // fecha com a linha depois de o resto ir para a última batida.
         estimatedQuantity: split?.batched
-          ? (batch.complementary
-              ? row.partialQuantities?.[batch.partialIndex] ?? row.partialQuantity
-              : row.batchQuantity) ?? (row.estimatedQuantity * batch.quantity) / split.totalUnits
+          ? Math.round(
+              ((batch.complementary
+                ? row.partialQuantities?.[batch.partialIndex] ?? row.partialQuantity
+                : row.batchQuantity) ?? (row.estimatedQuantity * batch.quantity) / split.totalUnits) * 1000,
+            ) / 1000
           : row.estimatedQuantity,
       })),
     }));
