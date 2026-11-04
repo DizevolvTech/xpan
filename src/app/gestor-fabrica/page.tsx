@@ -61,6 +61,7 @@ import type { OperationalSettings } from "@/lib/production-planning";
 import { readClientAccessContext } from "@/lib/client-access-context";
 import {
   describeOperationalSettingsSaveError,
+  isOperationalSettingsReady,
   operationalSettingsSaveBlock,
   toTimeInputValue,
 } from "@/lib/operational-settings-form";
@@ -138,7 +139,12 @@ export default function GestorFabricaPage() {
     useOperationalDateScope();
   const { planningData: planningSnapshot, isLoading, error, refresh: refreshPlanning } =
     useFactoryPlanningSnapshot(anchorDate);
-  const { snapshot: masterDataSnapshot, refresh: refreshMasterData } = useMasterDataSnapshot();
+  const {
+    snapshot: masterDataSnapshot,
+    isLoading: isMasterDataLoading,
+    error: masterDataError,
+    refresh: refreshMasterData,
+  } = useMasterDataSnapshot();
   const planningData = useMemo(
     () => filterFactoryPlanningDataByOperationalScope(planningSnapshot, scope),
     [planningSnapshot, scope],
@@ -159,6 +165,11 @@ export default function GestorFabricaPage() {
   // do cache de outra instância e devolver o horário antigo logo depois de salvar).
   const [savedSettings, setSavedSettings] = useState<OperationalSettings | null>(null);
   const operationalSettings = savedSettings ?? masterDataSnapshot.operationalSettings;
+  const settingsReady = isOperationalSettingsReady({
+    savedSettingsLoaded: savedSettings !== null,
+    masterDataLoading: isMasterDataLoading,
+    masterDataError: Boolean(masterDataError),
+  });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsFeedback, setSettingsFeedback] = useState<{
     tone: "success" | "error";
@@ -877,6 +888,12 @@ export default function GestorFabricaPage() {
               <DialogDescription>{settingsSummary}</DialogDescription>
             </DialogHeader>
 
+            {!settingsReady ? (
+              <p role="status" data-testid="settings-loading" className="animate-pulse rounded-xl border border-border/60 bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
+                Carregando as regras atuais…
+              </p>
+            ) : null}
+
             {isSettingsDirty ? (
               <div
                 role="status"
@@ -919,7 +936,7 @@ export default function GestorFabricaPage() {
                     }));
                     setSettingsFeedback(null);
                   }}
-                  disabled={isSavingSettings}
+                  disabled={isSavingSettings || !settingsReady}
                 />
               </div>
 
@@ -939,7 +956,7 @@ export default function GestorFabricaPage() {
                     }));
                     setSettingsFeedback(null);
                   }}
-                  disabled={isSavingSettings}
+                  disabled={isSavingSettings || !settingsReady}
                 />
               </div>
 
@@ -959,7 +976,7 @@ export default function GestorFabricaPage() {
                     }));
                     setSettingsFeedback(null);
                   }}
-                  disabled={isSavingSettings}
+                  disabled={isSavingSettings || !settingsReady}
                 />
               </div>
             </div>
@@ -977,7 +994,7 @@ export default function GestorFabricaPage() {
                   }));
                   setSettingsFeedback(null);
                 }}
-                disabled={isSavingSettings}
+                disabled={isSavingSettings || !settingsReady}
               >
                 <option value="kg">{weightDisplayUnitLabels.kg}</option>
                 <option value="g">{weightDisplayUnitLabels.g}</option>
@@ -1001,7 +1018,7 @@ export default function GestorFabricaPage() {
                   }));
                   setSettingsFeedback(null);
                 }}
-                disabled={isSavingSettings}
+                disabled={isSavingSettings || !settingsReady}
               >
                 <option value="erp">{productCodeSourceLabels.erp}</option>
                 <option value="gtin">{productCodeSourceLabels.gtin}</option>
@@ -1046,7 +1063,7 @@ export default function GestorFabricaPage() {
               <Button
                 type="button"
                 onClick={() => void handleSaveOperationalSettings()}
-                disabled={!settingsFormIsValid || !isSettingsDirty || isSavingSettings}
+                disabled={!settingsReady || !settingsFormIsValid || !isSettingsDirty || isSavingSettings}
               >
                 {isSavingSettings ? "Salvando..." : "Salvar regras"}
               </Button>
