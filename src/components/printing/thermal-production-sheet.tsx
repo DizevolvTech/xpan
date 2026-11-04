@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 import { groupPrintRowsByStage, type ProductionSheetDocument } from "@/lib/printing-documents";
-import { buildThermalTickets, compactIngredientName, splitRecipeLabel, sumTicketWeightKg } from "@/lib/thermal-production";
+import { buildThermalTickets, compactIngredientName, resolveTicketWeightKg, splitRecipeLabel } from "@/lib/thermal-production";
 import { toSVG } from "bwip-js/browser";
 import { useMemo } from "react";
 import { formatLocaleNumber } from "@/lib/utils";
@@ -44,7 +44,7 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       .thermal-ticket h1 { font-size: 16px; font-weight: bold; margin-bottom: 8px; }
       .thermal-ticket h2 { font-size: 13px; font-weight: bold; margin: 4px 0 2px; }
       .thermal-ticket p { margin: 4px 0; }
-      .thermal-ticket table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 2px 0 4px; }
+      .thermal-ticket table { width: 100%; table-layout: auto; border-collapse: collapse; margin: 2px 0 4px; }
       .thermal-ticket th, .thermal-ticket td { border-bottom: 1px dashed #777; padding: 1.5px 1px; text-align: left; vertical-align: top; }
       .thermal-ticket th:last-child, .thermal-ticket td:last-child { text-align: right; white-space: nowrap; }
       .thermal-ticket tbody td { font-size: 10.5px; line-height: 1.2; }
@@ -52,12 +52,14 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       .thermal-ticket .t-head { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; font-size: 11px; line-height: 1.3; margin: 2px 0 4px; }
       .thermal-ticket .t-head p { margin: 0; }
       .thermal-ticket .t-head .line { display: inline-block; width: 16mm; border-bottom: 1px solid #000; height: 11px; vertical-align: bottom; }
-      .thermal-ticket col.c-code { width: 13mm; } .thermal-ticket col.c-qty { width: 18mm; } .thermal-ticket col.c-dp { width: 9mm; }
       .thermal-ticket th.dp, .thermal-ticket td.dp { text-align: center; padding: 1.5px 0; white-space: nowrap; font-size: 9px; }
       .thermal-ticket .box { display: inline-block; width: 2.6mm; height: 2.6mm; border: 1px solid #000; margin: 0 .3mm; vertical-align: middle; }
       .thermal-ticket .t-head .rend { grid-column: 1 / -1; }
-      .thermal-ticket td.code { font-size: 9.5px; white-space: nowrap; overflow: hidden; }
-      .thermal-ticket td.name { overflow-wrap: anywhere; }
+      .thermal-ticket th.code, .thermal-ticket td.code { width: 1%; padding-right: 3px; white-space: nowrap; }
+      .thermal-ticket td.code { font-size: 9.5px; }
+      .thermal-ticket th.name, .thermal-ticket td.name { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+      .thermal-ticket th.dp, .thermal-ticket td.dp { width: 1%; }
+      .thermal-ticket th.qty, .thermal-ticket td.qty { width: 1%; padding-left: 3px; text-align: right; white-space: nowrap; }
       .thermal-ticket .ticket-codes { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; }
       .thermal-ticket .ticket-qr svg { width: 17mm; height: 17mm; display: block; }
       .thermal-ticket .ticket-bar { flex: 1; text-align: center; min-width: 0; }
@@ -85,16 +87,16 @@ export function ThermalProductionSheet({ document, code, line, productionDate, d
       <div className="t-head">
         <p><strong>OP: {code.replace(/^OP-?/i, "")}</strong></p><p>Linha: {line}</p>
         <p>DT Kit: <span className="line" /></p><p><strong>Batida: {ticket.number} de {ticket.count}{ticket.complementary ? " (Parcial)" : ""}</strong></p>
-        <p>DT Prod: {productionDate}</p><p>Peso: {formatDisplayQuantity(sumTicketWeightKg(ticket.items), "Kg", weight, { maximumFractionDigits: 3 })}</p>
+        <p>DT Prod: {productionDate}</p><p>Peso: {formatDisplayQuantity(resolveTicketWeightKg(ticket), "Kg", weight, { maximumFractionDigits: 3 })}</p>
         <p>DT Entrega: {deliveryDate}</p><p><strong>Qtd OP: {formatTicketQuantity(ticket.quantity, ticket.unit, ticket.kind, weight)}</strong></p>
         <p>Usuário: <span className="line" /></p><p className="rend">REND: prev. {formatTicketQuantity(ticket.quantity, ticket.unit, ticket.kind, weight)} · real <span className="line" /></p><p className="rend">Pesar o bloco com {ticket.rawBlockWeightG != null ? <strong>{formatLocaleNumber(ticket.rawBlockWeightG, { maximumFractionDigits: 1 })}</strong> : <span className="line" />} g</p>
       </div>
       {groupPrintRowsByStage(ticket.items, ticket.recipeStageConfig).map(group => <section key={group.stage}>
         <h2>{group.label}</h2>
-        <table><colgroup><col className="c-code" /><col /><col className="c-dp" /><col className="c-qty" /></colgroup>
-        <thead><tr><th>Código</th><th>Insumo</th><th className="dp">D&nbsp;&nbsp;P</th><th>Qtd</th></tr></thead><tbody>
+        <table>
+        <thead><tr><th className="code">Código</th><th className="name">Insumo</th><th className="dp">D&nbsp;&nbsp;P</th><th className="qty">Qtd</th></tr></thead><tbody>
           {/* Cartão #239: UMA linha por insumo — código, nome reduzido e quantidade com a unidade. */}
-          {group.rows.map(row => { const { code: rowCode, name } = splitRecipeLabel(row.label); return <tr key={row.key}><td className="code">{rowCode}</td><td className="name">{compactIngredientName(name, row.shortName)}</td><td className="dp"><span className="box" /><span className="box" /></td><td>{formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, { maximumFractionDigits: 3 })}</td></tr>; })}
+          {group.rows.map(row => { const { code: rowCode, name } = splitRecipeLabel(row.label); return <tr key={row.key}><td className="code">{rowCode}</td><td className="name" title={name}>{compactIngredientName(name, row.shortName)}</td><td className="dp"><span className="box" /><span className="box" /></td><td className="qty">{formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, { maximumFractionDigits: 3 })}</td></tr>; })}
         </tbody></table>
         {group.instructions && <p style={{ whiteSpace: "pre-line" }}>{group.instructions}</p>}
       </section>)}

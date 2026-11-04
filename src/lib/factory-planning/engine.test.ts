@@ -1712,6 +1712,38 @@ test("buildFactoryPlanningData soma demanda de MPI em uma única OP quando flag 
   });
 });
 
+test("#236 total da MPI na OP = soma exata dos pedidos em 3 casas (sem acumular round2 a cada pedido)", () => {
+  withMpiExpansion(() => {
+    const { sectors, lines, products, schedules } = buildPizzaScenario();
+    // Massa por pedido com 3 casas (0,413 kg de massa por kg de pizza): somar com round2 a cada
+    // pedido desviava o total da OP dos blocos da MPI (133,650 x 133,607 no panetone).
+    const pizza = products.find((product) => product.id === "pizza")!;
+    pizza.recipe = pizza.recipe.map((row) => (row.sourceType === "produto" ? { ...row, quantity: 0.413 } : row));
+    const planning = buildFactoryPlanningData("2026-03-19", {
+      stores: [baseStore],
+      storeOrders: Array.from({ length: 12 }, (_, index) => ({
+        id: `order-${index}`,
+        code: `PD-${index}`,
+        storeId: "store-1",
+        orderedAt: "2026-03-17T09:00:00.000Z",
+        items: [{ id: `item-${index}`, productId: "pizza", quantity: 3 + index, unit: "Un" }],
+      })),
+      settings,
+      sectors,
+      lines,
+      products,
+      schedules,
+    });
+    const op = planning.productionOrders.find((row) => row.items.some((item) => item.productId === "mpi-massa"))!;
+    const massa = op.items.find((item) => item.productId === "mpi-massa")!;
+    const exact = op.sourceItems
+      .filter((source) => source.productId === "mpi-massa")
+      .reduce((sum, source) => sum + source.internalKg, 0);
+    assert.equal(op.sourceItems.filter((source) => source.productId === "mpi-massa").length, 12);
+    assert.equal(massa.totalKg, Number(exact.toFixed(3)));
+  });
+});
+
 test("buildFactoryPlanningData respeita escape hatch EXPAND_MPI_INTO_OPS=false (rollback sem deploy)", () => {
   withMpiExpansionDisabled(() => {
     const { sectors, lines, products, schedules } = buildPizzaScenario();

@@ -527,6 +527,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
           {
             key: "product-pao-l3-10",
             sourceType: "produto",
+            sourceProductId: "mpi-chantilly",
             kind: "produto_mpi",
             sectionKind: "base",
             stage: "massa",
@@ -541,6 +542,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
           {
             key: "product-pao-l4-10",
             sourceType: "produto",
+            sourceProductId: "mpi-chantilly",
             kind: "produto_mpi",
             sectionKind: "base",
             stage: "massa",
@@ -1213,7 +1215,7 @@ import { ThermalProductionSheet } from "@/components/printing/thermal-production
 import { buildBatchTickets, buildPreWeighingBatchSections, buildProductionBatchSections } from "@/lib/printing/batch-tickets";
 import { findProductionOrderByNavParam } from "@/lib/printing/find-production-order";
 import { resolveRawBlockWeightG } from "@/lib/printing/raw-block-weight";
-import { compactIngredientName } from "@/lib/thermal-production";
+import { compactIngredientName, resolveTicketWeightKg } from "@/lib/thermal-production";
 
 const esponja = buildProduct(
   "mpi-esponja",
@@ -1333,20 +1335,32 @@ test("#236 os valores da esponja batem entre a pré-pesagem e a folha de produç
   assert.equal(quantidadeNaPre.batchQuantity, quantidadeNaFolha.batchQuantity);
 });
 
-test("#236 causa da diferença 133,607 × 133,650: o total do item MPI da OP soma em 2 casas; a seção soma o consumo em 3", () => {
-  // O motor acumula `totalKg = round2(totalKg + internalKg)` a cada pedido; a impressão soma o que
-  // cada produto consome em 3 casas. Com muitos pedidos pequenos a primeira conta se afasta da segunda.
-  const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-  const consumos = Array.from({ length: 12 }, () => 11.1339); // 12 pedidos: 133,607 kg exatos no consumo
-  const consumoReal = consumos.reduce((sum, value) => sum + value, 0);
-  const acumuladoDoMotor = consumos.reduce((sum, value) => round2(sum + round2(value)), 0);
-  assert.equal(Number(consumoReal.toFixed(3)), 133.607);
-  assert.notEqual(Number(acumuladoDoMotor.toFixed(3)), Number(consumoReal.toFixed(3)));
-  assert.ok(Math.abs(acumuladoDoMotor - consumoReal) < 0.1);
-  // A pré-pesagem agora imprime só a seção (a fonte do consumo), então o valor do item da OP não aparece.
-  const doc = buildPreWeighingDocument(buildPanetoneOp(50.043), panetoneSource);
-  const text = JSON.stringify(doc);
-  assert.ok(!text.includes("50.043"));
+test("#236 a carga do MPI, o que as batidas do produto consomem e o total da OP fecham ao grama", () => {
+  // Total do item MPI na OP (a tela) difere do consumo só por arredondamento (4 g).
+  const op = buildPanetoneOp(50.004);
+  for (const doc of [buildPreWeighingDocument(op, panetoneSource), buildProductionSheetDocument(op, panetoneSource)]) {
+    const mpi = "ingredientProducts" in doc ? doc.ingredientProducts[0]! : doc.ingredientSections[0]!;
+    assert.equal(mpi.requiredKg, 50.004, "bloco do MPI mostra o total da OP");
+    const tickets = "ingredientProducts" in doc
+      ? buildBatchTickets(buildPreWeighingBatchSections(doc), "OP-261104-030")
+      : buildBatchTickets(buildProductionBatchSections(doc), "OP-261104-030");
+    const consumoDasBatidas = tickets
+      .filter((ticket) => ticket.productId === "prod-panetone")
+      .reduce((sum, ticket) => sum + ticket.items.find((row) => row.label.includes("Esponja"))!.estimatedQuantity, 0);
+    assert.equal(Number(consumoDasBatidas.toFixed(3)), 50.004);
+    // Insumos do próprio MPI: as batidas dele também somam a quantidade da linha.
+    const farinha = tickets
+      .filter((ticket) => ticket.productId === "mpi-esponja")
+      .reduce((sum, ticket) => sum + ticket.items.find((row) => row.label.includes("Farinha"))!.estimatedQuantity, 0);
+    assert.equal(Number(farinha.toFixed(3)), Number(mpi.items.find((row) => row.label.includes("Farinha"))!.estimatedQuantity.toFixed(3)));
+  }
+});
+
+test("#236 batidas: o resto de arredondamento vai para a última batida e a soma fecha com a linha", () => {
+  const split = { batched: true, fullBatchCount: 2, fullBatchUnits: 1, fullBatchKg: 1, partialUnits: 1, partialKg: 1, partials: [{ units: 1, kg: 1, count: 1 }], totalUnits: 3, unitLabel: "Kg" } as never;
+  const row = { key: "r", sourceType: "ingrediente", kind: "ingrediente", stage: "massa", label: "X", unit: "Kg", estimatedQuantity: 1, batchQuantity: 0.333, partialQuantity: 0.333 } as never;
+  const tickets = buildBatchTickets([{ kind: "ingredient", productId: "p", productCode: "P", productName: "P", quantity: 3, unit: "Kg", kg: 3, batchSplit: split, items: [row] }], "OP-1");
+  assert.deepEqual(tickets.map((ticket) => ticket.items[0]!.estimatedQuantity), [0.333, 0.333, 0.334]);
 });
 
 test("#238 MPI que é item da OP imprime a receita CONGELADA dela, não a receita ao vivo editada depois", () => {
@@ -1467,4 +1481,25 @@ test("#239 80 mm: cada insumo ocupa UMA linha, com código, nome reduzido e a un
   assert.match(markup, /Farinha T1/);
   assert.match(markup, /\d,\d{3} Kg|\d+,\d{3} Un|\d+ g/);
   assert.match(markup, /Pesar o bloco com <strong>500<\/strong> g/);
+});
+
+test("#236 80 mm: o Peso da ficha é a carga quando a soma das linhas só difere por arredondamento", () => {
+  assert.equal(resolveTicketWeightKg({ batchKg: 80, items: [{ estimatedQuantity: 80.001, unit: "Kg" }] }), 80);
+  assert.equal(resolveTicketWeightKg({ batchKg: 80, items: [{ estimatedQuantity: 70, unit: "Kg" }] }), 70, "diferença real não é escondida");
+});
+
+test("#239 80 mm: uma linha por insumo — código inteiro, nome com reticências e quantidade à direita", () => {
+  const html = renderToStaticMarkup(
+    createElement(ThermalProductionSheet, {
+      document: buildProductionSheetDocument(buildPanetoneOp(50.004), panetoneSource),
+      code: "OP-261104-030",
+      line: "L",
+      productionDate: "04/11/2026",
+      deliveryDate: "05/11/2026",
+    }),
+  );
+  assert.ok(!html.includes("<colgroup"), "larguras vêm do conteúdo, não de colunas fixas");
+  assert.match(html, /td\.name[^}]*text-overflow: ellipsis[^}]*white-space: nowrap/);
+  assert.match(html, /td\.code[^}]*white-space: nowrap/);
+  assert.match(html, /td\.qty[^}]*text-align: right[^}]*white-space: nowrap/);
 });

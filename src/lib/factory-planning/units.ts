@@ -55,6 +55,10 @@ export function isMassOrVolumeUnit(code: UnitCode): boolean {
   return code === "Kg" || code === "g" || code === "L" || code === "ml";
 }
 
+export function round3(value: number): number {
+  return Number(value.toFixed(3));
+}
+
 export function round2(value: number): number {
   return Number(value.toFixed(2));
 }
