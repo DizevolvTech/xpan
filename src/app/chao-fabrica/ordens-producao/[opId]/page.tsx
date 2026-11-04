@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { findProductionOrderByNavParam } from "@/lib/printing/find-production-order";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import type { ProductionOrderItem } from "@/lib/order-planning";
 import { hierarchyLabels } from "@/lib/production-planning";
@@ -178,12 +179,7 @@ export default function OrdemProducaoDetailsPage() {
   const tryFutureDateOverride = useFutureDateOverride();
 
   const op = useMemo(() => {
-    const decoded = decodeURIComponent(opId);
-    return (
-      planningData.productionOrders.find((item) => getProductionOrderNavKey(item) === decoded) ??
-      planningData.productionOrders.find((item) => item.id === opId) ??
-      null
-    );
+    return findProductionOrderByNavParam(planningData.productionOrders, opId);
   }, [opId, planningData.productionOrders]);
 
   const lineCapacity = useMemo(() => {

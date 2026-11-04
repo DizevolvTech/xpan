@@ -24,6 +24,7 @@ import { isMassOrVolumeUnit, type UnitCode } from "@/lib/factory-planning/units"
 import { round3, scaleRecipeQuantity } from "@/lib/factory-planning/recipe-expansion";
 import { getProductDisplayCode, relabelRecipeLineWithClientCode } from "@/lib/product-identity";
 import { getRecipeReferenceWeightKgFromData } from "@/lib/production-data-utils";
+import { resolveRawBlockWeightG } from "@/lib/printing/raw-block-weight";
 import { computePreWeighBatchSplit, productSalesToKgFactor, type PreWeighBatchSplit } from "@/lib/production-batches";
 
 type PrintIngredientKind = "ingrediente" | "ingrediente_misturado" | "produto_mpi";
@@ -37,6 +38,13 @@ export type PrintIngredientRow = {
   /** Etapa/função da linha na receita. Receita legada = `massa` em tudo. */
   stage: RecipeStage;
   label: string;
+  /**
+   * Nome reduzido do insumo/produto (cadastro `short_name`). Só a 80 mm usa: uma linha por insumo
+   * com código + nome reduzido; vazio = a ficha corta o nome completo.
+   */
+  shortName?: string;
+  /** Linha "adicional" (cobertura, calda…) — a A4 imprime depois das linhas base e marca "Adic.". */
+  isAdditional?: boolean;
   unit: UnitCode;
   estimatedQuantity: number;
   /** Quantidade para UMA batida cheia (só quando o produto é batido). */
@@ -69,6 +77,8 @@ export type PreWeighingProductSection = {
   requestedQuantity: number;
   requestedUnit: UnitCode;
   unitWeightKg: number;
+  /** Peso do bloco cru em g (cadastro `labTest.rawUnitWeightKg`); null = a OP deixa o campo em branco. */
+  rawBlockWeightG?: number | null;
   /** Desdobramento de batidas (cheia ×N + parcial). null = não batido. */
   batchSplit: PreWeighBatchSplit | null;
   /**
@@ -93,6 +103,8 @@ export type ProductIngredientSection = {
   requiredUnit: UnitCode;
   requiredKg: number;
   usedBy: string[];
+  /** Peso do bloco cru em g (ver `PreWeighingProductSection.rawBlockWeightG`). */
+  rawBlockWeightG?: number | null;
   /** Ficha do próprio MPI — ordena os blocos da receita DELE. */
   recipeStageConfig?: RecipeStageConfigEntry[];
   /** Desdobramento de batidas do MPI, quando ele próprio é batido. */
@@ -106,6 +118,10 @@ export type ProductIngredientSection = {
  */
 export type ProductionSheetRow = PrintIngredientRow & {
   /**
+   * Cartão #237 (5.5): NÃO é mais impresso — a coluna "Unidades" saiu da folha A4 porque o número
+   * (ex.: 155) não tinha significado operacional por insumo. O dado segue calculado para quem
+   * precisar (subtotal por unidade, testes), mas nenhuma folha o mostra.
+   *
    * Quanto desta linha vai em UMA unidade produzida. Vale para qualquer linha — pode ser um
    * MPI (0,234 kg de massa por cuca) ou um ingrediente simples (0,120 kg de farofa por cuca).
    * `null` quando o produto não tem peso unitário/carga para derivar a conta.
@@ -121,6 +137,7 @@ export type ProductionSheetProductSection = {
   requestedQuantity: number;
   requestedUnit: UnitCode;
   unitWeightKg: number;
+  rawBlockWeightG?: number | null;
   /**
    * Quantas unidades a carga planejada rende (`plannedKg / unitWeightKg`) — é o divisor da
    * coluna "Unidades". Sai da carga PLANEJADA, não do pedido: se a fábrica arredondou para
@@ -443,6 +460,9 @@ function buildScaledRecipeRowsForProduct(
         !staged && isAdditionalIngredient(recipeItem, ingredient, sourceProduct) ? "additional" : "base",
       stage: normalizeRecipeStage(recipeItem.stage),
       label: relabelRecipeLineWithClientCode(recipeItem.label, ingredient ?? sourceProduct),
+      ...((ingredient ?? sourceProduct)?.shortName?.trim()
+        ? { shortName: (ingredient ?? sourceProduct)!.shortName!.trim() }
+        : {}),
       unit: recipeItem.unit,
       estimatedQuantity,
       batchQuantity,
@@ -502,6 +522,9 @@ function collectIngredientProductSections(
       const baseProduct = productsById.get(item.productId);
       return baseProduct ? withFrozenRecipe(baseProduct, item.frozenRecipe) : undefined;
     }),
+  );
+  const frozenRecipeByProductId = new Map(
+    op.items.flatMap((item) => (item.frozenRecipe ? [[item.productId, item.frozenRecipe] as const] : [])),
   );
   // Chave = (produto MPI, ETAPA). O mesmo chantilly no recheio e na cobertura vira duas
   // seções com pesos próprios em vez de uma soma — é o peso por etapa que o padeiro pesa.
@@ -573,6 +596,7 @@ function collectIngredientProductSections(
         requiredUnit: entry.requiredUnit,
         requiredKg: round3(entry.requiredKg),
         usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
+        rawBlockWeightG: resolveRawBlockWeightG(entry.product),
         recipeStageConfig: entry.product.recipeStageConfig,
         batchSplit: split.batched ? split : null,
         items: buildScaledRecipeRowsForProduct(
@@ -580,6 +604,9 @@ function collectIngredientProductSections(
           entry.requiredKg,
           source,
           batchKgsOf(split),
+          // Cartão #236/#238: o MPI que é item da própria OP traz a receita congelada na liberação;
+          // sem ela a seção listava a receita ao vivo (editada depois) e divergia da OP gerada.
+          frozenRecipeByProductId.get(entry.product.id) ?? null,
         ),
       };
     })
@@ -604,7 +631,16 @@ export function buildPreWeighingDocument(
 ) {
   const { productsById, ingredientsById } = buildSourceMaps(source);
 
-  const productSections: PreWeighingProductSection[] = op.items.map((item) => {
+  // Cartão #236: MPI que também é ITEM da OP (o motor o coloca na mesma OP do produto) é impresso
+  // UMA vez, na seção de MPI abaixo. Sem este filtro a esponja saía duas vezes: na seção de MPI
+  // (soma do que os produtos consomem, 3 casas) e de novo como "produto" (total da OP, somado em
+  // 2 casas pelo motor) — dois valores diferentes para a mesma massa.
+  const ingredientProducts = collectIngredientProductSections(op, source);
+  const mpiProductIds = new Set(ingredientProducts.map((section) => section.productId));
+
+  const productSections: PreWeighingProductSection[] = op.items
+    .filter((item) => !mpiProductIds.has(item.productId))
+    .map((item) => {
     // Receita congelada na liberação, quando houver: a folha tem que casar com a OP de
     // MPI que o motor gerou, não com a receita editada depois.
     const baseProduct = productsById.get(item.productId);
@@ -630,6 +666,7 @@ export function buildPreWeighingDocument(
         requestedQuantity: requestedSummary.requestedQuantity,
         requestedUnit: requestedSummary.requestedUnit,
         unitWeightKg: 0,
+        rawBlockWeightG: null,
         batchSplit: null,
         recipeStageConfig: undefined,
         baseIngredients,
@@ -648,13 +685,15 @@ export function buildPreWeighingDocument(
       const sourceProduct = recipeItem?.sourceType === "produto" ? productsById.get(recipeItem.sourceId) : undefined;
       const isProductIngredient = row.sourceType === "produto" && Boolean(sourceProduct?.canBeIngredient);
 
-      // MPI sai do bloco do produto e vira seção própria (`collectIngredientProductSections`).
-      if (isProductIngredient && sourceProduct) {
+      // Destino da linha: embalagem e consumo não se pesam na balança.
+      if (!printsOn(row, "prepesagem")) {
         return;
       }
 
-      // Destino da linha: embalagem e consumo não se pesam na balança.
-      if (!printsOn(row, "prepesagem")) {
+      // Cartão #236: o MPI entra como INSUMO da batida do produto (quantidade daquela batida),
+      // como já era na folha de produção; a OP/massa dele continua só na seção de MPI.
+      if (isProductIngredient && sourceProduct) {
+        baseIngredients.push({ ...row, kind: "produto_mpi", sectionKind: "base" });
         return;
       }
 
@@ -687,6 +726,7 @@ export function buildPreWeighingDocument(
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg: getOperationalUnitWeight(product),
+      rawBlockWeightG: resolveRawBlockWeightG(product),
       batchSplit: split.batched ? split : null,
       recipeStageConfig: product.recipeStageConfig,
       baseIngredients,
@@ -696,7 +736,7 @@ export function buildPreWeighingDocument(
 
   return {
     productSections,
-    ingredientProducts: collectIngredientProductSections(op, source),
+    ingredientProducts,
   };
 }
 
@@ -869,6 +909,7 @@ export function buildProductionSheetDocument(
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg,
+      rawBlockWeightG: resolveRawBlockWeightG(product),
       unitsCount: round3(unitsCount),
       batchSplit: split.batched ? split : null,
       // Config vem do produto AO VIVO (`withFrozenRecipe` só troca a receita): a sequência

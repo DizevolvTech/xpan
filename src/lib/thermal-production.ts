@@ -1,5 +1,5 @@
-import type { ProductionSheetDocument, PrintIngredientRow } from "@/lib/printing-documents";
-import type { PreWeighBatchSplit } from "@/lib/production-batches";
+import type { ProductionSheetDocument } from "@/lib/printing-documents";
+import { buildBatchTicketCode, buildBatchTickets, buildProductionBatchSections } from "@/lib/printing/batch-tickets";
 
 /**
  * Código lido pelo QR/código de barras da ficha: `OP` + código da OP sem hífens + `-Bnn` (batida).
@@ -7,12 +7,7 @@ import type { PreWeighBatchSplit } from "@/lib/production-batches";
  * entra `-Pn-` (n = posição da seção) para duas fichas nunca terem o mesmo código.
  */
 export function buildThermalTicketCode(opCode: string, sectionIndex: number, sectionCount: number, batchNumber: number) {
-  // O código da OP já nasce com "OP-" (OP-261013-001); a planilha do cliente mostra "OP260902011".
-  // Sem o prefixo (OP vinda de fora do sistema), ele é acrescentado.
-  const compact = opCode.replace(/[^0-9A-Za-z]/g, "");
-  const base = /^OP/i.test(compact) ? `OP${compact.slice(2)}` : `OP${compact}`;
-  const section = sectionCount > 1 ? `-P${sectionIndex + 1}` : "";
-  return `${base}${section}-B${String(batchNumber).padStart(2, "0")}`;
+  return buildBatchTicketCode(opCode, sectionIndex, sectionCount, batchNumber);
 }
 
 /** Separa "COD · Nome" (como a receita guarda o rótulo) em código e nome. Sem código: só o nome. */
@@ -27,44 +22,27 @@ export function sumTicketWeightKg(items: Array<{ estimatedQuantity: number; unit
 }
 
 export function buildThermalTickets(document: ProductionSheetDocument, opCode = "") {
-  const sections = [
-    ...document.ingredientSections.map((s) => ({ ...s, kind: "ingredient" as const, quantity: s.requiredQuantity, unit: s.requiredUnit })),
-    ...document.productSections.map((s) => ({ ...s, kind: "product" as const, quantity: s.requestedQuantity, unit: s.requestedUnit })),
-  ];
-  return sections.flatMap((section, sectionIndex) => {
-    const split: PreWeighBatchSplit | null = section.batchSplit;
-    const batches = split?.batched
-      ? [...Array.from({ length: split.fullBatchCount }, () => ({ quantity: split.fullBatchUnits, complementary: false, partialIndex: -1 })),
-          // Cartão #42: com mínimo por batida pode haver várias parciais (9 + 9 + 6 + 4).
-          ...(split.partials ?? []).flatMap((partial, partialIndex) =>
-            Array.from({ length: partial.count }, () => ({ quantity: partial.units, complementary: true, partialIndex })),
-          )]
-      : [{ quantity: section.quantity, complementary: false, partialIndex: -1 }];
-    return batches.map((batch, index) => ({
-      key: `${sectionIndex + 1}-B${String(index + 1).padStart(2, "0")}`,
-      /** Código do QR/barras. */
-      barcode: buildThermalTicketCode(opCode, sectionIndex, sections.length, index + 1),
-      /** `ingredient` = MPI (peso de insumo, converte p/ g); `product` = quantidade pedida (não converte). */
-      kind: section.kind,
-      productCode: section.productCode,
-      productName: section.productName,
-      number: index + 1,
-      count: batches.length,
-      quantity: batch.quantity,
-      totalQuantity: split?.batched ? split.totalUnits : section.quantity,
-      unit: split?.batched ? split.unitLabel : section.unit,
-      complementary: batch.complementary,
-      /** Quantidade pedida do produto na OP inteira (não só desta batida). */
-      recipeStageConfig: section.recipeStageConfig,
-      items: section.items.map((row): PrintIngredientRow => ({
-        ...row,
-        estimatedQuantity: split?.batched
-          ? (batch.complementary
-              ? row.partialQuantities?.[batch.partialIndex] ?? row.partialQuantity
-              : row.batchQuantity)
-            ?? row.estimatedQuantity * batch.quantity / split.totalUnits
-          : row.estimatedQuantity,
-      })),
-    }));
-  });
+  // Mesmas fichas da A4 de produção (uma por batida) — ver `printing/batch-tickets.ts`.
+  return buildBatchTickets(buildProductionBatchSections(document), opCode);
+}
+
+const COMPACT_NAME_MAX = 22;
+
+/**
+ * Cartão #239: nome do insumo na 80 mm — o nome REDUZIDO do cadastro; sem ele, o nome completo
+ * cortado na última palavra inteira que cabe (com "…"), para a linha não passar de uma.
+ */
+export function compactIngredientName(name: string, shortName?: string | null, max = COMPACT_NAME_MAX) {
+  const short = shortName?.trim();
+  if (short) {
+    return short;
+  }
+  const full = name.trim();
+  if (full.length <= max) {
+    return full;
+  }
+  const cut = full.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  const base = lastSpace >= Math.floor(max / 2) ? cut.slice(0, lastSpace) : cut;
+  return `${base.trimEnd()}…`;
 }
