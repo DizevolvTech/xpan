@@ -30,7 +30,7 @@ function formatYield(ticket: BatchTicket, weight: WeightDisplayUnit) {
     : `${formatLocaleNumber(ticket.quantity, { maximumFractionDigits: 3 })} ${ticket.unit}`;
 }
 
-function BlankField({ width = "w-28" }: { width?: string }) {
+function BlankField({ width = "w-24" }: { width?: string }) {
   return <span className={`inline-block h-4 ${width} border-b border-stone-700 align-bottom`} aria-hidden="true" />;
 }
 
@@ -134,11 +134,11 @@ export function BatchOpBlock({
       className="overflow-hidden border border-stone-400 print:break-inside-avoid"
       data-batch-ticket={ticket.key}
     >
-      <header className="grid grid-cols-[110px_84px_1fr_190px] border-b border-stone-400 bg-stone-300 text-stone-900">
+      <header className="grid grid-cols-[110px_100px_1fr_215px] border-b border-stone-400 bg-stone-300 text-stone-900">
         <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
           {isMpi ? "Produto MPI" : "Produto"}
         </div>
-        <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{ticket.productCode}</div>
+        <div className="border-r border-stone-400 px-3 py-2 text-base font-bold leading-none whitespace-nowrap">{ticket.productCode}</div>
         <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">
           {ticket.productName}
           {ticket.stageLabel ? (
@@ -161,7 +161,7 @@ export function BatchOpBlock({
         </div>
       </header>
 
-      <div className="grid grid-cols-3 gap-x-4 border-b border-stone-300 px-3 py-2 text-sm text-stone-800 print:break-inside-avoid">
+      <div className="flex items-baseline justify-between gap-x-4 whitespace-nowrap border-b border-stone-300 px-3 py-2 text-sm text-stone-800 print:break-inside-avoid">
         <div>
           <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
             Rendimento previsto:{" "}
@@ -181,7 +181,7 @@ export function BatchOpBlock({
           {ticket.rawBlockWeightG != null ? (
             <strong>{formatLocaleNumber(ticket.rawBlockWeightG, { maximumFractionDigits: 1 })}</strong>
           ) : (
-            <BlankField width="w-14" />
+            <BlankField width="w-12" />
           )}{" "}
           g
         </div>
