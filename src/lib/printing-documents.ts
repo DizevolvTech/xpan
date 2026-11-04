@@ -596,7 +596,7 @@ function collectIngredientProductSections(
         requiredUnit: entry.requiredUnit,
         requiredKg: round3(entry.requiredKg),
         usedBy: entry.usedBy.sort((a, b) => a.localeCompare(b)),
-        rawBlockWeightG: resolveRawBlockWeightG(entry.product),
+        rawBlockWeightG: resolveRawBlockWeightG(entry.product, source),
         recipeStageConfig: entry.product.recipeStageConfig,
         batchSplit: split.batched ? split : null,
         items: buildScaledRecipeRowsForProduct(
@@ -726,7 +726,7 @@ export function buildPreWeighingDocument(
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg: getOperationalUnitWeight(product),
-      rawBlockWeightG: resolveRawBlockWeightG(product),
+      rawBlockWeightG: resolveRawBlockWeightG(product, source),
       batchSplit: split.batched ? split : null,
       recipeStageConfig: product.recipeStageConfig,
       baseIngredients,
@@ -909,7 +909,7 @@ export function buildProductionSheetDocument(
       requestedQuantity: requestedSummary.requestedQuantity,
       requestedUnit: requestedSummary.requestedUnit,
       unitWeightKg,
-      rawBlockWeightG: resolveRawBlockWeightG(product),
+      rawBlockWeightG: resolveRawBlockWeightG(product, source),
       unitsCount: round3(unitsCount),
       batchSplit: split.batched ? split : null,
       // Config vem do produto AO VIVO (`withFrozenRecipe` só troca a receita): a sequência

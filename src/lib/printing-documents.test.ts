@@ -1243,12 +1243,12 @@ const panetone = buildProduct(
       expedition: { unit: "Un", description: "Expedição", weightKg: 0.5 },
     },
     capacityPerBatch: 100,
+    // Teste da receita: massa crua 5 kg; 10 un. padrão com 5 kg assados (unidade de 0,5 kg,
+    // igual ao cadastro) → peso da unidade crua 0,5 kg = bloco de 500 g (cartão #231).
     labTest: {
-      rawUnitWeightKg: 0.443,
-      rawDoughKg: null,
-      bakedKg: null,
-      leftoverBakedKg: null,
-      unitCount: null,
+      bakedKg: 5,
+      leftoverBakedKg: 0,
+      unitCount: 10,
       labelWeightKg: null,
     },
   },
@@ -1411,8 +1411,8 @@ test("#237 A4: uma OP por batida, inclusive as parciais da MPI; um só campo de 
   assert.match(text, /Batida 3 de 3 \(Parcial\)/);
   assert.doesNotMatch(text, /batida padrão|Unidades|×\d/i);
   assert.equal((text.match(/Pesar o bloco com/g) ?? []).length, 6);
-  // Panetone tem peso do bloco cru no cadastro (0,443 kg): sai preenchido; a esponja fica em branco.
-  assert.equal((text.match(/Pesar o bloco com \|443\| g/g) ?? []).length, 3);
+  // Panetone tem peso da unidade crua do teste (0,5 kg): sai preenchido; a esponja fica em branco.
+  assert.equal((text.match(/Pesar o bloco com \|500\| g/g) ?? []).length, 3);
 });
 
 test("#237 folha de produção A4: uma OP por batida, observação por linha e sem coluna Unidades", () => {
@@ -1433,11 +1433,11 @@ test("#237 folha de produção A4: uma OP por batida, observação por linha e s
   );
 });
 
-test("#237 peso do bloco: vem do cadastro (peso da peça crua) em g; sem o dado, null (linha em branco)", () => {
-  assert.equal(resolveRawBlockWeightG(panetone), 443);
-  assert.equal(resolveRawBlockWeightG(esponja), null);
-  assert.equal(resolveRawBlockWeightG({ labTest: { ...panetone.labTest!, rawUnitWeightKg: 0 } }), null);
-  assert.equal(resolveRawBlockWeightG(undefined), null);
+test("#237 peso do bloco: peso da unidade crua do teste da receita, em g; sem o dado, null (linha em branco)", () => {
+  assert.equal(resolveRawBlockWeightG(panetone, panetoneSource), 500);
+  assert.equal(resolveRawBlockWeightG(esponja, panetoneSource), null);
+  assert.equal(resolveRawBlockWeightG({ ...panetone, labTest: { ...panetone.labTest!, unitCount: null } }, panetoneSource), null);
+  assert.equal(resolveRawBlockWeightG(undefined, panetoneSource), null);
 });
 
 test("#239 nome do insumo na 80 mm: nome reduzido; sem ele, o completo cortado na última palavra inteira", () => {
@@ -1466,5 +1466,5 @@ test("#239 80 mm: cada insumo ocupa UMA linha, com código, nome reduzido e a un
   }
   assert.match(markup, /Farinha T1/);
   assert.match(markup, /\d,\d{3} Kg|\d+,\d{3} Un|\d+ g/);
-  assert.match(markup, /Pesar o bloco com <strong>443<\/strong> g/);
+  assert.match(markup, /Pesar o bloco com <strong>500<\/strong> g/);
 });

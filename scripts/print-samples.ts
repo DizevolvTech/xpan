@@ -58,7 +58,7 @@ const panetone = product("prod-panetone", "PR-00600", "Panetone 500 g", [
 ], {
   salesUnit: "Un", salesToKgFactor: 0.5, isSoldLoose: false, capacityPerBatch: 100,
   unitProfiles: { sales: { unit: "Un", description: "", weightKg: 0.5 }, production: { unit: "Un", description: "", weightKg: 0.5 }, expedition: { unit: "Un", description: "", weightKg: 0.5 } },
-  labTest: { rawUnitWeightKg: 0.443, rawDoughKg: null, bakedKg: null, leftoverBakedKg: null, unitCount: null, labelWeightKg: null },
+  labTest: { bakedKg: 6.8, leftoverBakedKg: 0.2, unitCount: 15, labelWeightKg: null },
 });
 
 const item = (p: ProductionProduct, totalKg: number, over: Partial<ProductionOrderItem>): ProductionOrderItem => ({
