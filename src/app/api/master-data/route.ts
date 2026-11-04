@@ -6,7 +6,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getMasterDataSnapshot } from "@/lib/supabase-data/master-data";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Quadro #235: ?fresh=1 (depois de salvar) pula o cache de dados mestres desta instância.
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
   const authorization = await authorizeApiRequest({
     contextLabel: "GET /api/master-data",
     includeStoreScope: true,
@@ -25,6 +27,7 @@ export async function GET() {
     const snapshot = await getMasterDataSnapshot({
       supabase,
       tenantId: authorization.effectiveTenantId,
+      forceRefresh: fresh,
       includeProfileNames: hasAnyNonStoreAccess(authorization.permissions),
       // A6: a auditoria de cronograma (gestor-fabrica) consome o último changelog por
       // produto daqui, em vez do endpoint cross-módulo que exige gestor-dados.produtos.

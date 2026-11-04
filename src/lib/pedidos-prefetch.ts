@@ -36,7 +36,7 @@ export async function loadPedidosPrefetch(referenceDate: string | null): Promise
     referenceDate
       ? readOk(getFactoryPlanning(new Request(`http://localhost/api/factory-planning?referenceDate=${referenceDate}`)))
       : undefined,
-    readOk(getMasterData()),
+    readOk(getMasterData(new Request("http://localhost/api/master-data"))),
     readOk(getDeliveryExecutions()),
     readOk(getListFilters()),
     readOk(getOrderBatchesOverview()),
