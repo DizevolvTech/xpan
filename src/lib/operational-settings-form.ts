@@ -60,3 +60,16 @@ export function describeOperationalSettingsSaveError(input: { status?: number; s
   if (input.thrown instanceof Error && input.thrown.message) return input.thrown.message;
   return "Não foi possível salvar as regras. Tente de novo.";
 }
+
+/**
+ * Quadro #235 (achado): as regras só podem ser editadas quando o valor REAL é conhecido — lido do
+ * servidor ou já presente nos dados mestres. Antes disso o diálogo mostrava 18:00 / D+0 (padrões)
+ * e deixava salvar por cima do valor verdadeiro.
+ */
+export function isOperationalSettingsReady(input: {
+  savedSettingsLoaded: boolean;
+  masterDataLoading: boolean;
+  masterDataError: boolean;
+}): boolean {
+  return input.savedSettingsLoaded || (!input.masterDataLoading && !input.masterDataError);
+}

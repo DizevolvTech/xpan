@@ -86,7 +86,7 @@ export function buildBatchTickets(sections: BatchSectionInput[], opCode = ""): B
         ]
       : [{ quantity: section.quantity, kg: section.kg, complementary: false, partialIndex: -1 }];
 
-    return batches.map((batch, index): BatchTicket => ({
+    const tickets = batches.map((batch, index): BatchTicket => ({
       key: `${sectionIndex + 1}-B${String(index + 1).padStart(2, "0")}`,
       barcode: buildBatchTicketCode(opCode, sectionIndex, sections.length, index + 1),
       kind: section.kind,
@@ -114,6 +114,21 @@ export function buildBatchTickets(sections: BatchSectionInput[], opCode = ""): B
           : row.estimatedQuantity,
       })),
     }));
+
+    // Cartão #236: a soma das batidas fecha com a quantidade da linha ao grama — o resto de
+    // arredondamento (cada batida arredondada em 3 casas) vai para a ÚLTIMA batida.
+    if (split?.batched && tickets.length > 1) {
+      const last = tickets[tickets.length - 1];
+      section.items.forEach((row, rowIndex) => {
+        const sum = tickets.reduce((total, ticket) => total + ticket.items[rowIndex].estimatedQuantity, 0);
+        const residue = Math.round((row.estimatedQuantity - sum) * 1000) / 1000;
+        if (residue !== 0) {
+          last.items[rowIndex].estimatedQuantity =
+            Math.round((last.items[rowIndex].estimatedQuantity + residue) * 1000) / 1000;
+        }
+      });
+    }
+    return tickets;
   });
 }
 

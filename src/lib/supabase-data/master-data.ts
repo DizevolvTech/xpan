@@ -2,7 +2,7 @@ import "server-only";
 
 import { normalizeStoreProductMix } from "@/lib/store-product-mix";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { getCachedServerData } from "@/lib/server-data-cache";
+import { getCachedServerData, invalidateServerDataCache } from "@/lib/server-data-cache";
 import {
   assertSupabaseResult,
   assertTenantId,
@@ -136,49 +136,59 @@ async function loadMasterDataSnapshot(
   const includeProductChangelog = options.includeProductChangelog ?? false;
   const tenantId = assertTenantId(options.tenantId);
 
-  const [
-    operationalSettingsResult,
-    sectorsResult,
-    linesResult,
-    ingredientsResult,
-    ingredientComponentsResult,
-    storesResult,
-    productsResult,
-    recipeItemsResult,
-    preparationStepsResult,
-    profilesResult,
-    schedulesResult,
-    scheduleSnapshotsResult,
-    productChangelogResult,
-    recipeStageDefinitionsResult,
-  ] = await Promise.all([
-    supabase
-      .from("operational_settings")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from("categories").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
-    supabase.from("subcategories").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
-    supabase.from("ingredients").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
-    supabase
-      .from("ingredient_components")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("sort_order", { ascending: true }),
-    supabase.from("stores").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
-    supabase.from("products").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
-    supabase
-      .from("product_recipe_items")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("sort_order", { ascending: true }),
-    supabase
-      .from("product_preparation_steps")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("sort_order", { ascending: true }),
+  // Cartão #236 (lentidão): as 12 leituras de cadastro são as MESMAS para todas as variantes do
+  // snapshot (com/sem nomes de perfil, com/sem histórico). Antes cada variante lia tudo de novo —
+  // Pedidos e pré-pesagem disparavam 2-3 cargas completas em paralelo no banco pequeno. Agora o
+  // resultado cru é compartilhado (mesma chave de invalidação `master-data`); só perfis e histórico,
+  // que mudam por variante, são lidos à parte e em paralelo.
+  const rawKey = buildTenantCacheKey(tenantId, "master-data", "raw");
+  const [baseResults, profilesResult, productChangelogResult] = await Promise.all([
+    getCachedServerData(
+      rawKey,
+      MASTER_DATA_CACHE_TTL_MS,
+      () =>
+        Promise.all([
+          supabase
+            .from("operational_settings")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle(),
+          supabase.from("categories").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+          supabase.from("subcategories").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+          supabase.from("ingredients").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+          supabase
+            .from("ingredient_components")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("sort_order", { ascending: true }),
+          supabase.from("stores").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+          supabase.from("products").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+          supabase
+            .from("product_recipe_items")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("sort_order", { ascending: true }),
+          supabase
+            .from("product_preparation_steps")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("sort_order", { ascending: true }),
+          supabase.from("schedule_lines").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
+          supabase
+            .from("schedule_line_item_snapshots")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("recipe_stage_definitions")
+            .select("id, key, label, base_stage, active, sort_order")
+            .eq("tenant_id", tenantId)
+            .order("sort_order", { ascending: true }),
+        ]),
+      { forceRefresh: options.forceRefresh },
+    ),
     includeProfileNames
       ? supabase
           .from("profiles")
@@ -186,12 +196,6 @@ async function loadMasterDataSnapshot(
           .eq("tenant_id", tenantId)
           .order("name", { ascending: true })
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("schedule_lines").select("*").eq("tenant_id", tenantId).order("code", { ascending: true }),
-    supabase
-      .from("schedule_line_item_snapshots")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: true }),
     includeProductChangelog
       ? supabase
           .from("product_changelog")
@@ -202,12 +206,25 @@ async function loadMasterDataSnapshot(
           .order("product_id", { ascending: true })
           .order("version_number", { ascending: false })
       : Promise.resolve({ data: [], error: null }),
-    supabase
-      .from("recipe_stage_definitions")
-      .select("id, key, label, base_stage, active, sort_order")
-      .eq("tenant_id", tenantId)
-      .order("sort_order", { ascending: true }),
   ]);
+  const [
+    operationalSettingsResult,
+    sectorsResult,
+    linesResult,
+    ingredientsResult,
+    ingredientComponentsResult,
+    storesResult,
+    productsResult,
+    recipeItemsResult,
+    preparationStepsResult,
+    schedulesResult,
+    scheduleSnapshotsResult,
+    recipeStageDefinitionsResult,
+  ] = baseResults;
+  // Leitura com falha não pode ficar 15 s no cache compartilhado.
+  if (baseResults.some((result) => result.error && !isSupabaseMissingSchemaError(result.error, ["product_preparation_steps", "recipe_stage_definitions"]))) {
+    invalidateServerDataCache(rawKey);
+  }
   // Sem a migration do cartão #173 a tabela não existe: segue só com as etapas padrão.
   const recipeStageDefinitions = mapRecipeStageDefinitionRows(
     recipeStageDefinitionsResult.error ? [] : (recipeStageDefinitionsResult.data as unknown[] | null) ?? [],

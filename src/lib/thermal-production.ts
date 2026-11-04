@@ -21,6 +21,15 @@ export function sumTicketWeightKg(items: Array<{ estimatedQuantity: number; unit
   return Math.round(items.reduce((sum, row) => sum + (row.unit === "Kg" ? row.estimatedQuantity : row.unit === "g" ? row.estimatedQuantity / 1000 : 0), 0) * 1000) / 1000;
 }
 
+/**
+ * Peso da ficha: a soma das linhas, mas quando ela só difere da carga da batida por arredondamento
+ * (80,001 x 80,000 kg) vale a CARGA — o número que a OP e os blocos mostram.
+ */
+export function resolveTicketWeightKg(ticket: { items: Array<{ estimatedQuantity: number; unit: string }>; batchKg: number }) {
+  const sum = sumTicketWeightKg(ticket.items);
+  return ticket.batchKg > 0 && Math.abs(sum - ticket.batchKg) <= 0.005 ? ticket.batchKg : sum;
+}
+
 export function buildThermalTickets(document: ProductionSheetDocument, opCode = "") {
   // Mesmas fichas da A4 de produção (uma por batida) — ver `printing/batch-tickets.ts`.
   return buildBatchTickets(buildProductionBatchSections(document), opCode);

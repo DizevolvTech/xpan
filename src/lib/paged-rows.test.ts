@@ -22,7 +22,8 @@ test("tabela maior que a página vem inteira, sem repetir nem perder linha", asy
   assert.equal(result.data?.length, 2505);
   assert.deepEqual(result.data?.slice(998, 1002).map((row) => row.id), [998, 999, 1000, 1001]);
   assert.equal(new Set(result.data?.map((row) => row.id)).size, 2505);
-  assert.deepEqual(table.calls, [[0, 999], [1000, 1999], [2000, 2999]]);
+  // 1ª página; depois janela paralela de 3 (a última volta vazia/incompleta encerra).
+  assert.deepEqual(table.calls, [[0, 999], [1000, 1999], [2000, 2999], [3000, 3999]]);
 });
 
 test("tabela pequena e vazia leem uma página só; múltiplo exato pede uma extra", async () => {
@@ -35,7 +36,7 @@ test("tabela pequena e vazia leem uma página só; múltiplo exato pede uma extr
 
   const exact = fakeTable(2000);
   assert.equal((await fetchAllRows(exact.fetchPage, 1000)).data?.length, 2000);
-  assert.equal(exact.calls.length, 3);
+  assert.equal(exact.calls.length, 4);
 });
 
 test("erro em qualquer página aborta e devolve o erro", async () => {
@@ -48,4 +49,20 @@ test("erro em qualquer página aborta e devolve o erro", async () => {
   }, 1000);
   assert.equal(result.data, null);
   assert.equal(result.error?.message, "boom");
+});
+
+test("páginas seguintes saem em paralelo (tabela grande não espera uma ida e volta por página)", async () => {
+  let running = 0;
+  let maxRunning = 0;
+  const rows = Array.from({ length: 5200 }, (_, index) => ({ id: index }));
+  const result = await fetchAllRows(async (from: number, to: number) => {
+    running += 1;
+    maxRunning = Math.max(maxRunning, running);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    running -= 1;
+    return { data: rows.slice(from, to + 1), error: null };
+  }, 1000);
+  assert.equal(result.data?.length, 5200);
+  assert.deepEqual(result.data?.map((row) => row.id), rows.map((row) => row.id), "ordem preservada");
+  assert.equal(maxRunning, 3);
 });

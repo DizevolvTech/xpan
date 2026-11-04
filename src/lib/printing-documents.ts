@@ -43,6 +43,8 @@ export type PrintIngredientRow = {
    * com código + nome reduzido; vazio = a ficha corta o nome completo.
    */
   shortName?: string;
+  /** Produto-MPI de origem da linha (só `sourceType` produto): liga o consumo à carga do MPI. */
+  sourceProductId?: string;
   /** Linha "adicional" (cobertura, calda…) — a A4 imprime depois das linhas base e marca "Adic.". */
   isAdditional?: boolean;
   unit: UnitCode;
@@ -459,6 +461,7 @@ function buildScaledRecipeRowsForProduct(
       sectionKind:
         !staged && isAdditionalIngredient(recipeItem, ingredient, sourceProduct) ? "additional" : "base",
       stage: normalizeRecipeStage(recipeItem.stage),
+      ...(recipeItem.sourceType === "produto" ? { sourceProductId: recipeItem.sourceId } : {}),
       label: relabelRecipeLineWithClientCode(recipeItem.label, ingredient ?? sourceProduct),
       ...((ingredient ?? sourceProduct)?.shortName?.trim()
         ? { shortName: (ingredient ?? sourceProduct)!.shortName!.trim() }
@@ -507,6 +510,9 @@ function convertRecipeRowToKg(
  * daqui porque a folha de produção passou a abrir a seção do MPI no topo (ficha do cliente).
  * Uma agregação só, dois documentos: o padeiro pesa e produz exatamente o mesmo MPI.
  */
+/** Diferença máxima (kg) que é só arredondamento entre a carga do MPI na OP e o consumo dos produtos. */
+const MPI_LOAD_TOLERANCE_KG = 0.01;
+
 function collectIngredientProductSections(
   op: ProductionOrderRow,
   source: {
@@ -582,6 +588,27 @@ function collectIngredientProductSections(
     });
   });
 
+  // Cartão #236: a carga do MPI é UMA só — a que a tela da OP mostra (item do próprio MPI). Quando
+  // o MPI aparece numa etapa só, os blocos usam essa carga; a diferença de arredondamento para a soma
+  // das linhas dos produtos é absorvida pela última linha de consumo (`reconcileMpiConsumption`).
+  const stagesPerMpi = new Map<string, number>();
+  ingredientProductMap.forEach((entry) => {
+    stagesPerMpi.set(entry.product.id, (stagesPerMpi.get(entry.product.id) ?? 0) + 1);
+  });
+  ingredientProductMap.forEach((entry) => {
+    const opItem = op.items.find((item) => item.productId === entry.product.id);
+    if (!opItem || stagesPerMpi.get(entry.product.id) !== 1 || !(opItem.totalKg > 0)) {
+      return;
+    }
+    if (Math.abs(opItem.totalKg - entry.requiredKg) > MPI_LOAD_TOLERANCE_KG) {
+      return;
+    }
+    if (entry.requiredUnit === "Kg") {
+      entry.requiredQuantity = opItem.totalKg;
+    }
+    entry.requiredKg = opItem.totalKg;
+  });
+
   return Array.from(ingredientProductMap.values())
     .map((entry) => {
       const split = batchSplitForKg(entry.requiredKg, entry.product, entry.product.salesUnit);
@@ -620,6 +647,34 @@ function collectIngredientProductSections(
 /** A linha sai nesta folha? (Consumo, peso e custo não passam por aqui: contam a receita inteira.) */
 function printsOn(row: { printDestinations?: RecipePrintDestination[] }, destination: RecipePrintDestination) {
   return resolveRecipePrintDestinations(row).includes(destination);
+}
+
+/**
+ * Cartão #236: o que os produtos consomem do MPI (soma das linhas, cada uma arredondada) tem que
+ * fechar com a carga do bloco do MPI ao grama. A diferença (arredondamento) vai para a última linha
+ * de consumo; a divisão por batida (`buildBatchTickets`) manda o resto para a última batida.
+ */
+export function reconcileMpiConsumption(
+  mpiSections: ProductIngredientSection[],
+  consumerRows: PrintIngredientRow[][],
+) {
+  mpiSections.forEach((section) => {
+    if (section.requiredUnit !== "Kg") {
+      return;
+    }
+    const rows = consumerRows
+      .flat()
+      .filter((row) => row.sourceProductId === section.productId && row.stage === section.stage && row.unit === "Kg");
+    if (rows.length === 0) {
+      return;
+    }
+    const sum = rows.reduce((total, row) => total + row.estimatedQuantity, 0);
+    const delta = round3(section.requiredKg - sum);
+    if (delta !== 0 && Math.abs(delta) <= MPI_LOAD_TOLERANCE_KG) {
+      const last = rows[rows.length - 1];
+      last.estimatedQuantity = round3(last.estimatedQuantity + delta);
+    }
+  });
 }
 
 export function buildPreWeighingDocument(
@@ -733,6 +788,11 @@ export function buildPreWeighingDocument(
       additionalIngredients,
     };
   });
+
+  reconcileMpiConsumption(
+    ingredientProducts,
+    productSections.map((section) => [...section.baseIngredients, ...section.additionalIngredients]),
+  );
 
   return {
     productSections,
@@ -928,6 +988,11 @@ export function buildProductionSheetDocument(
         })),
     };
     });
+
+  reconcileMpiConsumption(
+    ingredientSections,
+    productSections.map((section) => section.items),
+  );
 
   return {
     deliveryGap: resolveProductionDeliveryGap(op),

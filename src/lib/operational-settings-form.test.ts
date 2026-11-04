@@ -6,6 +6,7 @@ import {
   operationalSettingsFormProblem,
   operationalSettingsSaveBlock,
   toTimeInputValue,
+  isOperationalSettingsReady,
 } from "@/lib/operational-settings-form";
 
 const OK = { orderCutoffTime: "16:30", expeditionLeadDays: "1", saleLeadDays: "1" };
@@ -45,4 +46,11 @@ test("#235: erro de salvar sempre tem mensagem clara", () => {
   assert.match(describeOperationalSettingsSaveError({ status: 502 }), /erro 502/);
   assert.match(describeOperationalSettingsSaveError({ thrown: new TypeError("Failed to fetch") }), /Sem conexão/);
   assert.match(describeOperationalSettingsSaveError({}), /Não foi possível salvar/);
+});
+
+test("#235 regras só editáveis quando o valor real é conhecido (sem mostrar 18:00/D+0 padrão editável)", () => {
+  assert.equal(isOperationalSettingsReady({ savedSettingsLoaded: false, masterDataLoading: true, masterDataError: false }), false);
+  assert.equal(isOperationalSettingsReady({ savedSettingsLoaded: false, masterDataLoading: false, masterDataError: true }), false);
+  assert.equal(isOperationalSettingsReady({ savedSettingsLoaded: true, masterDataLoading: true, masterDataError: false }), true);
+  assert.equal(isOperationalSettingsReady({ savedSettingsLoaded: false, masterDataLoading: false, masterDataError: false }), true);
 });

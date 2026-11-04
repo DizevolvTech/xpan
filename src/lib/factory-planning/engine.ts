@@ -29,7 +29,7 @@ import type {
 } from "@/lib/factory-planning/types";
 import { getScheduleItemDayPriority } from "@/lib/production-data-utils";
 import { planBatches, deriveBatchStatus, productSalesToKgFactor } from "@/lib/production-batches";
-import { round2, roundQuantityForUnit } from "@/lib/factory-planning/units";
+import { round2, round3, roundQuantityForUnit } from "@/lib/factory-planning/units";
 import { getProductionStatusProgress, normalizeProductPreparationStages } from "@/lib/production-workflow";
 import { expandRecipeIntoItems } from "@/lib/factory-planning/recipe-expansion";
 import { getProductDisplayCode } from "@/lib/product-identity";
@@ -1003,7 +1003,9 @@ export function buildProductionOrdersFromPlannedItems(
       const group = opGroupMap.get(planningKey)!;
       group.orderCodes.add(item.orderCode);
       group.orderIds.add(item.orderId);
-      group.totalKg = round2(group.totalKg + item.internalKg);
+      // Cartão #236: soma SEM arredondar (round2 a cada parcela fazia a esponja da OP divergir ~0,04 kg
+      // das cargas dos blocos); o arredondamento de 3 casas é feito uma vez só, no fim.
+      group.totalKg += item.internalKg;
       group.releasedToProduction = group.releasedToProduction || item.releasedToProduction;
       group.productionStarted = group.productionStarted || item.productionStarted;
 
@@ -1041,7 +1043,7 @@ export function buildProductionOrdersFromPlannedItems(
       }
 
       const aggregated = group.items.get(item.productId)!;
-      aggregated.totalKg = round2(aggregated.totalKg + item.internalKg);
+      aggregated.totalKg += item.internalKg;
       // FASE 2: marca demanda real assim que QUALQUER source item for "pedido"
       // ou trouxer kg. demandSource final é derivado disto abaixo.
       aggregated.hasPedidoSource =
@@ -1076,6 +1078,14 @@ export function buildProductionOrdersFromPlannedItems(
         workflowProgress: item.workflowProgress,
       });
     });
+
+  // Cartão #236: arredonda 3 casas UMA vez, depois de somar tudo sem arredondar.
+  opGroupMap.forEach((group) => {
+    group.totalKg = round3(group.totalKg);
+    group.items.forEach((opItem) => {
+      opItem.totalKg = round3(opItem.totalKg);
+    });
+  });
 
   const groupedOps = Array.from(opGroupMap.values()).sort((a, b) => {
     const byDate = compareDateKeys(a.productionDate, b.productionDate);
@@ -1175,7 +1185,7 @@ export function buildProductionOrdersFromPlannedItems(
       scheduleName: group.scheduleName,
       itemsCount: group.sourceItems.length,
       ordersCount: group.orderIds.size,
-      totalKg: round2(group.totalKg),
+      totalKg: round3(group.totalKg),
       // FASE 2: a OP tem demanda real se ALGUM item consolidou kg > 0. OP cujos
       // itens são todos cronograma/0 é uma "OP de esqueleto".
       hasDemand: builtItems.some((opItem) => opItem.totalKg > 0),
