@@ -1966,7 +1966,8 @@ export function ProductFormDialog({
                             step="0.000001"
                             value={
                               lockedByLab
-                                ? labComputation?.bakedUnitKg ?? profile.weightKg
+                                ? // Cartão #233: valor calculado aparece como na ficha (3 casas), sem a conta crua.
+                                  Math.round((labComputation?.bakedUnitKg ?? profile.weightKg) * 1000) / 1000
                                 : lockedToKg
                                   ? 1
                                   : profile.weightKg
