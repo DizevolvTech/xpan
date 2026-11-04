@@ -1332,7 +1332,7 @@ export function ProductFormDialog({
         ) : null}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-panel/60 p-1 sm:grid-cols-4">
+          <TabsList className="grid h-auto group-data-[orientation=horizontal]/tabs:h-auto w-full grid-cols-2 gap-1 rounded-xl bg-panel/60 p-1 sm:grid-cols-4">
             <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
             <TabsTrigger value="receita" disabled={storeCodeGateBlocked}>Receita</TabsTrigger>
             <TabsTrigger value="cronograma" disabled={storeCodeGateBlocked} className="whitespace-normal">Cronograma</TabsTrigger>
