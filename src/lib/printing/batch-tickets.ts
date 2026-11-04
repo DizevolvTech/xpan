@@ -132,8 +132,42 @@ export function buildBatchTickets(sections: BatchSectionInput[], opCode = ""): B
         }
       });
     }
+    // Cartão #236: no bloco da MPI a carga da batida É a soma dos insumos dela. Com cada linha
+    // arredondada em 3 casas a soma lida pode passar 1 g da carga (6,898 x 6,897); o resto de
+    // arredondamento (até 5 g) vai para o maior insumo em kg, para a folha fechar ao grama.
+    if (section.kind === "ingredient") {
+      tickets.forEach((ticket) => closeTicketToBatchKg(ticket));
+    }
     return tickets;
   });
+}
+
+const ROUNDING_TOLERANCE_KG = 0.005;
+
+function rowKg(row: PrintIngredientRow) {
+  return row.unit === "Kg" ? row.estimatedQuantity : row.unit === "g" ? row.estimatedQuantity / 1000 : null;
+}
+
+export function closeTicketToBatchKg(ticket: BatchTicket) {
+  const target = Math.round(ticket.batchKg * 1000) / 1000;
+  if (!(target > 0)) return;
+  const rounded = ticket.items.map((row) => {
+    const kg = rowKg(row);
+    return kg === null ? null : Math.round(kg * 1000) / 1000;
+  });
+  if (rounded.every((kg) => kg === null)) return;
+  const sum = rounded.reduce<number>((total, kg) => total + (kg ?? 0), 0);
+  const diff = Math.round((target - sum) * 1000) / 1000;
+  if (diff === 0 || Math.abs(diff) > ROUNDING_TOLERANCE_KG) return;
+  let largest = -1;
+  rounded.forEach((kg, index) => {
+    if (kg !== null && ticket.items[index].unit === "Kg" && (largest < 0 || kg > (rounded[largest] ?? 0))) largest = index;
+  });
+  if (largest < 0) return;
+  ticket.items[largest] = {
+    ...ticket.items[largest],
+    estimatedQuantity: Math.round(((rounded[largest] ?? 0) + diff) * 1000) / 1000,
+  };
 }
 
 function mpiSectionInput(section: ProductIngredientSection, items: PrintIngredientRow[]): BatchSectionInput {

@@ -15,7 +15,8 @@ async function context(write: boolean) {
   const snapshot = await getMasterDataSnapshot({ supabase, tenantId: auth.effectiveTenantId, includeProfileNames: false, forceRefresh: true });
   const catalog: OrderEntryCatalog = {
     stores: snapshot.stores.filter(s => s.status === "ativo" && canAccessStore(auth, s.id)).map(s => ({ id: s.id, code: s.code, name: s.name, productMix: s.productMix ?? null })),
-    products: snapshot.products.filter(p => p.active && p.availableForOrdering).map(p => ({ id: p.id, code: p.code, externalCode: p.externalCode, name: p.name, unit: p.unitProfiles.sales.unit })),
+    // Cartão #236/XPAN-9: MPI (canBeIngredient) não é pedível — some da lista como no catálogo da loja.
+    products: snapshot.products.filter(p => p.active && p.availableForOrdering && !p.canBeIngredient).map(p => ({ id: p.id, code: p.code, externalCode: p.externalCode, name: p.name, unit: p.unitProfiles.sales.unit })),
   };
   return { auth, supabase, snapshot, catalog };
 }
