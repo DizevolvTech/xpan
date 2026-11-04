@@ -7,7 +7,7 @@ import { PrintDocument } from "@/components/printing/print-document";
 import { ThermalProductionSheet } from "@/components/printing/thermal-production-sheet";
 import { ProductionSheetSections } from "@/components/printing/production-sheet";
 import { buildProductionSheetDocument } from "@/lib/printing-documents";
-import { getProductionOrderNavKey } from "@/lib/factory-kanban";
+import { findProductionOrderByNavParam } from "@/lib/printing/find-production-order";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
@@ -31,12 +31,7 @@ export default function ProducaoPrintPage() {
   const { unit: weightUnit, setUnit: setWeightUnit } = usePrintWeightUnit();
 
   const op = useMemo(() => {
-    const decoded = decodeURIComponent(opId);
-    return (
-      planningData.productionOrders.find((item) => getProductionOrderNavKey(item) === decoded) ??
-      planningData.productionOrders.find((item) => item.id === opId) ??
-      null
-    );
+    return findProductionOrderByNavParam(planningData.productionOrders, opId);
   }, [opId, planningData.productionOrders]);
   const document = useMemo(
     () =>

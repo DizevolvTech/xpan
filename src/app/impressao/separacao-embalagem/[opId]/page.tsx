@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
 import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
-import { getProductionOrderNavKey } from "@/lib/factory-kanban";
+import { findProductionOrderByNavParam } from "@/lib/printing/find-production-order";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPackagingSeparationDocument } from "@/lib/printing-documents";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
@@ -34,12 +34,7 @@ export default function SeparacaoEmbalagemPrintPage() {
   const { unit: weightUnit, setUnit: setWeightUnit } = usePrintWeightUnit();
 
   const op = useMemo(() => {
-    const decoded = decodeURIComponent(opId);
-    return (
-      planningData.productionOrders.find((item) => getProductionOrderNavKey(item) === decoded) ??
-      planningData.productionOrders.find((item) => item.id === opId) ??
-      null
-    );
+    return findProductionOrderByNavParam(planningData.productionOrders, opId);
   }, [opId, planningData.productionOrders]);
 
   const document = useMemo(
