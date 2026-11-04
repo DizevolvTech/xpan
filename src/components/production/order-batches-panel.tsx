@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus, ListTree, Loader2, PackageCheck } from "lucide-react";
+import { AlertTriangle, CalendarPlus, FastForward, ListTree, Loader2, PackageCheck } from "lucide-react";
 
 import { batchReleaseBlockedReason, useBatchRelease } from "@/components/production/use-batch-release";
 import { Button } from "@/components/ui/button";
@@ -117,7 +117,7 @@ export function OrderBatchesPanel({
   // Quadro #20 (31/10): lista e lotes são relidos juntos (antes o lote esperava a lista).
   // Quadro #20 (31/10): lista e lotes mudam na mesma atualização: os lotes são lidos junto
   // com a lista e só aplicados quando a lista também chegou.
-  const { releaseGroup, busyDate } = useBatchRelease(async ({ group, releasedOrderCodes }) => {
+  const { releaseGroup, busyDate, anticipateLabelFor } = useBatchRelease(async ({ group, releasedOrderCodes }) => {
     // O lote sai do painel assim que o servidor confirma; lista e lotes são relidos depois.
     applyReleasedGroup(group.deliveryDate, releasedOrderCodes);
     // Com onOrdersReleased a lista já se relê sozinha; sem ele, relê pelo onChanged.
@@ -182,14 +182,14 @@ export function OrderBatchesPanel({
         // Quadro #2 (27/10): lotes numa tabela compacta (uma linha por entrega), como planilha.
         // Até ~4 entregas à vista; o resto rola dentro da caixa (não empurra a lista de pedidos).
         <div className="max-h-[10.5rem] overflow-auto rounded-lg border border-border/80">
-          <table className="w-full min-w-[640px] border-collapse text-xs">
+          <table className="w-full min-w-[560px] border-collapse text-xs">
             <thead className="sticky top-0 z-[1] bg-panel text-left text-[11px] text-muted-foreground">
               <tr className="[&>th]:whitespace-nowrap [&>th]:px-2 [&>th]:py-1 [&>th]:font-semibold">
                 <th>Lote · entrega</th>
                 <th>Lojas que pediram</th>
                 <th>Prazo das lojas</th>
                 <th className="w-full">Faltam</th>
-                <th className="text-right">Ações</th>
+                <th className="text-right max-sm:min-w-[11.5rem] sm:sticky sm:right-0 sm:z-[2] sm:bg-panel">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -244,8 +244,10 @@ export function OrderBatchesPanel({
                         "Todas pediram"
                       )}
                     </td>
-                    <td className="whitespace-nowrap text-right">
-                      <span className="inline-flex gap-1">
+                    {/* Quadro #234: Ações sempre inteira. Em tela larga fica presa à direita da caixa;
+                        no celular a tabela rola dentro da caixa e os botões quebram em coluna. */}
+                    <td className="bg-card text-right sm:sticky sm:right-0 sm:z-[1]">
+                      <span className="inline-flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:justify-end">
                         <Button
                           type="button"
                           size="xs"
@@ -271,6 +273,19 @@ export function OrderBatchesPanel({
                           )}
                           Liberar lote ({group.pendingOrderIds.length})
                         </Button>
+                        {anticipateLabelFor(group) ? (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="destructive"
+                            disabled={busyDate !== null}
+                            onClick={() => void releaseGroup(group, { anticipate: true })}
+                            title="Libera antes do prazo das lojas (só administrador)"
+                          >
+                            <FastForward className="size-3.5" aria-hidden />
+                            {anticipateLabelFor(group)}
+                          </Button>
+                        ) : null}
                       </span>
                     </td>
                   </tr>

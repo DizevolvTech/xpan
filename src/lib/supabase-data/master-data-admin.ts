@@ -29,6 +29,7 @@ import {
 } from "@/lib/production-data-utils";
 import {
   assertSupabaseResult,
+  resolveOptionalSupabaseResult,
   isSupabaseMissingSchemaError,
   isUuid,
   type SupabaseDataClient,
@@ -608,7 +609,9 @@ function normalizeOptionalText(value: string | undefined) {
 
 function normalizeOperationalSettingsPayload(input: OperationalSettingsInput) {
   const orderCutoffTime = input.orderCutoffTime.trim();
-  const timeMatch = orderCutoffTime.match(/^(\d{2}):(\d{2})$/);
+  // Quadro #235: o campo de hora pode devolver HH:MM:SS (ou H:MM) e o banco devolve HH:MM:SS;
+  // antes só HH:MM exato passava e o resto virava "falha ao salvar".
+  const timeMatch = orderCutoffTime.match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/);
 
   if (!timeMatch) {
     throw new Error("Informe o horário limite no formato HH:MM.");
@@ -673,29 +676,51 @@ export async function updateOperationalSettings(
     .limit(1)
     .maybeSingle();
 
-  const currentSettings = assertSupabaseResult(
+  // Empresa sem linha de regras ainda: o primeiro salvamento cria (antes estourava "no data returned").
+  const currentSettings = resolveOptionalSupabaseResult(
     { data: settingsResult.data, error: settingsResult.error },
     "Failed to load operational settings",
   );
 
+  // Colunas mais novas (unidade da OP, origem do código): banco ainda sem a migração não pode
+  // impedir o horário limite de ser salvo; grava o resto e segue (mesmo padrão do cadastro de produto).
+  const optionalColumns = ["op_weight_unit", "product_code_source"] as const;
+  const withoutOptional = (payload: Record<string, unknown>) => {
+    const rest = { ...payload };
+    for (const column of optionalColumns) delete rest[column];
+    return rest;
+  };
+
   if (currentSettings?.id) {
-    const updateResult = await supabase
+    let updateResult = await supabase
       .from("operational_settings")
-      .update({
-        ...normalizedInput,
-        updated_at: now,
-      })
+      .update({ ...normalizedInput, updated_at: now })
       .eq("id", currentSettings.id);
+
+    if (updateResult.error && isSupabaseMissingSchemaError(updateResult.error, [...optionalColumns])) {
+      updateResult = await supabase
+        .from("operational_settings")
+        .update({ ...withoutOptional(normalizedInput), updated_at: now })
+        .eq("id", currentSettings.id);
+    }
 
     if (updateResult.error) {
       throw new Error(`Failed to update operational settings: ${updateResult.error.message}`);
     }
   } else {
-    const insertResult = await supabase.from("operational_settings").insert({
+    let insertResult = await supabase.from("operational_settings").insert({
       ...normalizedInput,
       created_at: now,
       updated_at: now,
     });
+
+    if (insertResult.error && isSupabaseMissingSchemaError(insertResult.error, [...optionalColumns])) {
+      insertResult = await supabase.from("operational_settings").insert({
+        ...withoutOptional(normalizedInput),
+        created_at: now,
+        updated_at: now,
+      });
+    }
 
     if (insertResult.error) {
       throw new Error(`Failed to create operational settings: ${insertResult.error.message}`);
@@ -708,6 +733,32 @@ export async function updateOperationalSettings(
     saleLeadDays: normalizedInput.sale_lead_days,
     ...(normalizedInput.op_weight_unit ? { opWeightUnit: normalizedInput.op_weight_unit } : {}),
     ...(normalizedInput.product_code_source ? { productCodeSource: normalizedInput.product_code_source } : {}),
+  };
+}
+
+/**
+ * Quadro #235: lê as regras direto do banco (sem o cache de dados mestres, que é por instância do
+ * Worker e podia devolver o valor antigo logo depois de salvar). Usada pela tela de Regras.
+ */
+export async function readOperationalSettings(options: MutationOptions = {}) {
+  const supabase = options.supabase ?? createSupabaseAdminClient();
+  const result = await supabase
+    .from("operational_settings")
+    .select("*")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const row = assertSupabaseResult(
+    { data: result.data, error: result.error },
+    "Failed to load operational settings",
+  ) as Record<string, unknown> | null;
+  if (!row) return null;
+  return {
+    orderCutoffTime: String(row.order_cutoff_time ?? "18:00").slice(0, 5),
+    expeditionLeadDays: Number(row.expedition_lead_days ?? 0),
+    saleLeadDays: row.sale_lead_days != null ? Number(row.sale_lead_days) : 1,
+    opWeightUnit: (isWeightDisplayUnit(row.op_weight_unit) ? row.op_weight_unit : "kg") as "kg" | "g",
+    productCodeSource: (isProductCodeSource(row.product_code_source) ? row.product_code_source : "erp") as "erp" | "gtin",
   };
 }
 

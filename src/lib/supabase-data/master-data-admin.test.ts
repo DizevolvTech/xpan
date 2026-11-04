@@ -23,7 +23,7 @@ import test from "node:test";
 import type { SupabaseDataClient } from "@/lib/supabase-data/common";
 import type * as MasterDataAdminModule from "@/lib/supabase-data/master-data-admin";
 
-const { MasterDataValidationError, cloneProduct, confirmPendingScheduleRevision, createProduct, createStore, updateProduct, updateScheduleLineStatus, updateStore } = require(
+const { MasterDataValidationError, readOperationalSettings, updateOperationalSettings, cloneProduct, confirmPendingScheduleRevision, createProduct, createStore, updateProduct, updateScheduleLineStatus, updateStore } = require(
   "@/lib/supabase-data/master-data-admin",
 ) as typeof MasterDataAdminModule;
 
@@ -885,4 +885,60 @@ test("confirmar revisão que já não está pendente é recusado e não grava na
     );
     assert.equal(writes.length, 0, status);
   }
+});
+
+
+/* Quadro #235 — salvar o horário limite em Regras do cronograma. */
+const SETTINGS_INPUT = { orderCutoffTime: "16:30", expeditionLeadDays: 1, saleLeadDays: 1, opWeightUnit: "kg", productCodeSource: "erp" } as const;
+
+test("#235: horário limite salva e devolve HH:MM", async () => {
+  const { client, writes } = createFakeSupabase({ tables: { operational_settings: [{ id: "s1" }] } });
+  const saved = await updateOperationalSettings({ ...SETTINGS_INPUT }, { supabase: client });
+  assert.equal(saved.orderCutoffTime, "16:30");
+  assert.equal(findWrite(writes, "operational_settings", "update")[0]?.payload?.order_cutoff_time, "16:30");
+});
+
+test("#235: horário com segundos (HH:MM:SS, como o banco devolve) é aceito e gravado como HH:MM", async () => {
+  const { client, writes } = createFakeSupabase({ tables: { operational_settings: [{ id: "s1" }] } });
+  const saved = await updateOperationalSettings({ ...SETTINGS_INPUT, orderCutoffTime: "16:30:00" }, { supabase: client });
+  assert.equal(saved.orderCutoffTime, "16:30");
+  assert.equal(findWrite(writes, "operational_settings", "update")[0]?.payload?.order_cutoff_time, "16:30");
+});
+
+test("#235: horário inválido continua recusado", async () => {
+  const { client } = createFakeSupabase({ tables: { operational_settings: [{ id: "s1" }] } });
+  await assert.rejects(updateOperationalSettings({ ...SETTINGS_INPUT, orderCutoffTime: "25:00" }, { supabase: client }), /válido/);
+  await assert.rejects(updateOperationalSettings({ ...SETTINGS_INPUT, orderCutoffTime: "abc" }, { supabase: client }), /HH:MM/);
+});
+
+test("#235: banco sem as colunas novas (op_weight_unit / product_code_source) ainda grava o horário", async () => {
+  const { client, writes } = createFakeSupabase({
+    tables: { operational_settings: [{ id: "s1" }] },
+    missingColumns: ["op_weight_unit", "product_code_source"],
+  });
+  const saved = await updateOperationalSettings({ ...SETTINGS_INPUT }, { supabase: client });
+  assert.equal(saved.orderCutoffTime, "16:30");
+  const update = findWrite(writes, "operational_settings", "update");
+  assert.equal(update.length, 1);
+  assert.equal(update[0].payload?.order_cutoff_time, "16:30");
+  assert.equal("op_weight_unit" in (update[0].payload ?? {}), false);
+});
+
+test("#235: sem linha de regras ainda cria (primeiro salvamento da empresa)", async () => {
+  const { client, writes } = createFakeSupabase({ tables: { operational_settings: [] } });
+  await updateOperationalSettings({ ...SETTINGS_INPUT }, { supabase: client });
+  assert.equal(findWrite(writes, "operational_settings", "insert")[0]?.payload?.order_cutoff_time, "16:30");
+});
+
+test("#235: readOperationalSettings lê o valor gravado direto (HH:MM:SS do banco vira HH:MM)", async () => {
+  const { client } = createFakeSupabase({
+    tables: { operational_settings: [{ id: "s1", order_cutoff_time: "16:30:00", expedition_lead_days: 2, sale_lead_days: null, op_weight_unit: "g", product_code_source: "gtin" }] },
+  });
+  assert.deepEqual(await readOperationalSettings({ supabase: client }), {
+    orderCutoffTime: "16:30",
+    expeditionLeadDays: 2,
+    saleLeadDays: 1,
+    opWeightUnit: "g",
+    productCodeSource: "gtin",
+  });
 });

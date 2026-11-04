@@ -57,6 +57,13 @@ import {
   type OperationalDateScopeMode,
 } from "@/lib/operational-date-scope";
 import type { OrderStatus } from "@/lib/order-planning";
+import type { OperationalSettings } from "@/lib/production-planning";
+import { readClientAccessContext } from "@/lib/client-access-context";
+import {
+  describeOperationalSettingsSaveError,
+  operationalSettingsSaveBlock,
+  toTimeInputValue,
+} from "@/lib/operational-settings-form";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -148,6 +155,10 @@ export default function GestorFabricaPage() {
     opWeightUnit: normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit),
     productCodeSource: normalizeProductCodeSource(masterDataSnapshot.operationalSettings.productCodeSource),
   });
+  // Quadro #235: valor GRAVADO das regras, lido direto do banco (o snapshot de dados mestres pode vir
+  // do cache de outra instância e devolver o horário antigo logo depois de salvar).
+  const [savedSettings, setSavedSettings] = useState<OperationalSettings | null>(null);
+  const operationalSettings = savedSettings ?? masterDataSnapshot.operationalSettings;
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsFeedback, setSettingsFeedback] = useState<{
     tone: "success" | "error";
@@ -338,38 +349,48 @@ export default function GestorFabricaPage() {
   // direto no quadro do chão.
 
   useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/master-data/operational-settings", { cache: "no-store" })
+      .then((response) => (response.ok ? (response.json() as Promise<OperationalSettings | null>) : null))
+      .then((settings) => {
+        if (!cancelled && settings) setSavedSettings(settings);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setSettingsDraft({
-      orderCutoffTime: masterDataSnapshot.operationalSettings.orderCutoffTime,
-      expeditionLeadDays: String(masterDataSnapshot.operationalSettings.expeditionLeadDays),
-      saleLeadDays: String(masterDataSnapshot.operationalSettings.saleLeadDays),
-      opWeightUnit: normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit),
-      productCodeSource: normalizeProductCodeSource(masterDataSnapshot.operationalSettings.productCodeSource),
+      orderCutoffTime: toTimeInputValue(operationalSettings.orderCutoffTime),
+      expeditionLeadDays: String(operationalSettings.expeditionLeadDays),
+      saleLeadDays: String(operationalSettings.saleLeadDays),
+      opWeightUnit: normalizeWeightDisplayUnit(operationalSettings.opWeightUnit),
+      productCodeSource: normalizeProductCodeSource(operationalSettings.productCodeSource),
     });
   }, [
-    masterDataSnapshot.operationalSettings.expeditionLeadDays,
-    masterDataSnapshot.operationalSettings.orderCutoffTime,
-    masterDataSnapshot.operationalSettings.saleLeadDays,
-    masterDataSnapshot.operationalSettings.opWeightUnit,
-    masterDataSnapshot.operationalSettings.productCodeSource,
+    operationalSettings.expeditionLeadDays,
+    operationalSettings.orderCutoffTime,
+    operationalSettings.saleLeadDays,
+    operationalSettings.opWeightUnit,
+    operationalSettings.productCodeSource,
   ]);
 
   const isSettingsDirty =
-    settingsDraft.orderCutoffTime !== masterDataSnapshot.operationalSettings.orderCutoffTime ||
+    settingsDraft.orderCutoffTime !== operationalSettings.orderCutoffTime ||
     settingsDraft.expeditionLeadDays !==
-      String(masterDataSnapshot.operationalSettings.expeditionLeadDays) ||
-    settingsDraft.saleLeadDays !== String(masterDataSnapshot.operationalSettings.saleLeadDays) ||
-    settingsDraft.opWeightUnit !== normalizeWeightDisplayUnit(masterDataSnapshot.operationalSettings.opWeightUnit) ||
-    settingsDraft.productCodeSource !== normalizeProductCodeSource(masterDataSnapshot.operationalSettings.productCodeSource);
+      String(operationalSettings.expeditionLeadDays) ||
+    settingsDraft.saleLeadDays !== String(operationalSettings.saleLeadDays) ||
+    settingsDraft.opWeightUnit !== normalizeWeightDisplayUnit(operationalSettings.opWeightUnit) ||
+    settingsDraft.productCodeSource !== normalizeProductCodeSource(operationalSettings.productCodeSource);
   const expeditionLeadDaysValue = Number(settingsDraft.expeditionLeadDays);
   const saleLeadDaysValue = Number(settingsDraft.saleLeadDays);
-  const settingsFormIsValid =
-    /^\d{2}:\d{2}$/.test(settingsDraft.orderCutoffTime) &&
-    Number.isInteger(expeditionLeadDaysValue) &&
-    expeditionLeadDaysValue >= 0 &&
-    expeditionLeadDaysValue <= 30 &&
-    Number.isInteger(saleLeadDaysValue) &&
-    saleLeadDaysValue >= 0 &&
-    saleLeadDaysValue <= 30;
+  // Quadro #235: master abre o cliente em leitura (PATCH daria 403) e campo vazio/ inválido não
+  // pode deixar o botão parado sem dizer por quê.
+  const isReadOnlyTenantView = readClientAccessContext().accessMode === "read-only-tenant";
+  const settingsSaveBlock = operationalSettingsSaveBlock({ draft: settingsDraft, readOnlyTenant: isReadOnlyTenantView });
+  const settingsFormIsValid = settingsSaveBlock === null;
 
   useUnsavedChangesGuard({
     isDirty: isSettingsDirty,
@@ -677,12 +698,23 @@ export default function GestorFabricaPage() {
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      const payload = (await response.json().catch(() => null)) as (Partial<OperationalSettings> & { message?: string }) | null;
 
       if (!response.ok) {
-        throw new Error(payload?.message ?? "Falha ao salvar regras operacionais.");
+        throw new Error(
+          describeOperationalSettingsSaveError({ status: response.status, serverMessage: payload?.message }),
+        );
       }
 
+      // O que o servidor devolveu é o que foi gravado: a tela passa a mostrar isso, mesmo que a
+      // releitura dos dados mestres ainda traga o valor antigo de outra instância.
+      const saved = payload as Partial<OperationalSettings> | null;
+      if (saved?.orderCutoffTime) {
+        setSavedSettings((current) => ({
+          ...(current ?? masterDataSnapshot.operationalSettings),
+          ...saved,
+        }) as OperationalSettings);
+      }
       await Promise.all([refreshMasterData(true), refreshPlanning(true)]);
       setSettingsFeedback({
         tone: "success",
@@ -692,7 +724,11 @@ export default function GestorFabricaPage() {
       setSettingsFeedback({
         tone: "error",
         message:
-          saveError instanceof Error ? saveError.message : "Falha ao salvar regras operacionais.",
+          saveError instanceof TypeError
+            ? describeOperationalSettingsSaveError({ thrown: saveError })
+            : saveError instanceof Error
+              ? saveError.message
+              : describeOperationalSettingsSaveError({}),
       });
     } finally {
       setIsSavingSettings(false);
@@ -861,6 +897,12 @@ export default function GestorFabricaPage() {
               >
                 {settingsFeedback.message}
               </div>
+            ) : null}
+
+            {settingsSaveBlock ? (
+              <p role="alert" data-testid="settings-save-block" className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-2 text-sm">
+                {settingsSaveBlock}
+              </p>
             ) : null}
 
             <div className="grid gap-4 sm:grid-cols-3">

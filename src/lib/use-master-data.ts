@@ -61,7 +61,8 @@ async function fetchMasterDataSnapshot(forceRefresh: boolean) {
     return inflightRequest;
   }
 
-  const request = fetch("/api/master-data")
+  // Quadro #235: leitura forçada (depois de salvar) pede o dado novo, sem cache de nenhuma instância.
+  const request = fetch(forceRefresh ? "/api/master-data?fresh=1" : "/api/master-data", forceRefresh ? { cache: "no-store" } : undefined)
     .then(async (response) => {
       if (!response.ok) {
         throw new Error("Falha ao carregar dados mestres");
