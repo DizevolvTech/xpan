@@ -455,6 +455,12 @@ export interface ReleaseOrderOptions {
    * operacional de hoje pode contradizer o que o gestor vê.
    */
   referenceDate?: string;
+  /**
+   * Quadro #234: antecipação do lote (só superusuário, conferido na rota). Dentro do prazo das
+   * lojas o pedido sai mesmo com loja do lote sem pedir; as demais validações continuam, e o
+   * evento `liberacao_antecipada` registra quem antecipou e quais lojas ficaram sem pedir.
+   */
+  anticipateBatch?: boolean;
 }
 
 async function validateOrderReleasable(
@@ -604,13 +610,18 @@ export async function releaseOrder(
   // auto-liberação (sem perfil) segue como antes; "liberar mesmo assim" registra a exceção.
   // Reunião 22/10 (bloco 7): vale também para a auto-liberação — lote só vai para a produção
   // completo (todas as lojas pediram) ou com o prazo encerrado.
+  let anticipatedMessage: string | null = null;
   if (orderRow.management_status !== "cancelado") {
     const pendingMessage = await describePendingBatchStores(orderRow.id, supabase);
     if (pendingMessage) {
-      if (!options.force) {
-        throw new OrderReleaseValidationError("batch_stores_pending", pendingMessage);
+      if (options.anticipateBatch && !options.force) {
+        anticipatedMessage = pendingMessage;
+      } else {
+        if (!options.force) {
+          throw new OrderReleaseValidationError("batch_stores_pending", pendingMessage);
+        }
+        forcedReason = forcedReason ? `${forcedReason} | ${pendingMessage}` : pendingMessage;
       }
-      forcedReason = forcedReason ? `${forcedReason} | ${pendingMessage}` : pendingMessage;
     }
   }
 
@@ -654,6 +665,21 @@ export async function releaseOrder(
         description: `Liberação forçada pelo gestor mesmo com bloqueio: ${forcedReason}`,
         createdByProfileId: releasedByProfileId ?? null,
         metadata: { forcedReason },
+      },
+      supabase,
+    );
+    return;
+  }
+
+  if (anticipatedMessage) {
+    await appendStoreOrderEvent(
+      {
+        orderId: orderRow.id,
+        type: "liberacao_antecipada",
+        title: "Lote liberado antes do prazo das lojas",
+        description: `Liberação antecipada pelo superusuário. ${anticipatedMessage}`,
+        createdByProfileId: releasedByProfileId ?? null,
+        metadata: { origin: "antecipacao_lote", pendingStores: anticipatedMessage },
       },
       supabase,
     );

@@ -1,32 +1,47 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiRequest } from "@/lib/api-auth";
+import { checkBatchAnticipation } from "@/lib/batch-anticipation";
 import { invalidatePlanningCaches } from "@/lib/server-data-cache";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { closeFinishedBatches, getOrderBatchOverview } from "@/lib/supabase-data/order-batch-overview";
 import { OrderReleaseValidationError } from "@/lib/supabase-data/release-validation";
 import { releaseOrder } from "@/lib/supabase-data/workflow";
 import { createTenantScopedSupabaseClient } from "@/lib/supabase-tenant-client";
+import { canWriteInAccessMode, isMasterRole } from "@/lib/tenant";
 
 /**
  * "Liberar lote" (reunião 22/10, bloco 7): manda para a produção, de uma vez, todos os pedidos
- * do lote naquela data de entrega. Lote ainda esperando lojas dentro do prazo só vai com
- * `force` (o gestor confirma sabendo quais lojas faltam). Lote todo liberado sai do painel.
+ * do lote naquela data de entrega. Dentro do prazo das lojas o lote só sai com `anticipate`
+ * (quadro #234): antecipação só do superusuário (administrador da empresa ou master), conferida
+ * AQUI no servidor (gestor de fábrica recebe 403) e gravada como evento `liberacao_antecipada`.
  */
 export async function POST(request: Request) {
+  const body = (await request.json().catch(() => null)) as
+    | { batchId?: unknown; deliveryDate?: unknown; anticipate?: unknown }
+    | null;
+  const anticipate = body?.anticipate === true;
   const authorization = await authorizeApiRequest({
     contextLabel: "POST /api/order-batches/release",
     permission: "gestor-fabrica.pedidos",
-    minimumLevel: "operar",
+    // Antecipar: o master chega com permissão delegada de leitura; quem decide é o papel (abaixo).
+    minimumLevel: anticipate ? "visualizar" : "operar",
     requireTenantContext: true,
-    requireWritableTenant: true,
+    // O master abre o cliente em leitura; antecipar é a escrita liberada a ele (como a lixeira de OP).
+    requireWritableTenant: !anticipate,
   });
   if ("response" in authorization) {
     return authorization.response;
   }
-  const body = (await request.json().catch(() => null)) as
-    | { batchId?: unknown; deliveryDate?: unknown; force?: unknown }
-    | null;
+  if (anticipate) {
+    const refusal = checkBatchAnticipation(authorization.actorRole);
+    if (refusal) {
+      return NextResponse.json({ message: refusal.message }, { status: refusal.status });
+    }
+    if (!isMasterRole(authorization.actorRole) && !canWriteInAccessMode(authorization.accessMode)) {
+      return NextResponse.json({ message: "Empresa em modo somente leitura." }, { status: 403 });
+    }
+  }
   // Quadro #3 (27/10): um cartão por data de entrega — a data identifica o lote a liberar.
   const deliveryDate = typeof body?.deliveryDate === "string" ? body.deliveryDate : "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
@@ -42,7 +57,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Lote não encontrado ou já liberado." }, { status: 404 });
     }
     // Quadro #4 (Lucas, 27/10): dentro do prazo das lojas o lote não é liberado (sem "forçar").
-    if (group.state === "aguardando_lojas") {
+    const anticipating = anticipate && group.state === "aguardando_lojas";
+    if (group.state === "aguardando_lojas" && !anticipating) {
       return NextResponse.json(
         {
           message: `As lojas ainda podem pedir até ${group.deadline.dateKey.split("-").reverse().slice(0, 2).join("/")} às ${group.deadline.time} (faltam ${group.missingStoreIds.length} loja(s)).`,
@@ -61,6 +77,7 @@ export async function POST(request: Request) {
           tenantId,
           // Lote completo ou prazo encerrado (aguardando_lojas foi recusado acima).
           force: false,
+          anticipateBatch: anticipating,
           referenceDate: overview.now.dateKey,
         });
         released.push(order.orderCode);

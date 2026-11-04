@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, PackageCheck } from "lucide-react";
+import { FastForward, Loader2, PackageCheck } from "lucide-react";
 
 import { batchReleaseBlockedReason, brDate } from "@/components/production/use-batch-release";
 import { Button } from "@/components/ui/button";
@@ -14,10 +14,15 @@ export function BatchBandRow({
   group,
   busy,
   onRelease,
+  anticipateLabel = null,
+  onAnticipate,
 }: {
   group: BatchGroupView;
   busy: boolean;
   onRelease: () => void;
+  /** Quadro #234: texto do botão "Antecipar liberação (N)"; null = quem vê não é superusuário. */
+  anticipateLabel?: string | null;
+  onAnticipate?: () => void;
 }) {
   const blocked = batchReleaseBlockedReason(group);
   const released = group.state === "liberado";
@@ -56,6 +61,12 @@ export function BatchBandRow({
             {blocked && group.state === "aguardando_lojas" ? "Aguardando prazo" : `Liberar lote (${group.pendingOrderIds.length})`}
           </Button>
         )}
+        {!released && anticipateLabel && onAnticipate ? (
+          <Button type="button" size="xs" variant="destructive" className="ml-1" disabled={busy} onClick={onAnticipate}>
+            <FastForward className="size-3.5" aria-hidden />
+            {anticipateLabel}
+          </Button>
+        ) : null}
       </td>
     </tr>
   );

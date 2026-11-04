@@ -421,7 +421,7 @@ export function PedidosFabricaPageClient() {
     }
   }
 
-  const { releaseGroup: releaseBatchGroup, busyDate: releasingBatchDate } = useBatchRelease(
+  const { releaseGroup: releaseBatchGroup, busyDate: releasingBatchDate, anticipateLabelFor } = useBatchRelease(
     async ({ group, releasedOrderCodes }) => {
       // Quadro #20: lote e pedidos mudam juntos assim que o servidor confirma; a lista
       // oficial (OPs, status) e os lotes chegam logo depois.
@@ -881,6 +881,8 @@ export function PedidosFabricaPageClient() {
                           group={batchGroup}
                           busy={releasingBatchDate === batchGroup.deliveryDate}
                           onRelease={() => void releaseBatchGroup(batchGroup)}
+                          anticipateLabel={anticipateLabelFor(batchGroup)}
+                          onAnticipate={() => void releaseBatchGroup(batchGroup, { anticipate: true })}
                         />
                       ) : null}
                       <tr className={`hover:bg-panel/30 [&>td]:align-middle ${batchGroup ? "[&>td:first-child]:border-l-2 [&>td:first-child]:border-l-info/50" : ""}`}>

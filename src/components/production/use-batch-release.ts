@@ -4,6 +4,12 @@ import { useState } from "react";
 
 import { useConfirm } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
+import {
+  anticipateButtonLabel,
+  buildAnticipationConfirmation,
+  canAnticipateBatchRelease,
+} from "@/lib/batch-anticipation";
+import { useCurrentProfile } from "@/lib/use-current-profile";
 import type { BatchGroupView } from "@/lib/supabase-data/order-batch-overview";
 
 export function brDate(dateKey: string) {
@@ -31,14 +37,42 @@ export function useBatchRelease(
   const [busyDate, setBusyDate] = useState<string | null>(null);
   const confirm = useConfirm();
   const toast = useToast();
+  const { profile } = useCurrentProfile();
+  // Quadro #234: só administrador da empresa e master veem o botão; o servidor confere de novo.
+  const canAnticipate = canAnticipateBatchRelease(profile?.role);
 
-  async function releaseGroup(group: BatchGroupView) {
-    const blocked = batchReleaseBlockedReason(group);
+  /** Botão "Antecipar liberação (N)": só na linha de lote dentro do prazo e só para o superusuário. */
+  function anticipateLabelFor(group: Pick<BatchGroupView, "state" | "pendingOrderIds">) {
+    return canAnticipate && group.state === "aguardando_lojas" && group.pendingOrderIds.length > 0
+      ? anticipateButtonLabel(group.pendingOrderIds.length)
+      : null;
+  }
+
+  async function releaseGroup(group: BatchGroupView, mode: { anticipate?: boolean } = {}) {
+    const anticipate = mode.anticipate === true;
+    const blocked = anticipate
+      ? group.pendingOrderIds.length === 0
+        ? "Nenhum pedido para liberar ainda"
+        : null
+      : batchReleaseBlockedReason(group);
     if (blocked) {
       toast.info(blocked);
       return;
     }
-    const go = await confirm({
+    const anticipation = anticipate
+      ? buildAnticipationConfirmation({
+          deliveryLabel: brDate(group.deliveryDate),
+          pendingOrders: group.pendingOrderIds.length,
+          missingStoreNames: group.missingStoreNames,
+        })
+      : null;
+    const go = await confirm(anticipation ? {
+      title: anticipation.title,
+      description: anticipation.description,
+      tone: "destructive",
+      confirmLabel: "Antecipar liberação",
+      cancelLabel: "Voltar",
+    } : {
       title: `Liberar a entrega de ${brDate(group.deliveryDate)} para a produção?`,
       description: `${group.pendingOrderIds.length} pedido(s) vão para a produção de uma vez.${
         group.missingStoreNames.length > 0
@@ -55,7 +89,7 @@ export function useBatchRelease(
       const response = await fetch("/api/order-batches/release", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deliveryDate: group.deliveryDate }),
+        body: JSON.stringify({ deliveryDate: group.deliveryDate, ...(anticipate ? { anticipate: true } : {}) }),
       });
       const result = (await response.json().catch(() => null)) as
         | { released?: string[]; failed?: Array<{ orderCode: string; message: string }>; message?: string }
@@ -80,5 +114,5 @@ export function useBatchRelease(
     }
   }
 
-  return { releaseGroup, busyDate };
+  return { releaseGroup, busyDate, canAnticipate, anticipateLabelFor };
 }
