@@ -358,6 +358,16 @@ export function recipeItemCountsTowardMixer(item: {
   return defaultCountsTowardMixer(item.stage);
 }
 
+export function recipeItemParticipatesInCooking(item: {
+  stage?: RecipeStage;
+  participatesInCooking?: boolean;
+}): boolean {
+  if (typeof item.participatesInCooking === "boolean") {
+    return item.participatesInCooking;
+  }
+  return recipeStageCountsTowardDough(item.stage);
+}
+
 /**
  * Configuração de uma etapa na ficha do produto: a POSIÇÃO dela (índice no array) e o modo de
  * preparo daquele bloco. Ver migration `20260725110000_product_recipe_stage_config`.
@@ -500,6 +510,12 @@ export interface RecipeIngredientReference {
    * Óleo na mesa e chocolate no fim do panetone ficam de fora do limite físico.
    */
   countsTowardMixer?: boolean;
+  /**
+   * Se o insumo vai ao forno/panela: só ele entra na massa crua da quebra e do rendimento
+   * (ex.: ganache aplicada depois fica de fora). Ausente = padrão da etapa (massa participa;
+   * operacional e acabamento não), como a quebra sempre foi calculada.
+   */
+  participatesInCooking?: boolean;
   /** Onde a linha é impressa. Ausente = folha de produção + pré-pesagem (como sempre foi). */
   printDestinations?: RecipePrintDestination[];
 }

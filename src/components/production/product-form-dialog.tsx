@@ -37,6 +37,8 @@ import {
   hierarchyLabels,
   productionWeekDays,
   recipeItemCountsTowardMixer,
+  recipeItemParticipatesInCooking,
+  recipeStageCountsTowardDough,
   getRecipeStageLabel,
   listRecipeStageOptions,
   normalizeRecipeStage,
@@ -47,7 +49,6 @@ import {
   resolveRecipePrintDestinations,
   supplyClassLabels,
   supplyClassStageWarning,
-  type BreakStage,
   type IngredientCompositionItem,
   type PackagingProfile,
   type ProductLabTest,
@@ -162,10 +163,9 @@ type ProductFormDialogProps = {
   onRequestEdit?: () => void;
 };
 
-const breakStageLabels: Record<BreakStage, string> = {
-  antes_divisao: "Antes da divisão",
-  depois_divisao: "Depois da divisão",
-};
+/** Quadro #233: marcações da linha da receita com borda forte, visíveis no fundo claro da tabela. */
+const strongCheckboxClass =
+  "size-5 border-2 border-foreground/70 bg-white shadow-none data-[state=checked]:border-primary";
 
 function buildLineDraft(sectorId: string): LineDraftState {
   return {
@@ -788,6 +788,7 @@ export function ProductFormDialog({
         unit: draft.unit,
         stage,
         countsTowardMixer: defaultCountsTowardMixer(stage),
+        participatesInCooking: recipeStageCountsTowardDough(stage),
         // Embalagem e consumo se contam e separam, não se pesam: nascem fora da pré-pesagem.
         // Os demais ficam sem o campo (= padrão de sempre). O usuário pode trocar na linha.
         ...(() => {
@@ -812,7 +813,7 @@ export function ProductFormDialog({
 
   function updateRecipeItem(
     recipeId: string,
-    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit" | "countsTowardMixer" | "printDestinations">>,
+    patch: Partial<Pick<RecipeIngredientReference, "quantity" | "unit" | "countsTowardMixer" | "participatesInCooking" | "printDestinations">>,
   ) {
     setFormState((current) => ({
       ...current,
@@ -824,6 +825,7 @@ export function ProductFormDialog({
               unit: patch.unit ?? item.unit,
               countsTowardMixer:
                 patch.countsTowardMixer ?? item.countsTowardMixer ?? defaultCountsTowardMixer(item.stage),
+              participatesInCooking: patch.participatesInCooking ?? item.participatesInCooking,
               stage: item.stage ?? defaultRecipeStage,
               // `undefined` no patch = não mexe; lista (inclusive vazia) = nova escolha do usuário.
               printDestinations: patch.printDestinations ?? item.printDestinations,
@@ -839,7 +841,11 @@ export function ProductFormDialog({
       ...current,
       recipe: moveRecipeItemToStage(current.recipe, recipeId, stage).map((item) =>
         item.id === recipeId
-          ? { ...item, countsTowardMixer: defaultCountsTowardMixer(stage) }
+          ? {
+              ...item,
+              countsTowardMixer: defaultCountsTowardMixer(stage),
+              participatesInCooking: recipeStageCountsTowardDough(stage),
+            }
           : item,
       ),
     }));
@@ -2379,7 +2385,7 @@ export function ProductFormDialog({
                           </p>
                         ) : (
                           <div className="overflow-x-auto rounded-xl border border-border/70">
-                            <table className="w-full min-w-[880px] table-fixed border-collapse lg:min-w-0">
+                            <table className="w-full min-w-[944px] table-fixed border-collapse lg:min-w-0">
                               {/* Quadro #172 (03/11): colunas com largura fixa e cabeçalhos curtos para a
                                   composição caber na largura da janela, sem rolar para os lados. */}
                               <colgroup>
@@ -2390,6 +2396,7 @@ export function ProductFormDialog({
                                 <col className="w-[72px]" />
                                 <col className="w-[70px]" />
                                 <col className="w-[56px]" />
+                                <col className="w-[64px]" />
                                 <col className="w-[122px]" />
                                 <col className="w-[100px]" />
                                 <col className="w-[76px]" />
@@ -2403,6 +2410,7 @@ export function ProductFormDialog({
                                   <th className="text-right" title="Percentual sobre o total da receita">% total</th>
                                   <th className="text-right" title="kg por unidade (calculado pelo XPAN)">kg / 1 un</th>
                                   <th className="text-center" title="Entra na batida (masseira)?">Na batida?</th>
+                                  <th className="text-center" title="Participa da cocção (vai ao forno ou à panela)? Só os marcados entram na massa crua da quebra e do rendimento.">Cocção?</th>
                                   <th className="text-left">Imprime em</th>
                                   <th className="text-left" title="Mover para outra etapa">Etapa</th>
                                   <th className="text-right">Ações</th>
@@ -2487,6 +2495,7 @@ export function ProductFormDialog({
                                     </td>
                                     <td className="border-t border-border/70 bg-card px-2 py-2 text-center">
                                       <Checkbox
+                                        className={strongCheckboxClass}
                                         checked={recipeItemCountsTowardMixer(item)}
                                         onCheckedChange={(checked) =>
                                           updateRecipeItem(item.id, {
@@ -2497,6 +2506,20 @@ export function ProductFormDialog({
                                         title="Desmarque para incorporação fora do mixer (óleo na mesa, chocolate no fim)"
                                       />
                                     </td>
+                                    <td className="border-t border-border/70 bg-card px-2 py-2 text-center">
+                                      <Checkbox
+                                        className={strongCheckboxClass}
+                                        checked={recipeItemParticipatesInCooking(item)}
+                                        disabled={isReadOnly}
+                                        onCheckedChange={(checked) =>
+                                          updateRecipeItem(item.id, {
+                                            participatesInCooking: checked === true,
+                                          })
+                                        }
+                                        aria-label={`Participa da cocção: ${item.label}`}
+                                        title="Desmarque se este insumo não vai ao forno/panela (ex.: ganache aplicada depois): o peso dele sai da quebra e do rendimento."
+                                      />
+                                    </td>
                                     <td className="border-t border-border/70 bg-card px-2 py-2 text-xs">
                                       <fieldset className="grid gap-1 leading-tight">
                                         <legend className="sr-only">Onde {item.label} é impresso</legend>
@@ -2505,6 +2528,7 @@ export function ProductFormDialog({
                                           return (
                                             <label key={destination} className="flex items-start gap-1.5">
                                               <Checkbox
+                                                className={strongCheckboxClass}
                                                 checked={current.includes(destination)}
                                                 disabled={isReadOnly}
                                                 onCheckedChange={(checked) =>
@@ -3140,29 +3164,6 @@ export function ProductFormDialog({
                   </p>
                 </div>
                 <div className="space-y-3 rounded-xl border border-border/80 bg-card p-4">
-                  <div className="grid gap-2">
-                    <Label>Em qual etapa a perda acontece</Label>
-                    <Select
-                      value={formState.breakStage}
-                      onValueChange={(value) =>
-                        setFormState((current) => ({
-                          ...current,
-                          breakStage: value as BreakStage,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(breakStageLabels) as BreakStage[]).map((stage) => (
-                          <SelectItem key={stage} value={stage}>
-                            {breakStageLabels[stage]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                   <div className="grid gap-2">
                     <Label>Comentário operacional da perda</Label>
                     <Input

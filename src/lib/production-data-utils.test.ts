@@ -714,3 +714,30 @@ test("ME/MC todos os tipos entram na ficha: na etapa operacional contam no peso 
   assert.equal(totals.totalIngredientsKg, 10.3, "peso total inclui ME e MC");
   assert.equal(totals.doughKg, 10, "massa não inclui ME e MC");
 });
+
+test("Quadro #232: insumo desmarcado em 'Participa da cocção' sai da massa crua, da quebra e do rendimento", () => {
+  const recipe: ProductionProduct["recipe"] = [
+    { id: "a", sourceType: "ingrediente", sourceId: "a", label: "Farinha", quantity: 10, unit: "Kg", stage: "massa" },
+    { id: "b", sourceType: "ingrediente", sourceId: "b", label: "Água", quantity: 5, unit: "Kg", stage: "massa" },
+    { id: "c", sourceType: "ingrediente", sourceId: "c", label: "Ganache", quantity: 2, unit: "Kg", stage: "massa" },
+    { id: "d", sourceType: "ingrediente", sourceId: "d", label: "Cobertura", quantity: 1, unit: "Kg", stage: "acabamento" },
+  ];
+  const labTest = { rawUnitWeightKg: null, rawDoughKg: null, bakedKg: 14.25, leftoverBakedKg: null, unitCount: 57, labelWeightKg: null };
+  const product: ProductionProduct = { ...baseProduct, breakPercent: 10, labTest, recipe };
+
+  // Sem escolha gravada: padrão da etapa (massa participa; acabamento não) — número de sempre.
+  const padrao = getProductRecipeTotalsFromData(product, [], []);
+  assert.equal(padrao.doughKg, 17);
+  assert.equal(padrao.postBakeKg, 1);
+
+  const semGanache = recipe.map((item) => (item.id === "c" ? { ...item, participatesInCooking: false } : item));
+  const totals = getProductRecipeTotalsFromData({ ...product, recipe: semGanache }, [], []);
+  assert.equal(totals.doughKg, 15);
+  const lab = computeLabTest({ recipeTotalKg: totals.doughKg, labTest });
+  assert.equal(lab?.complete, true);
+  assert.equal(Number(lab?.breakPercent.toFixed(2)), 5);
+  assert.equal(Number(lab?.yieldPercent.toFixed(2)), 95);
+
+  const comCobertura = recipe.map((item) => (item.id === "d" ? { ...item, participatesInCooking: true } : item));
+  assert.equal(getProductRecipeTotalsFromData({ ...product, recipe: comCobertura }, [], []).doughKg, 18);
+});

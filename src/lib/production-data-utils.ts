@@ -14,7 +14,7 @@ import {
   sortProductionDays,
   recipeItemCountsTowardMixer,
   recipeStageAddsAfterBake,
-  recipeStageCountsTowardDough,
+  recipeItemParticipatesInCooking,
 } from "@/lib/production-planning";
 import { computeLabTest } from "@/lib/lab-test";
 
@@ -412,14 +412,14 @@ export function getProductRecipeTotalsFromData(
   for (const item of product.recipe) {
     const kg = getRecipeReferenceWeightKgFromData(item, ingredientsById, productsById);
     allKg += kg;
-    if (recipeStageCountsTowardDough(item.stage)) doughSumKg += kg;
+    if (recipeItemParticipatesInCooking(item)) doughSumKg += kg;
     else if (recipeStageAddsAfterBake(item.stage)) postBakeSumKg += kg;
   }
   /** Todos os ingredientes (inclui operacionais e acabamento) — o que a OP pesa. */
   const totalIngredientsKg = Number(allKg.toFixed(3));
   /**
-   * Massa crua: só as etapas de massa (planilha do cliente: "Peso total dos Ingredientes
-   * Massa"). Operacionais e acabamento ficam fora — é a base da quebra ao assar.
+   * Massa crua: só os insumos marcados "Participa da cocção" (por padrão, os das etapas de
+   * massa). Operacionais e o que é aplicado depois ficam fora — é a base da quebra ao assar.
    */
   const doughKg = Number(doughSumKg.toFixed(3));
   /** Acabamento: entra depois do forno, sem quebra. */

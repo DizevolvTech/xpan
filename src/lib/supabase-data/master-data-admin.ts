@@ -927,7 +927,7 @@ async function replaceProductRecipeItems(
     return;
   }
 
-  const rows = await Promise.all(
+  const fullRows = await Promise.all(
     recipe.map(async (item, index) => ({
       product_id: productId,
       source_type: item.sourceType,
@@ -946,12 +946,34 @@ async function replaceProductRecipeItems(
       stage: normalizeRecipeStage(item.stage),
       counts_toward_mixer: item.countsTowardMixer ?? defaultCountsTowardMixer(item.stage),
       print_destinations: resolveRecipePrintDestinations(item),
+      participates_in_cooking: item.participatesInCooking ?? null,
     })),
   );
 
-  const insertResult = await supabase.from("product_recipe_items").insert(rows);
+  const insertResult = await supabase.from("product_recipe_items").insert(fullRows);
   if (!insertResult.error) {
     return;
+  }
+
+  let rows: Array<Omit<(typeof fullRows)[number], "participates_in_cooking">> = fullRows;
+  let firstError = insertResult.error;
+
+  // Base sem a coluna "Participa da cocção" (migration 20261104140000): a receita não pode se
+  // perder (DELETE + INSERT sem transação). Regrava sem a coluna; o cálculo volta ao padrão da etapa.
+  if (isSupabaseMissingSchemaError(firstError, ["participates_in_cooking"])) {
+    rows = fullRows.map((row) => {
+      const { participates_in_cooking: droppedCooking, ...rest } = row;
+      void droppedCooking;
+      return rest;
+    });
+    const cookingRetry = await supabase.from("product_recipe_items").insert(rows);
+    if (!cookingRetry.error) {
+      console.warn(
+        "[master-data-admin] coluna `participates_in_cooking` ausente em product_recipe_items — receita gravada sem a marcação de cocção. Aplique a migration 20261104140000.",
+      );
+      return;
+    }
+    firstError = cookingRetry.error;
   }
 
   type RecipeItemRow = (typeof rows)[number];
@@ -960,7 +982,7 @@ async function replaceProductRecipeItems(
     | Omit<RecipeItemRow, "counts_toward_mixer" | "stage" | "print_destinations">
     | Omit<RecipeItemRow, "print_destinations">
   > = rows;
-  let pendingError = insertResult.error;
+  let pendingError = firstError;
 
   // Base sem a coluna de destino de impressão: a receita não pode se perder (DELETE + INSERT sem
   // transação). Regrava sem a coluna — todas as linhas voltam ao padrão (produção + pré-pesagem).
@@ -2144,6 +2166,7 @@ export async function cloneProduct(
       print_destinations: resolveRecipePrintDestinations({
         printDestinations: (item as Record<string, unknown>).print_destinations,
       }),
+      participates_in_cooking: (item as Record<string, unknown>).participates_in_cooking ?? null,
       tenant_id: item.tenant_id,
     }));
     const insertRecipeResult = await supabase.from("product_recipe_items").insert(clonedRecipeItems);

@@ -406,6 +406,10 @@ async function loadMasterDataSnapshot(
         typeof (row as Record<string, unknown>).counts_toward_mixer === "boolean"
           ? Boolean((row as Record<string, unknown>).counts_toward_mixer)
           : undefined,
+      participatesInCooking:
+        typeof (row as Record<string, unknown>).participates_in_cooking === "boolean"
+          ? Boolean((row as Record<string, unknown>).participates_in_cooking)
+          : undefined,
       // Base sem a coluna = ausente = padrão (folha de produção + pré-pesagem).
       printDestinations: Array.isArray((row as Record<string, unknown>).print_destinations)
         ? resolveRecipePrintDestinations({ printDestinations: (row as Record<string, unknown>).print_destinations })
