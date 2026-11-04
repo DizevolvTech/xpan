@@ -6,6 +6,10 @@ import {
   buildProductFormState,
   getInvalidFieldTarget,
   formatLabelWeight,
+  isProductFormDirty,
+  labelWeightDraftFromKg,
+  refreshProductValidation,
+  sanitizeLabelWeightInput,
   parseLabelWeight,
   validateProductFormState,
 } from "@/lib/product-form-logic";
@@ -279,4 +283,48 @@ test("validateProductFormState bloqueia GTIN com verificador errado e orienta co
     validateProductFormState({ product: { ...base, gtin: "123456789011" } }).invalidFields,
     ["gtin"],
   );
+});
+
+test("#2: o erro de GTIN some assim que o campo fica válido", () => {
+  const base = buildBaseProduct();
+  const bad = refreshProductValidation({ product: { ...base, gtin: "7891000100104" } });
+  assert.ok(bad.invalidFields.includes("gtin"));
+  assert.ok(bad.error);
+  const good = refreshProductValidation({ product: { ...base, gtin: "7891000100103" } });
+  assert.equal(good.error, null);
+  assert.deepEqual(good.invalidFields, []);
+  const empty = refreshProductValidation({ product: { ...base, gtin: "" } });
+  assert.equal(empty.error, null);
+});
+
+test("#2: erro de capacidade da batida só some quando deixa de bloquear", () => {
+  const base = buildBaseProduct();
+  assert.ok(refreshProductValidation({ product: base, mixerCapacityBlocked: true }).error);
+  assert.equal(refreshProductValidation({ product: base, mixerCapacityBlocked: false }).error, null);
+});
+
+test("#6: peso da etiqueta aceita 0,4 / ,4 / 0.4 e apagar deixa vazio", () => {
+  assert.equal(parseLabelWeight("0,4"), 0.4);
+  assert.equal(parseLabelWeight(",4"), 0.4);
+  assert.equal(parseLabelWeight("0.4"), 0.4);
+  assert.equal(parseLabelWeight(""), null);
+  assert.equal(sanitizeLabelWeightInput(""), "");
+  assert.equal(sanitizeLabelWeightInput("0,400 kg"), "0,400");
+  assert.equal(labelWeightDraftFromKg(null), "");
+  assert.equal(labelWeightDraftFromKg(0.4), "0,4");
+  assert.equal(formatLabelWeight(0.4), "0,400 kg");
+});
+
+test("#7: sem baseline gravado ou sem mudança real não há alteração pendente", () => {
+  const base = buildBaseProduct();
+  const current = { formState: base, recipeDrafts: {} };
+  assert.equal(isProductFormDirty({ active: true, baseline: "", current }), false);
+  const baseline = JSON.stringify(current);
+  assert.equal(isProductFormDirty({ active: true, baseline, current }), false);
+  // recálculo automático de capacidade/base econômica não conta
+  const derived = { formState: { ...base, capacityPerBatch: 99, economicProductionKg: 12 }, recipeDrafts: {} };
+  assert.equal(isProductFormDirty({ active: true, baseline, current: derived }), false);
+  const edited = { formState: { ...base, name: "Outro" }, recipeDrafts: {} };
+  assert.equal(isProductFormDirty({ active: true, baseline, current: edited }), true);
+  assert.equal(isProductFormDirty({ active: false, baseline, current: edited }), false);
 });

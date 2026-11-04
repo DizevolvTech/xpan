@@ -105,6 +105,9 @@ import {
   buildProductFormState,
   calculateQuantityPerPackage,
   getInvalidFieldTarget,
+  isProductFormDirty,
+  MIXER_CAPACITY_ERROR,
+  refreshProductValidation,
   validateProductFormState,
   type ProductValidationField,
 } from "@/lib/product-form-logic";
@@ -211,14 +214,21 @@ export function ProductFormDialog({
   );
   // Bloco que abriu o cadastro de ingrediente inline — o insumo criado volta pro rascunho dele.
   const [ingredientDialogStage, setIngredientDialogStage] = useState<RecipeStage>(defaultRecipeStage);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [rawFormError, setRawFormError] = useState<string | null>(null);
+  // Qualquer erro que não seja de validação (servidor, criação) assume a tela e desliga a revalidação.
+  function setFormError(message: string | null) {
+    setValidationActive(false);
+    setRawFormError(message);
+  }
   // Visão da composição da receita: blocos por etapa (padrão) ou lista única com coluna Etapa.
   // Só muda a apresentação — os dados e a ordem salvos são os mesmos.
   const [recipeView, setRecipeView] = useState<"blocos" | "lista">("blocos");
   const [recipeListStageFilter, setRecipeListStageFilter] = useState<RecipeStage | "todas">("todas");
   const [recipeListSortedByStage, setRecipeListSortedByStage] = useState(false);
-  const [invalidFields, setInvalidFields] = useState<ProductValidationField[]>([]);
+  const [rawInvalidFields, setInvalidFields] = useState<ProductValidationField[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Erro de validação visível: a cada edição ele é reavaliado e some quando o campo fica válido.
+  const [validationActive, setValidationActive] = useState(false);
   const [activeTab, setActiveTab] = useState("cadastro");
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   // Cronograma com ordens em andamento: a revisão espera UMA confirmação, aqui mesmo.
@@ -237,13 +247,11 @@ export function ProductFormDialog({
   // do cronograma; avisamos antes de salvar e orientamos a reauditoria depois.
   const isOperationalProduct = Boolean(product?.operationalLineId);
   const isReadOnly = mode === "view";
-  const formDirty =
-    open &&
-    !isReadOnly &&
-    JSON.stringify({
-      formState,
-      recipeDrafts,
-    }) !== formBaseline;
+  const formDirty = isProductFormDirty({
+    active: open && !isReadOnly,
+    baseline: formBaseline,
+    current: { formState, recipeDrafts },
+  });
   const formGuard = useUnsavedChangesGuard({
     enabled: open && !isReadOnly,
     isDirty: formDirty,
@@ -277,6 +285,7 @@ export function ProductFormDialog({
     );
     setFormError(null);
     setInvalidFields([]);
+    setValidationActive(false);
     setRestoredFromVersion(null);
     setIsVersionsOpen(false);
     setActiveTab("cadastro");
@@ -498,6 +507,24 @@ export function ProductFormDialog({
   const recipeFinalQuantityPrecise = recipeTotals.finalFractionsQuantityPrecise;
   // XPAN-8: capacidade por batida derivada do ingrediente principal (⭐) + limite físico.
   const mixerCapacity = useMemo(() => calculateMixerCapacity(formState, snapshot.ingredients, snapshot.products), [formState, snapshot.ingredients, snapshot.products]);
+  // Com erro de validação na tela, ele é reavaliado a cada edição: some (ou troca) assim que o
+  // campo fica válido, sem esperar o próximo Salvar.
+  const liveValidation = useMemo(
+    () =>
+      validationActive
+        ? refreshProductValidation({
+            product: { ...formState, gtin: canonicalGtin(formState.gtin) || undefined },
+            mixerCapacityBlocked: formState.maxBatchWeightKg != null && mixerCapacity.capacity == null,
+            availablePackagingUnits,
+            duplicateExternalCode: Boolean(duplicateExternalCode),
+            requireExternalCode: isNewProduct || Boolean(normalizeExternalCode(product?.externalCode)),
+            storedGtin: product?.gtin,
+          })
+        : null,
+    [validationActive, formState, mixerCapacity.capacity, availablePackagingUnits, duplicateExternalCode, isNewProduct, product?.externalCode, product?.gtin],
+  );
+  const formError = liveValidation ? liveValidation.error : rawFormError;
+  const invalidFields = liveValidation ? liveValidation.invalidFields : rawInvalidFields;
   const derivedBatchCapacity = useMemo(
     () =>
       formState.maxBatchWeightKg != null ? mixerCapacity.capacity : deriveCapacityFromProductRecipe({
@@ -948,7 +975,8 @@ export function ProductFormDialog({
 
   async function handleSaveProduct() {
     if (formState.maxBatchWeightKg != null && mixerCapacity.capacity == null) {
-      setFormError("Revise o limite máximo, os insumos marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira.");
+      setValidationActive(true);
+      setRawFormError(MIXER_CAPACITY_ERROR);
       return;
     }
     const normalizedPackagingProfile = formState.isSoldLoose
@@ -1037,7 +1065,8 @@ export function ProductFormDialog({
     });
     if (validation.error) {
       setInvalidFields(validation.invalidFields);
-      setFormError(validation.error);
+      setValidationActive(true);
+      setRawFormError(validation.error);
       focusFirstInvalidField(validation.invalidFields);
       return;
     }
@@ -1057,6 +1086,7 @@ export function ProductFormDialog({
     setIsSubmitting(true);
     setFormError(null);
     setInvalidFields([]);
+    setValidationActive(false);
 
     try {
       // Para produto existente, manda também o cadastro como estava ao abrir: se ele ainda não
@@ -1302,11 +1332,11 @@ export function ProductFormDialog({
         ) : null}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4 rounded-xl bg-panel/60 p-1">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-xl bg-panel/60 p-1 sm:grid-cols-4">
             <TabsTrigger value="cadastro">Cadastro</TabsTrigger>
             <TabsTrigger value="receita" disabled={storeCodeGateBlocked}>Receita</TabsTrigger>
-            <TabsTrigger value="cronograma" disabled={storeCodeGateBlocked}>Cronograma</TabsTrigger>
-            <TabsTrigger value="mpi" disabled={storeCodeGateBlocked}>Produto como MPI</TabsTrigger>
+            <TabsTrigger value="cronograma" disabled={storeCodeGateBlocked} className="whitespace-normal">Cronograma</TabsTrigger>
+            <TabsTrigger value="mpi" disabled={storeCodeGateBlocked} className="whitespace-normal">Produto como MPI</TabsTrigger>
           </TabsList>
 
           <TabsContent value="cadastro">
@@ -1761,7 +1791,7 @@ export function ProductFormDialog({
                   <p className="text-xs text-muted-foreground">
                     Um peso só: o kg da unidade. Loja, padeiro e expedição só mudam o rótulo
                     (Un, pacote, caixa). A dosimetria sempre pesa em kg. O peso da etiqueta
-                    (Inmetro) fica na aba Dados — não é o peso de produção.
+                    (Inmetro) fica na aba Cadastro — não é o peso de produção.
                   </p>
                 </div>
 

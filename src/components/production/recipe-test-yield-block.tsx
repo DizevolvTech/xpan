@@ -95,6 +95,15 @@ export function RecipeTestYieldBlock({ labTest, computation, rawDoughKg, onChang
         </div>
       </div>
 
+      {computation?.bakedExceedsRaw ? (
+        <p role="alert" className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
+          O peso assado ({formatFixed(computation.effectiveBakedKg, 3, " kg")}) passou da massa crua (
+          {formatFixed(computation.rawDoughKg, 3, " kg")}). Confira os kg assados, a sobra e os insumos que
+          participam da cocção. Quebra, rendimento e peso da unidade crua só aparecem quando o assado couber na
+          massa crua.
+        </p>
+      ) : null}
+
       <div className="grid gap-4 rounded-lg border border-stone-200 bg-white/60 p-3 sm:grid-cols-2 lg:grid-cols-3">
         <CalculatedField
           label="Massa crua (kg)"
@@ -103,7 +112,7 @@ export function RecipeTestYieldBlock({ labTest, computation, rawDoughKg, onChang
         />
         <CalculatedField
           label="Peso da unidade assada"
-          value={done && computation ? formatFixed(computation.bakedUnitKg, 3, " kg") : pending}
+          value={computation && computation.bakedUnitKg > 0 ? formatFixed(computation.bakedUnitKg, 3, " kg") : pending}
           hint="Kg assado ÷ unidades padrão."
         />
         <CalculatedField

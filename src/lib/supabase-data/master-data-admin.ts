@@ -1918,28 +1918,29 @@ async function recordProductVersion(args: {
   const { supabase, tenantId, productId, input, changedFields, actingProfileId } = args;
 
   try {
-    const existingResult = await supabase
-      .from("product_changelog")
-      .select("version_number, product_snapshot")
-      .eq("product_id", productId)
-      .order("version_number", { ascending: false });
+    // Histórico e autor não dependem um do outro: uma ida ao banco só.
+    const [existingResult, authorLookup] = await Promise.all([
+      supabase
+        .from("product_changelog")
+        .select("version_number, product_snapshot")
+        .eq("product_id", productId)
+        .order("version_number", { ascending: false }),
+      actingProfileId
+        ? (isUuid(actingProfileId)
+            ? supabase.from("profiles").select("id, name").eq("id", actingProfileId)
+            : supabase.from("profiles").select("id, name").eq("legacy_id", actingProfileId)
+          ).maybeSingle()
+        : Promise.resolve(null),
+    ]);
     if (existingResult.error) {
       throw new Error(existingResult.error.message);
     }
     const existing = (existingResult.data ?? []) as Array<{ version_number: number; product_snapshot: unknown }>;
     let nextVersion = (existing[0]?.version_number ?? 0) + 1;
 
-    let authorId: string | null = null;
-    let authorName = "";
-    if (actingProfileId) {
-      const profileResult = await (isUuid(actingProfileId)
-        ? supabase.from("profiles").select("id, name").eq("id", actingProfileId)
-        : supabase.from("profiles").select("id, name").eq("legacy_id", actingProfileId)
-      ).maybeSingle();
-      const profile = profileResult.data as { id: string; name: string } | null;
-      authorId = profile?.id ?? null;
-      authorName = profile?.name ?? "";
-    }
+    const profile = (authorLookup?.data ?? null) as { id: string; name: string } | null;
+    const authorId: string | null = profile?.id ?? null;
+    const authorName = profile?.name ?? "";
 
     const hasSnapshotVersion = existing.some((entry) => isProductVersionSnapshot(entry.product_snapshot));
     if (!hasSnapshotVersion && isProductVersionSnapshot(input.versionBaseline)) {
@@ -1992,10 +1993,14 @@ export async function updateProduct(
   options: MutationOptions = {},
 ) {
   const supabase = options.supabase ?? createSupabaseAdminClient();
-  input = await withCalculatedBatchCapacity(input, supabase, options.tenantId);
-  const row = await resolveRowByIdentifier("products", identifier, supabase);
+  // Três leituras independentes (capacidade da batida, produto, linha): em paralelo.
+  const [calculatedInput, row, subcategoryId] = await Promise.all([
+    withCalculatedBatchCapacity(input, supabase, options.tenantId),
+    resolveRowByIdentifier("products", identifier, supabase),
+    resolveSubcategoryId(input.lineId, supabase),
+  ]);
+  input = calculatedInput;
   const productId = String(row.id);
-  const subcategoryId = await resolveSubcategoryId(input.lineId, supabase);
   const currentSubcategoryId = row.subcategory_id ? String(row.subcategory_id) : null;
   const operationalSubcategoryId = row.operational_subcategory_id ? String(row.operational_subcategory_id) : null;
   const externalCode = normalizeOptionalCode(input.externalCode);
@@ -2006,8 +2011,13 @@ export async function updateProduct(
   }
 
   assertGtinSavable(input.gtin, typeof row.gtin === "string" ? row.gtin : null);
-  await assertProductExternalCodeEditable(productId, externalCode, supabase);
-  await assertExternalCodeAvailable("products", externalCode, productId, supabase);
+  // Verificações independentes disparadas juntas; a ordem dos erros continua a mesma.
+  const editableCheck = assertProductExternalCodeEditable(productId, externalCode, supabase);
+  const availableCheck = assertExternalCodeAvailable("products", externalCode, productId, supabase);
+  editableCheck.catch(() => undefined);
+  availableCheck.catch(() => undefined);
+  await editableCheck;
+  await availableCheck;
 
   const updatePayload = {
     subcategory_id: subcategoryId,
@@ -2025,8 +2035,11 @@ export async function updateProduct(
     throw new Error(`Failed to update product: ${result.error.message}`);
   }
 
-  await replaceProductRecipeItems(String(row.id), input.recipe, supabase);
-  await replaceProductPreparationSteps(String(row.id), input.preparationStages, supabase);
+  // Receita e etapas são tabelas separadas: regravadas ao mesmo tempo.
+  await Promise.all([
+    replaceProductRecipeItems(String(row.id), input.recipe, supabase),
+    replaceProductPreparationSteps(String(row.id), input.preparationStages, supabase),
+  ]);
 
   // XPAN-6.3: diff dos campos sempre (não só quando há changeDescription) — decide
   // se a edição exige reauditoria do cronograma. Reutilizado no changelog abaixo.
@@ -2034,17 +2047,17 @@ export async function updateProduct(
 
   // Registra a versão quando há motivo. Falha ao registrar NÃO desfaz o produto já salvo, mas
   // também não passa em silêncio: devolvemos `versionRecorded: false` para a tela avisar.
-  let versionRecorded: boolean | null = null;
-  if (input.changeDescription?.trim()) {
-    versionRecorded = await recordProductVersion({
+  // Roda junto com a reconstrução do cronograma (não depende dela e nunca rejeita).
+  const versionPromise: Promise<boolean | null> = input.changeDescription?.trim()
+    ? recordProductVersion({
       supabase,
       tenantId: row.tenant_id,
       productId,
       input,
       changedFields,
       actingProfileId: options.actingProfileId ?? null,
-    });
-  }
+    })
+    : Promise.resolve(null);
 
   // XPAN-6.3: a reauditoria do cronograma só é exigida quando a edição afeta a
   // composição/timing da grade (campos cronograma-relevantes) ou quando o produto
@@ -2064,6 +2077,7 @@ export async function updateProduct(
   const cronogramaAffected = lineChanged || changeAffectsCronograma(changedFields);
 
   if (!cronogramaAffected) {
+    const versionRecorded = await versionPromise;
     return { scheduleRevisionImpact: null, ...(versionRecorded === null ? {} : { versionRecorded }) };
   }
 
@@ -2114,6 +2128,7 @@ export async function updateProduct(
     };
   }
 
+  const versionRecorded = await versionPromise;
   return { scheduleRevisionImpact, ...(versionRecorded === null ? {} : { versionRecorded }) };
 }
 

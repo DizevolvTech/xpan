@@ -316,3 +316,66 @@ export function parseLabelWeight(text: string): number | null {
   const numeric = Number(cleaned);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }
+
+/** Campo de peso da etiqueta enquanto digita: texto livre, só dígitos e separador decimal. */
+export function sanitizeLabelWeightInput(text: string): string {
+  return text.replace(/kg/gi, "").replace(/[^0-9.,]/g, "");
+}
+
+/** Texto inicial ao entrar no campo: o número sem zeros sobrando (0.4 -> "0,4"). */
+export function labelWeightDraftFromKg(kg: number | null | undefined): string {
+  if (kg == null || !Number.isFinite(kg)) {
+    return "";
+  }
+  return String(kg).replace(".", ",");
+}
+
+export const MIXER_CAPACITY_ERROR =
+  "Revise o limite máximo, os insumos marcados em Na batida e o rendimento: deve caber pelo menos uma unidade inteira.";
+
+/**
+ * Revalida o formulário a cada edição depois de um erro de validação: o erro some (ou troca)
+ * assim que o campo fica válido, sem esperar o próximo clique em Salvar.
+ */
+export function refreshProductValidation(options: {
+  product: ProductionProduct;
+  mixerCapacityBlocked?: boolean;
+  availablePackagingUnits?: PackagingProfile["unit"][];
+  duplicateExternalCode?: boolean;
+  requireExternalCode?: boolean;
+  storedGtin?: string | null;
+}): ProductValidationResult {
+  if (options.mixerCapacityBlocked) {
+    return { error: MIXER_CAPACITY_ERROR, invalidFields: [] };
+  }
+  return validateProductFormState(options);
+}
+
+/**
+ * Há alteração pendente? Só depois que o estado inicial foi normalizado (baseline gravado) e
+ * ignorando os campos derivados da receita (capacidade/base econômica), que o formulário
+ * recalcula sozinho ao abrir.
+ */
+export function isProductFormDirty(options: {
+  active: boolean;
+  baseline: string;
+  current: { formState: unknown; recipeDrafts: unknown };
+}): boolean {
+  if (!options.active || options.baseline === "") {
+    return false;
+  }
+  return stripDerivedFormFields(JSON.stringify(options.current)) !== stripDerivedFormFields(options.baseline);
+}
+
+function stripDerivedFormFields(serialized: string): string {
+  try {
+    const parsed = JSON.parse(serialized) as { formState?: Record<string, unknown> };
+    if (parsed.formState && typeof parsed.formState === "object") {
+      delete parsed.formState.capacityPerBatch;
+      delete parsed.formState.economicProductionKg;
+    }
+    return JSON.stringify(parsed);
+  } catch {
+    return serialized;
+  }
+}

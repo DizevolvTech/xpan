@@ -75,6 +75,8 @@ export function normalizeLabTest(value: unknown): ProductLabTest | null {
 
 export interface LabTestComputation {
   complete: boolean;
+  /** Assado total passou da massa crua: só os valores que dependem da massa crua ficam sem cálculo. */
+  bakedExceedsRaw: boolean;
   /** Massa crua = soma dos insumos que participam da cocção. */
   rawDoughKg: number;
   leftoverBakedKg: number;
@@ -114,9 +116,13 @@ export function computeLabTest(input: {
   const complete =
     rawDoughKg > 0 && bakedKg > 0 && unitCount > 0 && effectiveBakedKg <= rawDoughKg;
 
+  // Peso da unidade assada e assado total não dependem da massa crua: saem sempre que houver lançamento.
+  const partialBakedUnitKg = bakedKg > 0 && unitCount > 0 ? bakedKg / unitCount : 0;
+
   if (!complete) {
     return {
       complete: false,
+      bakedExceedsRaw: rawDoughKg > 0 && effectiveBakedKg > rawDoughKg,
       rawDoughKg,
       leftoverBakedKg,
       effectiveBakedKg: Math.max(0, effectiveBakedKg),
@@ -125,8 +131,8 @@ export function computeLabTest(input: {
       yieldPercent: 0,
       unitCount,
       effectiveUnitCount: 0,
-      bakedUnitKg: 0,
-      bakedUnitGrams: 0,
+      bakedUnitKg: partialBakedUnitKg,
+      bakedUnitGrams: partialBakedUnitKg * 1000,
       rawUnitWeightKg: 0,
       labelWeightKg: lab.labelWeightKg,
     };
@@ -139,6 +145,7 @@ export function computeLabTest(input: {
 
   return {
     complete: true,
+    bakedExceedsRaw: false,
     rawDoughKg,
     leftoverBakedKg,
     effectiveBakedKg,

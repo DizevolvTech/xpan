@@ -271,3 +271,23 @@ test("Quadro #231: o peso da unidade assada de produção/venda vira 0,425 kg (k
   assert.equal(applied.unitProfiles.production.weightKg, 0.425);
   assert.equal(Number(applied.breakPercent.toFixed(2)), 3.99);
 });
+
+test("#5: assado acima da massa crua mantém peso da unidade assada e assado total", () => {
+  const result = computeLabTest({
+    recipeTotalKg: 40,
+    labTest: { ...emptyLabTest(), bakedKg: 44, leftoverBakedKg: 1, unitCount: 110 },
+  });
+  assert.equal(result?.complete, false);
+  assert.equal(result?.bakedExceedsRaw, true);
+  assert.equal(result?.effectiveBakedKg, 45);
+  assert.equal(result?.bakedUnitKg, 44 / 110);
+  assert.equal(result?.breakPercent, 0);
+  assert.equal(result?.rawUnitWeightKg, 0);
+});
+
+test("#5: sem unidades padrão a unidade assada não existe, e dentro da massa crua não há aviso", () => {
+  const semUnidades = computeLabTest({ recipeTotalKg: 40, labTest: { ...emptyLabTest(), bakedKg: 30 } });
+  assert.equal(semUnidades?.bakedUnitKg, 0);
+  assert.equal(semUnidades?.effectiveBakedKg, 30);
+  assert.equal(semUnidades?.bakedExceedsRaw, false);
+});
