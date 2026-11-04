@@ -75,32 +75,36 @@ test("folha de produção em kg: sem informar unidade sai idêntica à de sempre
   assert.equal(html(), html("kg"));
   const t = text(html("kg"));
   assert.match(t, /0,234 Kg/);
-  assert.match(t, /5,500 Kg/);
-  assert.match(t, /Peso finalizado: 3,250 Kg/);
-  assert.match(t, /Carga: 12,500 Kg/);
-  assert.match(t, /Peso un\.: 0,500 Kg/);
+  assert.match(t, /2,500 Kg/); // farinha da batida cheia
+  assert.match(t, /0,500 Kg/); // farinha da parcial
+  // Cartão #237: uma OP por batida — a faixa traz a carga DA BATIDA (a 1ª cheia = 6 Kg, a parcial = 1,5 Kg).
+  assert.match(t, /Carga da batida: 3,250 Kg/); // MPI (batida única)
+  assert.match(t, /Carga da batida: 6,000 Kg/);
+  assert.match(t, /Carga da batida: 1,500 Kg/);
   assert.doesNotMatch(t, /234 g/, "em kg nenhum valor pode aparecer em gramas");
 });
 
-test("folha de produção em g: Kg do cadastro vira gramas em TODAS as colunas (pré-pesagem, batida, parcial, unidade, subtotais)", () => {
+test("folha de produção em g: Kg do cadastro vira gramas em TODAS as colunas (pré-pesagem de cada batida e carga da batida)", () => {
   const t = text(html("g"));
   assert.match(t, /\b234 g\b/); // 0,234 Kg do ingrediente
-  assert.match(t, /5\.500 g/); // pré pesagem da farinha
   assert.match(t, /2\.500 g/); // coluna batida cheia
   assert.match(t, /\b500 g\b/); // coluna parcial
-  assert.match(t, /\b220 g\b/); // coluna unidades (0,22 Kg por unidade)
-  assert.match(t, /Peso finalizado: 3\.250 g/);
-  assert.match(t, /Carga: 12\.500 g/);
-  assert.match(t, /Peso un\.: 500 g/);
-  assert.doesNotMatch(t, /\d Kg/, "nenhum 'Kg' de ingrediente/carga deve sobrar em modo g (a unidade pedida da faixa não é peso de ingrediente)");
+  assert.doesNotMatch(t, /Unidades/, "a coluna Unidades saiu da folha (cartão #237)");
+  assert.match(t, /Carga da batida: 3\.250 g/);
+  assert.match(t, /Carga da batida: 6\.000 g/);
+  // O rendimento previsto de PRODUTO é a quantidade pedida na unidade de venda (não converte, como na 80 mm).
+  assert.doesNotMatch(
+    t.replace(/Rendimento previsto: \|[^|]*\|/g, ""),
+    /\d Kg/,
+    "nenhum 'Kg' de ingrediente/carga deve sobrar em modo g",
+  );
 });
 
 test("modo g NÃO converte o que não é Kg: g, Un e L passam intactos", () => {
   const t = text(html("g"));
-  assert.match(t, /30,000 g/); // fermento já em g: não vira 30.000 g nem 0,03
-  assert.match(t, /12,000 Un/);
-  assert.match(t, /1,500 L/);
-  assert.match(t, /1,200 g/); // por unidade do fermento (g)
+  assert.match(t, /13,333 g/); // fermento (g) da batida cheia: não vira 13.333 g nem 0,013
+  assert.match(t, /5,333 Un/);
+  assert.match(t, /0,667 L/);
 });
 
 test("frase de batidas converte só o que é peso: Kg vira g, Un não", () => {

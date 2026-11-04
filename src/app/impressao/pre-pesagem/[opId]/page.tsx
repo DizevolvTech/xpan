@@ -1,18 +1,14 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
+import { BatchOpSheets } from "@/components/printing/batch-op-sheet";
 import { PrintDocument } from "@/components/printing/print-document";
-import type { PrintIngredientRow } from "@/lib/printing-documents";
-import { groupPrintRowsByStage } from "@/lib/printing-documents";
-import { listPartialColumns, partialQuantityAt, type PreWeighBatchSplit } from "@/lib/production-batches";
-import { formatBatchSplitPhrase } from "@/lib/production-batches";
-import type { RecipeStageConfigEntry } from "@/lib/production-planning";
-import { getProductionOrderNavKey } from "@/lib/factory-kanban";
 import { getTodayDateKey } from "@/lib/order-planning";
 import { buildPreWeighingDocument } from "@/lib/printing-documents";
-import { formatDisplayNumber, formatDisplayQuantity, type WeightDisplayUnit } from "@/lib/weight-display";
+import { buildBatchTickets, buildPreWeighingBatchSections } from "@/lib/printing/batch-tickets";
+import { findProductionOrderByNavParam } from "@/lib/printing/find-production-order";
 import { usePrintWeightUnit } from "@/lib/use-weight-display-unit";
 import { WeightUnitToggle } from "@/components/shared/weight-unit-toggle";
 import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
@@ -25,168 +21,6 @@ function sanitizeDateKey(raw: string | null) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : getTodayDateKey();
 }
 
-type RecipeTableRow = PrintIngredientRow & { isAdditional?: boolean };
-
-const PREWEIGH_FRACTION = { minimumFractionDigits: 3, maximumFractionDigits: 3 } as const;
-
-function IngredientCell({ row }: { row: RecipeTableRow }) {
-  return (
-    <td className="border-t border-stone-200 px-3 py-2 text-sm text-stone-700">
-      <div className="flex items-baseline gap-2">
-        <span>{row.label}</span>
-        {row.isAdditional ? (
-          <span className="shrink-0 border border-stone-400 px-1 text-[9px] font-semibold uppercase tracking-wide text-stone-500">
-            Adic.
-          </span>
-        ) : null}
-      </div>
-      {row.notes ? <div className="mt-1 text-xs text-stone-500">{row.notes}</div> : null}
-    </td>
-  );
-}
-
-function formatWeightCell(value: number | undefined, unit: string, weight: WeightDisplayUnit) {
-  if (value == null) {
-    return "—";
-  }
-  return formatDisplayQuantity(value, unit, weight, PREWEIGH_FRACTION);
-}
-
-/** Cargas da folha (peso finalizado / carga planejada / peso unitário): sempre kg no cadastro, g na tela se escolhido. */
-function formatSheetWeight(value: number, weight: WeightDisplayUnit) {
-  const unitText = weight === "g" ? "g" : "kg";
-  return `${formatDisplayNumber(value, "kg", weight, PREWEIGH_FRACTION)} ${unitText}`;
-}
-
-function RecipeTable({
-  rows,
-  batchSplit,
-  weight,
-}: {
-  rows: RecipeTableRow[];
-  batchSplit?: PreWeighBatchSplit | null;
-  weight: WeightDisplayUnit;
-}) {
-  if (rows.length === 0) {
-    return null;
-  }
-
-  const isBatched = Boolean(batchSplit?.batched);
-  const showBatchColumn = isBatched && (batchSplit?.fullBatchCount ?? 0) > 0;
-  // Cartão #42: com mínimo por batida pode haver mais de uma parcial (uma coluna por tamanho).
-  const partialColumns = listPartialColumns(batchSplit);
-
-  if (!isBatched) {
-    return (
-      <section className="overflow-hidden border border-stone-300">
-        <table className="w-full border-collapse">
-          <thead className="bg-stone-300">
-            <tr>
-              <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-                Pré pesagem
-              </th>
-              <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-                Insumos
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key}>
-                <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                  {formatDisplayQuantity(row.estimatedQuantity, row.unit, weight, PREWEIGH_FRACTION)}
-                </td>
-                <IngredientCell row={row} />
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    );
-  }
-
-  return (
-    <section className="overflow-hidden border border-stone-300">
-      <table className="w-full border-collapse">
-        <thead className="bg-stone-300">
-          <tr>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-              Insumos
-            </th>
-            {showBatchColumn ? (
-              <th className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-                Batida ×{batchSplit?.fullBatchCount}
-              </th>
-            ) : null}
-            {partialColumns.map((column) => (
-              <th key={column.label} className="w-40 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-700">
-                {column.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.key}>
-              <IngredientCell row={row} />
-              {showBatchColumn ? (
-                <td className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                  {formatWeightCell(row.batchQuantity, row.unit, weight)}
-                </td>
-              ) : null}
-              {partialColumns.map((column) => (
-                <td key={column.label} className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-900">
-                  {formatWeightCell(partialQuantityAt(row, column.index), row.unit, weight)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
-/**
- * Blocos da receita por ETAPA, na SEQUÊNCIA que a ficha do produto definiu (sem ficha
- * configurada, a ordem canônica de sempre). Receita não migrada volta como um único grupo
- * sem cabeçalho — a impressão sai idêntica à de hoje.
- *
- * O modo de preparo por etapa (`group.instructions`) existe aqui, mas NÃO é impresso: a
- * pré-pesagem é a folha de PESAR (o padeiro separa os insumos na balança), o preparo é lido
- * na folha de produção. Repetir o texto aqui só encheria a folha da balança.
- */
-function StagedRecipeTables({
-  rows,
-  batchSplit,
-  stageConfig,
-  weight,
-}: {
-  rows: RecipeTableRow[];
-  batchSplit?: PreWeighBatchSplit | null;
-  stageConfig?: RecipeStageConfigEntry[];
-  weight: WeightDisplayUnit;
-}) {
-  return (
-    <>
-      {groupPrintRowsByStage(rows, stageConfig).map((group) => (
-        <Fragment key={group.stage}>
-          {group.showStageHeader ? (
-            <div className="border-b border-stone-300 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-600">
-              {group.label}
-            </div>
-          ) : null}
-          <RecipeTable rows={group.rows} batchSplit={batchSplit} weight={weight} />
-        </Fragment>
-      ))}
-    </>
-  );
-}
-
-function formatBatchLegend(split: PreWeighBatchSplit, weight: WeightDisplayUnit) {
-  return `${formatBatchSplitPhrase(split, "units", weight)} · ${formatBatchSplitPhrase(split, "kg", weight)}`;
-}
-
 export default function PrePesagemPrintPage() {
   const params = useParams<{ opId: string }>();
   const searchParams = useSearchParams();
@@ -196,14 +30,10 @@ export default function PrePesagemPrintPage() {
   const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
   const { unit: weightUnit, setUnit: setWeightUnit } = usePrintWeightUnit();
 
-  const op = useMemo(() => {
-    const decoded = decodeURIComponent(opId);
-    return (
-      planningData.productionOrders.find((item) => getProductionOrderNavKey(item) === decoded) ??
-      planningData.productionOrders.find((item) => item.id === opId) ??
-      null
-    );
-  }, [opId, planningData.productionOrders]);
+  const op = useMemo(
+    () => findProductionOrderByNavParam(planningData.productionOrders, opId),
+    [opId, planningData.productionOrders],
+  );
 
   const document = useMemo(
     () =>
@@ -211,6 +41,11 @@ export default function PrePesagemPrintPage() {
         ? buildPreWeighingDocument(op, { products: snapshot.products, ingredients: snapshot.ingredients })
         : null,
     [op, snapshot.ingredients, snapshot.products],
+  );
+
+  const tickets = useMemo(
+    () => (document ? buildBatchTickets(buildPreWeighingBatchSections(document), op?.code ?? "") : []),
+    [document, op?.code],
   );
 
   const deliveryDateLabel = useMemo(() => {
@@ -244,94 +79,7 @@ export default function PrePesagemPrintPage() {
       toolbar={<WeightUnitToggle value={weightUnit} onChange={setWeightUnit} />}
       meta={`Pré-pesagem · ${op.code} · Produzir ${op.productionDateLabel} · Entregar ${deliveryDateLabel}`}
     >
-      {document.ingredientProducts.length > 0 ? (
-        <section className="space-y-3 print:space-y-1.5">
-          {document.ingredientProducts.map((section) => (
-            // Chave inclui a etapa: o mesmo MPI pode render duas seções (ex.: recheio e cobertura).
-            <article
-              key={`${section.productId}-${section.stage}`}
-              className="overflow-hidden border border-stone-400"
-            >
-              <header className="grid grid-cols-[132px_84px_1fr_180px] border-b border-stone-400 bg-stone-300 text-stone-900">
-                <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
-                  Produto MPI
-                </div>
-                <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
-                <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">
-                  {section.productName}
-                  {section.stageLabel ? (
-                    <span className="ml-2 border border-stone-400 px-1 text-[9px] font-semibold uppercase tracking-wide text-stone-600">
-                      {section.stageLabel}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-                  <div>Peso finalizado: {formatSheetWeight(section.requiredKg, weightUnit)}</div>
-                </div>
-              </header>
-
-              <div className="space-y-2 px-3 py-3">
-                <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
-                  Usado por: {section.usedBy.join(", ")}
-                </div>
-                {/* Ficha do próprio MPI: os blocos DELE saem na sequência que ele definiu. */}
-                <StagedRecipeTables
-                  rows={section.items}
-                  batchSplit={section.batchSplit}
-                  stageConfig={section.recipeStageConfig}
-                  weight={weightUnit}
-                />
-              </div>
-            </article>
-          ))}
-        </section>
-      ) : null}
-
-      <section className="space-y-3 print:space-y-1.5">
-        {document.productSections.map((section) => (
-          <article key={section.productId} className="overflow-hidden border border-stone-400">
-            <header className="grid grid-cols-[96px_84px_1fr_120px_160px] border-b border-stone-400 bg-stone-300 text-stone-900">
-              <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
-                Produto
-              </div>
-              <div className="border-r border-stone-400 px-3 py-2 text-lg font-bold leading-none">{section.productCode}</div>
-              <div className="border-r border-stone-400 px-3 py-2 text-sm font-semibold">{section.productName}</div>
-              <div className="border-r border-stone-400 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-                <div>Pedido</div>
-                <div className="mt-1 text-base font-bold text-stone-900">
-                  {section.requestedQuantity.toFixed(0)} {section.requestedUnit}
-                </div>
-              </div>
-              <div className="px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.06em] text-stone-600">
-                <div>Carga planejada: {formatSheetWeight(section.plannedKg, weightUnit)}</div>
-                <div className="mt-1">Peso unitário: {formatSheetWeight(section.unitWeightKg, weightUnit)}</div>
-              </div>
-            </header>
-
-            <div className="space-y-2 px-3 py-3">
-              {section.batchSplit?.batched ? (
-                <div className="text-[11px] uppercase tracking-[0.08em] text-stone-500">
-                  {formatBatchLegend(section.batchSplit, weightUnit)}
-                </div>
-              ) : null}
-              <StagedRecipeTables
-                rows={[
-                  ...section.baseIngredients,
-                  ...section.additionalIngredients.map((row) => ({ ...row, isAdditional: true })),
-                ]}
-                batchSplit={section.batchSplit}
-                stageConfig={section.recipeStageConfig}
-                weight={weightUnit}
-              />
-              {section.baseIngredients.length === 0 && section.additionalIngredients.length === 0 ? (
-                <div className="border border-dashed border-stone-300 px-3 py-3 text-sm text-stone-500">
-                  Este produto consome somente produto MPI destacado abaixo.
-                </div>
-              ) : null}
-            </div>
-          </article>
-        ))}
-      </section>
+      <BatchOpSheets tickets={tickets} variant="prepesagem" weight={weightUnit} />
     </PrintDocument>
   );
 }

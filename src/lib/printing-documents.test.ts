@@ -335,7 +335,8 @@ test("pré-pesagem: receita legada mantém UMA seção somada por MPI e sem rót
   const [section] = document.productSections;
   assert.deepEqual(
     section.baseIngredients.map((row) => row.label),
-    ["Farinha de trigo"],
+    // Cartão #236: o MPI entra como INSUMO da batida do produto (a massa dele fica na seção de MPI).
+    ["Farinha de trigo", "Chantilly", "Chantilly"],
   );
   assert.deepEqual(
     section.additionalIngredients.map((row) => row.label),
@@ -355,6 +356,8 @@ test("pré-pesagem: linhas do produto carregam a etapa para o agrupamento na imp
     [
       ["esponja", ["Farinha de trigo"]],
       ["massa", ["Farinha de trigo"]],
+      ["recheio", ["Chantilly"]],
+      ["cobertura", ["Chantilly"]],
       ["acabamento", ["Cobertura de chocolate"]],
     ],
   );
@@ -453,6 +456,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
         productId: "mpi-chantilly",
         productCode: "PR-00090",
         productName: "Chantilly",
+        rawBlockWeightG: null,
         stage: "massa",
         stageLabel: null,
         requiredQuantity: 3,
@@ -483,6 +487,7 @@ test("retrocompatibilidade: produto sem recipeStageConfig e tudo em `massa` impr
         productId: "product-pao",
         productCode: "PR-00001",
         productName: "Pão doce",
+        rawBlockWeightG: null,
         plannedKg: 10,
         requestedQuantity: 10,
         requestedUnit: "Kg",
@@ -616,7 +621,7 @@ test("pré-pesagem: seções de MPI e blocos do produto seguem a sequência da f
   const [section] = document.productSections;
   assert.deepEqual(
     groupPrintRowsByStage(section.baseIngredients, section.recipeStageConfig).map((group) => group.stage),
-    ["acabamento", "massa", "esponja"],
+    ["cobertura", "acabamento", "massa", "esponja", "recheio"],
   );
 });
 
@@ -1195,4 +1200,271 @@ test("etiquetas do dia: a mesma OP não aparece duas vezes na lista de OPs do pr
   const op = opWith("op-1", "OP-1", [{ product: a, totalKg: 10 }, { product: a, totalKg: 6 }]);
   const [label] = buildDayLabels([op], { products: [a], ingredients: ingredientsWithBox });
   assert.deepEqual(label.opCodes, ["OP-1"]);
+});
+
+/* -------------------------------------------------------------------------------------------------
+ * Lote 230 — cartões #236 (esponja duplicada), #237 (uma OP por batida no A4), #238 (OP não
+ * encontrada depois de editar a MPI) e #239 (80 mm compacta).
+ * -----------------------------------------------------------------------------------------------*/
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { BatchOpSheets } from "@/components/printing/batch-op-sheet";
+import { ThermalProductionSheet } from "@/components/printing/thermal-production-sheet";
+import { buildBatchTickets, buildPreWeighingBatchSections, buildProductionBatchSections } from "@/lib/printing/batch-tickets";
+import { findProductionOrderByNavParam } from "@/lib/printing/find-production-order";
+import { resolveRawBlockWeightG } from "@/lib/printing/raw-block-weight";
+import { compactIngredientName } from "@/lib/thermal-production";
+
+const esponja = buildProduct(
+  "mpi-esponja",
+  "PR-00500",
+  "Esponja panetone",
+  [
+    { id: "e1", sourceType: "ingrediente", sourceId: "ing-farinha", label: "Farinha de trigo", quantity: 1, unit: "Kg" },
+    { id: "e2", sourceType: "ingrediente", sourceId: "ing-creme", label: "Creme de leite", quantity: 0.5, unit: "Kg" },
+  ],
+  { canBeIngredient: true, isMpiIngredient: true, capacityPerBatch: 20 },
+);
+
+const panetone = buildProduct(
+  "prod-panetone",
+  "PR-00600",
+  "Panetone 500 g",
+  [
+    { id: "p1", sourceType: "ingrediente", sourceId: "ing-farinha", label: "Farinha de trigo", quantity: 3, unit: "Kg" },
+    { id: "p2", sourceType: "produto", sourceId: "mpi-esponja", label: "Esponja panetone", quantity: 2, unit: "Kg" },
+  ],
+  {
+    salesUnit: "Un",
+    salesToKgFactor: 0.5,
+    unitProfiles: {
+      sales: { unit: "Un", description: "Unidade", weightKg: 0.5 },
+      production: { unit: "Un", description: "Produção", weightKg: 0.5 },
+      expedition: { unit: "Un", description: "Expedição", weightKg: 0.5 },
+    },
+    capacityPerBatch: 100,
+    labTest: {
+      rawUnitWeightKg: 0.443,
+      rawDoughKg: null,
+      bakedKg: null,
+      leftoverBakedKg: null,
+      unitCount: null,
+      labelWeightKg: null,
+    },
+  },
+);
+
+const panetoneSource = { products: [panetone, esponja], ingredients };
+
+/** OP do motor: panetone (250 Un = 125 kg) + a esponja como ITEM próprio da mesma OP (decisão do cartão 175). */
+function buildPanetoneOp(mpiTotalKg = 50.043): ProductionOrderRow {
+  const base = buildOp(panetone, 125);
+  const panetoneItem: ProductionOrderItem = {
+    ...base.items[0]!,
+    capacityPerBatch: 100,
+    batchUnitLabel: "Un",
+    batchSizes: [100, 100, 50],
+    batchCount: 3,
+  };
+  const esponjaItem: ProductionOrderItem = {
+    ...buildOpItem(esponja, mpiTotalKg),
+    isIntermediate: true,
+    capacityPerBatch: 20,
+  };
+  return {
+    ...base,
+    items: [panetoneItem, esponjaItem],
+    sourceItems: [{ ...base.sourceItems[0]!, requestedQuantity: 250, requestedUnit: "Un", internalKg: 125 }],
+  };
+}
+
+test("#236 pré-pesagem: a esponja aparece UMA vez (seção de MPI) e não volta como bloco de produto", () => {
+  const doc = buildPreWeighingDocument(buildPanetoneOp(), panetoneSource);
+
+  assert.deepEqual(
+    doc.ingredientProducts.map((section) => section.productId),
+    ["mpi-esponja"],
+  );
+  assert.deepEqual(
+    doc.productSections.map((section) => section.productId),
+    ["prod-panetone"],
+    "o item da esponja na OP não pode virar um 2º bloco com outro valor",
+  );
+  // O valor da seção é o que os produtos consomem (3 casas), não o total da OP arredondado em 2 casas.
+  assert.equal(doc.ingredientProducts[0]!.requiredKg, 50);
+  assert.notEqual(doc.ingredientProducts[0]!.requiredKg, 50.043);
+});
+
+test("#236 pré-pesagem: cada batida do panetone lista a esponja como insumo com a quantidade DA BATIDA", () => {
+  const doc = buildPreWeighingDocument(buildPanetoneOp(), panetoneSource);
+  const [section] = doc.productSections;
+  const esponjaRow = section!.baseIngredients.find((row) => row.label.includes("Esponja"));
+  assert.ok(esponjaRow, "a esponja é insumo do produto");
+  assert.equal(esponjaRow!.batchQuantity, 20); // batida cheia de 100 Un = 50 kg de massa
+  assert.equal(esponjaRow!.partialQuantity, 10); // parcial de 50 Un
+
+  const tickets = buildBatchTickets(buildPreWeighingBatchSections(doc), "OP-261104-001");
+  const produto = tickets.filter((ticket) => ticket.productId === "prod-panetone");
+  assert.deepEqual(
+    produto.map((ticket) => ticket.items.find((row) => row.label.includes("Esponja"))!.estimatedQuantity),
+    [20, 20, 10],
+  );
+  // A esponja que as batidas do panetone consomem é exatamente a que a OP de MPI produz.
+  assert.equal(
+    produto.reduce((sum, ticket) => sum + ticket.items.find((row) => row.label.includes("Esponja"))!.estimatedQuantity, 0),
+    doc.ingredientProducts[0]!.requiredKg,
+  );
+});
+
+test("#236 os valores da esponja batem entre a pré-pesagem e a folha de produção (mesma fonte)", () => {
+  const op = buildPanetoneOp();
+  const pre = buildPreWeighingDocument(op, panetoneSource);
+  const folha = buildProductionSheetDocument(op, panetoneSource);
+
+  assert.equal(pre.ingredientProducts[0]!.requiredKg, folha.ingredientSections[0]!.requiredKg);
+  assert.deepEqual(
+    pre.ingredientProducts[0]!.items.map((row) => [row.label, row.estimatedQuantity, row.batchQuantity, row.partialQuantity]),
+    folha.ingredientSections[0]!.items.map((row) => [row.label, row.estimatedQuantity, row.batchQuantity, row.partialQuantity]),
+  );
+  // E a esponja como insumo do produto tem a mesma quantidade nos dois documentos.
+  const quantidadeNaPre = pre.productSections[0]!.baseIngredients.find((row) => row.label.includes("Esponja"))!;
+  const quantidadeNaFolha = folha.productSections[0]!.items.find((row) => row.label.includes("Esponja"))!;
+  assert.equal(quantidadeNaPre.estimatedQuantity, quantidadeNaFolha.estimatedQuantity);
+  assert.equal(quantidadeNaPre.batchQuantity, quantidadeNaFolha.batchQuantity);
+});
+
+test("#236 causa da diferença 133,607 × 133,650: o total do item MPI da OP soma em 2 casas; a seção soma o consumo em 3", () => {
+  // O motor acumula `totalKg = round2(totalKg + internalKg)` a cada pedido; a impressão soma o que
+  // cada produto consome em 3 casas. Com muitos pedidos pequenos a primeira conta se afasta da segunda.
+  const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+  const consumos = Array.from({ length: 12 }, () => 11.1339); // 12 pedidos: 133,607 kg exatos no consumo
+  const consumoReal = consumos.reduce((sum, value) => sum + value, 0);
+  const acumuladoDoMotor = consumos.reduce((sum, value) => round2(sum + round2(value)), 0);
+  assert.equal(Number(consumoReal.toFixed(3)), 133.607);
+  assert.notEqual(Number(acumuladoDoMotor.toFixed(3)), Number(consumoReal.toFixed(3)));
+  assert.ok(Math.abs(acumuladoDoMotor - consumoReal) < 0.1);
+  // A pré-pesagem agora imprime só a seção (a fonte do consumo), então o valor do item da OP não aparece.
+  const doc = buildPreWeighingDocument(buildPanetoneOp(50.043), panetoneSource);
+  const text = JSON.stringify(doc);
+  assert.ok(!text.includes("50.043"));
+});
+
+test("#238 MPI que é item da OP imprime a receita CONGELADA dela, não a receita ao vivo editada depois", () => {
+  const congelada = [
+    { id: "e1", sourceType: "ingrediente", sourceId: "ing-farinha", label: "Farinha de trigo", quantity: 1, unit: "Kg" },
+  ] as RecipeIngredientReference[];
+  const op = buildPanetoneOp();
+  const opCongelada: ProductionOrderRow = {
+    ...op,
+    items: op.items.map((item) => (item.productId === "mpi-esponja" ? { ...item, frozenRecipe: congelada } : item)),
+  };
+
+  const pre = buildPreWeighingDocument(opCongelada, panetoneSource);
+  assert.deepEqual(pre.ingredientProducts[0]!.items.map((row) => row.label), ["Farinha de trigo"]);
+  const folha = buildProductionSheetDocument(opCongelada, panetoneSource);
+  assert.deepEqual(folha.ingredientSections[0]!.items.map((row) => row.label), ["Farinha de trigo"]);
+
+  // Sem snapshot, cai na receita atual SEM erro.
+  const semSnapshot = buildPreWeighingDocument(op, panetoneSource);
+  assert.deepEqual(semSnapshot.ingredientProducts[0]!.items.map((row) => row.label), ["Farinha de trigo", "Creme de leite"]);
+});
+
+test("#238 a OP abre pela chave antiga depois que a MPI editada troca o cronograma da linha", () => {
+  const op = buildPanetoneOp();
+  const chaveAntiga = encodeURIComponent("2026-07-24|sector-1|line-1|schedule-1");
+  // Editar a MPI reabre/ativa uma revisão do cronograma: a MESMA OP passa a ter outro scheduleId.
+  const aposEdicao = [{ ...op, scheduleId: "schedule-2" }];
+
+  assert.equal(findProductionOrderByNavParam(aposEdicao, chaveAntiga)?.code, op.code, "antes: 'não encontrada'");
+  assert.equal(findProductionOrderByNavParam(aposEdicao, "2026-07-24|sector-1|line-1|schedule-2")?.code, op.code);
+  assert.equal(findProductionOrderByNavParam(aposEdicao, "op-1")?.code, op.code);
+  // Outra data/linha continua não encontrada (não chuta uma OP qualquer).
+  assert.equal(findProductionOrderByNavParam(aposEdicao, "2026-07-25|sector-1|line-1|schedule-1"), null);
+  assert.equal(findProductionOrderByNavParam(aposEdicao, "2026-07-24|sector-1|line-9|schedule-1"), null);
+  assert.equal(findProductionOrderByNavParam([], chaveAntiga), null);
+  // Chave exata sempre vence a aproximação.
+  const duas = [{ ...op, id: "a", scheduleId: "schedule-9" }, { ...op, id: "b", scheduleId: "schedule-1" }];
+  assert.equal(findProductionOrderByNavParam(duas, chaveAntiga)?.id, "b");
+});
+
+test("#237 A4: uma OP por batida, inclusive as parciais da MPI; um só campo de rendimento real; sem coluna Unidades", () => {
+  const op = buildPanetoneOp();
+  const pre = buildPreWeighingDocument(op, panetoneSource);
+  const tickets = buildBatchTickets(buildPreWeighingBatchSections(pre), op.code);
+
+  // MPI: 20 + 20 + 10 (parcial); panetone: 100 + 100 + 50 (parcial).
+  assert.deepEqual(tickets.map((ticket) => [ticket.productId, ticket.number, ticket.count, ticket.complementary]), [
+    ["mpi-esponja", 1, 3, false],
+    ["mpi-esponja", 2, 3, false],
+    ["mpi-esponja", 3, 3, true],
+    ["prod-panetone", 1, 3, false],
+    ["prod-panetone", 2, 3, false],
+    ["prod-panetone", 3, 3, true],
+  ]);
+  assert.equal(new Set(tickets.map((ticket) => ticket.key)).size, 6);
+
+  const markup = renderToStaticMarkup(createElement(BatchOpSheets, { tickets, variant: "prepesagem", weight: "kg" }));
+  const text = markup.replace(/<[^>]+>/g, "|").replace(/\|+/g, "|");
+  assert.equal((markup.match(/data-batch-ticket=/g) ?? []).length, 6, "um bloco por batida");
+  assert.equal((text.match(/Rendimento real:/g) ?? []).length, 6, "um campo de rendimento real por OP");
+  assert.equal((text.match(/Rendimento previsto:/g) ?? []).length, 6);
+  assert.match(text, /Batida 3 de 3 \(Parcial\)/);
+  assert.doesNotMatch(text, /batida padrão|Unidades|×\d/i);
+  assert.equal((text.match(/Pesar o bloco com/g) ?? []).length, 6);
+  // Panetone tem peso do bloco cru no cadastro (0,443 kg): sai preenchido; a esponja fica em branco.
+  assert.equal((text.match(/Pesar o bloco com \|443\| g/g) ?? []).length, 3);
+});
+
+test("#237 folha de produção A4: uma OP por batida, observação por linha e sem coluna Unidades", () => {
+  const op = buildPanetoneOp();
+  const folha = buildProductionSheetDocument(op, panetoneSource);
+  const tickets = buildBatchTickets(buildProductionBatchSections(folha), op.code);
+  assert.equal(tickets.length, 6);
+  const markup = renderToStaticMarkup(createElement(BatchOpSheets, { tickets, variant: "producao", weight: "kg" }));
+  const text = markup.replace(/<[^>]+>/g, "|").replace(/\|+/g, "|");
+  assert.match(text, /Observação/);
+  assert.doesNotMatch(text, /Unidades/);
+  assert.equal((text.match(/Rendimento real:/g) ?? []).length, 6);
+  // Cada batida de produto traz a esponja com a quantidade da batida.
+  const doProduto = tickets.filter((ticket) => ticket.productId === "prod-panetone");
+  assert.deepEqual(
+    doProduto.map((ticket) => ticket.items.find((row) => row.label.includes("Esponja"))!.estimatedQuantity),
+    [20, 20, 10],
+  );
+});
+
+test("#237 peso do bloco: vem do cadastro (peso da peça crua) em g; sem o dado, null (linha em branco)", () => {
+  assert.equal(resolveRawBlockWeightG(panetone), 443);
+  assert.equal(resolveRawBlockWeightG(esponja), null);
+  assert.equal(resolveRawBlockWeightG({ labTest: { ...panetone.labTest!, rawUnitWeightKg: 0 } }), null);
+  assert.equal(resolveRawBlockWeightG(undefined), null);
+});
+
+test("#239 nome do insumo na 80 mm: nome reduzido; sem ele, o completo cortado na última palavra inteira", () => {
+  assert.equal(compactIngredientName("Açúcar refinado especial extra fino", "Açúcar ref."), "Açúcar ref.");
+  assert.equal(compactIngredientName("Farinha de trigo", "  "), "Farinha de trigo");
+  assert.equal(compactIngredientName("Farinha de trigo especial tipo 1 premium", undefined), "Farinha de trigo…");
+  assert.equal(compactIngredientName("Supercalifragilisticoespialidoso", ""), "Supercalifragilistico…");
+  assert.ok(compactIngredientName("Margarina culinária com sal 15 kg", null).length <= 22);
+});
+
+test("#239 80 mm: cada insumo ocupa UMA linha, com código, nome reduzido e a unidade junto da quantidade", () => {
+  const fariha = { ...ingredients[0]!, shortName: "Farinha T1", displayCode: "FAR-01" };
+  const op = buildPanetoneOp();
+  const folha = buildProductionSheetDocument(op, { products: [panetone, esponja], ingredients: [fariha, ingredients[1]!, ingredients[2]!] });
+  const markup = renderToStaticMarkup(
+    createElement(ThermalProductionSheet, { document: folha, code: op.code, line: op.lineName, productionDate: "24/07", deliveryDate: "25/07" }),
+  );
+  // 6 fichas (uma por batida), cada linha de insumo é UM <tr> com 4 células e sem linha extra de observação.
+  assert.equal((markup.match(/<article class="thermal-ticket"/g) ?? []).length, 6);
+  const bodyRows = markup.match(/<tbody>.*?<\/tbody>/g) ?? [];
+  const rows = bodyRows.flatMap((body) => body.match(/<tr>.*?<\/tr>/g) ?? []);
+  assert.ok(rows.length >= 6);
+  for (const row of rows) {
+    assert.equal((row.match(/<td/g) ?? []).length, 4, "código · nome · D P · quantidade");
+    assert.doesNotMatch(row, /<div>/, "sem observação em linha extra dentro da célula");
+  }
+  assert.match(markup, /Farinha T1/);
+  assert.match(markup, /\d,\d{3} Kg|\d+,\d{3} Un|\d+ g/);
+  assert.match(markup, /Pesar o bloco com <strong>443<\/strong> g/);
 });
