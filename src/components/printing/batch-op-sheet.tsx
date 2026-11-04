@@ -131,9 +131,12 @@ export function BatchOpBlock({
   const isMpi = ticket.kind === "ingredient";
   return (
     <article
-      className="overflow-hidden border border-stone-400 print:break-inside-avoid"
+      // No celular a folha mantém o desenho do papel e rola de lado dentro do bloco (nada cortado);
+      // no papel continua inteira, sem rolagem.
+      className="overflow-x-auto border border-stone-400 print:overflow-hidden print:break-inside-avoid"
       data-batch-ticket={ticket.key}
     >
+      <div className="min-w-[660px] print:min-w-0">
       <header className="grid grid-cols-[110px_100px_1fr_215px] border-b border-stone-400 bg-stone-300 text-stone-900">
         <div className="border-r border-stone-400 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em]">
           {isMpi ? "Produto MPI" : "Produto"}
@@ -196,6 +199,7 @@ export function BatchOpBlock({
               : "Este produto consome somente produto MPI destacado acima."}
           </div>
         ) : null}
+      </div>
       </div>
     </article>
   );
