@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Box, Clock3, ListOrdered, Plus } from "lucide-react";
 
+import { CatalogTransferButtons } from "@/components/production/catalog-transfer-dialogs";
 import { ProductFormDialog, type ProductDialogMode } from "@/components/production/product-form-dialog";
 import { DataTable } from "@/components/shared/data-table";
 import { KPICard } from "@/components/shared/kpi-card";
@@ -265,6 +266,18 @@ export default function ProdutosPage() {
       ]}
       actions={
         <div className="flex flex-wrap gap-2">
+          <CatalogTransferButtons
+            products={snapshot.products.map((product) => ({
+              id: product.id,
+              name: product.name,
+              code: product.code,
+              externalCode: product.externalCode,
+              active: product.active,
+            }))}
+            onImported={async () => {
+              await refresh(true);
+            }}
+          />
           <Button asChild type="button" variant="outline">
             <Link href="/gestor-dados/produtos/etapas">
               <ListOrdered className="size-4" />
