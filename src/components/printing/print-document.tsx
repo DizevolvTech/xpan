@@ -257,8 +257,8 @@ export function PrintDocument({
           // Repetir de verdade exige `display: table-header-group`, o que significa remontar o
           // documento como tabela. Enquanto isso o cabeçalho sai UMA vez; o que já repete por
           // página são os `<thead>` das tabelas, que o navegador reemite ao quebrar.
-          <header className="flex items-center justify-between gap-3 border-b-2 border-stone-700 px-4 py-2 print:px-4 print:py-1">
-            <div className="min-w-0">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-stone-700 px-4 py-2 print:flex-nowrap print:px-4 print:py-1">
+            <div className="min-w-[220px] flex-1 print:min-w-0">
               <h1 className="text-2xl font-bold uppercase leading-none text-stone-900">{title}</h1>
               {meta ? (
                 <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-stone-500 print:mt-0.5">
