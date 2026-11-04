@@ -18,7 +18,8 @@ import {
   normalizeSupplyClass,
   resolveRecipePrintDestinations,
 } from "@/lib/production-planning";
-import { isProductCodeSource, normalizeGtin, type ProductCodeSource } from "@/lib/product-identity";
+import { gtinErrorMessage } from "@/lib/product-form-logic";
+import { canonicalGtin, isProductCodeSource, isValidGtin, type ProductCodeSource } from "@/lib/product-identity";
 import { normalizeLabTest } from "@/lib/lab-test";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
@@ -1054,10 +1055,17 @@ async function replaceProductPreparationSteps(
   }
 }
 
+/** Cartão #230: valida o GTIN também no servidor; legado de 12/14 dígitos só passa se não mudou. */
+function assertGtinSavable(gtin: string | null | undefined, storedGtin?: string | null) {
+  if (!isValidGtin(gtin, storedGtin)) {
+    throw new Error(gtinErrorMessage(gtin));
+  }
+}
+
 function normalizeProductPayload(input: ProductInput) {
   return {
     external_code: normalizeOptionalCode(input.externalCode),
-    gtin: normalizeOptionalCode(normalizeGtin(input.gtin)),
+    gtin: normalizeOptionalCode(canonicalGtin(input.gtin)),
     name: input.name.trim(),
     short_name: normalizeOptionalText(input.shortName),
     description: input.description.trim(),
@@ -1787,6 +1795,7 @@ export async function createProduct(input: ProductInput, options: MutationOption
   const existingCodesResult = await supabase.from("products").select("code");
   const existingCodes = assertSupabaseResult(existingCodesResult, "Failed to load product codes");
   const subcategoryId = await resolveSubcategoryId(input.lineId, supabase);
+  assertGtinSavable(input.gtin);
   const code = input.code?.trim() || buildNextCode(existingCodes.map((row) => row.code), "PR", 5);
   const legacyId = buildGeneratedLegacyId("product");
   await assertExternalCodeAvailable("products", normalizeOptionalCode(input.externalCode), undefined, supabase);
@@ -1923,6 +1932,7 @@ export async function updateProduct(
     nextOperationalSubcategoryId = operationalSubcategoryId ? subcategoryId : null;
   }
 
+  assertGtinSavable(input.gtin, typeof row.gtin === "string" ? row.gtin : null);
   await assertProductExternalCodeEditable(productId, externalCode, supabase);
   await assertExternalCodeAvailable("products", externalCode, productId, supabase);
 

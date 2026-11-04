@@ -1,5 +1,5 @@
 import { normalizeExternalCode } from "@/lib/ingredient-form-logic";
-import { isValidGtin } from "@/lib/product-identity";
+import { checkGtin, isValidGtin } from "@/lib/product-identity";
 import { emptyLabTest } from "@/lib/lab-test";
 import { formatKgLabel } from "@/lib/utils";
 import {
@@ -195,11 +195,21 @@ export function buildProductFormState(
   };
 }
 
+export function gtinErrorMessage(value: string | undefined | null): string {
+  const check = checkGtin(value);
+  if (check.status === "invalid" && check.suggestion) {
+    return `O dígito verificador do GTIN não confere. Com o verificador fica ${check.suggestion}.`;
+  }
+  return "GTIN inválido: informe um código de 8 ou 13 dígitos com o dígito verificador correto, ou deixe o campo vazio.";
+}
+
 export function validateProductFormState(options: {
   product: ProductionProduct;
   availablePackagingUnits?: PackagingProfile["unit"][];
   duplicateExternalCode?: boolean;
   requireExternalCode?: boolean;
+  /** GTIN já gravado: legado de 12/14 dígitos só passa se não for alterado. */
+  storedGtin?: string | null;
 }) {
   const { product } = options;
   const invalidFields: ProductValidationField[] = [];
@@ -218,7 +228,7 @@ export function validateProductFormState(options: {
     } satisfies ProductValidationResult;
   }
 
-  if (!isValidGtin(product.gtin)) {
+  if (!isValidGtin(product.gtin, options.storedGtin)) {
     invalidFields.push("gtin");
   }
 
@@ -240,7 +250,7 @@ export function validateProductFormState(options: {
       first === "externalCode"
         ? "Informe o código da loja antes de continuar o cadastro."
         : first === "gtin"
-          ? "Informe um GTIN com 8, 12, 13 ou 14 dígitos, ou deixe o campo vazio."
+          ? gtinErrorMessage(product.gtin)
           : "Preencha os campos obrigatórios destacados antes de salvar.";
     return {
       error,
@@ -287,4 +297,22 @@ export function validateProductFormState(options: {
     error: null,
     invalidFields: [],
   } satisfies ProductValidationResult;
+}
+
+/** Cartão #230: peso da etiqueta sempre com zero à esquerda e 3 casas, ex.: "0,400 kg". */
+export function formatLabelWeight(kg: number | null | undefined): string {
+  if (kg == null || !Number.isFinite(kg)) {
+    return "";
+  }
+  return `${kg.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
+}
+
+/** Lê o que a pessoa digita ("0,4", ",400", "0.400 kg"); vazio ou inválido = null. */
+export function parseLabelWeight(text: string): number | null {
+  const cleaned = text.replace(/kg/i, "").trim().replace(",", ".");
+  if (cleaned === "") {
+    return null;
+  }
+  const numeric = Number(cleaned);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }

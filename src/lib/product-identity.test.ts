@@ -6,6 +6,9 @@ import {
   resolveClientCode,
   getIngredientDisplayCode,
   getProductDisplayCode,
+  canonicalGtin,
+  checkGtin,
+  computeGtinCheckDigit,
   isValidGtin,
   normalizeGtin,
   relabelRecipeLineWithClientCode,
@@ -27,15 +30,13 @@ test("normalizeGtin remove tudo que não é dígito", () => {
   assert.equal(normalizeGtin("789.123 4567890"), "7891234567890");
 });
 
-test("isValidGtin aceita vazio e comprimentos EAN/UPC/GTIN", () => {
+test("isValidGtin aceita vazio, EAN-8 e EAN-13 válidos; recusa comprimentos fora do padrão", () => {
   assert.equal(isValidGtin(""), true);
-  assert.equal(isValidGtin("12345670"), true);
-  assert.equal(isValidGtin("123456789012"), true);
-  assert.equal(isValidGtin("1234567890123"), true);
-  assert.equal(isValidGtin("12345678901234"), true);
-  assert.equal(isValidGtin("123"), false);
-  assert.equal(isValidGtin("abc"), false);
-  assert.equal(isValidGtin("789.1234.567890"), true);
+  assert.equal(isValidGtin("96385074"), true);
+  assert.equal(isValidGtin("7891000100103"), true);
+  assert.equal(isValidGtin("789.1000.100103"), true);
+  assert.equal(isValidGtin("12345678"), false);
+  assert.equal(isValidGtin("abc"), true);
 });
 
 test("getIngredientDisplayCode segue a mesma regra do produto (ERP do cliente primeiro)", () => {
@@ -81,4 +82,31 @@ test("normalizeProductCodeSource: valor estranho ou ausente vira erp (cliente an
   assert.equal(normalizeProductCodeSource("gtin"), "gtin");
   assert.equal(normalizeProductCodeSource("erp"), "erp");
   for (const bad of [undefined, null, "", "EAN", 3]) assert.equal(normalizeProductCodeSource(bad), "erp");
+});
+
+test("checkGtin: 4256 sem verificador é inválido e sugere 0000000042567", () => {
+  const check = checkGtin("4256");
+  assert.equal(check.status, "invalid");
+  assert.equal(check.status === "invalid" ? check.suggestion : null, "0000000042567");
+  assert.equal(checkGtin("0000000042567").status, "valid");
+  assert.equal(checkGtin("42567").gtin, "0000000042567");
+});
+
+test("checkGtin: EAN-13 e EAN-8 válidos e inválidos", () => {
+  assert.equal(checkGtin("7891000100103").status, "valid");
+  assert.equal(checkGtin("7891000100104").status, "invalid");
+  assert.equal(checkGtin("96385074").status, "valid");
+  assert.equal(checkGtin("96385075").status, "invalid");
+  assert.equal(checkGtin("12345678901134").status, "invalid");
+  assert.equal(checkGtin("").status, "empty");
+  assert.equal(computeGtinCheckDigit("400638133393"), 1);
+});
+
+test("isValidGtin: legado de 12/14 dígitos só passa se não for alterado", () => {
+  assert.equal(isValidGtin("123456789011", "123456789011"), true);
+  assert.equal(isValidGtin("123456789011"), false);
+  assert.equal(isValidGtin("12345678901134", "12345678901134"), true);
+  assert.equal(isValidGtin("12345678901135", "12345678901134"), false);
+  assert.equal(canonicalGtin("42567"), "0000000042567");
+  assert.equal(canonicalGtin("123456789011"), "123456789011");
 });

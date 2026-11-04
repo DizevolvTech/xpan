@@ -1,17 +1,74 @@
-const GTIN_PATTERN = /^(?:\d{8}|\d{12}|\d{13}|\d{14})$/;
-
 export function normalizeGtin(value: string | undefined | null): string {
   return (value ?? "").replace(/\D/g, "");
 }
 
-export function isValidGtin(value: string | undefined | null): boolean {
-  const raw = (value ?? "").trim();
-  if (raw.length === 0) {
+/** Dígito verificador GS1 do corpo (sem o verificador): pesos 3,1,3,1... da direita para a esquerda. */
+export function computeGtinCheckDigit(body: string): number {
+  let sum = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const digit = Number(body[body.length - 1 - index]);
+    sum += digit * (index % 2 === 0 ? 3 : 1);
+  }
+  return (10 - (sum % 10)) % 10;
+}
+
+function hasValidCheckDigit(digits: string): boolean {
+  return computeGtinCheckDigit(digits.slice(0, -1)) === Number(digits[digits.length - 1]);
+}
+
+export type GtinCheck =
+  | { status: "empty"; gtin: "" }
+  | { status: "valid"; gtin: string }
+  | { status: "invalid"; gtin: string; suggestion: string | null };
+
+/**
+ * Cartão #230: só EAN-8 e EAN-13 com verificador GS1 correto. Entrada curta (menos de 13 dígitos e
+ * diferente de 8) é completada com zeros à esquerda até 13 e conferida como código completo (com
+ * verificador). Se não bater e a entrada tinha até 12 dígitos, sugere o código que resultaria de
+ * tratar os dígitos como corpo sem verificador (ex.: 4256 → 0000000042567).
+ */
+export function checkGtin(value: string | undefined | null): GtinCheck {
+  const digits = normalizeGtin(value);
+  if (digits.length === 0) {
+    return { status: "empty", gtin: "" };
+  }
+  if (digits.length === 8) {
+    return hasValidCheckDigit(digits)
+      ? { status: "valid", gtin: digits }
+      : { status: "invalid", gtin: digits, suggestion: null };
+  }
+  if (digits.length > 13) {
+    return { status: "invalid", gtin: digits, suggestion: null };
+  }
+  const padded = digits.padStart(13, "0");
+  if (hasValidCheckDigit(padded)) {
+    return { status: "valid", gtin: padded };
+  }
+  const body = digits.length <= 12 ? digits.padStart(12, "0") : null;
+  return {
+    status: "invalid",
+    gtin: padded,
+    suggestion: body ? `${body}${computeGtinCheckDigit(body)}` : null,
+  };
+}
+
+/**
+ * Vazio vale. Código já gravado (12 ou 14 dígitos, de antes da regra) continua aceito enquanto o
+ * campo não for alterado: passe o valor gravado em `storedGtin`.
+ */
+export function isValidGtin(value: string | undefined | null, storedGtin?: string | null): boolean {
+  const check = checkGtin(value);
+  if (check.status !== "invalid") {
     return true;
   }
+  const stored = normalizeGtin(storedGtin);
+  return stored.length > 0 && stored === normalizeGtin(value);
+}
 
-  const digits = normalizeGtin(value);
-  return GTIN_PATTERN.test(digits);
+/** Valor a gravar: código completo de 8/13 dígitos quando válido; legado inalterado fica como estava. */
+export function canonicalGtin(value: string | undefined | null): string {
+  const check = checkGtin(value);
+  return check.status === "valid" ? check.gtin : normalizeGtin(value);
 }
 
 export type ProductCodeSource = "erp" | "gtin";

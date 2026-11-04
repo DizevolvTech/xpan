@@ -80,7 +80,8 @@ import {
   preferredOperationalUnits,
 } from "@/lib/operational-units";
 import { findDuplicateExternalCode, normalizeExternalCode } from "@/lib/ingredient-form-logic";
-import { getProductDisplayCode, normalizeGtin, relabelRecipeLineWithClientCode } from "@/lib/product-identity";
+import { LabelWeightField } from "@/components/production/label-weight-field";
+import { canonicalGtin, checkGtin, isValidGtin, getProductDisplayCode, relabelRecipeLineWithClientCode } from "@/lib/product-identity";
 import {
   applyProductVersionSnapshot,
   buildProductVersionSnapshot,
@@ -323,6 +324,9 @@ export function ProductFormDialog({
     [formState.externalCode, product?.id, snapshot.products],
   );
   const isNewProduct = !product;
+  const gtinCheck = checkGtin(formState.gtin);
+  const gtinSuggestion =
+    gtinCheck.status === "invalid" && !isValidGtin(formState.gtin, product?.gtin) ? gtinCheck.suggestion : null;
   const storeCodeGateBlocked =
     !isReadOnly &&
     isNewProduct &&
@@ -998,7 +1002,7 @@ export function ProductFormDialog({
     const nextProduct: ProductFormState = {
       ...withLab,
       description: withLab.name.trim(),
-      gtin: normalizeGtin(withLab.gtin) || undefined,
+      gtin: canonicalGtin(withLab.gtin) || undefined,
       preparationStages: normalizeProductPreparationStages(withLab.preparationStages),
       salesUnit: withLab.unitProfiles.sales.unit,
       productionUnit: withLab.unitProfiles.production.unit,
@@ -1034,6 +1038,7 @@ export function ProductFormDialog({
       availablePackagingUnits,
       duplicateExternalCode: Boolean(duplicateExternalCode),
       requireExternalCode: isNewProduct || Boolean(normalizeExternalCode(product?.externalCode)),
+      storedGtin: product?.gtin,
     });
     if (validation.error) {
       setInvalidFields(validation.invalidFields);
@@ -1390,8 +1395,24 @@ export function ProductFormDialog({
                       )}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Etiqueta com dígito verificador. 8, 12, 13 ou 14 dígitos.
+                      8 ou 13 dígitos, com o dígito verificador.
                     </p>
+                    {gtinSuggestion ? (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-danger">
+                        <span>O dígito verificador não confere. Com o verificador fica {gtinSuggestion}.</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setFormState((current) => ({ ...current, gtin: gtinSuggestion }));
+                            setInvalidFields((current) => current.filter((field) => field !== "gtin"));
+                          }}
+                        >
+                          Usar {gtinSuggestion}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="grid gap-2">
                     <Label>Código da fábrica</Label>
@@ -1435,6 +1456,27 @@ export function ProductFormDialog({
                           shortName: event.target.value,
                         }))
                       }
+                    />
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="product-validity-days">Validade após produção (dias)</Label>
+                      <Input
+                        id="product-validity-days"
+                        type="number"
+                        value={formState.validityDays}
+                        onChange={(event) =>
+                          setFormState((current) => ({
+                            ...current,
+                            validityDays: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                    <LabelWeightField
+                      valueKg={formState.labTest?.labelWeightKg}
+                      onChange={(labelWeightKg) => updateLabTest({ labelWeightKg })}
                     />
                   </div>
 
@@ -2711,7 +2753,7 @@ export function ProductFormDialog({
                   <p className="text-xs text-amber-900/80">
                     Lance as medições da ficha amarela. Quebra, rendimento e peso da unidade
                     assada saem sozinhos — não se digitam %. Sempre informe as unidades, mesmo
-                    se o produto for vendido em kg. A etiqueta (Inmetro) não entra na produção.
+                    se o produto for vendido em kg. 
                   </p>
                 </div>
 
@@ -2792,20 +2834,6 @@ export function ProductFormDialog({
                       }
                     />
                   </div>
-                  <div className="grid gap-2">
-                    <Label>Peso da etiqueta (kg)</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.001"
-                      className="border-stone-300 bg-white"
-                      value={formState.labTest?.labelWeightKg ?? ""}
-                      onChange={(event) =>
-                        updateLabTest({ labelWeightKg: readOptionalNumber(event.target.value) })
-                      }
-                    />
-                    <p className="text-[11px] text-amber-900/70">Inmetro / rótulo. Não é o peso de produção.</p>
-                  </div>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-4">
@@ -2881,25 +2909,12 @@ export function ProductFormDialog({
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">4. Capacidade e parâmetros de produção</h3>
                   <p className="text-xs text-muted-foreground">
-                    Validade, lote mínimo (aviso) e limite da masseira. A capacidade por batida
+                    Lote mínimo (aviso) e limite da masseira. A capacidade por batida
                     é calculada pela soma dos insumos marcados em “Na batida?”.
                   </p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-4">
-                  <div className="grid gap-2">
-                    <Label>Validade após produção (dias)</Label>
-                    <Input
-                      type="number"
-                      value={formState.validityDays}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          validityDays: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
                   <div className="grid gap-2">
                     <Label>Produção mínima do dia (Kg)</Label>
                     <Input

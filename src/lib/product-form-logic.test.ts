@@ -5,6 +5,8 @@ import type { ProductionLine, ProductionProduct } from "@/lib/production-plannin
 import {
   buildProductFormState,
   getInvalidFieldTarget,
+  formatLabelWeight,
+  parseLabelWeight,
   validateProductFormState,
 } from "@/lib/product-form-logic";
 
@@ -241,23 +243,42 @@ test("código da loja duplicado bloqueia o cadastro na hora", () => {
   assert.deepEqual(validation.invalidFields, ["externalCode"]);
 });
 
-test("GTIN inválido é rejeitado; vazio ou 8/12/13/14 dígitos passam", () => {
+test("GTIN inválido é rejeitado; vazio ou EAN válido passam", () => {
   const invalid = validateProductFormState({
-    product: { ...buildBaseProduct(), gtin: "123" },
+    product: { ...buildBaseProduct(), gtin: "123456789012345" },
   });
-  assert.equal(
-    invalid.error,
-    "Informe um GTIN com 8, 12, 13 ou 14 dígitos, ou deixe o campo vazio.",
-  );
+  assert.match(invalid.error ?? "", /8 ou 13 dígitos/);
   assert.deepEqual(invalid.invalidFields, ["gtin"]);
 
-  const empty = validateProductFormState({
-    product: { ...buildBaseProduct(), gtin: "" },
-  });
-  assert.equal(empty.error, null);
+  assert.equal(validateProductFormState({ product: { ...buildBaseProduct(), gtin: "" } }).error, null);
+  assert.equal(
+    validateProductFormState({ product: { ...buildBaseProduct(), gtin: "7891000100103" } }).error,
+    null,
+  );
+});
 
-  const ean13 = validateProductFormState({
-    product: { ...buildBaseProduct(), gtin: "7891234567890" },
-  });
-  assert.equal(ean13.error, null);
+test("formatLabelWeight mostra zero à esquerda e três casas; parseLabelWeight lê vírgula", () => {
+  assert.equal(formatLabelWeight(0.4).replace(/\u00a0/g, " "), "0,400 kg");
+  assert.equal(formatLabelWeight(null), "");
+  assert.equal(parseLabelWeight("0,4"), 0.4);
+  assert.equal(parseLabelWeight(",400"), 0.4);
+  assert.equal(parseLabelWeight("0,400 kg"), 0.4);
+  assert.equal(parseLabelWeight(""), null);
+  assert.equal(parseLabelWeight("abc"), null);
+});
+
+test("validateProductFormState bloqueia GTIN com verificador errado e orienta com o código completo", () => {
+  const base = buildBaseProduct();
+  const result = validateProductFormState({ product: { ...base, gtin: "4256" } });
+  assert.deepEqual(result.invalidFields, ["gtin"]);
+  assert.match(result.error ?? "", /0000000042567/);
+  assert.equal(validateProductFormState({ product: { ...base, gtin: "0000000042567" } }).error, null);
+  assert.equal(
+    validateProductFormState({ product: { ...base, gtin: "123456789011" }, storedGtin: "123456789011" }).error,
+    null,
+  );
+  assert.deepEqual(
+    validateProductFormState({ product: { ...base, gtin: "123456789011" } }).invalidFields,
+    ["gtin"],
+  );
 });
