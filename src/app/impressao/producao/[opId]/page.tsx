@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 
 import { PrintDocument } from "@/components/printing/print-document";
+import { PrintLoadError } from "@/components/printing/print-load-error";
 import { ThermalProductionSheet } from "@/components/printing/thermal-production-sheet";
 import { ProductionSheetSections } from "@/components/printing/production-sheet";
 import { buildProductionSheetDocument } from "@/lib/printing-documents";
@@ -26,8 +27,8 @@ export default function ProducaoPrintPage() {
   const searchParams = useSearchParams();
   const opId = typeof params.opId === "string" ? params.opId : "";
   const referenceDate = sanitizeDateKey(searchParams.get("ref"));
-  const { planningData, isLoading: isPlanningLoading } = useFactoryPlanningSnapshot(referenceDate);
-  const { snapshot, isLoading: isMasterDataLoading } = useMasterDataSnapshot();
+  const { planningData, isLoading: isPlanningLoading, error: planningError } = useFactoryPlanningSnapshot(referenceDate);
+  const { snapshot, isLoading: isMasterDataLoading, error: masterDataError } = useMasterDataSnapshot();
   const { unit: weightUnit, setUnit: setWeightUnit } = usePrintWeightUnit();
 
   const op = useMemo(() => {
@@ -58,6 +59,11 @@ export default function ProducaoPrintPage() {
         subtitle="Carregando os dados da ordem de produção para impressão."
       />
     );
+  }
+
+  const loadError = planningError ?? masterDataError;
+  if ((!op || !document) && loadError) {
+    return <PrintLoadError message={loadError} />;
   }
 
   if (!op || !document) {
