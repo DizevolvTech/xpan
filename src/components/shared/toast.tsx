@@ -37,19 +37,22 @@ const VARIANT_ICON: Record<ToastVariant, React.ComponentType<{ className?: strin
 };
 
 const toastVariants = cva(
-  "scroll-modern group pointer-events-auto relative flex w-full items-start gap-rhythm-xs overflow-hidden rounded-xl border bg-card p-rhythm-sm pr-rhythm-lg shadow-[var(--shadow-popover)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=cancel]:translate-x-0 data-[swipe=cancel]:transition-[transform] data-[swipe=end]:animate-out data-[state=open]:slide-in-from-bottom-2 sm:data-[state=open]:slide-in-from-right-4 motion-reduce:animate-none motion-reduce:transition-none",
+  "scroll-modern group pointer-events-auto relative flex w-full items-start gap-rhythm-xs overflow-hidden rounded-xl border bg-card p-rhythm-sm [--toast-fg:var(--foreground)] [--toast-muted:var(--foreground)] pr-rhythm-lg shadow-[var(--shadow-popover)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=cancel]:translate-x-0 data-[swipe=cancel]:transition-[transform] data-[swipe=end]:animate-out data-[state=open]:slide-in-from-bottom-2 sm:data-[state=open]:slide-in-from-right-4 motion-reduce:animate-none motion-reduce:transition-none",
   {
     variants: {
       variant: {
+        // Fundo sempre sólido (quadro #386): a cor do aviso é misturada ao fundo do cartão, sem transparência,
+        // para o texto ficar legível sobre qualquer tela. Erro usa a cor de perigo cheia, com texto branco.
         success:
-          "border-success/[var(--opacity-border)] bg-success/[var(--opacity-faint)] [--toast-accent:var(--success)]",
+          "border-success-foreground/40 bg-[color-mix(in_oklch,var(--success)_45%,var(--card))] [--toast-accent:var(--success-foreground)]",
         error:
-          "border-danger/[var(--opacity-border)] bg-danger/[var(--opacity-faint)] [--toast-accent:var(--danger)]",
+          "border-destructive bg-destructive shadow-[0_12px_32px_-8px_oklch(0.4_0.15_25/0.55)] [--toast-accent:oklch(0.99_0_0)] [--toast-fg:oklch(0.99_0_0)] [--toast-muted:oklch(0.98_0.01_20)]",
         warning:
-          "border-warning/[var(--opacity-border)] bg-warning/[var(--opacity-faint)] [--toast-accent:var(--warning)]",
-        info: "border-info/[var(--opacity-border)] bg-info/[var(--opacity-faint)] [--toast-accent:var(--info)]",
+          "border-warning-foreground/40 bg-[color-mix(in_oklch,var(--warning)_55%,var(--card))] [--toast-accent:var(--warning-foreground)]",
+        info: "border-info-foreground/40 bg-[color-mix(in_oklch,var(--info)_40%,var(--card))] [--toast-accent:var(--info-foreground)]",
       },
     },
+
     defaultVariants: { variant: "info" },
   },
 );
@@ -137,7 +140,7 @@ function ToastTitle({
     <ToastPrimitive.Title
       data-slot="toast-title"
       className={cn(
-        "font-heading text-sm leading-none font-semibold text-foreground",
+        "font-heading text-sm leading-none font-semibold text-[color:var(--toast-fg)]",
         className,
       )}
       {...props}
@@ -154,7 +157,7 @@ function ToastDescription({
       data-slot="toast-description"
       className={cn(
         // Erros de API podem ser longos: quebra palavra + scroll interno, nunca trunca.
-        "scroll-modern max-h-40 overflow-y-auto overscroll-contain text-sm leading-snug break-words text-muted-foreground",
+        "scroll-modern max-h-40 overflow-y-auto overscroll-contain text-sm leading-snug break-words text-[color:var(--toast-muted)]",
         className,
       )}
       {...props}
@@ -171,7 +174,7 @@ function ToastClose({
       data-slot="toast-close"
       // Hit-target ≥44px no mobile (M7): área tocável grande com ícone pequeno.
       className={cn(
-        "focus:ring-ring absolute top-2 right-2 inline-flex size-11 items-center justify-center rounded-md text-muted-foreground opacity-80 transition hover:bg-secondary hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none sm:size-8 motion-reduce:transition-none",
+        "focus:ring-ring absolute top-2 right-2 inline-flex size-11 items-center justify-center rounded-md text-[color:var(--toast-fg)] opacity-80 transition hover:bg-foreground/10 hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none sm:size-8 motion-reduce:transition-none",
         className,
       )}
       {...props}
