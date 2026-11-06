@@ -105,11 +105,17 @@ function isDeliveryExecutionCacheFresh(entry: DeliveryExecutionCacheEntry) {
   return Date.now() - entry.fetchedAt < DELIVERY_EXECUTION_CLIENT_CACHE_TTL_MS;
 }
 
+// Telas abertas ao mesmo tempo (lista por baixo e janela do pedido por cima, quadro #317)
+// têm cada uma o seu estado: ao gravar numa, as outras recebem o valor novo.
+const deliveryExecutionListeners = new Set<(data: DeliveryExecutionState) => void>();
+
 function setDeliveryExecutionCache(data: DeliveryExecutionState, cacheKey = getDeliveryExecutionCacheKey()) {
   deliveryExecutionCache.set(cacheKey, {
     data,
     fetchedAt: Date.now(),
   });
+  // Fora do render: o cache também é gravado dentro de um updater de setState.
+  queueMicrotask(() => deliveryExecutionListeners.forEach((listener) => listener(data)));
 }
 
 /** Cartão #18: dados que vieram junto com o HTML da página; a tela não busca de novo. */
@@ -177,9 +183,14 @@ export function useDeliveryExecution(_referenceDate?: string) {
     }
 
     void loadExecutionState();
+    const listener = (data: DeliveryExecutionState) => {
+      if (!cancelled) setExecutionState((current) => (current === data ? current : data));
+    };
+    deliveryExecutionListeners.add(listener);
 
     return () => {
       cancelled = true;
+      deliveryExecutionListeners.delete(listener);
     };
   }, []);
 

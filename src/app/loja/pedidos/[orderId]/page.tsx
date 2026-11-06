@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import { BackToListLink } from "@/components/shared/back-to-list-link";
+import { useInRouteModal } from "@/components/shared/route-modal";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   AlertCircle,
@@ -94,6 +95,7 @@ function parseBrDate(dateLabel: string): Date | null {
 
 export default function PedidoLojaDetailsPage() {
   const params = useParams<{ orderId: string }>();
+  const inModal = useInRouteModal();
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
@@ -347,12 +349,15 @@ export default function PedidoLojaDetailsPage() {
             </Button>
           ) : null}
 
-          <Button asChild type="button" variant="outline">
-            <BackToListLink href="/loja/pedidos">
-              <ArrowLeft className="size-4" />
-              Voltar para pedidos
-            </BackToListLink>
-          </Button>
+          {/* Na janela o X fecha e volta à lista (achado D93, 06/11). */}
+          {inModal ? null : (
+            <Button asChild type="button" variant="outline">
+              <BackToListLink href="/loja/pedidos">
+                <ArrowLeft className="size-4" />
+                Voltar para pedidos
+              </BackToListLink>
+            </Button>
+          )}
 
           {order.canOpenOccurrence ? (
             <Button asChild type="button" variant="outline">
