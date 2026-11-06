@@ -686,7 +686,9 @@ export function DataTable<T extends object>({
                             variant={isDestructive ? "ghost" : action.variant || "ghost"}
                             size="lg"
                             className={cn(
-                              "transition-colors duration-200",
+                              // Motivo longo ("Pedido liberado para produção — …") quebra linha no
+                              // cartão do celular em vez de alargar a página (achado D91, 06/11).
+                              "h-auto min-h-11 max-w-full whitespace-normal text-left transition-colors duration-200",
                               isDestructive
                                 ? "text-danger-foreground/80 hover:bg-danger/40 hover:text-danger-foreground"
                                 : "text-muted-foreground hover:text-foreground",
@@ -712,7 +714,7 @@ export function DataTable<T extends object>({
                         );
 
                         return disabledReason ? (
-                          <span key={actionIndex} title={disabledReason} className="inline-flex">
+                          <span key={actionIndex} title={disabledReason} className="inline-flex max-w-full">
                             {button}
                           </span>
                         ) : (
