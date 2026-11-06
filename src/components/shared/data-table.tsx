@@ -596,12 +596,14 @@ export function DataTable<T extends object>({
             const handleCardActivate = () => {
               onRowClick?.(item);
             };
-            const isInteractiveTarget = (target: EventTarget | null) =>
-              Boolean(
-                (target as HTMLElement | null)?.closest(
-                  "button, a, input, select, textarea, [role='button'], [data-stop-row-click='true']",
-                ),
+            // O próprio cartão clicável tem role="button": ele não conta como alvo interno, senão
+            // o toque no cartão no celular era sempre ignorado (achado no quadro #316, 06/11).
+            const isInteractiveTarget = (target: EventTarget | null, card: EventTarget | null) => {
+              const hit = (target as HTMLElement | null)?.closest(
+                "button, a, input, select, textarea, [role='button'], [data-stop-row-click='true']",
               );
+              return Boolean(hit && hit !== card);
+            };
 
             return (
               <li key={rowKey}>
@@ -618,7 +620,7 @@ export function DataTable<T extends object>({
                   onClick={
                     rowClickable
                       ? (event) => {
-                          if (isInteractiveTarget(event.target)) {
+                          if (isInteractiveTarget(event.target, event.currentTarget)) {
                             return;
                           }
                           handleCardActivate();
@@ -633,7 +635,7 @@ export function DataTable<T extends object>({
                           if (event.key !== "Enter" && event.key !== " ") {
                             return;
                           }
-                          if (isInteractiveTarget(event.target)) {
+                          if (isInteractiveTarget(event.target, event.currentTarget)) {
                             return;
                           }
                           event.preventDefault();
