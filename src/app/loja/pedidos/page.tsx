@@ -1868,14 +1868,15 @@ export default function PedidosLojaPage() {
                 abaixo para montar seu pedido — <strong>1 pedido por data</strong>. As datas já
                 pedidas somem desta lista.
               </p>
-              <ul className="grid gap-2 sm:grid-cols-2">
+              <ul className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
                 {pendingSlotDatesForStore.map((deliveryDate) => (
                   <li
                     key={deliveryDate}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
+                    className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-border/70 bg-card px-3 py-2"
                   >
+                    {/* Achado D91 (06/11): no celular a data longa alargava a página inteira. */}
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">
+                      <p className="break-words text-sm font-medium text-foreground">
                         Pedido para entrega em {formatDateKeyWithWeekday(deliveryDate)}
                       </p>
                       <SlotDeadlineHint

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { InfoHint } from "@/components/shared/info-hint";
 import { BackToListLink } from "@/components/shared/back-to-list-link";
+import { useInRouteModal } from "@/components/shared/route-modal";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import { getExpeditionVisibleStatus, isOrderReadyForDeliveryExecution } from "@/lib/delivery-workflow";
 import { useMemo } from "react";
@@ -35,6 +36,7 @@ function openPrintPage(pathname: string) {
  * (04/11) é a aba "Resumo" da janela do pedido, ao lado da aba "Expedição".
  */
 export function OrderSummaryView({ orderId }: { orderId: string }) {
+  const inModal = useInRouteModal();
   const confirm = useConfirm();
   const toast = useToast();
   // Quadro #42 (01/11): o detalhe abre o pedido pelo identificador; o recorte de datas da
@@ -158,18 +160,23 @@ export function OrderSummaryView({ orderId }: { orderId: string }) {
             <Printer className="size-4" />
             Folha da Loja
           </Button>
-          <Button asChild type="button" variant="outline">
-            <BackToListLink href="/gestor-fabrica/pedidos">
-              <ArrowLeft className="size-4" />
-              Voltar para pedidos
-            </BackToListLink>
-          </Button>
-          <Button asChild type="button" variant="outline">
-            <Link href="/gestor-fabrica/ordens-producao">
-              <Factory className="size-4" />
-              Ver OPs
-            </Link>
-          </Button>
+          {/* Na janela o X fecha e volta à lista: sem "Voltar" e "Ver OPs" (achado D91, 06/11). */}
+          {inModal ? null : (
+            <>
+              <Button asChild type="button" variant="outline">
+                <BackToListLink href="/gestor-fabrica/pedidos">
+                  <ArrowLeft className="size-4" />
+                  Voltar para pedidos
+                </BackToListLink>
+              </Button>
+              <Button asChild type="button" variant="outline">
+                <Link href="/gestor-fabrica/ordens-producao">
+                  <Factory className="size-4" />
+                  Ver OPs
+                </Link>
+              </Button>
+            </>
+          )}
         </div>
       }
     >

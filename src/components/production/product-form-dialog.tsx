@@ -1795,7 +1795,8 @@ export function ProductFormDialog({
                   </p>
                 </div>
 
-                <div className="overflow-hidden rounded-xl border border-border/80">
+                {/* No celular a tabela rola de lado em vez de espremer os títulos (achado D92, 06/11). */}
+                <div className="overflow-x-auto rounded-xl border border-border/80 [&>div]:min-w-[600px]">
                   <div className="grid grid-cols-[112px_repeat(4,minmax(0,1fr))] border-b border-border/80 bg-panel/70">
                     <div className="border-r border-border/70 px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                       Campo
