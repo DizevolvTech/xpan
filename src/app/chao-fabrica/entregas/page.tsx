@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, MapPinned, Navigation, Package, Truck, XCircle } from "lucide-react";
 
@@ -15,9 +15,7 @@ import { PageLayout } from "@/components/shared/page-layout";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { StatusFilterBar } from "@/components/shared/status-filter-bar";
-import { useConfirm } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
-import { ReleaseOrderBlockedError } from "@/lib/use-factory-planning";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -31,6 +29,7 @@ import {
   type DeliveryExecutionStatus,
 } from "@/lib/delivery-workflow";
 import { getProductionOrderNavKey } from "@/lib/factory-kanban";
+import { pushWithProgress } from "@/lib/navigation-progress";
 import { filterFactoryPlanningDataByOperationalScope } from "@/lib/operational-date-scope";
 import { formatDateKeyBr, type ExpeditionRow } from "@/lib/order-planning";
 import { paginateArray } from "@/lib/pagination";
@@ -130,7 +129,13 @@ export default function EntregasPage() {
   );
   const deliveryExecutionState = useDeliveryExecution();
   const toast = useToast();
-  const confirm = useConfirm();
+  const router = useRouter();
+  // Quadro #316 (04/11): tocar no pedido abre a janela do pedido na aba Expedição, por cima da
+  // lista (filtros, página e rolagem continuam iguais ao fechar).
+  const openOrder = useCallback(
+    (orderId: string) => pushWithProgress(router, `/chao-fabrica/expedicao/${encodeURIComponent(orderId)}`),
+    [router],
+  );
   const [attemptDialogRow, setAttemptDialogRow] = useState<DeliveryRow | null>(null);
   // Linha com transição de entrega em voo — desabilita o botão e evita
   // disparos concorrentes. Chave: orderId.
@@ -145,44 +150,16 @@ export default function EntregasPage() {
       try {
         await deliveryExecutionState.updateExecution(orderId, nextStatus);
       } catch (transitionError) {
-        // Trava de data futura na entrega: gestor/admin podem confirmar mesmo assim
-        // (forceable vem do servidor). Refaz com forceFutureDate: true.
-        if (
-          transitionError instanceof ReleaseOrderBlockedError &&
-          transitionError.forceable &&
-          transitionError.reason === "delivery_in_future"
-        ) {
-          const confirmed = await confirm({
-            title: "Confirmar entrega em data futura?",
-            description: transitionError.message,
-            tone: "default",
-            confirmLabel: "Confirmar mesmo assim",
-            cancelLabel: "Cancelar",
-          });
-          if (confirmed) {
-            try {
-              await deliveryExecutionState.updateExecution(orderId, nextStatus, {
-                forceFutureDate: true,
-              });
-            } catch (forceError) {
-              toast.error(
-                forceError instanceof Error ? forceError.message : "Falha ao atualizar a entrega.",
-                { title: "Não foi possível atualizar a entrega" },
-              );
-            }
-          }
-        } else {
-          const message =
-            transitionError instanceof Error
-              ? transitionError.message
-              : "Falha ao atualizar a entrega.";
-          toast.error(message, { title: "Não foi possível atualizar a entrega" });
-        }
+        const message =
+          transitionError instanceof Error
+            ? transitionError.message
+            : "Falha ao atualizar a entrega.";
+        toast.error(message, { title: "Não foi possível atualizar a entrega" });
       } finally {
         setPendingTransitionOrderId(null);
       }
     },
-    [confirm, deliveryExecutionState, pendingTransitionOrderId, toast],
+    [deliveryExecutionState, pendingTransitionOrderId, toast],
   );
 
   // AJ-A8: roteirização real. Constrói StoreProfile[] a partir do master-data
@@ -573,7 +550,14 @@ export default function EntregasPage() {
               const canMarkFailure = canRegisterDeliveryFailure(item.executionStatus);
 
               return (
-                <article key={item.id} className="rounded-xl border border-border/75 bg-card p-3 shadow-[var(--shadow-soft)]">
+                <article
+                  key={item.id}
+                  className="cursor-pointer rounded-xl border border-border/75 bg-card p-3 shadow-[var(--shadow-soft)]"
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest("button, a, [role='button']")) return;
+                    openOrder(item.orderId);
+                  }}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{item.routeCode}</p>
@@ -677,6 +661,7 @@ export default function EntregasPage() {
               keyField="id"
               pagination={false}
               showFooterControls={false}
+              onRowClick={(item) => openOrder(item.orderId)}
               emptyMessage="Nenhum pedido encontrado para execução de entrega"
               stickyHeader
             />

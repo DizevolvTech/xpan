@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
 import { useState } from "react";
 
+import { NavigationModulesProvider } from "@/components/layout/navigation-modules";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
 import type { AppShellNavigationContext } from "@/lib/permission-modules";
@@ -101,7 +102,7 @@ export function AppShell({ navigationContext, children }: AppShellProps) {
           data-app-tenant-id={navigationContext.effectiveTenantId ?? ""}
           data-app-access-mode={navigationContext.accessMode}
         >
-          {children}
+          <NavigationModulesProvider sections={navigationContext.sections}>{children}</NavigationModulesProvider>
         </div>
       </div>
     </div>

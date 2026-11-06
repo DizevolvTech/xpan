@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowRight, CalendarPlus, CalendarRange, Factory, ShoppingCart, Truck, Zap } from "lucide-react";
 
@@ -46,6 +46,8 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { useToast } from "@/components/shared/toast";
 import { useConfirm } from "@/components/shared/confirm-dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { OrderRowActionsMenu } from "@/components/orders/order-row-actions-menu";
+import { pushWithProgress } from "@/lib/navigation-progress";
 import { useDeliveryExecution } from "@/lib/delivery-execution";
 import {
   getExpeditionVisibleStatus,
@@ -106,6 +108,13 @@ function brDayMonth(dateKey: string) {
 }
 
 export function PedidosFabricaPageClient() {
+  const router = useRouter();
+  // Quadro #316 (04/11): o pedido abre em janela por cima da lista (rota interceptada), então
+  // filtros, página e rolagem continuam iguais ao fechar.
+  const openOrderDetail = useCallback(
+    (orderId: string) => pushWithProgress(router, `/gestor-fabrica/pedidos/${orderId}`),
+    [router],
+  );
   const { scope, anchorDate, summary, setMode, setDate, setStartDate, setEndDate } = useOperationalDateScope();
   const searchParams = useSearchParams();
   const toast = useToast();
@@ -885,7 +894,16 @@ export function PedidosFabricaPageClient() {
                           onAnticipate={() => void releaseBatchGroup(batchGroup, { anticipate: true })}
                         />
                       ) : null}
-                      <tr className={`hover:bg-panel/30 [&>td]:align-middle ${batchGroup ? "[&>td:first-child]:border-l-2 [&>td:first-child]:border-l-info/50" : ""}`}>
+                      {/* Quadro #316 (04/11): clicar na linha abre o pedido em janela (como em Ordens de
+                          Produção); a seta do código continua abrindo o resumo na própria lista. */}
+                      <tr
+                        data-testid={`order-row-${order.code}`}
+                        className={`cursor-pointer hover:bg-panel/30 [&>td]:align-middle ${batchGroup ? "[&>td:first-child]:border-l-2 [&>td:first-child]:border-l-info/50" : ""}`}
+                        onClick={(event) => {
+                          if ((event.target as HTMLElement).closest("button, a, input, [role='button'], [role='menu'], [data-stop-row-click='true']")) return;
+                          openOrderDetail(order.id);
+                        }}
+                      >
                         <td className="border-t border-border/70 bg-card px-2 py-1 text-[13px]">
                           <button
                             type="button"
@@ -913,17 +931,6 @@ export function PedidosFabricaPageClient() {
                         </td>
                         <td className="whitespace-nowrap border-t border-border/70 bg-card px-2 py-1 text-right sm:sticky sm:right-0 sm:z-[1] shadow-[-10px_0_12px_-12px_rgba(0,0,0,0.35)]">
                           <div className="flex items-center justify-end gap-1">
-                            <Button asChild type="button" variant="outline" size="xs" className={ROW_ACTION_TOUCH}>
-                              <Link href={`/gestor-fabrica/pedidos/${order.id}`}>Detalhe</Link>
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="xs" className={ROW_ACTION_TOUCH}
-                              onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${anchorDate}`)}
-                            >
-                              Folha Loja
-                            </Button>
                             {/* Quadro #18 (01/11): pedido de lote reaberto mostra "No lote" na hora,
                                 sem "Liberar" cinza enquanto os lotes são relidos. */}
                             {(batchGroup || batchesRefreshingOrderId === order.id) && !order.releasedToProduction && order.status !== "cancelado" ? (
@@ -960,17 +967,19 @@ export function PedidosFabricaPageClient() {
                               <Button type="button" variant="outline" size="xs" className={ROW_ACTION_TOUCH} onClick={() => handleReopenOrder(order)}>
                                 Reabrir
                               </Button>
-                            ) : visibleStatus === "entregue" || order.releasedToProduction ? null : (
-                              // Quadro #42 (01/11): pedido liberado não oferece "Cancelar" (igual ao detalhe).
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="xs" className={ROW_ACTION_TOUCH}
-                                onClick={() => handleCancelOrder(order)}
-                              >
-                                Cancelar
-                              </Button>
-                            )}
+                            ) : null}
+                            <OrderRowActionsMenu
+                              orderCode={order.code}
+                              touchClassName="max-sm:size-11"
+                              onOpen={() => openOrderDetail(order.id)}
+                              onPrintStoreSheet={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${anchorDate}`)}
+                              // Quadro #42 (01/11): pedido liberado, entregue ou cancelado não oferece "Cancelar".
+                              onCancel={
+                                order.status === "cancelado" || visibleStatus === "entregue" || order.releasedToProduction
+                                  ? undefined
+                                  : () => handleCancelOrder(order)
+                              }
+                            />
                           </div>
                         </td>
                       </tr>

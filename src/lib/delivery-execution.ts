@@ -198,8 +198,6 @@ export function useDeliveryExecution(_referenceDate?: string) {
         checklistCompletedAt?: string | null;
         force?: boolean;
         releaseReason?: string | null;
-        // Override de gestor/admin da trava de data futura (entrega).
-        forceFutureDate?: boolean;
       },
     ) => {
       const updatedAt = new Date().toISOString();
@@ -246,7 +244,6 @@ export function useDeliveryExecution(_referenceDate?: string) {
           checklistCompletedAt: options?.checklistCompletedAt,
           force: options?.force,
           releaseReason: options?.force ? options.releaseReason : undefined,
-          forceFutureDate: options?.forceFutureDate,
         }),
       });
 
@@ -269,8 +266,7 @@ export function useDeliveryExecution(_referenceDate?: string) {
           setDeliveryExecutionCache(nextState);
           return nextState;
         });
-        // Bloqueio overridable (ex.: data futura): preserva reason/forceable para a
-        // UI poder oferecer "confirmar mesmo assim" e refazer com forceFutureDate.
+        // Bloqueio com motivo: preserva reason/forceable para a UI tratar.
         if (response.status === 400 && payload?.reason) {
           throw new ReleaseOrderBlockedError(
             payload.message ?? "Entrega bloqueada",

@@ -1293,14 +1293,18 @@ export function ProductFormDialog({
           size="3xl"
           className="flex max-h-[92vh] flex-col overflow-hidden rounded-[28px] bg-white p-0 sm:max-w-[1080px] xl:max-w-[1200px]"
         >
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-        <DialogHeader>
-          <DialogTitle className="text-xl">
+        {/* Cabeçalho fora da rolagem: o nome digitado do produto fica visível em todas as abas
+            (Cadastro, Receita, Cronograma e MPI) — quadro #315, 04/11. */}
+        <DialogHeader className="shrink-0 border-b border-border/70 px-5 pb-3 pt-5 pr-12">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {!product
-              ? "Cadastrar Novo Produto"
+              ? "Cadastrar novo produto"
               : isReadOnly
-                ? "Visualizar Produto"
-                : "Editar Produto"}
+                ? "Visualizar produto"
+                : "Editar produto"}
+          </p>
+          <DialogTitle className="break-words text-xl" data-testid="product-dialog-name">
+            {formState.name.trim() || (product ? product.name : "Novo produto")}
           </DialogTitle>
           <DialogDescription>
             {isReadOnly
@@ -1308,6 +1312,7 @@ export function ProductFormDialog({
               : "Comece pelo código da loja. O nome completo do produto vira a descrição no ERP; o código da fábrica é gerado automaticamente."}
           </DialogDescription>
         </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 pt-4">
 
         {formError ? (
           <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
@@ -1778,11 +1783,6 @@ export function ProductFormDialog({
 
           <TabsContent value="receita">
             <fieldset disabled={isReadOnly} className="min-w-0 space-y-5">
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm">
-                <strong>Como preencher a receita</strong>
-                <p>1. Confira unidades e pesos. 2. Informe insumos, quantidades e etapas. 3. Preencha o rendimento. 4. Informe o limite máximo da batida.</p>
-                <p>Preenchimento manual: campos editáveis. Calculado pelo XPAN: valores em painéis sombreados. Campos com * são obrigatórios para adicionar um insumo.</p>
-              </div>
               <section className="space-y-4 rounded-xl border border-border/80 p-4">
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">

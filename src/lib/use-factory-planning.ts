@@ -33,9 +33,7 @@ export type ReleaseBlockReason =
   | "batch_stores_pending"
   // Trava de data futura: o servidor responde 400 + reason ao tentar concluir
   // produção (ou bater a última batida) em data futura. forceable=true só p/ gestor.
-  | "production_in_future"
-  // Trava de data futura na ENTREGA: marcar `entregue` antes da data de entrega.
-  | "delivery_in_future";
+  | "production_in_future";
 
 export class ReleaseOrderBlockedError extends Error {
   readonly reason: ReleaseBlockReason;

@@ -300,13 +300,8 @@ export default function ExpedicaoPage() {
             <Button type="button" variant="outline" size="sm" onClick={() => openPrintPage(`/impressao/expedicao/${item.id}?ref=${anchorDate}`)}>
               Imprimir
             </Button>
-            {item.checklistReady ? (
-              <Button asChild type="button" size="sm" variant={item.checklistStatus === "aguardando_expedicao" ? "default" : "outline"}>
-                <Link href={`/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`}>
-                  {item.checklistStatus === "aguardando_expedicao" ? "Abrir checklist" : "Ver checklist"}
-                </Link>
-              </Button>
-            ) : (
+            {/* Quadro #316 (04/11): a linha abre o pedido (janela, aba Expedição); sem botão só para abrir. */}
+            {item.checklistReady ? null : (
               <Button
                 type="button"
                 size="sm"
@@ -514,13 +509,7 @@ export default function ExpedicaoPage() {
             keyField="id"
             pagination={false}
             showFooterControls={false}
-            onRowClick={(item) => {
-              if (item.checklistReady) {
-                pushWithProgress(router, `/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
-              } else {
-                toggleOrderDetail(item.id);
-              }
-            }}
+            onRowClick={(item) => pushWithProgress(router, `/gestor-fabrica/expedicao/${item.id}?ref=${anchorDate}`)}
             isRowExpanded={(item) => expandedOrderIds.includes(item.id)}
             renderExpandedRow={(item) => (
               <ExpeditionOrderOpsDetail

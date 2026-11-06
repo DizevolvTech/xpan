@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   FutureWorkflowDateError,
-  assertDeliveryNotInFuture,
   assertProductionNotInFuture,
   canOverrideFutureWorkflowDate,
   getOperationalTodayKey,
@@ -39,17 +38,6 @@ test("assertProductionNotInFuture PERMITE hoje e datas passadas", () => {
 
 test("assertProductionNotInFuture: chave sem data válida não bloqueia", () => {
   assert.doesNotThrow(() => assertProductionNotInFuture("chave-estranha", TODAY));
-});
-
-test("assertDeliveryNotInFuture BLOQUEIA entregue em data de entrega futura", () => {
-  assert.throws(() => assertDeliveryNotInFuture("2026-06-04", TODAY), FutureWorkflowDateError);
-});
-
-test("assertDeliveryNotInFuture PERMITE hoje, passado e data ausente", () => {
-  assert.doesNotThrow(() => assertDeliveryNotInFuture("2026-06-02", TODAY));
-  assert.doesNotThrow(() => assertDeliveryNotInFuture("2026-05-30", TODAY));
-  assert.doesNotThrow(() => assertDeliveryNotInFuture(null, TODAY));
-  assert.doesNotThrow(() => assertDeliveryNotInFuture(undefined, TODAY));
 });
 
 test("FutureWorkflowDateError carrega reason e mensagem amigável (DD/MM/AAAA)", () => {

@@ -3,6 +3,8 @@
 import { pushWithProgress } from "@/lib/navigation-progress";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+
+import { BackToListLink } from "@/components/shared/back-to-list-link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   AlertCircle,
@@ -264,10 +266,10 @@ export default function PedidoLojaDetailsPage() {
         ]}
         actions={
           <Button asChild type="button" variant="outline">
-            <Link href="/loja/pedidos">
+            <BackToListLink href="/loja/pedidos">
               <ArrowLeft className="size-4" />
               Voltar para pedidos
-            </Link>
+            </BackToListLink>
           </Button>
         }
       >
@@ -346,10 +348,10 @@ export default function PedidoLojaDetailsPage() {
           ) : null}
 
           <Button asChild type="button" variant="outline">
-            <Link href="/loja/pedidos">
+            <BackToListLink href="/loja/pedidos">
               <ArrowLeft className="size-4" />
               Voltar para pedidos
-            </Link>
+            </BackToListLink>
           </Button>
 
           {order.canOpenOccurrence ? (

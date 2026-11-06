@@ -7,16 +7,16 @@
  * Como `concluido` é o portão que joga o pedido para "Aguardando expedição", isso
  * fazia pedidos não produzidos pularem direto para a expedição, confundindo o chão.
  *
- * Esta trava impede registrar produção CONCLUÍDA ou entrega ENTREGUE para uma data
- * estritamente no futuro. Hoje e datas passadas continuam permitidos (conclusão no
+ * Esta trava impede iniciar a produção para uma data estritamente no futuro (a entrega
+ * antecipada é permitida sem confirmação desde o quadro #319, 04/11). Hoje e datas passadas continuam permitidos (conclusão no
  * dia ou registro tardio são legítimos). Desfazer/corrigir nunca é bloqueado.
  */
 
 /** Erro de validação: tentativa de concluir produção/entrega em data futura. Mapeado para HTTP 400 nos routes. */
 export class FutureWorkflowDateError extends Error {
-  readonly reason: "production_in_future" | "delivery_in_future";
+  readonly reason: "production_in_future";
 
-  constructor(reason: "production_in_future" | "delivery_in_future", message: string) {
+  constructor(reason: "production_in_future", message: string) {
     super(message);
     this.name = "FutureWorkflowDateError";
     this.reason = reason;
@@ -82,22 +82,6 @@ export function assertProductionNotInFuture(
     throw new FutureWorkflowDateError(
       "production_in_future",
       `Não é possível iniciar a produção de ${formatDateKeyBr(productionDate)} antes da data chegar (hoje é ${formatDateKeyBr(today)}). Só o gestor pode liberar o início antecipado; depois de iniciada, a produção pode ser concluída normalmente.`,
-    );
-  }
-}
-
-/**
- * Lança `FutureWorkflowDateError` se a entrega estiver agendada para uma data
- * futura relativa a `today`. Data ausente/inválida não bloqueia.
- */
-export function assertDeliveryNotInFuture(
-  deliveryDate: string | null | undefined,
-  today: string = getOperationalTodayKey(),
-): void {
-  if (deliveryDate && DATE_KEY.test(deliveryDate) && deliveryDate > today) {
-    throw new FutureWorkflowDateError(
-      "delivery_in_future",
-      `Não é possível marcar como entregue antes da data de entrega (${formatDateKeyBr(deliveryDate)}); hoje é ${formatDateKeyBr(today)}.`,
     );
   }
 }

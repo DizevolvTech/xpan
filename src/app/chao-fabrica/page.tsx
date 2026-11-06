@@ -551,7 +551,7 @@ export default function ChaoFabricaPage() {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.22 }}
         aria-label="Quadro de produção por etapa"
-        className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 [scrollbar-gutter:stable]"
+        className="-mx-1 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 [scrollbar-gutter:stable] md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 xl:grid-cols-4"
       >
         {kanbanColumns.map((column, columnIndex) => {
           const tone = KANBAN_TONE_STYLES[column.tone];
@@ -562,7 +562,7 @@ export default function ChaoFabricaPage() {
             <section
               key={column.key}
               aria-labelledby={`chao-kanban-${column.key}-title`}
-              className={`group relative flex min-h-[460px] w-[84vw] shrink-0 snap-start flex-col gap-3 overflow-hidden rounded-2xl bg-card p-4 sm:w-[300px] ${tone.ring}`}
+              className={`group relative flex min-h-[460px] w-[84vw] shrink-0 snap-start flex-col gap-3 overflow-hidden rounded-2xl bg-card p-4 sm:w-[300px] md:w-auto md:min-w-0 ${tone.ring}`}
             >
               <span
                 aria-hidden

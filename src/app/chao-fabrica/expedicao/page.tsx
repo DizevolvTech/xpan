@@ -334,18 +334,8 @@ export default function ExpedicaoPage() {
       render: (item: ExpeditionOrderRow) => (
         <div className="flex min-w-0 flex-col gap-2 sm:min-w-[180px]">
           <div className="flex flex-wrap gap-2">
-            {item.checklistReady ? (
-              <Button
-                asChild
-                type="button"
-                size="lg"
-                variant={item.checklistStatus === "aguardando_expedicao" ? "default" : "outline"}
-              >
-                <Link href={`/chao-fabrica/expedicao/${item.id}?ref=${anchorDate}`}>
-                  {item.checklistStatus === "aguardando_expedicao" ? "Abrir checklist" : "Ver checklist"}
-                </Link>
-              </Button>
-            ) : (
+            {/* Quadro #316 (04/11): a linha abre o pedido (janela, aba Expedição); sem botão só para abrir. */}
+            {item.checklistReady ? null : (
               <Button
                 type="button"
                 size="lg"
@@ -562,13 +552,7 @@ export default function ExpedicaoPage() {
             keyField="id"
             pagination={false}
             showFooterControls={false}
-            onRowClick={(item) => {
-              if (item.checklistReady) {
-                pushWithProgress(router, `/chao-fabrica/expedicao/${item.id}?ref=${anchorDate}`);
-              } else {
-                toggleOrderDetail(item.id);
-              }
-            }}
+            onRowClick={(item) => pushWithProgress(router, `/chao-fabrica/expedicao/${item.id}?ref=${anchorDate}`)}
             isRowExpanded={(item) => expandedOrderIds.includes(item.id)}
             renderExpandedRow={(item) => (
               <ExpeditionOrderOpsDetail

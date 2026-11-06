@@ -1,0 +1,539 @@
+"use client";
+
+import Link from "next/link";
+import { InfoHint } from "@/components/shared/info-hint";
+import { BackToListLink } from "@/components/shared/back-to-list-link";
+import { useDeliveryExecution } from "@/lib/delivery-execution";
+import { getExpeditionVisibleStatus, isOrderReadyForDeliveryExecution } from "@/lib/delivery-workflow";
+import { useMemo } from "react";
+import { ArrowLeft, Factory, Printer, ShoppingCart, Truck } from "lucide-react";
+
+import { FactoryFlow } from "@/components/shared/factory-flow";
+import { PaginatedSection } from "@/components/shared/paginated-section";
+import { PageLayout } from "@/components/shared/page-layout";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { useConfirm } from "@/components/shared/confirm-dialog";
+import { useToast } from "@/components/shared/toast";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getProductionOrderNavKey } from "@/lib/factory-kanban";
+import { aggregateOrderItems } from "@/lib/order-item-aggregation";
+import { formatDateKeyBr } from "@/lib/order-planning";
+import { formatKgValue } from "@/lib/utils";
+import { useOperationalDateScope } from "@/lib/use-operational-date-scope";
+import { useFactoryPlanningSnapshot } from "@/lib/use-factory-planning";
+import { performReleaseOrderWithConfirm } from "@/lib/release-order-with-confirm";
+import { useWaitingBatchOrders } from "@/components/production/use-waiting-batch-orders";
+import { waitingBatchOrderHint } from "@/lib/waiting-batch-orders";
+
+function openPrintPage(pathname: string) {
+  window.open(pathname, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Resumo do pedido para o gestor de fábrica (auditar, liberar, cancelar). Desde o quadro #317
+ * (04/11) é a aba "Resumo" da janela do pedido, ao lado da aba "Expedição".
+ */
+export function OrderSummaryView({ orderId }: { orderId: string }) {
+  const confirm = useConfirm();
+  const toast = useToast();
+  // Quadro #42 (01/11): o detalhe abre o pedido pelo identificador; o recorte de datas da
+  // operação não filtra nada aqui, então o cartão "Janela do pedido" saiu (confundia com
+  // "Somente <dia>" em pedido de outro mês). A data de referência segue para os dados.
+  const { anchorDate } = useOperationalDateScope();
+  const { planningData, isLoading, releaseOrder, cancelOrder, reopenOrder } = useFactoryPlanningSnapshot(anchorDate);
+
+  const order = useMemo(
+    () => planningData.orders.find((item) => item.id === orderId) ?? null,
+    [orderId, planningData.orders],
+  );
+
+  const orderItems = useMemo(
+    () => planningData.orderItems.filter((item) => item.orderId === orderId),
+    [orderId, planningData.orderItems],
+  );
+
+  const relatedOps = useMemo(
+    () => planningData.productionOrders.filter((op) => op.orderCodes.includes(order?.code ?? "")),
+    [order, planningData.productionOrders],
+  );
+
+  const aggregatedOrderItems = useMemo(() => aggregateOrderItems(orderItems), [orderItems]);
+  // Quadro #42 (29/10): mesmo status da lista de Pedidos — produção mesclada com a execução
+  // de entrega. Sem isso o pedido já entregue aparecia "Aguardando expedição" no detalhe.
+  const deliveryExecutionState = useDeliveryExecution();
+  // Até a situação da entrega carregar, não mostrar o status só da produção (piscava
+  // "Em produção" antes de virar "Entregue").
+  const visibleStatus = order && deliveryExecutionState.isHydrated
+    ? getExpeditionVisibleStatus(
+        order.status,
+        deliveryExecutionState.resolveExecution(order.id, isOrderReadyForDeliveryExecution(order.status)).status,
+      )
+    : null;
+  // Quando a entrega já avançou (em rota, entregue), os itens seguem o pedido; antes disso
+  // cada item mostra o próprio andamento da produção.
+  const deliveryOverridesItems = Boolean(order && visibleStatus && visibleStatus !== order.status);
+  const itemVisibleStatus = (status: typeof orderItems[number]["status"]) =>
+    deliveryOverridesItems && visibleStatus ? visibleStatus : status;
+  const canCancelOrder = Boolean(order && !order.releasedToProduction && order.status !== "cancelado");
+  // Quadro #4 (Lucas, 28/10): pedido de lote no prazo das lojas fica sem "Liberar", igual a Pedidos.
+  const { waiting: waitingBatchOrders, loaded: waitingBatchLoaded } = useWaitingBatchOrders(planningData);
+  const waitingBatch = order && !order.releasedToProduction ? waitingBatchOrders.get(order.code) ?? null : null;
+
+  const flowSteps = [
+    {
+      key: "pedidos",
+      title: "Pedidos",
+      helper: "Itens vendidos",
+      value: planningData.orders.length,
+      href: "/gestor-fabrica/pedidos",
+      icon: ShoppingCart,
+    },
+    {
+      key: "producao",
+      title: "Produção",
+      helper: "OPs liberadas",
+      value: planningData.productionOrders.length,
+      href: "/gestor-fabrica/ordens-producao",
+      icon: Factory,
+    },
+    {
+      key: "expedicao",
+      title: "Expedição",
+      helper: "Checklists",
+      value: planningData.expedition.length,
+      href: "/gestor-fabrica/expedicao",
+      icon: Truck,
+    },
+  ];
+
+  if (!order) {
+    return (
+      <PageLayout
+        title={isLoading ? "Carregando pedido…" : "Pedido não encontrado"}
+        description={isLoading ? "" : "O pedido solicitado não existe para a referência atual."}
+        badge="Fábrica"
+        breadcrumbs={[
+          { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
+          { label: "Pedidos", href: "/gestor-fabrica/pedidos" },
+          { label: "Detalhe" },
+        ]}
+        actions={
+          <Button asChild type="button" variant="outline">
+            <BackToListLink href="/gestor-fabrica/pedidos">
+              <ArrowLeft className="size-4" />
+              Voltar para pedidos
+            </BackToListLink>
+          </Button>
+        }
+      >
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            {isLoading
+              ? "Buscando dados do pedido…"
+              : "Ajuste a data de referência na lista de pedidos e tente novamente."}
+          </CardContent>
+        </Card>
+      </PageLayout>
+    );
+  }
+
+  return (
+    <PageLayout
+      title={`${order.code} · ${order.storeName}`}
+      description="Audite o pedido, libere para produção e acompanhe o progresso derivado dos produtos."
+      badge="Fábrica"
+      breadcrumbs={[
+        { label: "Gestor de Fábrica", href: "/gestor-fabrica" },
+        { label: "Pedidos", href: "/gestor-fabrica/pedidos" },
+        { label: order.code },
+      ]}
+      actions={
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => openPrintPage(`/impressao/pedido-loja/${order.id}?ref=${anchorDate}`)}
+          >
+            <Printer className="size-4" />
+            Folha da Loja
+          </Button>
+          <Button asChild type="button" variant="outline">
+            <BackToListLink href="/gestor-fabrica/pedidos">
+              <ArrowLeft className="size-4" />
+              Voltar para pedidos
+            </BackToListLink>
+          </Button>
+          <Button asChild type="button" variant="outline">
+            <Link href="/gestor-fabrica/ordens-producao">
+              <Factory className="size-4" />
+              Ver OPs
+            </Link>
+          </Button>
+        </div>
+      }
+    >
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Resumo do Pedido</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Pedido</p>
+            <p className="mt-1 text-sm font-semibold">{order.code}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Loja</p>
+            <p className="mt-1 text-sm font-semibold">{order.storeName}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Feito em</p>
+            <p className="mt-1 text-sm font-semibold">{order.orderedAt}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Prazo</p>
+            <p className="mt-1 text-sm font-semibold">{order.dPlusLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Recebimento</p>
+            <p className="mt-1 text-sm font-semibold text-warning-foreground">{order.deliveryDateLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Status</p>
+            <div className="mt-1">
+              {visibleStatus ? (
+                <StatusBadge status={visibleStatus} />
+              ) : (
+                <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />
+              )}
+            </div>
+          </div>
+          <div className="space-y-2 sm:col-span-2 lg:col-span-1 xl:col-span-1">
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Liberação</p>
+            {/* Quadro #18 (01/11): pedido cancelado não mostra "Liberar"; só "Reabrir" ao lado. */}
+            {order.status === "cancelado" ? (
+              <p className="text-sm text-muted-foreground">Pedido cancelado: reabra para liberar.</p>
+            ) : (
+            <Button
+              type="button"
+              className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
+              // Servidor é a fonte da verdade — em caso de bloqueio, o gestor
+              // recebe o motivo e a opção de forçar via diálogo.
+              disabled={
+                order.releasedToProduction || waitingBatch !== null || !waitingBatchLoaded
+              }
+              title={waitingBatch ? waitingBatchOrderHint(waitingBatch) : undefined}
+              onClick={() => void performReleaseOrderWithConfirm(order, releaseOrder, confirm, toast)}
+            >
+              {order.releasedToProduction
+                ? "Pedido liberado"
+                : waitingBatch
+                  ? "Aguardando prazo do lote"
+                  : "Liberar para produção"}
+            </Button>
+            )}
+            {waitingBatch ? (
+              <p className="text-xs leading-snug text-muted-foreground">{waitingBatchOrderHint(waitingBatch)}</p>
+            ) : null}
+          </div>
+          <div className="space-y-2 sm:col-span-2 lg:col-span-2 xl:col-span-2">
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Gestão do pedido</p>
+            {order.status === "cancelado" ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: `Reabrir o pedido ${order.code}?`,
+                      tone: "default",
+                      confirmLabel: "Reabrir",
+                      cancelLabel: "Voltar",
+                    })
+                  ) {
+                    try {
+                      await reopenOrder(order.id);
+                      toast.success(`Pedido ${order.code} reaberto.`);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível concluir. Tente de novo.");
+                    }
+                  }
+                }}
+              >
+                Reabrir pedido
+              </Button>
+            ) : !canCancelOrder ? (
+              // Quadro #42 (01/11): pedido já liberado (ou entregue) não oferece "Cancelar".
+              <p className="text-sm text-muted-foreground">Pedido liberado para a produção: não pode ser cancelado.</p>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto min-h-10 w-full whitespace-normal px-4 py-2.5 text-center leading-tight"
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: `Cancelar o pedido ${order.code}?`,
+                      description: "Ele sairá do fluxo operacional até ser reaberto.",
+                      tone: "destructive",
+                      confirmLabel: "Cancelar pedido",
+                      cancelLabel: "Voltar",
+                    })
+                  ) {
+                    try {
+                      await cancelOrder(order.id);
+                      toast.success(`Pedido ${order.code} cancelado.`);
+                    } catch (error) {
+                      toast.error(error instanceof Error ? error.message : "Não foi possível concluir. Tente de novo.");
+                    }
+                  }
+                }}
+              >
+                Cancelar pedido
+              </Button>
+            )}
+          </div>
+          <div className="sm:col-span-2 lg:col-span-3 xl:col-span-7">
+            <div className="rounded-md border border-border/70 bg-panel/40 px-3 py-2 text-sm text-muted-foreground">
+              {deliveryOverridesItems && visibleStatus ? (
+                <>
+                  Progresso: <strong>100%</strong>.{" "}
+                  {visibleStatus === "entregue"
+                    ? "Pedido entregue à loja; o fluxo deste pedido terminou."
+                    : "Pedido já saiu para entrega; a produção dele terminou."}
+                </>
+              ) : (
+                <>
+              Progresso derivado: <strong>{order.workflowProgress.toFixed(1)}%</strong>.{" "}
+              {order.status === "cancelado"
+                ? "Pedido cancelado pela fábrica e fora do fluxo operacional até reabertura."
+                : "O pedido só sobe para expedição quando todos os produtos da OP concluírem."}
+                </>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <FactoryFlow
+        currentKey="pedidos"
+        steps={flowSteps}
+        subtitle="Você está auditando um pedido dentro do fluxo operacional completo."
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Itens Consolidados do Pedido</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PaginatedSection
+            items={aggregatedOrderItems}
+            label="itens consolidados"
+            initialPageSize={8}
+            temporalSortKeys={["deliveryDate", "productionDate", "saleDate"]}
+          >
+            {(paginatedItems) => (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[980px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg Interno</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" className="relative after:absolute after:-inset-x-[14px] after:-inset-y-[12px] after:content-['']" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map((item) => (
+                      <tr key={item.aggregationKey}>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.productCode} · {item.productName}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.requestedQuantity} {item.requestedUnit}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.productionDate ? formatDateKeyBr(item.productionDate) : "Sem agenda"}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.scheduleName}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {visibleStatus ? (
+                            <StatusBadge status={itemVisibleStatus(item.status)} />
+                          ) : (
+                            <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />
+                          )}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{item.opCode ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Itens Originais do Pedido</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PaginatedSection
+            items={orderItems}
+            label="itens originais"
+            initialPageSize={8}
+            temporalSortKeys={["deliveryDate", "productionDate", "saleDate"]}
+          >
+            {(paginatedItems) => (
+              <div className="overflow-x-auto rounded-xl border border-border/80">
+                <table className="w-full min-w-[760px] border-collapse">
+                  <thead className="bg-panel">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produto</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Qtd Loja</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Kg</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground" title="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)"><span className="inline-flex items-center gap-1">Início da venda<InfoHint label="O que é Início da venda" className="relative after:absolute after:-inset-x-[14px] after:-inset-y-[12px] after:content-['']" content="Dia em que a loja começa a vender o item: data de entrega + prazo de venda da fábrica (Visão Geral › Prazo de venda após entrega)" /></span></th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Status do item</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map((item) => (
+                      <tr key={item.id}>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.productCode} · {item.productName}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {item.requestedQuantity} {item.requestedUnit}
+                        </td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(item.internalKg)}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatDateKeyBr(item.saleDate)}</td>
+                        <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                          {visibleStatus ? (
+                            <StatusBadge status={itemVisibleStatus(item.status)} />
+                          ) : (
+                            <span className="inline-block h-5 w-24 animate-pulse rounded-full bg-muted" aria-label="Carregando status" />
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </PaginatedSection>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Previsão por Dia de Produção</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {(() => {
+            const byDate = new Map<string, typeof aggregatedOrderItems>();
+
+            aggregatedOrderItems.forEach((item) => {
+              const key = item.productionDate ?? "sem-data";
+              const current = byDate.get(key) ?? [];
+              current.push(item);
+              byDate.set(key, current);
+            });
+
+            const sortedDates = [...byDate.keys()].sort();
+
+            return sortedDates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum item para exibir.</p>
+            ) : (
+              <div className="space-y-4">
+                {sortedDates.map((date) => {
+                  const items = byDate.get(date) ?? [];
+                  const totalKg = items.reduce((sum, i) => sum + i.internalKg, 0);
+                  return (
+                    <div key={date} className="rounded-lg border border-border/70 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-foreground">
+                          {date === "sem-data" ? "Sem data de produção" : formatDateKeyBr(date)}
+                        </p>
+                        <span className="text-xs text-muted-foreground">
+                          {items.length} produto(s) · {formatKgValue(totalKg)}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {items.map((item) => (
+                          <div key={item.productCode} className="flex items-center justify-between text-sm">
+                            <span>{item.productCode} · {item.productName}</span>
+                            <span className="text-muted-foreground">{formatKgValue(item.internalKg)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>OPs Relacionadas</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {relatedOps.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhuma OP gerada. Libere o pedido para produção.</p>
+          ) : (
+            <PaginatedSection items={relatedOps} label="OPs relacionadas" initialPageSize={6}>
+              {(paginatedOps) => (
+                <div className="overflow-x-auto rounded-xl border border-border/80">
+                  <table className="w-full min-w-[860px] border-collapse">
+                    <thead className="bg-panel">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">OP</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Produção</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Linha</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Total (Kg)</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Progresso da OP</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedOps.map((op) => (
+                        <tr key={op.id}>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.code}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.productionDateLabel}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{op.scheduleName}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">{formatKgValue(op.totalKg)}</td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3 text-sm">
+                            {op.progress.toFixed(1)}%
+                            {op.ordersCount > 1 ? (
+                              <span className="block text-xs text-muted-foreground">OP compartilhada com {op.ordersCount} pedidos: o progresso é da OP inteira</span>
+                            ) : null}
+                          </td>
+                          <td className="border-t border-border/70 bg-card px-4 py-3">
+                            <Button asChild type="button" size="sm" variant="ghost">
+                              <Link href={`/gestor-fabrica/ordens-producao/${encodeURIComponent(getProductionOrderNavKey(op))}?ref=${anchorDate}`}>Abrir</Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </PaginatedSection>
+          )}
+        </CardContent>
+      </Card>
+    </PageLayout>
+  );
+}
