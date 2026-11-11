@@ -480,13 +480,13 @@ export default function LojasPage() {
           setIsDialogOpen(open);
         }}
       >
-        <DialogContent size="3xl">
+        <DialogContent size="3xl" className="grid-cols-[minmax(0,1fr)]">
           <DialogHeader>
             <DialogTitle>
               {!editingStore ? "Cadastrar Loja" : isReadOnly ? "Visualizar Loja" : "Editar Loja"}
             </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-6 py-2">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-6 py-2">
             {formError ? (
               <div className="rounded-lg border border-danger/40 bg-danger/20 px-3 py-2 text-sm text-danger-foreground">
                 {formError}
@@ -509,7 +509,7 @@ export default function LojasPage() {
               </div>
             ) : null}
 
-            <fieldset disabled={isReadOnly} className="grid gap-6">
+            <fieldset disabled={isReadOnly} className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6">
             <div>
               <h3 className="mb-4 text-sm font-semibold">Informações Básicas</h3>
               <div className="grid gap-4 md:grid-cols-2">

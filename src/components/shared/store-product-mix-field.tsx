@@ -83,7 +83,7 @@ export function ProductChecklist({
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Buscar produto por código ou nome..."
-          className="max-w-xs"
+          className="w-full max-w-xs"
           aria-label={label}
         />
         {!readOnly ? (
@@ -104,23 +104,23 @@ export function ProductChecklist({
             </button>
           </>
         ) : null}
-        <span className="ml-auto text-xs text-muted-foreground">
+        <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
           <strong>{selectedCount}</strong> de {options.length} produtos marcados
         </span>
       </div>
 
-      <div className="grid max-h-64 gap-1 overflow-auto rounded-lg border border-border/70 bg-card p-2 sm:grid-cols-2">
+      <div className="grid max-h-64 grid-cols-[minmax(0,1fr)] gap-1 overflow-auto rounded-lg border border-border/70 bg-card p-2 sm:grid-cols-2">
         {visibleOptions.length === 0 ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">Nenhum produto encontrado.</p>
         ) : (
           visibleOptions.map((option) => (
-            <label key={option.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm">
+            <label key={option.id} className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm">
               <Checkbox
                 checked={selected.has(option.id)}
                 disabled={readOnly}
                 onCheckedChange={(checked) => setMany([option.id], checked === true)}
               />
-              <span className="min-w-0 truncate">
+              <span className="min-w-0 truncate" title={`${option.code} · ${option.name}`}>
                 <span className="text-muted-foreground">{option.code}</span> · {option.name}
               </span>
             </label>
@@ -185,7 +185,7 @@ export function StoreProductMixField({
   const missingTemplate = mode === "modelo" && !selectedTemplate;
 
   return (
-    <section className="space-y-3 rounded-xl border border-border/80 bg-panel/20 p-4" data-testid="store-product-mix">
+    <section className="min-w-0 space-y-3 rounded-xl border border-border/80 bg-panel/20 p-4" data-testid="store-product-mix">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-foreground">Mix de produtos da loja</h3>
@@ -237,7 +237,7 @@ export function StoreProductMixField({
               <span className="text-muted-foreground">Modelo</span>
               <select
                 aria-label="Modelo de mix"
-                className="h-9 min-w-56 rounded-md border border-border bg-card px-2 text-sm"
+                className="h-9 w-full max-w-xs rounded-md border border-border bg-card px-2 text-sm"
                 value={value.templateId ?? ""}
                 disabled={readOnly}
                 onChange={(event) => onChange({ mode: "modelo", templateId: event.target.value || null, manual: null })}

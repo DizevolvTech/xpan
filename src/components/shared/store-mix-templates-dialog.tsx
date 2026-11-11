@@ -89,7 +89,7 @@ export function StoreMixTemplatesDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-w-3xl">
+      <DialogContent size="xl" className="grid-cols-[minmax(0,1fr)]">
         <DialogHeader>
           <DialogTitle>Modelos de mix de produtos</DialogTitle>
         </DialogHeader>
