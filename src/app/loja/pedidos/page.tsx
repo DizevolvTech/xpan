@@ -1054,7 +1054,8 @@ export default function PedidosLojaPage() {
         transition={{ duration: 0.3, ease: "easeOut" }}
         className="flex flex-col gap-4 border-b border-border/[var(--opacity-divider)] pb-5 sm:flex-row sm:items-end sm:justify-between"
       >
-        <div className="min-w-0">
+        {/* No celular o botão do menu fica no canto: o cabeçalho reserva o espaço dele (como o PageHero). */}
+        <div className="min-w-0 max-lg:min-h-11 max-lg:pl-14">
           <nav className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <Link href="/loja" className="transition hover:text-foreground">
               Loja
