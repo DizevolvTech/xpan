@@ -82,7 +82,7 @@ export function ProductChecklist({
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Buscar produto por código ou nome..."
+          placeholder="Buscar produto..."
           className="w-full max-w-xs"
           aria-label={label}
         />
@@ -171,9 +171,10 @@ export function StoreProductMixField({
 
   function chooseMode(next: StoreProductMixMode) {
     if (readOnly) return;
-    if (next === "todos") onChange({ mode: next, templateId: null, manual: null });
+    if (next === "todos") onChange({ mode: next, templateId: null, manual: value.manual });
     if (next === "manual") onChange({ mode: next, templateId: null, manual: value.manual });
-    if (next === "modelo") onChange({ mode: next, templateId: value.templateId ?? templates[0]?.id ?? null, manual: null });
+    // A lista manual fica guardada ao trocar de modo (só não é enviada no modo modelo/todos).
+    if (next === "modelo") onChange({ mode: next, templateId: value.templateId ?? templates[0]?.id ?? null, manual: value.manual });
   }
 
   function emitManual(nextIds: string[]) {
@@ -240,7 +241,7 @@ export function StoreProductMixField({
                 className="h-9 w-full max-w-xs rounded-md border border-border bg-card px-2 text-sm"
                 value={value.templateId ?? ""}
                 disabled={readOnly}
-                onChange={(event) => onChange({ mode: "modelo", templateId: event.target.value || null, manual: null })}
+                onChange={(event) => onChange({ mode: "modelo", templateId: event.target.value || null, manual: value.manual })}
               >
                 <option value="">Escolha um modelo...</option>
                 {templates.map((template) => (
