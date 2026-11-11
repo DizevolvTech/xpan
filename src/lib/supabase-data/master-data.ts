@@ -1,6 +1,11 @@
 import "server-only";
 
-import { normalizeStoreProductMix } from "@/lib/store-product-mix";
+import {
+  mapStoreProductMixTemplateRows,
+  normalizeStoreProductMix,
+  resolveEffectiveStoreProductMix,
+  type StoreProductMixTemplate,
+} from "@/lib/store-product-mix";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getCachedServerData, invalidateServerDataCache } from "@/lib/server-data-cache";
 import {
@@ -60,6 +65,8 @@ export interface MasterDataSnapshot {
   productChangelogByProductId?: Record<string, ProductChangelogSummary>;
   /** Cartão #173: etapas da ficha técnica cadastradas pela empresa (e padrão renomeadas). */
   recipeStageDefinitions?: RecipeStageDefinition[];
+  /** Cartão #602: modelos de mix de produtos da empresa. */
+  productMixTemplates?: StoreProductMixTemplate[];
 }
 
 type MasterDataSnapshotOptions = {
@@ -186,6 +193,10 @@ async function loadMasterDataSnapshot(
             .select("id, key, label, base_stage, active, sort_order")
             .eq("tenant_id", tenantId)
             .order("sort_order", { ascending: true }),
+          supabase
+            .from("store_product_mix_templates")
+            .select("id, name, product_ids")
+            .eq("tenant_id", tenantId),
         ]),
       { forceRefresh: options.forceRefresh },
     ),
@@ -220,14 +231,19 @@ async function loadMasterDataSnapshot(
     schedulesResult,
     scheduleSnapshotsResult,
     recipeStageDefinitionsResult,
+    productMixTemplatesResult,
   ] = baseResults;
   // Leitura com falha não pode ficar 15 s no cache compartilhado.
-  if (baseResults.some((result) => result.error && !isSupabaseMissingSchemaError(result.error, ["product_preparation_steps", "recipe_stage_definitions"]))) {
+  if (baseResults.some((result) => result.error && !isSupabaseMissingSchemaError(result.error, ["product_preparation_steps", "recipe_stage_definitions", "store_product_mix_templates"]))) {
     invalidateServerDataCache(rawKey);
   }
   // Sem a migration do cartão #173 a tabela não existe: segue só com as etapas padrão.
   const recipeStageDefinitions = mapRecipeStageDefinitionRows(
     recipeStageDefinitionsResult.error ? [] : (recipeStageDefinitionsResult.data as unknown[] | null) ?? [],
+  );
+  // Cartão #602: sem a migration a tabela não existe: lojas seguem com a lista manual (ou todos).
+  const productMixTemplates = mapStoreProductMixTemplateRows(
+    productMixTemplatesResult.error ? [] : (productMixTemplatesResult.data as unknown[] | null) ?? [],
   );
   // Os nomes são registrados só no navegador (use-master-data): no servidor o registro seria
   // compartilhado entre empresas.
@@ -398,7 +414,7 @@ async function loadMasterDataSnapshot(
     orderingBlockedDays: (row.ordering_blocked_days ?? []) as StoreMasterData["orderingBlockedDays"],
     receivingBlockedDays: (row.receiving_blocked_days ?? []) as StoreMasterData["receivingBlockedDays"],
     deliveryZone: (row as { delivery_zone?: string | null }).delivery_zone ?? null,
-    productMix: normalizeStoreProductMix((row as { product_mix?: unknown }).product_mix),
+    ...buildStoreProductMixFields(row, productMixTemplates),
   }));
 
   const recipeByProductId = recipeRows.reduce<Map<string, ProductionProduct["recipe"]>>((acc, row) => {
@@ -594,6 +610,22 @@ async function loadMasterDataSnapshot(
     schedules,
     ...(productChangelogByProductId ? { productChangelogByProductId } : {}),
     recipeStageDefinitions,
+    productMixTemplates,
+  };
+}
+
+/** Cartão #602: mix que vale para a loja + como ela está configurada (modelo / lista manual). */
+function buildStoreProductMixFields(row: unknown, templates: StoreProductMixTemplate[]) {
+  const record = row as { product_mix?: unknown; product_mix_template_id?: unknown };
+  const manualProductMix = normalizeStoreProductMix(record.product_mix);
+  const productMixTemplateId =
+    typeof record.product_mix_template_id === "string" && templates.some((t) => t.id === record.product_mix_template_id)
+      ? record.product_mix_template_id
+      : null;
+  return {
+    productMix: resolveEffectiveStoreProductMix({ productMixTemplateId, manualProductMix }, templates),
+    productMixTemplateId,
+    manualProductMix,
   };
 }
 

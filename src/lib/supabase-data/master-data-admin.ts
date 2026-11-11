@@ -430,20 +430,40 @@ export async function updateSubcategory(
 }
 
 /**
- * Mix da loja: só entra no payload quando a tela enviou o campo. Quem salva a loja por outro
- * caminho (sem `productMix`) nunca apaga o mix existente. `null` volta a "todos os produtos".
+ * Mix da loja (cartão #602): só entra no payload quando a tela enviou o campo. Quem salva a
+ * loja por outro caminho (sem os campos de mix) nunca apaga o mix existente.
+ *  - `productMixTemplateId` preenchido -> a loja usa o modelo (lista manual é limpa);
+ *  - senão `manualProductMix` (ou o antigo `productMix`): lista própria; `null` = todos.
  */
-function buildStoreProductMixPatch(input: StoreInput): { product_mix?: string[] | null } {
-  if (input.productMix === undefined) {
+async function buildStoreProductMixPatch(
+  input: StoreInput,
+  supabase: SupabaseDataClient,
+): Promise<{ product_mix?: string[] | null; product_mix_template_id?: string | null }> {
+  const sentTemplate = input.productMixTemplateId !== undefined;
+  const manualInput = input.manualProductMix !== undefined ? input.manualProductMix : input.productMix;
+  if (!sentTemplate && manualInput === undefined) {
     return {};
   }
 
-  const result = resolveStoreProductMixForSave(input.productMix);
+  const templateId = typeof input.productMixTemplateId === "string" ? input.productMixTemplateId.trim() : "";
+  if (templateId) {
+    const template = await supabase
+      .from("store_product_mix_templates")
+      .select("id")
+      .eq("id", templateId)
+      .maybeSingle();
+    if (template.error || !template.data) {
+      throw new MasterDataValidationError("Modelo de mix não encontrado. Escolha outro modelo ou marque os produtos.");
+    }
+    return { product_mix_template_id: templateId, product_mix: null };
+  }
+
+  const result = resolveStoreProductMixForSave(manualInput);
   if (!result.ok) {
     throw new MasterDataValidationError(result.message);
   }
 
-  return { product_mix: result.mix };
+  return { product_mix_template_id: null, product_mix: result.mix };
 }
 
 export async function createStore(input: StoreInput, options: MutationOptions = {}) {
@@ -457,6 +477,7 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
   const requestedCode = normalizeStoreCode(input.code);
   const code = requestedCode || buildNextCode(existingCodes.map((row) => row.code), "LJ", 3);
   await assertStoreCodeAvailable(code, undefined, supabase);
+  const mixPatch = await buildStoreProductMixPatch(input, supabase);
 
   const result = await supabase.from("stores").insert({
     legacy_id: buildGeneratedLegacyId("store"),
@@ -475,7 +496,7 @@ export async function createStore(input: StoreInput, options: MutationOptions = 
     // AJ-A8: zona de entrega manual (livre). Quando vazia, a roteirização
     // cai no fallback por janela horária.
     delivery_zone: input.deliveryZone?.trim() || null,
-    ...buildStoreProductMixPatch(input),
+    ...mixPatch,
   }).select("id").single();
 
   const createdStore = assertSupabaseResult(result, "Failed to create store");
@@ -496,6 +517,7 @@ export async function updateStore(
     : null;
   const nextCode = normalizeStoreCode(input.code) || String(row.code);
   await assertStoreCodeAvailable(nextCode, String(row.id), supabase);
+  const mixPatch = await buildStoreProductMixPatch(input, supabase);
 
   const result = await supabase
     .from("stores")
@@ -514,7 +536,7 @@ export async function updateStore(
       receiving_blocked_days: input.receivingBlockedDays,
       // AJ-A8: zona de entrega manual (livre). Vazia = fallback por janela.
       delivery_zone: input.deliveryZone?.trim() || null,
-      ...buildStoreProductMixPatch(input),
+      ...mixPatch,
       updated_at: new Date().toISOString(),
     })
     .eq("id", String(row.id));

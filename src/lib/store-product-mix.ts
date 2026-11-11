@@ -1,20 +1,28 @@
 /**
- * Mix de produtos por loja (cliente, 07/10/2026).
+ * Mix de produtos por loja (cliente, 07/10/2026; cartão #602, 11/11/2026).
  *
- * É um FILTRO DE APRESENTAÇÃO: organiza os pedidos abertos do dia mostrando, por padrão,
- * só os produtos que a loja costuma vender. NÃO bloqueia nada — pedido manual, encomenda
- * fora do padrão e importação por planilha seguem aceitando qualquer produto. Por isso
- * nenhuma validação de pedido, cronograma ou produção olha para este mix.
+ * Nem todo produto é vendido em toda loja. O mix de cada loja é CONFIGURAÇÃO (nunca vem do
+ * histórico de pedidos) e pode ser trocado a qualquer momento:
+ *  - modelo de mix (`stores.product_mix_template_id`): várias lojas com a mesma lista;
+ *  - seleção manual (`stores.product_mix`): lista própria da loja;
+ *  - nenhum dos dois: a loja vende TODOS os produtos (padrão; loja nova e cliente sem mix).
  *
- * Valor guardado em `stores.product_mix`:
- *  - `null`  → a loja recebe TODOS os produtos (padrão; loja nova e cliente sem mix).
- *  - lista de ids de produto (mesmo id do snapshot: `legacy_id ?? id`) → só esses por padrão.
+ * Num lote aberto, a loja vê só os produtos do seu mix (`inStoreMix`). Item que já tem
+ * quantidade num pedido continua aparecendo (o mix pode ter mudado depois do pedido).
+ * Pedido centralizado da fábrica e importação por planilha não olham o mix: são o caminho
+ * da fábrica para exceções. Por isso nenhuma validação de pedido, cronograma ou produção usa
+ * o mix — ele não entra em `available`.
  *
- * Lista vazia nunca é gravada (esconderia todo o catálogo da loja). Na leitura, vazio ou
- * lixo vira `null`: na dúvida, mostra tudo.
+ * Ids de produto guardados no mesmo formato do snapshot (`legacy_id ?? id`). Lista vazia
+ * nunca é gravada (esconderia todo o catálogo da loja). Na leitura, vazio ou lixo vira
+ * `null`: na dúvida, mostra tudo.
  */
 
 export type StoreProductMix = string[] | null;
+
+export type StoreProductMixTemplate = { id: string; name: string; productIds: string[] };
+
+export type StoreProductMixMode = "todos" | "modelo" | "manual";
 
 export type StoreProductMixSaveResult =
   | { ok: true; mix: StoreProductMix }
@@ -62,13 +70,86 @@ export function resolveStoreProductMixForSave(value: unknown): StoreProductMixSa
   return { ok: true, mix: normalized };
 }
 
-/** O produto está no mix padrão da loja? Sem mix definido, todo produto está. */
+/** Nome do modelo: espaços normalizados, 1 a 60 letras. `null` = inválido. */
+export function cleanStoreProductMixTemplateName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.replace(/\s+/g, " ").trim();
+  return name.length >= 1 && name.length <= 60 ? name : null;
+}
+
+/** Linhas de `store_product_mix_templates` -> modelos (descarta linha sem lista válida). */
+export function mapStoreProductMixTemplateRows(rows: unknown[]): StoreProductMixTemplate[] {
+  return rows
+    .map((row) => {
+      const record = (row ?? {}) as { id?: unknown; name?: unknown; product_ids?: unknown };
+      const productIds = normalizeStoreProductMix(record.product_ids);
+      if (typeof record.id !== "string" || typeof record.name !== "string" || !productIds) {
+        return null;
+      }
+      return { id: record.id, name: record.name, productIds };
+    })
+    .filter((template): template is StoreProductMixTemplate => template !== null)
+    .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
+}
+
+/**
+ * Mix que vale para a loja: modelo (se existir) > lista manual > todos.
+ * Modelo apontado mas não encontrado (apagado/sem permissão) cai na lista manual e, sem ela,
+ * em "todos": na dúvida a loja vê tudo, nunca um catálogo vazio.
+ */
+export function resolveEffectiveStoreProductMix(
+  store: { productMixTemplateId?: string | null; manualProductMix?: StoreProductMix },
+  templates: readonly StoreProductMixTemplate[],
+): StoreProductMix {
+  if (store.productMixTemplateId) {
+    const template = templates.find((entry) => entry.id === store.productMixTemplateId);
+    if (template && template.productIds.length > 0) {
+      return template.productIds;
+    }
+  }
+
+  return normalizeStoreProductMix(store.manualProductMix ?? null);
+}
+
+/** Como a loja está configurada (para a tela). */
+export function getStoreProductMixMode(store: {
+  productMixTemplateId?: string | null;
+  manualProductMix?: StoreProductMix;
+}): StoreProductMixMode {
+  if (store.productMixTemplateId) return "modelo";
+  return normalizeStoreProductMix(store.manualProductMix ?? null) ? "manual" : "todos";
+}
+
+/** O produto está no mix da loja? Sem mix definido, todo produto está. */
 export function isProductInStoreMix(mix: StoreProductMix | undefined, productId: string): boolean {
   if (!mix || mix.length === 0) {
     return true;
   }
 
   return mix.includes(productId);
+}
+
+/**
+ * Lista que a loja vê no lote: só o mix, mais o que já tem quantidade digitada (pedido feito
+ * antes de o mix mudar não perde item). Sem mix definido, todos os itens.
+ */
+export function selectStoreMixItems<T extends { inStoreMix: boolean }>(
+  items: readonly T[],
+  hasQuantity: (item: T) => boolean,
+): T[] {
+  return items.filter((item) => item.inStoreMix || hasQuantity(item));
+}
+
+/**
+ * Inclui ou tira um produto de uma lista de mix (usado no cadastro do produto).
+ * Devolve `null` quando tirar o produto deixaria a lista vazia (proibido).
+ */
+export function toggleProductInMixList(list: readonly string[], productId: string, include: boolean): string[] | null {
+  const without = list.filter((id) => id !== productId);
+  if (include) {
+    return [...without, productId];
+  }
+  return without.length > 0 ? without : null;
 }
 
 /**

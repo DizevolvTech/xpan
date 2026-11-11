@@ -31,7 +31,14 @@ import {
 } from "@/lib/production-planning";
 import { formatBrazilPhone } from "@/lib/phone-mask";
 import { getProductDisplayCode } from "@/lib/product-identity";
-import { StoreProductMixField } from "@/components/shared/store-product-mix-field";
+import {
+  StoreProductMixField,
+  buildStoreProductMixValue,
+  toStoreProductMixPayload,
+  validateStoreProductMixValue,
+  type StoreProductMixValue,
+} from "@/components/shared/store-product-mix-field";
+import { StoreMixTemplatesDialog } from "@/components/shared/store-mix-templates-dialog";
 import { useMasterDataSnapshot } from "@/lib/use-master-data";
 import { useStoreUserCandidates } from "@/lib/use-store-user-candidates";
 import { useUnsavedChangesGuard } from "@/lib/use-unsaved-changes-guard";
@@ -45,7 +52,7 @@ import {
 
 type Loja = StoreMasterData;
 
-type LojaFormState = StoreMasterData;
+type LojaFormState = StoreMasterData & { mix: StoreProductMixValue };
 type StoreDialogMode = "view" | "edit";
 
 function buildLojaFormState(store?: Loja | null): LojaFormState {
@@ -65,7 +72,17 @@ function buildLojaFormState(store?: Loja | null): LojaFormState {
     receivingBlockedDays: store?.receivingBlockedDays ?? [],
     deliveryZone: store?.deliveryZone ?? null,
     productMix: store?.productMix ?? null,
+    mix: buildStoreProductMixValue(store),
   };
+}
+
+/** Cartão #602: manda o mix como a tela configurou (modelo / lista manual / todos). */
+function buildStorePayload(formState: LojaFormState) {
+  const { mix, productMix: _effectiveMix, productMixTemplateId: _template, manualProductMix: _manual, ...store } = formState;
+  void _effectiveMix;
+  void _template;
+  void _manual;
+  return { ...store, ...toStoreProductMixPayload(mix) };
 }
 
 export default function LojasPage() {
@@ -83,6 +100,16 @@ export default function LojasPage() {
   const [formBaseline, setFormBaseline] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const mixTemplates = useMemo(() => snapshot.productMixTemplates ?? [], [snapshot.productMixTemplates]);
+  const storesByTemplateId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    snapshot.stores.forEach((store) => {
+      if (!store.productMixTemplateId) return;
+      map.set(store.productMixTemplateId, [...(map.get(store.productMixTemplateId) ?? []), store.name]);
+    });
+    return map;
+  }, [snapshot.stores]);
   const isReadOnly = dialogMode === "view";
   const formDirty = isDialogOpen && !isReadOnly && JSON.stringify(formState) !== formBaseline;
   const formGuard = useUnsavedChangesGuard({
@@ -158,6 +185,21 @@ export default function LojasPage() {
           </span>
         </div>
       ),
+    },
+    {
+      key: "productMix",
+      header: "Mix",
+      render: (item: Loja) => {
+        const template = item.productMixTemplateId
+          ? mixTemplates.find((entry) => entry.id === item.productMixTemplateId)
+          : null;
+        const label = template
+          ? `Modelo: ${template.name}`
+          : item.manualProductMix
+            ? `${item.manualProductMix.length} produtos`
+            : "Todos os produtos";
+        return <span className="block text-sm text-foreground">{label}</span>;
+      },
     },
     {
       key: "orderingDays",
@@ -298,8 +340,9 @@ export default function LojasPage() {
       return;
     }
 
-    if (Array.isArray(formState.productMix) && formState.productMix.length === 0) {
-      setFormError("Marque ao menos um produto no mix da loja, ou volte para \"Todos os produtos\".");
+    const mixError = validateStoreProductMixValue(formState.mix);
+    if (mixError) {
+      setFormError(mixError);
       return;
     }
 
@@ -316,7 +359,7 @@ export default function LojasPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formState),
+          body: JSON.stringify(buildStorePayload(formState)),
         },
       );
 
@@ -344,10 +387,15 @@ export default function LojasPage() {
         { label: "Lojas" },
       ]}
       actions={
-        <Button type="button" onClick={openNewStore}>
-          <Plus className="size-4" />
-          Nova Loja
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => setIsTemplatesOpen(true)}>
+            Modelos de mix
+          </Button>
+          <Button type="button" onClick={openNewStore}>
+            <Plus className="size-4" />
+            Nova Loja
+          </Button>
+        </div>
       }
     >
       <div className="grid gap-3 md:grid-cols-2">
@@ -742,9 +790,11 @@ export default function LojasPage() {
             <StoreProductMixField
               key={editingStore?.id ?? "new-store"}
               options={mixOptions}
-              value={formState.productMix}
+              templates={mixTemplates}
+              value={formState.mix}
               readOnly={isReadOnly}
-              onChange={(next) => setFormState((current) => ({ ...current, productMix: next }))}
+              onManageTemplates={() => setIsTemplatesOpen(true)}
+              onChange={(next) => setFormState((current) => ({ ...current, mix: next }))}
             />
             </fieldset>
           </div>
@@ -770,6 +820,16 @@ export default function LojasPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <StoreMixTemplatesDialog
+        open={isTemplatesOpen}
+        onOpenChange={setIsTemplatesOpen}
+        templates={mixTemplates}
+        options={mixOptions}
+        storesByTemplateId={storesByTemplateId}
+        onChanged={async () => {
+          await refresh();
+        }}
+      />
     </PageLayout>
   );
 }

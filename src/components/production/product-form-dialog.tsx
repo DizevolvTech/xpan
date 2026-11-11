@@ -30,6 +30,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ProductStoreMixSection,
+  buildProductStoreMixToggles,
+  diffProductStoreMixToggles,
+  hasProductStoreMixChanges,
+  saveProductStoreMix,
+  type ProductStoreMixToggles,
+} from "@/components/production/product-store-mix-section";
 import { Textarea } from "@/components/ui/textarea";
 import {
   defaultRecipeStage,
@@ -242,6 +250,10 @@ export function ProductFormDialog({
   const [isVersionsOpen, setIsVersionsOpen] = useState(false);
   // Versão restaurada para dentro do formulário (ainda não salva): pré-preenche o motivo ao salvar.
   const [restoredFromVersion, setRestoredFromVersion] = useState<number | null>(null);
+  // Cartão #602: em quais modelos de mix / lojas de lista própria o produto é vendido.
+  const [storeMixBaseline, setStoreMixBaseline] = useState<ProductStoreMixToggles>({ templates: {}, stores: {} });
+  const [storeMixToggles, setStoreMixToggles] = useState<ProductStoreMixToggles>({ templates: {}, stores: {} });
+  const [isSavingStoreMix, setIsSavingStoreMix] = useState(false);
   const toast = useToast();
   // AJ-0025: produto em carteira operacional → editar reconstrói a revisão pendente
   // do cronograma; avisamos antes de salvar e orientamos a reauditoria depois.
@@ -266,6 +278,27 @@ export function ProductFormDialog({
   snapshotSectorsRef.current = snapshot.sectors;
   const productRef = useRef(product);
   productRef.current = product;
+  const snapshotStoresRef = useRef(snapshot.stores);
+  snapshotStoresRef.current = snapshot.stores;
+  const snapshotMixTemplatesRef = useRef(snapshot.productMixTemplates ?? []);
+  snapshotMixTemplatesRef.current = snapshot.productMixTemplates ?? [];
+  const storeMixDiff = diffProductStoreMixToggles(storeMixBaseline, storeMixToggles);
+  const storeMixDirty = hasProductStoreMixChanges(storeMixDiff);
+
+  async function handleSaveStoreMix() {
+    if (!product) return;
+    setIsSavingStoreMix(true);
+    try {
+      await saveProductStoreMix(product.id, storeMixDiff);
+      await refresh();
+      setStoreMixBaseline(storeMixToggles);
+      toast.success("Lojas do produto salvas.");
+    } catch (mixError) {
+      toast.error(mixError instanceof Error ? mixError.message : "Falha ao salvar as lojas do produto.");
+    } finally {
+      setIsSavingStoreMix(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) {
@@ -289,6 +322,13 @@ export function ProductFormDialog({
     setRestoredFromVersion(null);
     setIsVersionsOpen(false);
     setActiveTab("cadastro");
+    const mixToggles = buildProductStoreMixToggles(
+      productRef.current?.id ?? null,
+      snapshotMixTemplatesRef.current,
+      snapshotStoresRef.current,
+    );
+    setStoreMixBaseline(mixToggles);
+    setStoreMixToggles(mixToggles);
     // Reset apenas quando o dialog abre, o modo muda, ou outro produto é selecionado.
     // Usamos `product?.id` (não o objeto `product`) de propósito: o pai reconstrói a
     // referência de `product` a cada refresh de snapshot, o que dispararia reset indevido.
@@ -1110,11 +1150,24 @@ export function ProductFormDialog({
       );
 
       const respBody = (await response.json().catch(() => null)) as
-        | { message?: string; scheduleRevisionImpact?: ScheduleRevisionRebuildImpact | null; versionRecorded?: boolean }
+        | { id?: string; message?: string; scheduleRevisionImpact?: ScheduleRevisionRebuildImpact | null; versionRecorded?: boolean }
         | null;
 
       if (!response.ok) {
         throw new Error(respBody?.message ?? "Falha ao salvar produto");
+      }
+
+      // Cartão #602: produto novo leva junto as lojas marcadas no mix.
+      if (!product && respBody?.id && storeMixDirty) {
+        try {
+          await saveProductStoreMix(respBody.id, storeMixDiff);
+        } catch (mixError) {
+          toast.warning(
+            `Produto cadastrado, mas as lojas do mix não foram salvas: ${
+              mixError instanceof Error ? mixError.message : "tente de novo no cadastro do produto"
+            }`,
+          );
+        }
       }
 
       await refresh();
@@ -1778,6 +1831,19 @@ export function ProductFormDialog({
                 </fieldset>
               </section>
 
+              {!formState.canBeIngredient ? (
+                <ProductStoreMixSection
+                  isNewProduct={!product}
+                  templates={snapshot.productMixTemplates ?? []}
+                  stores={snapshot.stores}
+                  value={storeMixToggles}
+                  onChange={setStoreMixToggles}
+                  onSave={() => void handleSaveStoreMix()}
+                  saving={isSavingStoreMix}
+                  dirty={storeMixDirty}
+                  readOnly={isReadOnly}
+                />
+              ) : null}
             </fieldset>
           </TabsContent>
 

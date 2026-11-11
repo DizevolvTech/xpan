@@ -597,9 +597,13 @@ export interface StoreMasterData {
   /** AJ-A8: zona de entrega manual (texto livre). Quando vazia, a roteirização
    * agrupa pela janela horária (`receiveWindow`). */
   deliveryZone?: string | null;
-  /** Mix padrão da loja (cliente, 07/10): `null`/ausente = todos os produtos; lista = só esses
-   * por padrão. Filtro de apresentação — nunca bloqueia pedido. Ver `store-product-mix.ts`. */
+  /** Mix que VALE para a loja (cartão #602): modelo > lista manual > `null` (todos os produtos).
+   * Num lote a loja vê só esses produtos; nunca bloqueia pedido. Ver `store-product-mix.ts`. */
   productMix?: string[] | null;
+  /** Cartão #602: modelo de mix escolhido no cadastro da loja (`null` = sem modelo). */
+  productMixTemplateId?: string | null;
+  /** Cartão #602: lista marcada à mão no cadastro da loja (`null` = nenhuma). */
+  manualProductMix?: string[] | null;
 }
 
 export interface ProductionSector {
