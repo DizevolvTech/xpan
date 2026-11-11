@@ -146,7 +146,7 @@ export function StoreMixTemplatesDialog({
                       <div className="min-w-0 flex-1 space-y-0.5">
                         <p className="text-sm font-semibold text-foreground">{template.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {template.productIds.length} produtos:{" "}
+                          {template.productIds.length} {template.productIds.length === 1 ? "produto" : "produtos"}:{" "}
                           {template.productIds
                             .map((id) => nameById.get(id))
                             .filter(Boolean)

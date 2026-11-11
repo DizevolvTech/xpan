@@ -196,7 +196,7 @@ export default function LojasPage() {
         const label = template
           ? `Modelo: ${template.name}`
           : item.manualProductMix
-            ? `${item.manualProductMix.length} produtos`
+            ? `${item.manualProductMix.length} ${item.manualProductMix.length === 1 ? "produto" : "produtos"}`
             : "Todos os produtos";
         return <span className="block text-sm text-foreground">{label}</span>;
       },

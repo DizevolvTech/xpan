@@ -245,7 +245,7 @@ export function StoreProductMixField({
                 <option value="">Escolha um modelo...</option>
                 {templates.map((template) => (
                   <option key={template.id} value={template.id}>
-                    {template.name} ({template.productIds.length} produtos)
+                    {template.name} ({template.productIds.length} {template.productIds.length === 1 ? "produto" : "produtos"})
                   </option>
                 ))}
               </select>
