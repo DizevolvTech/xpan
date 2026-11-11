@@ -1203,7 +1203,6 @@ export default function PedidosLojaPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-                      <span className="text-muted-foreground/80">·</span>
                       <span className="text-foreground">
                         entrega{" "}
                         <strong className="font-semibold tabular-nums">
@@ -1213,14 +1212,14 @@ export default function PedidosLojaPage() {
                           <span className="text-muted-foreground">(D+{snapshot.operationalSettings.expeditionLeadDays})</span>
                         ) : null}
                       </span>
-                      <span className="text-muted-foreground/80">·</span>
+                      <span aria-hidden="true" className="hidden text-muted-foreground/80 sm:inline">·</span>
                       <span className="text-success-foreground">
                         venda{" "}
                         <strong className="font-semibold tabular-nums">
                           {selectedOrderItems.length > 0 ? selectedSaleSummary.value : saleDateLabel}
                         </strong>
                       </span>
-                      <span className="text-muted-foreground/80">·</span>
+                      <span aria-hidden="true" className="hidden text-muted-foreground/80 sm:inline">·</span>
                       <span className="text-foreground">
                         prazo{" "}
                         <strong className="font-semibold tabular-nums">
@@ -1474,8 +1473,8 @@ export default function PedidosLojaPage() {
                                       />
                                     </div>
                                     <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                                      <span className="font-mono">{product.code}</span>
-                                      <span className="opacity-50">·</span>
+                                      <span className="shrink-0 whitespace-nowrap font-mono">{product.code}</span>
+                                      <span aria-hidden="true" className="opacity-50">·</span>
                                       <span className="truncate">{product.category}</span>
                                     </div>
                                     {/* AJ — cobertura: atalho pra replicar a qtd do 1º dia em
